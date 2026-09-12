@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>مُطابِق</title>
+  <link rel="stylesheet" href="./css/base.css">
+  <link rel="stylesheet" href="./css/components.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="#/properties">مُطابِق</a>
+      <nav class="nav" aria-label="الصفحات">
+        <a href="#/dashboard" data-route="dashboard">الداشبورد</a>
+        <a href="#/properties" data-route="properties">العقارات</a>
+        <a href="#/map" data-route="map">خريطة العقارات</a>
+        <a href="#/clients" data-route="clients">العملاء</a>
+        <a href="#/tours" data-route="tours">الجولات الميدانية</a>
+        <a href="#/requests" data-route="requests">الطلبات</a>
+        <a href="#/matches" data-route="matches">المطابقات</a>
+        <a href="#/external" data-route="external">العروض الخارجية</a>
+        <a href="#/settings" data-route="settings">الإعدادات</a>
+      </nav>
+    </div>
+  </header>
+
+  <div id="backup-banner" class="banner" hidden></div>
+
+  <main id="page" class="page"></main>
+
+  <div id="modal-root"></div>
+  <div id="toast-root" class="toast-root" aria-live="polite"></div>
+
+  <noscript>
+    <div class="page"><div class="error-box">هذا التطبيق يحتاج تفعيل JavaScript في المتصفح.</div></div>
+  </noscript>
+
+  <script type="module" src="./js/app.js"></script>
+</body>
+</html>
