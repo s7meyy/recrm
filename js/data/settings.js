@@ -1,0 +1,372 @@
+// الإعدادات المخزَّنة في مخزن settings (مفتاح/قيمة) مع دوال مسمّاة لكل مفتاح.
+// القوائم القابلة للإضافة = المدمج في schema.js + ما يضيفه المستخدم هنا.
+
+import { repo, newId, setCurrentUser } from './repository.js';
+import { BUILTIN_PROPERTY_TYPES, BUILTIN_PROPERTY_STATUSES, DEFAULT_COMPLETENESS } from './schema.js';
+import { RIYADH_DISTRICTS, RIYADH_SECTORS, DEFAULT_CITY } from './riyadh-districts.js';
+
+export const SETTINGS_KEYS = {
+  matching: 'matching', // أوزان المعايير وحدود المرونة والحدّ الأدنى للظهور (المرحلة ٣)
+  zones: 'zones', // نطاقات الأحياء: { [city]: [{ key, label, districts: [] }] } (المرحلة ٣)
+  user: 'user', // { id, name, createdAt }
+  lists: 'lists', // { propertyTypes: [], propertyStatuses: [], clientTags: [], cities: [], districts: { city: [] } } — إضافات المستخدم فقط
+  customFields: 'customFields', // [{ key, label, input: 'text'|'number', forTypes: [] }]
+  completeness: 'completeness', // ['city', ...]
+  backup: 'backup', // { lastExportAt }
+  ui: 'ui', // { propertiesView: 'grid'|'table' }
+  seed: 'seed', // { ids: { clients: [], properties: [], images: [] }, insertedAt } | null
+};
+
+const EMPTY_LISTS = () => ({ propertyTypes: [], propertyStatuses: [], clientTags: [], cities: [], districts: {} });
+const shortKey = (prefix) => `${prefix}_${newId().replace(/-/g, '').slice(0, 8)}`;
+const norm = (s) => String(s ?? '').trim();
+const sortAr = (arr) => [...arr].sort((a, b) => a.localeCompare(b, 'ar'));
+
+/* ===== المستخدم الحالي (هوية محلية بلا تسجيل دخول) ===== */
+
+export async function ensureUser() {
+  let user = await repo.settings.get(SETTINGS_KEYS.user);
+  if (!user || !user.id) {
+    user = { id: newId(), name: 'الوسيط', createdAt: new Date().toISOString() };
+    await repo.settings.set(SETTINGS_KEYS.user, user);
+  }
+  setCurrentUser(user);
+  return user;
+}
+
+export async function updateUserName(name) {
+  const user = await ensureUser();
+  const next = { ...user, name: norm(name) || 'الوسيط' };
+  await repo.settings.set(SETTINGS_KEYS.user, next);
+  setCurrentUser(next);
+  return next;
+}
+
+/* ===== القوائم القابلة للإضافة ===== */
+
+async function readExtras() {
+  return { ...EMPTY_LISTS(), ...(await repo.settings.get(SETTINGS_KEYS.lists, {})) };
+}
+async function writeExtras(extras) {
+  await repo.settings.set(SETTINGS_KEYS.lists, extras);
+}
+
+/**
+ * القوائم المدمجة + إضافات المستخدم.
+ * @returns {{ propertyTypes, propertyStatuses, clientTags, cities, districtsByCity, extras }}
+ */
+export async function getLists() {
+  const extras = await readExtras();
+  const cities = [...new Set([DEFAULT_CITY, ...extras.cities])];
+  const districtsByCity = {};
+  for (const city of cities) {
+    const builtin = city === DEFAULT_CITY ? RIYADH_DISTRICTS : [];
+    districtsByCity[city] = sortAr(new Set([...builtin, ...(extras.districts[city] || [])]));
+  }
+  return {
+    propertyTypes: [...BUILTIN_PROPERTY_TYPES, ...extras.propertyTypes],
+    propertyStatuses: [...BUILTIN_PROPERTY_STATUSES, ...extras.propertyStatuses],
+    clientTags: sortAr(extras.clientTags),
+    cities,
+    districtsByCity,
+    extras,
+  };
+}
+
+export function typeLabel(lists, key) {
+  return lists.propertyTypes.find((t) => t.key === key)?.label ?? (key || 'بلا نوع');
+}
+export function typeGroup(lists, key) {
+  return lists.propertyTypes.find((t) => t.key === key)?.group ?? 'none';
+}
+export function statusLabel(lists, key) {
+  return lists.propertyStatuses.find((s) => s.key === key)?.label ?? (key || '');
+}
+
+export async function addPropertyType({ label, group = 'none' }) {
+  const lists = await getLists();
+  const name = norm(label);
+  if (!name) throw new Error('اسم النوع مطلوب');
+  const existing = lists.propertyTypes.find((t) => t.label === name);
+  if (existing) return existing;
+  const item = { key: shortKey('type'), label: name, group, builtin: false };
+  const extras = lists.extras;
+  extras.propertyTypes.push(item);
+  await writeExtras(extras);
+  return item;
+}
+
+export async function removePropertyType(key) {
+  const extras = await readExtras();
+  if (!extras.propertyTypes.some((t) => t.key === key)) throw new Error('لا يمكن حذف الأنواع المدمجة');
+  const inUse = await repo.properties.where('type', key);
+  if (inUse.length) throw new Error(`لا يمكن الحذف: ${inUse.length} عقار يستعمل هذا النوع`);
+  extras.propertyTypes = extras.propertyTypes.filter((t) => t.key !== key);
+  await writeExtras(extras);
+}
+
+export async function addPropertyStatus(label) {
+  const lists = await getLists();
+  const name = norm(label);
+  if (!name) throw new Error('اسم الحالة مطلوب');
+  const existing = lists.propertyStatuses.find((s) => s.label === name);
+  if (existing) return existing;
+  const item = { key: shortKey('status'), label: name, builtin: false };
+  const extras = lists.extras;
+  extras.propertyStatuses.push(item);
+  await writeExtras(extras);
+  return item;
+}
+
+export async function removePropertyStatus(key) {
+  const extras = await readExtras();
+  if (!extras.propertyStatuses.some((s) => s.key === key)) throw new Error('لا يمكن حذف الحالات المدمجة');
+  const inUse = await repo.properties.where('status', key);
+  if (inUse.length) throw new Error(`لا يمكن الحذف: ${inUse.length} عقار بهذه الحالة`);
+  extras.propertyStatuses = extras.propertyStatuses.filter((s) => s.key !== key);
+  await writeExtras(extras);
+}
+
+export async function addClientTag(label) {
+  const extras = await readExtras();
+  const name = norm(label);
+  if (!name) throw new Error('اسم التصنيف مطلوب');
+  if (!extras.clientTags.includes(name)) {
+    extras.clientTags.push(name);
+    await writeExtras(extras);
+  }
+  return name;
+}
+
+export async function removeClientTag(label) {
+  const extras = await readExtras();
+  const all = await repo.clients.list();
+  const inUse = all.filter((c) => (c.tags || []).includes(label)).length;
+  if (inUse) throw new Error(`لا يمكن الحذف: ${inUse} عميل بهذا التصنيف`);
+  extras.clientTags = extras.clientTags.filter((t) => t !== label);
+  await writeExtras(extras);
+}
+
+export async function addCity(name) {
+  const extras = await readExtras();
+  const city = norm(name);
+  if (!city) throw new Error('اسم المدينة مطلوب');
+  if (city !== DEFAULT_CITY && !extras.cities.includes(city)) {
+    extras.cities.push(city);
+    await writeExtras(extras);
+  }
+  return city;
+}
+
+export async function addDistrict(city, name) {
+  const extras = await readExtras();
+  const district = norm(name);
+  const cityName = norm(city);
+  if (!cityName || !district) throw new Error('المدينة والحي مطلوبان');
+  if (cityName === DEFAULT_CITY && RIYADH_DISTRICTS.includes(district)) return district;
+  const list = extras.districts[cityName] || [];
+  if (!list.includes(district)) {
+    extras.districts[cityName] = [...list, district];
+    await writeExtras(extras);
+  }
+  return district;
+}
+
+export async function removeDistrict(city, name) {
+  const extras = await readExtras();
+  const list = extras.districts[city] || [];
+  if (!list.includes(name)) throw new Error('لا يمكن حذف الأحياء المدمجة');
+  extras.districts[city] = list.filter((d) => d !== name);
+  await writeExtras(extras);
+}
+
+/* ===== الحقول المخصصة (تُخزَّن قيمها في property.extra) ===== */
+
+export async function getCustomFields() {
+  return repo.settings.get(SETTINGS_KEYS.customFields, []);
+}
+
+export async function addCustomField({ label, input = 'text', forTypes = [] }) {
+  const fields = await getCustomFields();
+  const name = norm(label);
+  if (!name) throw new Error('اسم الحقل مطلوب');
+  const item = { key: shortKey('field'), label: name, input: input === 'number' ? 'number' : 'text', forTypes: [...forTypes] };
+  await repo.settings.set(SETTINGS_KEYS.customFields, [...fields, item]);
+  return item;
+}
+
+export async function removeCustomField(key) {
+  const fields = await getCustomFields();
+  await repo.settings.set(SETTINGS_KEYS.customFields, fields.filter((f) => f.key !== key));
+}
+
+/* ===== تعريف "مكتمل البيانات" ===== */
+
+export async function getCompleteness() {
+  return repo.settings.get(SETTINGS_KEYS.completeness, DEFAULT_COMPLETENESS);
+}
+export async function setCompleteness(fields) {
+  return repo.settings.set(SETTINGS_KEYS.completeness, [...new Set(fields)]);
+}
+
+/* ===== النسخ الاحتياطي ===== */
+
+export async function getBackupInfo() {
+  return repo.settings.get(SETTINGS_KEYS.backup, { lastExportAt: null });
+}
+export async function setLastExport(iso) {
+  const info = await getBackupInfo();
+  return repo.settings.set(SETTINGS_KEYS.backup, { ...info, lastExportAt: iso });
+}
+
+/* ===== تفضيلات الواجهة ===== */
+
+export async function getUI() {
+  return repo.settings.get(SETTINGS_KEYS.ui, { propertiesView: 'grid' });
+}
+export async function setUI(patch) {
+  const ui = await getUI();
+  return repo.settings.set(SETTINGS_KEYS.ui, { ...ui, ...patch });
+}
+
+/* ===== علامة البيانات التجريبية ===== */
+
+export async function getSeedInfo() {
+  return repo.settings.get(SETTINGS_KEYS.seed, null);
+}
+export async function setSeedInfo(info) {
+  if (info == null) return repo.settings.remove(SETTINGS_KEYS.seed);
+  return repo.settings.set(SETTINGS_KEYS.seed, info);
+}
+
+/* ===== إعدادات المطابقة (المرحلة ٣) ===== */
+
+/**
+ * القيم الافتراضية لمحرك المطابقة.
+ * price.min* بحسب غرض الطلب: البيع والاستثمار بحدٍّ أدنى للمرونة يقاس بمئات الألوف، والإيجار بعشرات الآلاف.
+ */
+export const DEFAULT_MATCHING = {
+  weights: { district: 40, price: 35, area: 25 },
+  price: { percent: 12, minSale: 100000, minRent: 10000, minInvestment: 100000 },
+  area: { percent: 15, minSqm: 50 },
+  minScore: 50, // القيمة الابتدائية لشريط "أظهر ما نسبته ≥" في صفحة المطابقات
+  excludeOwnProperties: true, // لا تُعرض على العميل عقاراته هو
+};
+
+const numOr = (v, fallback) => (Number.isFinite(Number(v)) && v !== null && v !== '' ? Number(v) : fallback);
+
+/** الإعدادات المخزَّنة مدموجة بالافتراضي (فالنقص لا يُعطّل المحرك). */
+export async function getMatchingSettings() {
+  const stored = (await repo.settings.get(SETTINGS_KEYS.matching, null)) || {};
+  const d = DEFAULT_MATCHING;
+  return {
+    weights: {
+      district: numOr(stored.weights?.district, d.weights.district),
+      price: numOr(stored.weights?.price, d.weights.price),
+      area: numOr(stored.weights?.area, d.weights.area),
+    },
+    price: {
+      percent: numOr(stored.price?.percent, d.price.percent),
+      minSale: numOr(stored.price?.minSale, d.price.minSale),
+      minRent: numOr(stored.price?.minRent, d.price.minRent),
+      minInvestment: numOr(stored.price?.minInvestment, d.price.minInvestment),
+    },
+    area: {
+      percent: numOr(stored.area?.percent, d.area.percent),
+      minSqm: numOr(stored.area?.minSqm, d.area.minSqm),
+    },
+    minScore: numOr(stored.minScore, d.minScore),
+    excludeOwnProperties: stored.excludeOwnProperties !== false,
+  };
+}
+
+export async function setMatchingSettings(patch) {
+  const current = await getMatchingSettings();
+  const next = {
+    ...current, ...patch,
+    weights: { ...current.weights, ...(patch.weights || {}) },
+    price: { ...current.price, ...(patch.price || {}) },
+    area: { ...current.area, ...(patch.area || {}) },
+  };
+  await repo.settings.set(SETTINGS_KEYS.matching, next);
+  return next;
+}
+
+/* ===== نطاقات الأحياء (المرحلة ٣) ===== */
+
+const zonesDraft = () => ({
+  [DEFAULT_CITY]: RIYADH_SECTORS.map((s) => ({ key: s.key, label: s.label, districts: [...s.districts] })),
+});
+
+/**
+ * كل النطاقات لكل المدن. عند أول قراءة تُنسخ قطاعات الرياض مسودّةً قابلة للتعديل والحذف،
+ * وتُحفظ فعليًا حتى يصير تعديل المستخدم عليها هو المصدر بعد ذلك.
+ */
+export async function getZones() {
+  const stored = await repo.settings.get(SETTINGS_KEYS.zones, null);
+  if (stored && typeof stored === 'object') return stored;
+  const draft = zonesDraft();
+  await repo.settings.set(SETTINGS_KEYS.zones, draft);
+  return draft;
+}
+
+export async function getZonesFor(city) {
+  const zones = await getZones();
+  return zones[norm(city)] || [];
+}
+
+export async function addZone(city, { label, districts = [] }) {
+  const zones = await getZones();
+  const cityName = norm(city);
+  const name = norm(label);
+  if (!cityName) throw new Error('المدينة مطلوبة');
+  if (!name) throw new Error('اسم النطاق مطلوب');
+  const list = zones[cityName] || [];
+  if (list.some((z) => z.label === name)) throw new Error('يوجد نطاق بهذا الاسم');
+  const zone = { key: shortKey('zone'), label: name, districts: [...new Set(districts.map(norm).filter(Boolean))] };
+  zones[cityName] = [...list, zone];
+  await repo.settings.set(SETTINGS_KEYS.zones, zones);
+  return zone;
+}
+
+export async function updateZone(city, key, patch = {}) {
+  const zones = await getZones();
+  const cityName = norm(city);
+  const list = zones[cityName] || [];
+  const zone = list.find((z) => z.key === key);
+  if (!zone) throw new Error('النطاق غير موجود');
+  const next = {
+    ...zone,
+    label: patch.label != null ? norm(patch.label) || zone.label : zone.label,
+    districts: patch.districts ? [...new Set(patch.districts.map(norm).filter(Boolean))] : zone.districts,
+  };
+  zones[cityName] = list.map((z) => (z.key === key ? next : z));
+  await repo.settings.set(SETTINGS_KEYS.zones, zones);
+  return next;
+}
+
+export async function removeZone(city, key) {
+  const zones = await getZones();
+  const cityName = norm(city);
+  zones[cityName] = (zones[cityName] || []).filter((z) => z.key !== key);
+  await repo.settings.set(SETTINGS_KEYS.zones, zones);
+}
+
+/**
+ * يوسّع مفاتيح النطاقات إلى أحياء. دالة خالصة: مرّر قائمة نطاقات المدينة كما جاءت من getZonesFor.
+ * المفتاح غير الموجود (نطاق حُذف بعد إنشاء الطلب) يُهمل بصمت.
+ */
+export function expandZones(cityZones, zoneKeys = []) {
+  const byKey = new Map((cityZones || []).map((z) => [z.key, z]));
+  const out = [];
+  for (const key of zoneKeys || []) {
+    const zone = byKey.get(key);
+    if (zone) out.push(...zone.districts);
+  }
+  return [...new Set(out)];
+}
+
+/** اسم النطاق للعرض، أو null إن كان المفتاح لا يقابل نطاقًا موجودًا. */
+export function zoneLabel(cityZones, key) {
+  return (cityZones || []).find((z) => z.key === key)?.label ?? null;
+}

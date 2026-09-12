@@ -1,0 +1,106 @@
+// تنسيق الأرقام والريال والمساحة والتواريخ (ميلادي، أرقام إنجليزية).
+
+const numberFormat = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
+
+let dateFormat = null;
+let dateTimeFormat = null;
+try {
+  dateFormat = new Intl.DateTimeFormat('ar-SA-u-ca-gregory-nu-latn', { year: 'numeric', month: 'long', day: 'numeric' });
+  dateTimeFormat = new Intl.DateTimeFormat('ar-SA-u-ca-gregory-nu-latn', {
+    year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
+} catch (_) { /* يُستعمل البديل أدناه */ }
+
+export function formatNumber(n) {
+  if (n == null || n === '' || Number.isNaN(Number(n))) return '';
+  return numberFormat.format(Number(n));
+}
+
+export function formatSAR(n) {
+  return n == null || n === '' ? 'السعر غير معروف' : `${formatNumber(n)} ريال`;
+}
+
+export function formatArea(n) {
+  return n == null || n === '' ? '—' : `${formatNumber(n)} م²`;
+}
+
+function toDate(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+export function formatDate(iso) {
+  const d = toDate(iso);
+  if (!d) return '—';
+  return dateFormat ? dateFormat.format(d) : d.toLocaleDateString();
+}
+
+export function formatDateTime(iso) {
+  const d = toDate(iso);
+  if (!d) return '—';
+  return dateTimeFormat ? dateTimeFormat.format(d) : d.toLocaleString();
+}
+
+const pad = (x) => String(x).padStart(2, '0');
+
+/** قيمة لحقل <input type="date"> بالتوقيت المحلي. */
+export function toInputDate(iso = null) {
+  const d = iso ? toDate(iso) : new Date();
+  if (!d) return '';
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** قيمة لحقل <input type="datetime-local"> بالتوقيت المحلي. */
+export function toInputDateTime(iso = null) {
+  const d = iso ? toDate(iso) : new Date();
+  if (!d) return '';
+  return `${toInputDate(d.toISOString())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** من 'YYYY-MM-DD' إلى ISO (منتصف الليل بالتوقيت المحلي). */
+export function fromInputDate(value) {
+  if (!value) return null;
+  const [y, m, d] = value.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+/** من 'YYYY-MM-DDTHH:MM' إلى ISO. */
+export function fromInputDateTime(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function startOfDay(d) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+}
+
+/** عدد الأيام الكاملة من fromIso إلى toIso (موجب إن كان toIso لاحقًا). */
+export function daysBetween(fromIso, toIso = new Date().toISOString()) {
+  const a = toDate(fromIso);
+  const b = toDate(toIso);
+  if (!a || !b) return null;
+  return Math.round((startOfDay(b) - startOfDay(a)) / 86400000);
+}
+
+/** صيغة العدد مع كلمة "يوم" بحسب قواعد العربية. */
+export function daysWord(n) {
+  const x = Math.abs(n);
+  if (x === 0) return 'اليوم';
+  if (x === 1) return 'يوم واحد';
+  if (x === 2) return 'يومين';
+  if (x <= 10) return `${x} أيام`;
+  return `${x} يومًا`;
+}
+
+/** "اليوم" / "أمس" / "قبل 3 أيام" / "غدًا" / "بعد 5 أيام" */
+export function relativeDays(iso) {
+  const diff = daysBetween(iso);
+  if (diff == null) return '—';
+  if (diff === 0) return 'اليوم';
+  if (diff === 1) return 'أمس';
+  if (diff === -1) return 'غدًا';
+  return diff > 0 ? `قبل ${daysWord(diff)}` : `بعد ${daysWord(diff)}`;
+}
