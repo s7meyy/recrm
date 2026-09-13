@@ -7,7 +7,7 @@
 // يُحتفظ بآخر KEEP نسخ: الأحدث للاسترجاع السريع، والأقدم شبكة أمان لو أفسدت البيانات ولم تنتبه.
 
 import { getStore } from '@netlify/blobs';
-import { signedIn, unauthorized } from './_auth.js';
+import { signedIn, unauthorized } from '../lib/auth.js';
 
 const STORE = 'kassab-vault';
 const PREFIX = 'backup/';

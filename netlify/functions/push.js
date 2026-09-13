@@ -7,7 +7,7 @@
 // الحماية: كوكي بوابة الدخول نفسها (لا مفتاح إضافي).
 
 import { getStore } from '@netlify/blobs';
-import { signedIn, unauthorized } from './_auth.js';
+import { signedIn, unauthorized } from '../lib/auth.js';
 
 const STORE = 'kassab-push';
 const PREFIX = 'sub/';

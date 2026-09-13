@@ -4,7 +4,7 @@
 
 [build]
   publish = "."
-  command = ""
+  # بلا أمر بناء: التطبيق يُنشر كما هو. Netlify يثبّت تبعيات الدوال تلقائيًا من package.json.
 
 [functions]
   directory = "netlify/functions"
