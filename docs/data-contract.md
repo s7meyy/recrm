@@ -747,7 +747,7 @@
 - **التشفير كله في المتصفح:** AES-GCM بمفتاح مشتق بـPBKDF2 (٢٠٠ ألف دورة، SHA-256، ملح
   عشوائي لكل نسخة). ما يصل الخادم مغلّف `{ v, alg, kdf, rounds, salt, iv, data }` لا غير.
   **الخادم لا يستطيع فكّها، ولا نحن** — ونسيان العبارة السرّية يعني فقدان النسخ السحابية.
-- الحماية: **كوكي بوابة الدخول نفسها** عبر `netlify/functions/_auth.js` (يتحقق من التوقيع
+- الحماية: **كوكي بوابة الدخول نفسها** عبر `netlify/lib/auth.js` (يتحقق من التوقيع
   بـ`APP_SECRET`) — فلا مفتاح إضافي يُلصق ولا كلمة سر ثانية.
 - يُحتفظ بآخر **٥** نسخ: الأحدث للاسترجاع، والأقدم شبكة أمان لو أفسدتَ البيانات ولم تنتبه.
 - رفع تلقائي اختياري عند فتح التطبيق (مرة كل ٢٤ ساعة)، ويُعدّ تصديرًا فيسكت شريط التذكير.
@@ -816,7 +816,7 @@
 | `package.json` | `web-push` · الاسم | البند ٧ |
 
 **ملفات جديدة:** `js/data/vault.js` · `js/util/match-alert.js` · `js/util/push.js` ·
-`netlify/functions/{_auth,vault,push,push-tick,offer}.js` · `sw.js` · `manifest.webmanifest` · `icons/*`.
+`netlify/lib/auth.js` · `netlify/functions/{vault,push,push-tick,offer}.js` · `sw.js` · `manifest.webmanifest` · `icons/*`.
 
 **لم يُمسّ:** `repository.js` · `schema.js` · `adapters/indexeddb.js` (عدا تعليق اسم القاعدة) ·
 `matching.js` (تنبيه المطابقات يستدعيه ولا يعدّله) · `images.js` · `seed.js` · `listing-parse.js` ·
