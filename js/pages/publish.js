@@ -36,6 +36,7 @@ async function loadData(ctx) {
   ctx.company = company;
   ctx.publish = publish;
   ctx.selected = new Set(publish.listingIds);
+  ctx.publishedRefs = new Map(publish.publishedRefs || []);
 }
 
 function build(ctx) {
@@ -163,11 +164,36 @@ function drawList(ctx) {
       el('td', { text: (p.purposes || []).map((k) => labelFor(ENUMS.purposes, k)).join('، ') || '—' }),
       el('td', { class: 'num', text: formatArea(p.area) }),
       el('td', { class: 'num', text: formatSAR(p.price) }),
-      el('td', { text: `${(p.images || []).length}` }));
+      el('td', { text: `${(p.images || []).length}` }),
+      el('td', {}, shareButton(ctx, p)));
   });
   area.append(el('div', { class: 'table-wrap' }, el('table', { class: 'table' },
-    el('thead', {}, el('tr', {}, ['نشر', 'النوع', 'الموقع', 'الغرض', 'المساحة', 'السعر', 'الصور'].map((t) => el('th', { text: t })))),
+    el('thead', {}, el('tr', {}, ['نشر', 'النوع', 'الموقع', 'الغرض', 'المساحة', 'السعر', 'الصور', 'الرابط'].map((t) => el('th', { text: t })))),
     el('tbody', {}, rows))));
+}
+
+/**
+ * رابط العرض الواحد: يُشارك مع عميل بعينه فيرى عقاره وحده بمعاينة صحيحة في واتساب.
+ * الرقم (ref) = ترتيب العقار في آخر نشرة، فالزر لا يظهر إلا لما نُشر فعلًا.
+ */
+function shareButton(ctx, property) {
+  const index = ctx.publishedRefs.get(property.id);
+  if (!index) return el('span', { class: 'muted small', text: '—' });
+  const url = `${location.origin}/offers/l/${index}`;
+  return el('div', { class: 'row' },
+    el('a', { class: 'btn btn-ghost btn-sm', href: url, target: '_blank', rel: 'noopener', text: '↗' , title: 'فتح صفحة العرض' }),
+    el('button', {
+      type: 'button', class: 'btn btn-ghost btn-sm', text: '📋', title: 'نسخ الرابط',
+      onClick: async (e) => {
+        e.stopPropagation();
+        try { await navigator.clipboard.writeText(url); toast('نُسخ رابط العرض', 'success'); }
+        catch (_) { toast(url, 'info', 8000); }
+      },
+    }),
+    el('a', {
+      class: 'btn btn-ghost btn-sm', title: 'إرسال في واتساب', text: '💬',
+      href: `https://wa.me/?text=${encodeURIComponent(url)}`, target: '_blank', rel: 'noopener',
+    }));
 }
 
 async function toggle(ctx, id, on) {
@@ -265,8 +291,13 @@ async function doPublish(ctx, btn) {
       listings,
     });
 
-    ctx.publish = await setPublishSettings({ lastPublishAt: result.publishedAt, lastPublishCount: result.count });
+    ctx.publish = await setPublishSettings({
+      lastPublishAt: result.publishedAt, lastPublishCount: result.count,
+      publishedRefs: chosen.map((p, i) => [p.id, String(i + 1)]), // لبناء روابط العروض المفردة
+    });
+    ctx.publishedRefs = new Map(ctx.publish.publishedRefs);
     drawStatus(ctx);
+    drawList(ctx);
     toast(`نُشر ${result.count} عرض — الصفحة العامة محدَّثة الآن`, 'success', 5000);
   } catch (err) {
     console.error(err);

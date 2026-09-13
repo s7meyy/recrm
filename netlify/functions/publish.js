@@ -4,7 +4,7 @@
 
 import { getStore } from '@netlify/blobs';
 
-const STORE = 'motabiq-public';
+const STORE = 'kassab-public';
 const SNAPSHOT_KEY = 'snapshot';
 const IMAGE_PREFIX = 'img/';
 

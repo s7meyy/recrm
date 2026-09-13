@@ -1,9 +1,10 @@
 // نقطة الدخول: فتح التخزين، تهيئة المستخدم المحلي، التوجيه بين الصفحات (#/…)، وتذكير النسخ الاحتياطي.
 
 import { repo } from './data/repository.js';
-import { ensureUser, getUI, setUI } from './data/settings.js';
+import { ensureUser, getUI, setUI, getVaultSettings, setVaultSettings } from './data/settings.js';
 import { insertSeed } from './data/seed.js';
 import { backupStatus, exportBackup, downloadBlob, markExported } from './data/backup.js';
+import { uploadBackup } from './data/vault.js';
 import { revokeImageUrls } from './data/images.js';
 import { startFollowUpAlerts } from './util/follow-up-alerts.js';
 import { initGlobalSearch } from './util/global-search.js';
@@ -57,7 +58,7 @@ async function navigate() {
   document.querySelectorAll('.sidebar-nav a').forEach((a) => a.classList.toggle('active', a.dataset.route === name));
   const sidebarToggle = document.getElementById('sidebar-toggle');
   if (sidebarToggle) sidebarToggle.checked = false; // يطوي القائمة على الجوال بعد اختيار صفحة
-  document.title = `${route.title} — مُطابِق`;
+  document.title = `${route.title} — كسّاب`;
   revokeImageUrls();
   clear(page);
   const token = ++renderToken;
@@ -81,7 +82,7 @@ async function exportNow() {
     downloadBlob(blob, filename);
     await markExported();
     toast(`تم تصدير ${filename}`, 'success');
-    window.dispatchEvent(new CustomEvent('motabiq:data-changed'));
+    window.dispatchEvent(new CustomEvent('kassab:data-changed'));
   } catch (err) {
     console.error(err);
     toast(err.message || 'تعذر التصدير', 'error');
@@ -110,6 +111,32 @@ async function refreshBanner() {
   banner.hidden = false;
 }
 
+/* ===== الرفع التلقائي للنسخة السحابية المشفَّرة (المرحلة ١٠) ===== */
+
+const VAULT_EVERY_HOURS = 24;
+
+/**
+ * يرفع نسخة مشفَّرة مرة كل يوم إن فُعّل الخيار ووُجدت عبارة سرّية.
+ * صامت تمامًا عند الفشل (لا شبكة، جلسة منتهية): النسخة المحلية والتصدير اليدوي لم يتغيّرا،
+ * وشريط التذكير يبقى هو الحارس الظاهر.
+ */
+async function autoVaultBackup() {
+  try {
+    const vault = await getVaultSettings();
+    if (!vault.auto || !vault.passphrase) return;
+    const hours = vault.lastUploadAt ? (Date.now() - new Date(vault.lastUploadAt).getTime()) / 3600000 : Infinity;
+    if (hours < VAULT_EVERY_HOURS) return;
+    const counts = await repo.counts();
+    if (!DATA_STORES.some((s) => counts[s] > 0)) return; // لا ترفع قاعدة فارغة فوق نسخة صالحة
+    const res = await uploadBackup(vault.passphrase);
+    await setVaultSettings({ lastUploadAt: res.at });
+    await markExported();
+    window.dispatchEvent(new CustomEvent('kassab:data-changed'));
+  } catch (err) {
+    console.warn('تعذر رفع النسخة السحابية تلقائيًا', err);
+  }
+}
+
 /* ===== البيانات التجريبية عند أول تشغيل ===== */
 
 const DATA_STORES = ['clients', 'properties', 'tours', 'requests', 'matches', 'externalListings', 'deals'];
@@ -126,6 +153,14 @@ async function seedOnFirstRun() {
   } catch (err) {
     console.warn('تعذر إدراج البيانات التجريبية', err);
   }
+}
+
+/* ===== التثبيت على الجوال والعمل دون اتصال (المرحلة ١٠) ===== */
+
+function registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) return;
+  // النطاق الجذر كي يغطّي التطبيق كله؛ والفشل غير مؤثر (التطبيق يعمل بلا عامل خدمة).
+  navigator.serviceWorker.register('/sw.js').catch((err) => console.warn('تعذر تسجيل عامل الخدمة', err));
 }
 
 /* ===== التهيئة ===== */
@@ -148,7 +183,7 @@ async function init() {
   if (navigator.storage?.persist) navigator.storage.persist().catch(() => {});
 
   window.addEventListener('hashchange', navigate);
-  window.addEventListener('motabiq:data-changed', refreshBanner);
+  window.addEventListener('kassab:data-changed', refreshBanner);
   window.addEventListener('unhandledrejection', (e) => {
     console.error(e.reason);
     toast(e.reason?.message || 'حدث خطأ غير متوقع', 'error');
@@ -160,6 +195,8 @@ async function init() {
   startFollowUpAlerts();
   await navigate();
   refreshBanner();
+  autoVaultBackup(); // بلا await: لا يؤخّر ظهور الصفحة
+  registerServiceWorker();
 }
 
 init();

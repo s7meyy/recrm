@@ -3,7 +3,7 @@
 import { getStore } from '@netlify/blobs';
 
 export default async () => {
-  const store = getStore({ name: 'motabiq-public', consistency: 'strong' });
+  const store = getStore({ name: 'kassab-public', consistency: 'strong' });
   const snapshot = await store.get('snapshot', { type: 'json' });
   return new Response(JSON.stringify(snapshot || { publishedAt: null, office: {}, intro: '', listings: [] }), {
     headers: {

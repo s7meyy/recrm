@@ -9,7 +9,10 @@
 
 import { repo } from '../data/repository.js';
 import { ENUMS, labelFor, clientPriority, clientTagClass } from '../data/schema.js';
-import { getLists, typeLabel, statusLabel, zoneLabel } from '../data/settings.js';
+import {
+  getLists, typeLabel, statusLabel, zoneLabel,
+  getCompany, suggestInvoiceNumber, consumeInvoiceNumber,
+} from '../data/settings.js';
 import { loadMatchingContext, candidatesFor, scoreOne, hardReasonLabel, priceFlexFor } from '../data/matching.js';
 import {
   el, clear, labeled, selectEl, checkbox, badge, openModal, toast, emptyState,
@@ -313,7 +316,7 @@ async function setStatus(ctx, request, row, status) {
       });
     }
     if (status === 'won') await openDealForm(ctx, request, row);
-    window.dispatchEvent(new CustomEvent('motabiq:data-changed'));
+    window.dispatchEvent(new CustomEvent('kassab:data-changed'));
     await refresh(ctx);
   } catch (err) {
     console.error(err);
@@ -344,6 +347,8 @@ function openDealForm(ctx, request, row) {
       isExternal ? 'إغلاق الطلب (مُنجز) ووسم العرض الخارجي «لم يعد متاحًا»' : 'تحديث حالة العقار وإغلاق الطلب (مُنجز)',
       { checked: true },
     );
+    // فاتورة العمولة من الصفقة نفسها (المرحلة ١٠): مطفأة افتراضيًا، ولا تعمل إلا إن أُدخلت عمولة.
+    const invoiceBox = checkbox('أنشئ فاتورة بالعمولة لهذا العميل', { checked: false });
     const errorsBox = el('div', { class: 'form-errors', hidden: true });
 
     const saveBtn = el('button', { type: 'button', class: 'btn btn-primary', text: 'تسجيل الصفقة' });
@@ -368,7 +373,26 @@ function openDealForm(ctx, request, row) {
           else await repo.properties.update(p.id, { status: request.purpose === 'rent' ? 'rented' : 'sold' });
           await repo.requests.update(request.id, { status: 'done' });
         }
-        toast('سُجّلت الصفقة', 'success');
+        const commission = commissionInput.value === '' ? null : Number(commissionInput.value);
+        if (invoiceBox.querySelector('input').checked) {
+          if (!commission) {
+            toast('سُجّلت الصفقة — ولم تُنشأ فاتورة لأن العمولة فارغة', 'info', 5000);
+          } else {
+            const client = ctx.clientsById.get(request.clientId);
+            const company = await getCompany();
+            const number = suggestInvoiceNumber(company, 'invoice');
+            await repo.invoices.create({
+              type: 'invoice', number, date,
+              clientId: request.clientId, clientName: clientName(client), clientPhone: client?.phone || '',
+              statement: `عمولة وساطة — ${typeLabel(ctx.lists, p.type)}${[p.district, p.city].filter(Boolean).length ? ` بـ${[p.district, p.city].filter(Boolean).join('، ')}` : ''}`,
+              items: [{ description: 'عمولة الوساطة', qty: 1, unitPrice: commission }],
+            });
+            await consumeInvoiceNumber('invoice', number);
+            toast(`سُجّلت الصفقة وأُنشئت الفاتورة ${number}`, 'success', 5000);
+          }
+        } else {
+          toast('سُجّلت الصفقة', 'success');
+        }
         modal.close();
       } catch (err) {
         clear(errorsBox);
@@ -391,7 +415,8 @@ function openDealForm(ctx, request, row) {
           labeled('السعر النهائي (ريال)', priceInput, { required: true }),
           labeled('العمولة (ريال)', commissionInput),
           labeled('ملاحظات', notesInput, { full: true }),
-          el('div', { class: 'field field-full' }, syncBox))),
+          el('div', { class: 'field field-full' }, syncBox),
+          el('div', { class: 'field field-full' }, invoiceBox))),
       footer: [
         el('button', { type: 'button', class: 'btn btn-ghost', text: 'تخطّي الآن', onClick: () => modal.close() }),
         saveBtn,

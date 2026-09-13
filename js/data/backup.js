@@ -6,7 +6,9 @@ import { repo } from './repository.js';
 import { STORES } from './schema.js';
 import { getBackupInfo, setLastExport } from './settings.js';
 
-export const BACKUP_APP = 'motabiq';
+export const BACKUP_APP = 'kassab';
+// الاسم القديم للتطبيق: النسخ الاحتياطية المأخوذة قبل إعادة التسمية تبقى مقبولة للاستيراد.
+export const LEGACY_BACKUP_APP = 'motabiq';
 export const BACKUP_FORMAT = 1;
 export const REMINDER_HOURS = 24;
 
@@ -81,7 +83,7 @@ export async function exportBackup() {
   parts.push('}}');
   return {
     blob: new Blob(parts, { type: 'application/json' }),
-    filename: `motabiq-backup-${stamp(exportedAt)}.json`,
+    filename: `kassab-backup-${stamp(exportedAt)}.json`,
     counts,
     exportedAt,
   };
@@ -112,8 +114,8 @@ export async function readBackupFile(file) {
   } catch (_) {
     throw new Error('الملف ليس ملف JSON صالحًا');
   }
-  if (!parsed || parsed.app !== BACKUP_APP || !parsed.db || typeof parsed.db !== 'object') {
-    throw new Error('الملف ليس نسخة احتياطية من مُطابِق');
+  if (!parsed || ![BACKUP_APP, LEGACY_BACKUP_APP].includes(parsed.app) || !parsed.db || typeof parsed.db !== 'object') {
+    throw new Error('الملف ليس نسخة احتياطية من كسّاب');
   }
   if (Number(parsed.format) > BACKUP_FORMAT) {
     throw new Error('النسخة من إصدار أحدث من التطبيق الحالي');

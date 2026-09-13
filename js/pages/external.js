@@ -226,7 +226,7 @@ function statusCell(ctx, x) {
       try {
         await repo.externalListings.update(x.id, { status });
         toast(`الحالة الآن: ${labelFor(ENUMS.externalStatuses, status)}`, 'success');
-        window.dispatchEvent(new CustomEvent('motabiq:data-changed'));
+        window.dispatchEvent(new CustomEvent('kassab:data-changed'));
         await refresh(ctx);
       } catch (err) {
         toast(err.message || 'تعذر تغيير الحالة', 'error');
@@ -532,7 +532,7 @@ async function openForm(ctx, existing) {
       if (!readiness.ready) {
         toast(`بانتظار الإكمال — ينقصه: ${readiness.missing.map((m) => m.label).join('، ')}. لن يدخل المطابقة قبل إكماله.`, 'info', 6000);
       }
-      window.dispatchEvent(new CustomEvent('motabiq:data-changed'));
+      window.dispatchEvent(new CustomEvent('kassab:data-changed'));
       await refresh(ctx);
     } catch (err) {
       if (err instanceof ValidationError) showErrors(err.errors);
@@ -555,7 +555,7 @@ async function openForm(ctx, existing) {
         await repo.externalListings.remove(existing.id);
         modal.close();
         toast('حُذف العرض', 'success');
-        window.dispatchEvent(new CustomEvent('motabiq:data-changed'));
+        window.dispatchEvent(new CustomEvent('kassab:data-changed'));
         await refresh(ctx);
       } catch (err) {
         showErrors([err.message || 'تعذر الحذف']);

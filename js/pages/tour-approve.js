@@ -10,6 +10,7 @@ import { getImageUrl, deleteImages } from '../data/images.js';
 import {
   el, clear, labeled, fieldGroup, selectEl, checkbox, badge, openModal, promptDialog, confirmDialog, toast, emptyState, debounce,
 } from '../util/dom.js';
+import { announceMatches } from '../util/match-alert.js';
 import { formatPhone } from '../util/phone.js';
 import { formatDate } from '../util/format.js';
 import { parseLocation, isShortMapLink, locationToText, mapsLink } from '../util/location.js';
@@ -334,11 +335,13 @@ export async function openApprovalForm(property, { lists = null, onDone = null }
         }
       }
       if (state.removedImages.size) await deleteImages([...state.removedImages]);
-      await repo.properties.update(property.id, { ...data, ownerId, captureStatus: 'approved', captureContact: null });
+      const approvedRec = await repo.properties.update(property.id, { ...data, ownerId, captureStatus: 'approved', captureContact: null });
       if (data.district && !(ctx.lists.districtsByCity[data.city] || []).includes(data.district)) await addDistrict(data.city, data.district);
       modal.close();
       toast('تم الاعتماد — العقار الآن في المخزون', 'success');
       onDone?.();
+      // العقار صار في المخزون الآن، فيُفحص فورًا مقابل الطلبات النشطة (المرحلة ١٠).
+      await announceMatches(approvedRec);
     } catch (err) {
       showErrors(err.errors || [err.message || 'حدث خطأ غير متوقع']);
     } finally {

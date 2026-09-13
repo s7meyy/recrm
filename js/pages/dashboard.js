@@ -5,7 +5,7 @@
 // الإيراد ولا تدخل معدل التحويل.
 
 import { repo } from '../data/repository.js';
-import { ENUMS, labelFor } from '../data/schema.js';
+import { ENUMS, labelFor, invoiceTotal } from '../data/schema.js';
 import { getLists, getCompleteness, getFollowUpSettings, typeLabel, statusLabel } from '../data/settings.js';
 import { tourStats } from './tours.js';
 import { el, clear, badge } from '../util/dom.js';
@@ -20,14 +20,15 @@ export async function render(container) {
 }
 
 async function loadData() {
-  const [clients, properties, tours, matches, externals, deals, lists, completeness, followUp, tasks] = await Promise.all([
+  const [clients, properties, tours, matches, externals, deals, lists, completeness, followUp, tasks, invoices] = await Promise.all([
     repo.clients.list(), repo.properties.list(), repo.tours.list(), repo.matches.list(),
     repo.externalListings.list(), repo.deals.list(), getLists(), getCompleteness(), getFollowUpSettings(), repo.tasks.list(),
+    repo.invoices.list(),
   ]);
   const approved = properties.filter((p) => p.captureStatus === 'approved');
   const clientMap = new Map(clients.map((c) => [c.id, c]));
   const dealPropertyIds = new Set(deals.map((d) => d.propertyId).filter(Boolean));
-  return { clients, properties, approved, tours, matches, externals, deals, lists, completeness, followUp, tasks, clientMap, dealPropertyIds };
+  return { clients, properties, approved, tours, matches, externals, deals, lists, completeness, followUp, tasks, invoices, clientMap, dealPropertyIds };
 }
 
 /* ===== أدوات تجميع عامة ===== */
@@ -127,7 +128,7 @@ function statChip(value, label) {
 }
 
 function buildLayout(container, data) {
-  const { clients, properties, approved, tours, matches, externals, deals, lists, completeness, followUp, tasks, clientMap, dealPropertyIds } = data;
+  const { clients, properties, approved, tours, matches, externals, deals, lists, completeness, followUp, tasks, invoices, clientMap, dealPropertyIds } = data;
   clear(container);
 
   const pending = properties.filter((p) => p.captureStatus !== 'approved').length;
@@ -216,11 +217,45 @@ function buildLayout(container, data) {
       el('dt', { text: 'معدل التحويل (عقار ← صفقة)' }), el('dd', { text: deal.conversion == null ? '—' : `${formatNumber(deal.conversion)}٪` })),
     el('div', { class: 'muted small', text: 'صفقات العروض الخارجية (بلا عقار من مخزونك) تدخل الإيراد والعمولة أعلاه، ولا تدخل معدل التحويل.' })));
 
+  /* الفواتير وعروض الأسعار (المرحلة ١٠) */
+  grid.append(panel('الفواتير وعروض الأسعار', null, ...invoiceSection(invoices)));
+
   /* الجولات الميدانية */
   grid.append(panel('الجولات الميدانية', null, ...tourSection({ tours, properties, clientMap, completeness, dealPropertyIds })));
 
   /* المهام (المرحلة ٧) */
   grid.append(panel('المهام', null, ...taskSection(tasks)));
+}
+
+/**
+ * مؤشرات المستندات المالية: الفواتير وعروض الأسعار منفصلان (عرض السعر ليس إيرادًا).
+ * الإجمالي يُحسب من البنود لحظة العرض بـinvoiceTotal — لا مجموع مخزَّن (القسم ١٦).
+ */
+function invoiceSection(invoices) {
+  if (!invoices.length) {
+    return [el('div', { class: 'muted small', text: 'لا فواتير ولا عروض أسعار بعد.' }),
+      el('a', { class: 'btn btn-sm', href: '#/invoices', text: 'افتح صفحة الفواتير →' })];
+  }
+  const now = new Date();
+  const thisMonth = (iso) => {
+    const d = new Date(iso);
+    return !Number.isNaN(d.getTime()) && d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+  };
+  const bills = invoices.filter((x) => x.type === 'invoice');
+  const quotes = invoices.filter((x) => x.type === 'quote');
+  const sum = (list) => list.reduce((acc, x) => acc + invoiceTotal(x), 0);
+  return [
+    el('div', { class: 'stat-strip' },
+      statChip(bills.length, 'فاتورة'),
+      statChip(quotes.length, 'عرض سعر'),
+      statChip(bills.filter((x) => thisMonth(x.date)).length, 'فاتورة هذا الشهر')),
+    el('dl', { class: 'kv' },
+      el('dt', { text: 'إجمالي الفواتير' }), el('dd', { text: formatSAR(sum(bills)) }),
+      el('dt', { text: 'فواتير هذا الشهر' }), el('dd', { text: formatSAR(sum(bills.filter((x) => thisMonth(x.date)))) }),
+      el('dt', { text: 'قيمة عروض الأسعار المعلّقة' }), el('dd', { text: formatSAR(sum(quotes)) })),
+    el('div', { class: 'muted small', text: 'عرض السعر ليس إيرادًا — يُعرض هنا لمتابعة ما لم يتحوّل إلى فاتورة بعد.' }),
+    el('a', { class: 'btn btn-sm', href: '#/invoices', text: 'افتح صفحة الفواتير →' }),
+  ];
 }
 
 function taskSection(tasks) {

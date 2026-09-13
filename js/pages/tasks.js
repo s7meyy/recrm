@@ -10,6 +10,7 @@ import { getUI, setUI } from '../data/settings.js';
 import {
   el, clear, badge, selectEl, checkbox, openModal, confirmDialog, promptDialog, toast, emptyState,
 } from '../util/dom.js';
+import { syncReminders } from '../util/push.js';
 import { formatDateTime, toInputDateTime, fromInputDateTime } from '../util/format.js';
 import { clientName } from './requests.js';
 
@@ -44,6 +45,8 @@ async function loadData(ctx) {
 }
 
 async function refresh(ctx) {
+  // مواعيد التذكير على الخادم تتبع أي تغيير هنا (المرحلة ١٠) — صامتة إن لم تُفعَّل التنبيهات.
+  syncReminders().catch(() => {});
   await loadData(ctx);
   buildLayout(ctx);
 }

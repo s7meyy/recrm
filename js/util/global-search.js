@@ -1,9 +1,9 @@
-// بحث عام عبر العملاء والعقارات والطلبات (المرحلة ٦)، والمهام والأفكار (المرحلة ٧). يعيد استعمال
+// بحث عام عبر العملاء والعقارات والطلبات (المرحلة ٦)، والمهام والأفكار (المرحلة ٧)، والفواتير (المرحلة ١٠). يعيد استعمال
 // repo.<كيان>.search(q) الموجودة أصلًا لكل كيان (تبني على searchKey المحفوظ في كل سجل) — لا
 // منطق بحث جديد هنا، فقط واجهة تجمع الكيانات الخمسة في نافذة واحدة.
 
 import { repo } from '../data/repository.js';
-import { ENUMS, labelFor } from '../data/schema.js';
+import { ENUMS, labelFor, invoiceTotal } from '../data/schema.js';
 import { getLists, typeLabel, statusLabel } from '../data/settings.js';
 import { el, clear, badge, openModal, debounce } from './dom.js';
 import { formatNumber, formatDateTime } from './format.js';
@@ -55,6 +55,13 @@ function noteRow(n) {
     () => { location.hash = `#/notes/${n.id}`; closeModal(); });
 }
 
+function invoiceRow(inv) {
+  return resultRow(inv.number || 'بلا رقم',
+    [inv.clientName, `${formatNumber(invoiceTotal(inv))} ريال`].filter(Boolean).join(' · '),
+    labelFor(ENUMS.invoiceTypes, inv.type),
+    () => { location.hash = `#/invoices/${inv.id}`; closeModal(); });
+}
+
 function group(title, rows) {
   return rows.length ? el('div', { class: 'search-group' }, el('h3', { text: title }), ...rows) : null;
 }
@@ -67,8 +74,9 @@ async function runSearch(resultsEl, query) {
   const q = query.trim();
   if (q.length < MIN_QUERY_LEN) { renderEmpty(resultsEl, 'اكتب حرفين على الأقل للبحث.'); return; }
   const { lists, clientsById } = await ensureCache();
-  const [clients, properties, requests, tasks, notes] = await Promise.all([
+  const [clients, properties, requests, tasks, notes, invoices] = await Promise.all([
     repo.clients.search(q), repo.properties.search(q), repo.requests.search(q), repo.tasks.search(q), repo.notes.search(q),
+    repo.invoices.search(q),
   ]);
   if (!resultsEl.isConnected) return; // أُغلقت النافذة أثناء البحث
   clear(resultsEl);
@@ -78,6 +86,7 @@ async function runSearch(resultsEl, query) {
     group('الطلبات', requests.slice(0, MAX_PER_GROUP).map((r) => requestRow(r, clientsById))),
     group('المهام', tasks.slice(0, MAX_PER_GROUP).map(taskRow)),
     group('الأفكار', notes.filter((n) => !n.archived).slice(0, MAX_PER_GROUP).map(noteRow)),
+    group('الفواتير وعروض الأسعار', invoices.slice(0, MAX_PER_GROUP).map(invoiceRow)),
   ].filter(Boolean);
   if (!groups.length) { renderEmpty(resultsEl, 'لا نتائج.'); return; }
   resultsEl.append(...groups);
@@ -85,7 +94,7 @@ async function runSearch(resultsEl, query) {
 
 export function openGlobalSearch() {
   cache = null; // البيانات قد تغيّرت منذ آخر فتح
-  const input = el('input', { class: 'input search', type: 'search', placeholder: 'ابحث عن عميل أو عقار أو طلب أو مهمة أو فكرة…' });
+  const input = el('input', { class: 'input search', type: 'search', placeholder: 'ابحث عن عميل أو عقار أو طلب أو مهمة أو فكرة أو فاتورة…' });
   const results = el('div', { class: 'search-results' });
   const body = el('div', { class: 'search-modal-body' }, input, results);
   renderEmpty(results, 'اكتب حرفين على الأقل للبحث.');

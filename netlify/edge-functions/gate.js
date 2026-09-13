@@ -7,7 +7,7 @@
 // المستثنى من البوابة: صفحة العروض العامة `/offers` ومسارات الدوال `/api/*` و`/.netlify/*`
 // (دالة النشر محميّة بمفتاحها الخاص، ودالّتا القراءة عامّتان بقصد).
 
-const COOKIE = 'motabiq_gate';
+const COOKIE = 'kassab_gate';
 const MAX_AGE_DAYS = 30;
 
 const enc = new TextEncoder();
@@ -42,7 +42,7 @@ function loginPage({ error = false, target = '/' } = {}) {
   return new Response(`<!DOCTYPE html>
 <html lang="ar" dir="rtl"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>مُطابِق — الدخول</title>
+<title>كسّاب — الدخول</title>
 <style>
   :root { color-scheme: light; }
   *, *::before, *::after { box-sizing: border-box; } /* بدونها يفيض حقل الإدخال بعرض الحشو على الجوال */
@@ -59,7 +59,7 @@ function loginPage({ error = false, target = '/' } = {}) {
 </style></head>
 <body>
   <form method="POST" action="/__login">
-    <h1>مُطابِق</h1>
+    <h1>كسّاب</h1>
     <p>هذه الصفحة محمية. أدخل كلمة السر للمتابعة.</p>
     ${error ? '<div class="err">كلمة السر غير صحيحة.</div>' : ''}
     <input type="hidden" name="to" value="${target.replace(/"/g, '&quot;')}">

@@ -19,6 +19,7 @@ export const SETTINGS_KEYS = {
   sidebarOrder: 'sidebarOrder', // ['dashboard', 'properties', …] ترتيب صفحات القائمة الجانبية (المرحلة ٨)
   company: 'company', // بيانات الشركة والشعار وسلسلتا ترقيم المستندات (المرحلة ٨)
   publish: 'publish', // الصفحة العامة: المفتاح والعروض المختارة وآخر نشر (المرحلة ٩)
+  vault: 'vault', // النسخة السحابية المشفَّرة: العبارة السرّية والرفع التلقائي (المرحلة ١٠)
 };
 
 const EMPTY_LISTS = () => ({ propertyTypes: [], propertyStatuses: [], clientTags: [], cities: [], districts: {}, sources: [] });
@@ -511,6 +512,7 @@ export const DEFAULT_PUBLISH = {
   contactPhone: '', // جوال التواصل في بطاقات العروض (افتراضه جوال الشركة)
   lastPublishAt: null,
   lastPublishCount: 0,
+  publishedRefs: [], // [[propertyId, ref]] من آخر نشرة — لبناء روابط العروض المفردة (المرحلة ١٠)
 };
 
 export async function getPublishSettings() {
@@ -522,5 +524,27 @@ export async function setPublishSettings(patch) {
   const next = { ...(await getPublishSettings()), ...patch };
   next.listingIds = [...new Set(next.listingIds || [])];
   await repo.settings.set(SETTINGS_KEYS.publish, next);
+  return next;
+}
+
+
+/* ===== الخزنة السحابية المشفَّرة (المرحلة ١٠) ===== */
+
+export const DEFAULT_VAULT = {
+  // العبارة السرّية تُحفظ في هذا الجهاز فقط ليعمل الرفع التلقائي؛ الخادم لا يراها ولا يرى
+  // بياناتك (التشفير كله في المتصفح). نسيانها = فقدان النسخ السحابية، فلا أحد يستطيع فكّها.
+  passphrase: '',
+  auto: false, // رفع تلقائي عند فتح التطبيق إذا مضى أكثر من يوم على آخر رفع
+  lastUploadAt: null,
+  lastUploadCounts: null,
+};
+
+export async function getVaultSettings() {
+  return { ...DEFAULT_VAULT, ...((await repo.settings.get(SETTINGS_KEYS.vault, null)) || {}) };
+}
+
+export async function setVaultSettings(patch) {
+  const next = { ...(await getVaultSettings()), ...patch };
+  await repo.settings.set(SETTINGS_KEYS.vault, next);
   return next;
 }

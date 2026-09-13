@@ -17,6 +17,7 @@ import { formatPhone } from '../util/phone.js';
 import { parseLocation, isShortMapLink, mapsLink, locationToText } from '../util/location.js';
 import { LISTING_GROUPS, LISTING_VALUES, listingFilterOptions } from '../util/property-filters.js';
 import { sourceField, rememberSource, sourceBadge } from '../util/source-field.js';
+import { announceMatches } from '../util/match-alert.js';
 
 // "الحالة" فرز خاص بالعقارات (بلا معنى للعروض الخارجية) فيبقى معرَّفًا هنا؛ بقية المجموعات
 // مشتركة مع خريطة العقارات عبر util/property-filters.js فلا تنحرف الصفحتان عن بعضهما.
@@ -627,6 +628,8 @@ async function openForm(ctx, existing) {
       modal.close();
       toast(isEdit ? 'تم حفظ التعديلات' : 'تمت إضافة العقار', 'success');
       await refresh(ctx);
+      // تنبيه المطابقات (المرحلة ١٠): للعقار الجديد فقط — التعديل لا يُزعجك في كل حفظ.
+      if (!isEdit) await announceMatches(rec);
     } catch (err) {
       if (err instanceof ValidationError) showErrors(err.errors);
       else { console.error(err); showErrors([err.message || 'حدث خطأ غير متوقع']); }

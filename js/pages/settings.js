@@ -10,8 +10,10 @@ import {
   getMatchingSettings, setMatchingSettings, DEFAULT_MATCHING, getZones, addZone, updateZone, removeZone,
   getFollowUpSettings, setFollowUpSettings,
   getSidebarOrder, setSidebarOrder, resetSidebarOrder, orderedPageKeys,
-  getCompany, setCompany,
+  getCompany, setCompany, getVaultSettings, setVaultSettings,
 } from '../data/settings.js';
+import { listBackups, uploadBackup, restoreBackup } from '../data/vault.js';
+import { pushSupported, enablePush, disablePush, currentSubscription, syncReminders } from '../util/push.js';
 import { SIDEBAR_PAGES, DEFAULT_PAGE_KEYS, pageLabel, applySidebarOrder } from '../util/sidebar.js';
 import { storeImage, getImageUrl, removeImage } from '../data/images.js';
 import { requestFollowUpPermission } from '../util/follow-up-alerts.js';
@@ -22,7 +24,7 @@ import { el, clear, labeled, selectEl, checkbox, badge, confirmDialog, openModal
 import { clientTagClass } from '../data/schema.js';
 import { formatDateTime, relativeDays } from '../util/format.js';
 
-const dataChanged = () => window.dispatchEvent(new CustomEvent('motabiq:data-changed'));
+const dataChanged = () => window.dispatchEvent(new CustomEvent('kassab:data-changed'));
 
 export async function render(container) {
   clear(container);
@@ -34,6 +36,7 @@ export async function render(container) {
     panel('ترتيب صفحات القائمة الجانبية', 'رتّب الصفحات كما تريد رؤيتها في القائمة. كل الصفحات تبقى ظاهرة؛ الترتيب فقط هو ما يُحفظ.', sidebarOrderBody),
     panel('بيانات الشركة والمستندات', 'ما يُطبع أعلى الفاتورة وعرض السعر: الاسم والشعار وبيانات التواصل، وسلسلتا الترقيم التلقائي.', companyBody),
     panel('النسخ الاحتياطي', 'البيانات محفوظة في هذا المتصفح فقط. الملف الواحد يحوي كل شيء بما فيه الصور والإعدادات.', backupBody),
+    panel('النسخة السحابية المشفَّرة', 'نسخة مشفَّرة في متصفحك قبل رفعها — الخادم لا يستطيع قراءتها. تحمي بياناتك لو ضاع الجهاز، وتنقلها إلى جهاز آخر.', vaultBody),
     panel('التخزين والصور', 'ما تشغله البيانات على هذا الجهاز. لحذف صور بعينها افتح العقار واحذفها من نموذجه.', storageBody),
     panel('القوائم', 'أنواع العقار وحالاته وتصنيفات العملاء والمدن والأحياء. المدمج لا يُحذف؛ ما أضفته يُحذف ما لم يكن مستعملًا.', listsBody),
     panel('الحقول الإضافية', 'حقول تظهر في نموذج العقار لكل الأنواع أو لأنواع محددة.', customFieldsBody),
@@ -41,6 +44,7 @@ export async function render(container) {
     panel('نطاقات الأحياء', 'مجموعة أحياء بمسمّى واحد («شمال الدائري الشمالي») تُعرَّف مرة وتُستعمل في أي طلب. نطاقات الرياض الخمسة مسودّة تقريبية — راجعها وعدّلها.', zonesBody),
     panel('تعريف "مكتمل البيانات"', 'العقار يُعدّ مكتملًا عندما تتوفر فيه الحقول المحددة هنا.', completenessBody),
     panel('متابعة العملاء', 'حدّ "لم يُتواصل معه" في الداشبورد، وتنبيه المتصفح عند تجاوز عميل له.', followUpBody),
+    panel('تنبيهات الخلفية', 'تذكير المهام يصلك على الجهاز حتى بعد إغلاق التبويب. لا يغادر جهازك إلا موعد التذكير — بلا عناوين ولا أسماء.', pushBody),
     panel('البيانات التجريبية', 'عملاء وعقارات للتجربة (مع سجل واحد لكل كيان من المراحل اللاحقة لاختبار طبقة البيانات)؛ تُدرج تلقائيًا عند أول تشغيل، ومسحها لا يمس بياناتك الحقيقية.', seedBody),
   );
 }
@@ -686,4 +690,115 @@ async function companyBody(redraw) {
           } catch (err) { errToast(err); }
         },
       })));
+}
+
+
+/* ===== الخزنة السحابية المشفَّرة (المرحلة ١٠) ===== */
+
+async function vaultBody(redraw) {
+  const vault = await getVaultSettings();
+  const passInput = el('input', { class: 'input', type: 'password', value: vault.passphrase || '', placeholder: 'عبارة سرّية طويلة تتذكّرها' });
+  const autoBox = checkbox('ارفع نسخة تلقائيًا عند فتح التطبيق (مرة كل يوم)', { checked: !!vault.auto });
+  const listBox = el('div');
+  const busy = (btn, on, text) => { btn.disabled = on; if (text) btn.textContent = text; };
+
+  const drawList = async () => {
+    clear(listBox);
+    try {
+      const backups = await listBackups();
+      if (!backups.length) { listBox.append(el('p', { class: 'muted small', text: 'لا نسخ سحابية بعد.' })); return; }
+      listBox.append(el('table', { class: 'table' },
+        el('thead', {}, el('tr', {}, ['التاريخ', 'الحجم', ''].map((t) => el('th', { text: t })))),
+        el('tbody', {}, backups.map((b) => el('tr', {},
+          el('td', { text: formatDateTime(b.at) }),
+          el('td', { text: b.size ? formatBytes(b.size) : '—' }),
+          el('td', {}, el('button', {
+            type: 'button', class: 'btn btn-sm', text: 'استرجاع',
+            onClick: () => doRestore(b.key),
+          })))))));
+    } catch (err) {
+      listBox.append(el('p', { class: 'muted small', text: `تعذر قراءة الخزنة: ${err.message}` }));
+    }
+  };
+
+  const doRestore = async (key) => {
+    const ok = await confirmDialog({
+      title: 'استرجاع نسخة سحابية',
+      message: 'سيُستبدل كل ما في هذا المتصفح بمحتوى النسخة (نفس سلوك الاستيراد من ملف). المتابعة؟',
+      confirmText: 'استبدال واسترجاع', danger: true,
+    });
+    if (!ok) return;
+    try {
+      const res = await restoreBackup(passInput.value.trim(), key);
+      toast(`استُرجعت نسخة ${formatDateTime(res.exportedAt)} — يُعاد التحميل…`, 'success');
+      setTimeout(() => location.reload(), 900);
+    } catch (err) { errToast(err); }
+  };
+
+  const uploadBtn = el('button', { type: 'button', class: 'btn btn-primary', text: '☁️ ارفع نسخة الآن' });
+  uploadBtn.addEventListener('click', async () => {
+    const pass = passInput.value.trim();
+    if (pass.length < 8) { toast('اجعل العبارة السرّية ٨ أحرف فأكثر', 'error'); return; }
+    busy(uploadBtn, true, 'يشفّر ويرفع…');
+    try {
+      await setVaultSettings({ passphrase: pass, auto: autoBox.querySelector('input').checked });
+      const res = await uploadBackup(pass);
+      await setVaultSettings({ lastUploadAt: res.at });
+      await markExported(); // النسخة السحابية تُعدّ تصديرًا فعليًا، فيسكت شريط التذكير
+      toast('رُفعت نسخة مشفَّرة', 'success');
+      dataChanged();
+      await redraw();
+    } catch (err) { errToast(err); }
+    finally { busy(uploadBtn, false, '☁️ ارفع نسخة الآن'); }
+  });
+
+  await drawList();
+  return el('div', {},
+    el('dl', { class: 'kv' },
+      el('dt', { text: 'آخر رفع' }),
+      el('dd', {}, vault.lastUploadAt ? formatDateTime(vault.lastUploadAt) : badge('لم تُرفع نسخة بعد', 'badge-warn'))),
+    el('div', { class: 'form-grid' },
+      labeled('العبارة السرّية', passInput, { hint: 'تُشتق منها مفتاحية التشفير. نسيانها يعني فقدان النسخ السحابية — لا يستطيع أحد فكّها، ولا الخادم.' }),
+      el('div', { class: 'field' }, el('span', { class: 'field-label', text: 'الرفع التلقائي' }), autoBox)),
+    el('div', { class: 'row' }, uploadBtn,
+      el('button', { type: 'button', class: 'btn', text: 'تحديث القائمة', onClick: () => drawList() })),
+    el('div', { class: 'panel-block' }, el('h3', { text: 'النسخ المحفوظة (آخر ٥)' }), listBox),
+    el('p', { class: 'muted small', text: 'للنقل إلى جهاز آخر: افتح التطبيق عليه، اكتب العبارة السرّية نفسها هنا، ثم «استرجاع». تنبيه: الاسترجاع يستبدل بيانات الجهاز كلها، فلا تعمل على جهازين في وقت واحد — آخر رفع يغلب.' }),
+  );
+}
+
+
+/* ===== تنبيهات الخلفية (المرحلة ١٠) ===== */
+
+async function pushBody(redraw) {
+  if (!pushSupported()) {
+    return el('p', { class: 'muted small', text: 'هذا المتصفح لا يدعم تنبيهات الخلفية. تنبيهات «متابعة العملاء» أعلاه تبقى عاملة أثناء فتح التبويب.' });
+  }
+  const sub = await currentSubscription();
+  const on = !!sub;
+
+  const toggleBtn = el('button', {
+    type: 'button', class: on ? 'btn' : 'btn btn-primary', text: on ? 'إيقاف تنبيهات الخلفية' : 'تفعيل تنبيهات الخلفية',
+    onClick: async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      try {
+        if (on) { await disablePush(); toast('أُوقفت تنبيهات الخلفية', 'success'); }
+        else { await enablePush(); toast('فُعّلت — ستصلك التذكيرات ولو أغلقت التبويب', 'success', 5000); }
+        await redraw();
+      } catch (err) { errToast(err); }
+      finally { btn.disabled = false; }
+    },
+  });
+
+  return el('div', {},
+    el('dl', { class: 'kv' },
+      el('dt', { text: 'الحالة' }),
+      el('dd', {}, on ? badge('مفعَّلة على هذا الجهاز', 'badge-ok') : badge('غير مفعَّلة', 'badge-warn'))),
+    el('div', { class: 'row' }, toggleBtn,
+      on ? el('button', {
+        type: 'button', class: 'btn btn-ghost', text: 'تحديث المواعيد الآن',
+        onClick: async () => { await syncReminders(); toast('حُدّثت مواعيد التذكير على الخادم', 'success'); },
+      }) : null),
+    el('p', { class: 'muted small', text: 'يلزم أن يكون التطبيق مفتوحًا من رابطه الحقيقي (https)، وعلى آيفون يلزم تثبيته على الشاشة الرئيسية أولًا.' }));
 }

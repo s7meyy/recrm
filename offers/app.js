@@ -45,9 +45,11 @@ function card(listing) {
   const phone = (listing.contactPhone || '').replace(/\D/g, '');
   const waLink = phone ? `https://wa.me/${phone.startsWith('966') ? phone : `966${phone.replace(/^0/, '')}`}?text=${waText}` : null;
 
-  return el('article', { class: 'card' }, media,
+  const single = `/offers/l/${encodeURIComponent(listing.ref)}`;
+  return el('article', { class: 'card' },
+    el('a', { href: single, 'aria-label': listing.title || 'عرض' }, media),
     el('div', { class: 'card-body' },
-      el('h2', { class: 'card-title', text: listing.title || listing.typeLabel || 'عقار' }),
+      el('h2', { class: 'card-title' }, el('a', { class: 'card-link', href: single, text: listing.title || listing.typeLabel || 'عقار' })),
       el('div', { class: 'card-place', text: [listing.district, listing.city].filter(Boolean).join('، ') }),
       el('div', { class: 'card-price', text: money(listing.price) }),
       el('div', { class: 'card-meta' },
@@ -58,7 +60,8 @@ function card(listing) {
       el('div', { class: 'card-actions' },
         waLink ? el('a', { class: 'btn btn-primary', href: waLink, target: '_blank', rel: 'noopener', text: 'واتساب' }) : null,
         listing.contactPhone ? el('a', { class: 'btn', href: `tel:${listing.contactPhone}`, text: 'اتصال' }) : null,
-        listing.mapUrl ? el('a', { class: 'btn', href: listing.mapUrl, target: '_blank', rel: 'noopener', text: 'الموقع' }) : null)));
+        listing.mapUrl ? el('a', { class: 'btn', href: listing.mapUrl, target: '_blank', rel: 'noopener', text: 'الموقع' }) : null,
+        el('a', { class: 'btn', href: single, text: 'تفاصيل' }))));
 }
 
 function draw() {

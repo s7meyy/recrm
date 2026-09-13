@@ -332,7 +332,7 @@ export async function printInvoice(invoice, company, client = null) {
       el('div', { class: 'print-company' },
         logo,
         el('div', {},
-          el('div', { class: 'print-company-name', text: company?.name || 'مُطابِق' }),
+          el('div', { class: 'print-company-name', text: company?.name || 'كسّاب' }),
           ...companyLines.map((line) => el('div', {
             class: `print-company-line${line.ltr ? ' print-ltr' : ''}`, text: line.text,
           })))),
