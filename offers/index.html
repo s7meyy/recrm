@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>العروض المتاحة</title>
+  <meta name="description" content="العروض العقارية المتاحة للعرض على العملاء.">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <header class="hero">
+    <div class="wrap">
+      <div class="office">
+        <img id="logo" class="logo" alt="" hidden>
+        <div>
+          <h1 id="office-name">العروض المتاحة</h1>
+          <p id="office-contact" class="office-contact"></p>
+        </div>
+      </div>
+      <p id="intro" class="intro"></p>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div id="filters" class="filters" hidden></div>
+    <p id="status" class="status">جارٍ تحميل العروض…</p>
+    <div id="grid" class="grid"></div>
+  </main>
+
+  <footer class="wrap footer">
+    <p id="published-at" class="muted"></p>
+    <p class="muted small">الأسعار والتفاصيل قابلة للتغيير — للتأكد تواصل معنا مباشرة.</p>
+  </footer>
+
+  <noscript><p class="wrap">هذه الصفحة تحتاج تفعيل JavaScript لعرض العروض.</p></noscript>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

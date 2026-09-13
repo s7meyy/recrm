@@ -19,6 +19,7 @@ import * as requestsPage from './pages/requests.js';
 import * as matchesPage from './pages/matches.js';
 import * as externalPage from './pages/external.js';
 import * as invoicesPage from './pages/invoices.js';
+import * as publishPage from './pages/publish.js';
 import * as tasksPage from './pages/tasks.js';
 import * as notesPage from './pages/notes.js';
 import * as settingsPage from './pages/settings.js';
@@ -34,6 +35,7 @@ const ROUTES = {
   matches: { title: 'المطابقات', render: matchesPage.render },
   external: { title: 'العروض الخارجية', render: externalPage.render },
   invoices: { title: 'الفواتير وعروض الأسعار', render: invoicesPage.render },
+  publish: { title: 'الصفحة العامة للعروض', render: publishPage.render },
   tasks: { title: 'المهام', render: tasksPage.render },
   notes: { title: 'الأفكار والملاحظات', render: notesPage.render },
   settings: { title: 'الإعدادات', render: settingsPage.render },

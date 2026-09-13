@@ -1,0 +1,278 @@
+// صفحة النشر العام (المرحلة ٩): تختار العقارات التي توافق صراحة على عرضها للعملاء،
+// ثم تدفعها بضغطة واحدة إلى الصفحة العامة `/offers/` عبر دالة Netlify.
+//
+// **قيد معلن للمستخدم في الصفحة نفسها:** هذه **لقطة لحظة الضغط، لا بثّ حيّ** — بياناتك في
+// متصفح جهازك، فلا شيء يتحدث في السحابة تلقائيًا. وأي تعديل بعد النشر يحتاج ضغطة نشر جديدة.
+//
+// ما يخرج من الجهاز: الحقول التسويقية فقط للعقارات المختارة (نوع، حي، مدينة، مساحة، سعر إن
+// اخترت إظهاره، ملاحظات، صور). **لا يخرج أبدًا:** اسم المالك وجواله، ملاحظاتك الداخلية عنه،
+// الإحداثيات الدقيقة (يُشتق منها رابط خرائط فقط إن اخترت)، ولا أي عميل أو طلب أو مطابقة.
+
+import { repo } from '../data/repository.js';
+import { ENUMS, labelFor } from '../data/schema.js';
+import { getLists, typeLabel, getCompany, getPublishSettings, setPublishSettings } from '../data/settings.js';
+import { el, clear, labeled, checkbox, badge, toast, emptyState, confirmDialog, debounce } from '../util/dom.js';
+import { formatSAR, formatArea, formatDateTime } from '../util/format.js';
+import { mapsLink } from '../util/location.js';
+import { matchesQuery } from '../util/arabic.js';
+
+const PREVIEW_LIMIT = 400; // حد أعلى معقول لعدد العروض في لقطة واحدة
+
+export async function render(container) {
+  const ctx = { container, query: '', nodes: {} };
+  await loadData(ctx);
+  build(ctx);
+}
+
+async function loadData(ctx) {
+  const [properties, lists, company, publish] = await Promise.all([
+    repo.properties.list(), getLists(), getCompany(), getPublishSettings(),
+  ]);
+  // المعروض للاختيار: المخزون المعتمد فقط (نفس نطاق صفحة العقارات) — لا التقاطات غير معتمدة.
+  ctx.properties = properties
+    .filter((p) => p.captureStatus === 'approved')
+    .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+  ctx.lists = lists;
+  ctx.company = company;
+  ctx.publish = publish;
+  ctx.selected = new Set(publish.listingIds);
+}
+
+function build(ctx) {
+  clear(ctx.container);
+  ctx.container.append(el('div', { class: 'page-head' },
+    el('h1', {}, 'الصفحة العامة للعروض'),
+    el('div', { class: 'row' },
+      el('a', { class: 'btn', href: ctx.publish.publicUrl || '/offers/', target: '_blank', rel: 'noopener', text: 'فتح الصفحة العامة ↗' }))));
+
+  ctx.container.append(el('div', { class: 'notice' },
+    el('strong', { text: 'لقطة لا بثّ حيّ. ' }),
+    'بياناتك محفوظة في متصفح هذا الجهاز، فالصفحة العامة تعرض ما كان وقت آخر ضغطة «نشر». ',
+    'كل تعديل بعده يحتاج نشرًا جديدًا. ولا يخرج من جهازك إلا العقارات المختارة أدناه، ',
+    'بحقولها التسويقية فقط — بلا اسم المالك أو جواله أو ملاحظاتك الداخلية.'));
+
+  const grid = el('div', { class: 'settings-grid' });
+  ctx.nodes.settingsPanel = panelBody(grid, 'إعدادات النشر', 'مفتاح النشر يُضبط مرة واحدة، ويبقى محفوظًا في هذا الجهاز فقط.');
+  ctx.nodes.statusPanel = panelBody(grid, 'الحالة', 'آخر نشر وما هو ظاهر للعملاء الآن.');
+  ctx.container.append(grid);
+
+  drawSettings(ctx);
+  drawStatus(ctx);
+
+  /* اختيار العقارات */
+  ctx.nodes.count = el('span', { class: 'count' });
+  const search = el('input', {
+    class: 'input search', type: 'search', placeholder: 'بحث في العقارات…',
+    onInput: debounce((e) => { ctx.query = e.target.value.trim(); drawList(ctx); }, 150),
+  });
+  ctx.container.append(el('div', { class: 'page-head', style: { marginTop: '18px' } },
+    el('h2', {}, 'العقارات المختارة للنشر ', ctx.nodes.count),
+    el('div', { class: 'head-actions' }, search,
+      el('button', { type: 'button', class: 'btn btn-sm', text: 'إلغاء اختيار الكل', onClick: () => selectAll(ctx, false) }))));
+  ctx.nodes.list = el('div');
+  ctx.container.append(ctx.nodes.list);
+  drawList(ctx);
+}
+
+function panelBody(grid, title, desc) {
+  const body = el('div');
+  grid.append(el('section', { class: 'panel' }, el('h2', { text: title }), el('p', { class: 'panel-desc', text: desc }), body));
+  return body;
+}
+
+function drawSettings(ctx) {
+  const body = ctx.nodes.settingsPanel;
+  clear(body);
+  const tokenInput = el('input', { class: 'input', type: 'password', value: ctx.publish.token || '', placeholder: 'مفتاح النشر من إعدادات Netlify' });
+  const endpointInput = el('input', { class: 'input', type: 'text', dir: 'ltr', value: ctx.publish.endpoint || '/api/publish' });
+  const introInput = el('textarea', { class: 'input', rows: 3, value: ctx.publish.intro || '', placeholder: 'نص ترحيبي يظهر أعلى الصفحة العامة' });
+  const phoneInput = el('input', { class: 'input', type: 'tel', dir: 'ltr', value: ctx.publish.contactPhone || ctx.company.phone || '' });
+  const priceBox = checkbox('إظهار السعر للعميل', { checked: ctx.publish.showPrice !== false });
+
+  body.append(el('div', { class: 'form-grid' },
+    labeled('مفتاح النشر', tokenInput, { hint: 'لا يُرسل إلا لدالة النشر، ولا يظهر في الصفحة العامة' }),
+    labeled('مسار دالة النشر', endpointInput, { hint: 'اتركه كما هو ما دمت تنشر من نفس الموقع' }),
+    labeled('جوال التواصل في العروض', phoneInput, { hint: 'يظهر للعميل كزر واتساب واتصال' }),
+    el('div', { class: 'field' }, el('span', { class: 'field-label', text: 'السعر' }), priceBox),
+    labeled('نص أعلى الصفحة', introInput, { full: true })),
+  el('div', { class: 'row' }, el('button', {
+    type: 'button', class: 'btn btn-primary', text: 'حفظ الإعدادات',
+    onClick: async () => {
+      ctx.publish = await setPublishSettings({
+        token: tokenInput.value.trim(), endpoint: endpointInput.value.trim() || '/api/publish',
+        intro: introInput.value, contactPhone: phoneInput.value.trim(),
+        showPrice: priceBox.querySelector('input').checked,
+      });
+      toast('حُفظت إعدادات النشر', 'success');
+      drawStatus(ctx);
+    },
+  })));
+}
+
+function drawStatus(ctx) {
+  const body = ctx.nodes.statusPanel;
+  clear(body);
+  const p = ctx.publish;
+  body.append(el('dl', { class: 'kv' },
+    el('dt', { text: 'آخر نشر' }),
+    el('dd', {}, p.lastPublishAt ? `${formatDateTime(p.lastPublishAt)} — ${p.lastPublishCount} عرض` : badge('لم يُنشر شيء بعد', 'badge-warn')),
+    el('dt', { text: 'المختار الآن' }),
+    el('dd', { text: `${ctx.selected.size} عقار` })));
+
+  const publishBtn = el('button', { type: 'button', class: 'btn btn-primary', text: '🚀 نشر الآن' });
+  publishBtn.addEventListener('click', () => doPublish(ctx, publishBtn));
+  body.append(el('div', { class: 'row' }, publishBtn,
+    el('button', {
+      type: 'button', class: 'btn btn-danger', text: 'سحب كل ما نُشر',
+      onClick: async () => {
+        const ok = await confirmDialog({
+          title: 'سحب المنشور', message: 'إخلاء الصفحة العامة تمامًا وحذف صورها من الخادم؟ اختياراتك هنا تبقى كما هي.',
+          confirmText: 'سحب الكل', danger: true,
+        });
+        if (!ok) return;
+        try {
+          await callPublish(ctx, { kind: 'clear' });
+          ctx.publish = await setPublishSettings({ lastPublishAt: null, lastPublishCount: 0 });
+          toast('أُخليت الصفحة العامة', 'success');
+          drawStatus(ctx);
+        } catch (err) { toast(err.message, 'error', 6000); }
+      },
+    })));
+  body.append(el('p', { class: 'muted small', text: 'الصور تُرفع مرة واحدة لكل صورة؛ النشر التالي يرفع الجديد فقط.' }));
+}
+
+/* ===== قائمة الاختيار ===== */
+
+function drawList(ctx) {
+  const items = ctx.properties.filter((p) => !ctx.query || matchesQuery(p.searchKey || '', ctx.query));
+  ctx.nodes.count.textContent = `(${ctx.selected.size} من ${ctx.properties.length})`;
+  const area = ctx.nodes.list;
+  clear(area);
+  if (!ctx.properties.length) {
+    area.append(emptyState('لا عقارات معتمدة بعد لعرضها على العملاء.'));
+    return;
+  }
+  if (!items.length) { area.append(emptyState('لا نتائج تطابق البحث.')); return; }
+
+  const rows = items.map((p) => {
+    const box = checkbox('', { checked: ctx.selected.has(p.id), onChange: (e) => toggle(ctx, p.id, e.target.checked) });
+    return el('tr', {},
+      el('td', {}, box),
+      el('td', { class: 'strong', text: typeLabel(ctx.lists, p.type) }),
+      el('td', { text: [p.district, p.city].filter(Boolean).join('، ') || '—' }),
+      el('td', { text: (p.purposes || []).map((k) => labelFor(ENUMS.purposes, k)).join('، ') || '—' }),
+      el('td', { class: 'num', text: formatArea(p.area) }),
+      el('td', { class: 'num', text: formatSAR(p.price) }),
+      el('td', { text: `${(p.images || []).length}` }));
+  });
+  area.append(el('div', { class: 'table-wrap' }, el('table', { class: 'table' },
+    el('thead', {}, el('tr', {}, ['نشر', 'النوع', 'الموقع', 'الغرض', 'المساحة', 'السعر', 'الصور'].map((t) => el('th', { text: t })))),
+    el('tbody', {}, rows))));
+}
+
+async function toggle(ctx, id, on) {
+  if (on) ctx.selected.add(id); else ctx.selected.delete(id);
+  ctx.publish = await setPublishSettings({ listingIds: [...ctx.selected] });
+  ctx.nodes.count.textContent = `(${ctx.selected.size} من ${ctx.properties.length})`;
+  drawStatus(ctx);
+}
+
+async function selectAll(ctx, on) {
+  ctx.selected = on ? new Set(ctx.properties.map((p) => p.id)) : new Set();
+  ctx.publish = await setPublishSettings({ listingIds: [...ctx.selected] });
+  drawList(ctx);
+  drawStatus(ctx);
+}
+
+/* ===== النشر ===== */
+
+async function callPublish(ctx, payload, { method = 'POST' } = {}) {
+  const token = ctx.publish.token;
+  if (!token) throw new Error('اضبط مفتاح النشر أولًا في إعدادات النشر أعلاه');
+  const res = await fetch(ctx.publish.endpoint || '/api/publish', {
+    method,
+    headers: { 'content-type': 'application/json', 'x-publish-token': token },
+    body: method === 'GET' ? undefined : JSON.stringify(payload),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `تعذر الاتصال بدالة النشر (${res.status})`);
+  return data;
+}
+
+const blobToBase64 = (blob) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
+  reader.onerror = () => reject(new Error('تعذر قراءة الصورة'));
+  reader.readAsDataURL(blob);
+});
+
+/** يبني ما سيخرج من الجهاز — الحقول التسويقية فقط، بلا أي بيانات مالك أو عميل. */
+function toPublicListing(ctx, property, index) {
+  return {
+    ref: String(index + 1),
+    title: `${typeLabel(ctx.lists, property.type)} — ${property.district || property.city || ''}`.trim(),
+    typeLabel: typeLabel(ctx.lists, property.type),
+    purposeLabels: (property.purposes || []).map((k) => labelFor(ENUMS.purposes, k)),
+    city: property.city || '',
+    district: property.district || '',
+    area: property.area ?? null,
+    price: ctx.publish.showPrice !== false ? (property.price ?? null) : null,
+    notes: property.notes || '',
+    images: [...(property.images || [])],
+    mapUrl: property.location ? mapsLink(property.location) : null,
+    contactPhone: ctx.publish.contactPhone || ctx.company.phone || '',
+  };
+}
+
+async function doPublish(ctx, btn) {
+  const chosen = ctx.properties.filter((p) => ctx.selected.has(p.id));
+  if (!chosen.length) { toast('اختر عقارًا واحدًا على الأقل قبل النشر', 'error'); return; }
+  if (chosen.length > PREVIEW_LIMIT) { toast(`الحد الأعلى ${PREVIEW_LIMIT} عرضًا في النشرة الواحدة`, 'error'); return; }
+
+  btn.disabled = true;
+  const original = btn.textContent;
+  try {
+    const listings = chosen.map((p, i) => toPublicListing(ctx, p, i));
+
+    // ١) ما المرفوع أصلًا؟ فلا تُعاد صورة مرفوعة.
+    btn.textContent = 'يفحص المرفوع…';
+    const manifest = await callPublish(ctx, null, { method: 'GET' });
+    const already = new Set(manifest.images || []);
+
+    // ٢) الشعار ثم صور العروض الناقصة (صورة لكل طلب، ومع تقدّم مرئي).
+    const wanted = [];
+    if (ctx.company.logoImageId) wanted.push(ctx.company.logoImageId);
+    for (const listing of listings) wanted.push(...listing.images);
+    const missing = [...new Set(wanted)].filter((id) => !already.has(id));
+
+    let done = 0;
+    for (const id of missing) {
+      const rec = await repo.images.get(id);
+      if (!rec?.blob) continue;
+      btn.textContent = `يرفع الصور ${++done}/${missing.length}…`;
+      await callPublish(ctx, { kind: 'image', id, mime: rec.mime || 'image/jpeg', base64: await blobToBase64(rec.blob) });
+    }
+
+    // ٣) اللقطة نفسها (وهي التي تُظهر العروض للعميل فعليًا).
+    btn.textContent = 'ينشر…';
+    const result = await callPublish(ctx, {
+      kind: 'snapshot',
+      intro: ctx.publish.intro || '',
+      office: {
+        name: ctx.company.name || '', phone: ctx.publish.contactPhone || ctx.company.phone || '',
+        address: ctx.company.address || '', logo: ctx.company.logoImageId || null,
+      },
+      listings,
+    });
+
+    ctx.publish = await setPublishSettings({ lastPublishAt: result.publishedAt, lastPublishCount: result.count });
+    drawStatus(ctx);
+    toast(`نُشر ${result.count} عرض — الصفحة العامة محدَّثة الآن`, 'success', 5000);
+  } catch (err) {
+    console.error(err);
+    toast(err.message || 'تعذر النشر', 'error', 7000);
+  } finally {
+    btn.textContent = original;
+    btn.disabled = false;
+  }
+}

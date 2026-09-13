@@ -75,7 +75,9 @@ async function userBody() {
         try { await updateUserName(input.value); toast('تم حفظ الاسم', 'success'); } catch (err) { errToast(err); }
       },
     }),
-    el('span', { class: 'muted small' }, `المعرّف: ${user.id}`));
+    el('span', { class: 'muted small' }, `المعرّف: ${user.id}`),
+    // بوابة الدخول (المرحلة ٩) تُدار من الخادم؛ هذا الرابط يمسح كوكي الجلسة فقط.
+    el('a', { class: 'btn btn-ghost', href: '/__logout', text: 'تسجيل الخروج' }));
 }
 
 /* ===== النسخ الاحتياطي ===== */

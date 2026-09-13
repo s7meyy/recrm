@@ -15,6 +15,7 @@ export const SIDEBAR_PAGES = [
   { key: 'matches', label: 'المطابقات', icon: '🔗' },
   { key: 'external', label: 'العروض الخارجية', icon: '🌐' },
   { key: 'invoices', label: 'الفواتير وعروض الأسعار', icon: '🧾' },
+  { key: 'publish', label: 'الصفحة العامة للعروض', icon: '🌍' },
   { key: 'tasks', label: 'المهام', icon: '✅' },
   { key: 'notes', label: 'الأفكار والملاحظات', icon: '💡' },
   { key: 'settings', label: 'الإعدادات', icon: '⚙️' },

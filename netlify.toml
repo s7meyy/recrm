@@ -1,0 +1,22 @@
+# إعداد النشر على Netlify (المرحلة ٩).
+# لا أداة بناء للتطبيق نفسه: الملفات تُنشر كما هي من جذر المستودع (نفس مبدأ المشروع منذ المرحلة ١).
+# npm install يعمل فقط لتبعية واحدة تخص الدوال الخادمية (@netlify/blobs)، ولا يمسّ كود التطبيق.
+
+[build]
+  publish = "."
+  command = ""
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
+# لا تخزين مؤقت لصفحة التطبيق نفسها كي يصل التحديث فور النشر.
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/offers/*"
+  [headers.values]
+    Cache-Control = "no-cache"

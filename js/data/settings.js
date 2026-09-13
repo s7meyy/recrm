@@ -18,6 +18,7 @@ export const SETTINGS_KEYS = {
   followUp: 'followUp', // { staleContactDays: 14, notify: false } — المرحلة ٦ (تنبيهات المتابعة)
   sidebarOrder: 'sidebarOrder', // ['dashboard', 'properties', …] ترتيب صفحات القائمة الجانبية (المرحلة ٨)
   company: 'company', // بيانات الشركة والشعار وسلسلتا ترقيم المستندات (المرحلة ٨)
+  publish: 'publish', // الصفحة العامة: المفتاح والعروض المختارة وآخر نشر (المرحلة ٩)
 };
 
 const EMPTY_LISTS = () => ({ propertyTypes: [], propertyStatuses: [], clientTags: [], cities: [], districts: {}, sources: [] });
@@ -495,4 +496,31 @@ export async function consumeInvoiceNumber(type, usedNumber) {
   return setCompany(type === 'quote'
     ? { nextQuoteNo: company.nextQuoteNo + 1 }
     : { nextInvoiceNo: company.nextInvoiceNo + 1 });
+}
+
+
+/* ===== الصفحة العامة للعروض (المرحلة ٩) ===== */
+
+export const DEFAULT_PUBLISH = {
+  token: '', // مفتاح النشر (PUBLISH_TOKEN نفسه المضبوط على Netlify) — يبقى في هذا الجهاز فقط
+  endpoint: '/api/publish', // نسبي: يعمل من نفس الموقع. غيّره لرابط كامل إن نشرت من نطاق آخر
+  publicUrl: '/offers/', // رابط الصفحة العامة للعرض على العميل
+  listingIds: [], // معرّفات العقارات التي وافقتَ صراحة على نشرها — وما عداها لا يخرج أبدًا
+  intro: '', // نص تعريفي يظهر أعلى الصفحة العامة
+  showPrice: true, // إظهار السعر للعميل
+  contactPhone: '', // جوال التواصل في بطاقات العروض (افتراضه جوال الشركة)
+  lastPublishAt: null,
+  lastPublishCount: 0,
+};
+
+export async function getPublishSettings() {
+  const stored = (await repo.settings.get(SETTINGS_KEYS.publish, null)) || {};
+  return { ...DEFAULT_PUBLISH, ...stored, listingIds: [...(stored.listingIds || [])] };
+}
+
+export async function setPublishSettings(patch) {
+  const next = { ...(await getPublishSettings()), ...patch };
+  next.listingIds = [...new Set(next.listingIds || [])];
+  await repo.settings.set(SETTINGS_KEYS.publish, next);
+  return next;
 }
