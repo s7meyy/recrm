@@ -16,12 +16,14 @@ const OPEN = 8235;
 const SUITES = [
   ['gate-unit.mjs', null],            // بلا متصفح ولا خادم
   ['push-unit.mjs', null],
+  ['opportunity-unit.mjs', null],
   ['app-pages.mjs', OPEN],
   ['sidebar-order.mjs', OPEN],
   ['source-and-priority.mjs', OPEN],
   ['invoices.mjs', OPEN],
   ['invoices-lifecycle.mjs', OPEN],
   ['today-and-tools.mjs', OPEN],
+  ['opportunities.mjs', OPEN],
   ['gate-and-publish.mjs', LOCKED],
   ['rename-and-vault.mjs', LOCKED],
   ['offer-pwa-push.mjs', LOCKED],

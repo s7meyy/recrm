@@ -494,3 +494,6 @@ input[type="date"].input, input[type="datetime-local"].input { direction: ltr; t
 .badge.price-low { background: var(--ok-soft); color: var(--ok); }
 .badge.price-mid { background: var(--surface-2); color: var(--muted); }
 .mic-btn.mic-on { background: var(--danger-soft); color: var(--danger); }
+
+/* ===== المرحلة ١٢ — صفحة الفرص ===== */
+.section-title { font-size: var(--fs-lg); margin: 6px 0 10px; }

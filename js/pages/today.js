@@ -8,6 +8,7 @@ import { repo } from '../data/repository.js';
 import { ENUMS, labelFor, clientPriority, clientTagClass } from '../data/schema.js';
 import { getLists, getCompleteness, getFollowUpSettings, typeLabel, getUI, setUI } from '../data/settings.js';
 import { loadMatchingContext, candidatesFor, matchReadiness } from '../data/matching.js';
+import { buildOpportunityIndex, topOpportunities } from '../util/opportunity.js';
 import { el, clear, badge, emptyState } from '../util/dom.js';
 import { formatSAR, formatDate, formatDateTime, relativeDays, daysBetween, daysWord } from '../util/format.js';
 import { formatPhone, toInternational } from '../util/phone.js';
@@ -69,8 +70,11 @@ async function loadData() {
   const awaitingApproval = ctx.properties.filter((p) => p.captureStatus !== 'approved');
   const unreadyExternals = externals.filter((x) => x.status === 'active' && !matchReadiness(x).ready);
 
+  // أعلى الأحياء عجزًا (المرحلة ١٢) — نفس حساب صفحة «الفرص» بلا تكرار منطق.
+  const opportunities = topOpportunities(buildOpportunityIndex(ctx, { minScore: ctx.settings.minScore }).rows, 3);
+
   return {
-    since, lists, followUps, stale, dueTasks, newMatches, incomplete, awaitingApproval, unreadyExternals,
+    since, lists, followUps, stale, dueTasks, newMatches, incomplete, awaitingApproval, unreadyExternals, opportunities,
     clientsById, tasksPending: tasks.filter((t) => !t.done).length,
     quotesOpen: invoices.filter((i) => i.type === 'quote').length,
   };
@@ -160,6 +164,16 @@ function build(container, d) {
         clientActions(client))))
       : el('p', { class: 'muted small', text: 'لا أحد تجاوز الحدّ.' }),
     { href: '#/clients' }));
+
+  /* فرص الاقتناص (المرحلة ١٢) */
+  grid.append(section('أحياء يطلبها عملاؤك ولا تملك فيها', d.opportunities.length,
+    d.opportunities.length
+      ? el('div', {}, d.opportunities.map((o) => row(
+        o.district,
+        `${o.unmet} طلب بلا أي مطابقة · مخزونك هناك: ${o.supply}`,
+        el('a', { class: 'btn btn-ghost btn-sm', href: '#/opportunities', text: 'من يطلبه؟' }))))
+      : el('p', { class: 'muted small', text: 'لا عجز — كل طلب نشط يجد مرشحًا.' }),
+    { href: '#/opportunities', hrefText: 'الفرص →', tone: d.opportunities.length ? 'today-warn' : '' }));
 
   /* ما يحتاج إكمالًا */
   const chores = [];

@@ -14,6 +14,7 @@ import { el, clear, toast } from './util/dom.js';
 import { daysWord } from './util/format.js';
 import * as todayPage from './pages/today.js';
 import * as dashboardPage from './pages/dashboard.js';
+import * as opportunitiesPage from './pages/opportunities.js';
 import * as propertiesPage from './pages/properties.js';
 import * as mapPage from './pages/map.js';
 import * as clientsPage from './pages/clients.js';
@@ -31,6 +32,7 @@ import * as settingsPage from './pages/settings.js';
 const ROUTES = {
   today: { title: 'يومي', render: todayPage.render },
   dashboard: { title: 'الداشبورد', render: dashboardPage.render },
+  opportunities: { title: 'الفرص', render: opportunitiesPage.render },
   properties: { title: 'العقارات', render: propertiesPage.render },
   map: { title: 'خريطة العقارات', render: mapPage.render },
   clients: { title: 'العملاء', render: clientsPage.render },

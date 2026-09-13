@@ -8,6 +8,7 @@ import { getSidebarOrder, orderedPageKeys } from '../data/settings.js';
 export const SIDEBAR_PAGES = [
   { key: 'today', label: 'يومي', icon: '☀️' },
   { key: 'dashboard', label: 'الداشبورد', icon: '📊' },
+  { key: 'opportunities', label: 'الفرص', icon: '🎯' },
   { key: 'properties', label: 'العقارات', icon: '🏠' },
   { key: 'map', label: 'خريطة العقارات', icon: '🗺️' },
   { key: 'clients', label: 'العملاء', icon: '👤' },
