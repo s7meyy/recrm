@@ -16,6 +16,7 @@ import { matchesQuery } from '../util/arabic.js';
 import { formatPhone } from '../util/phone.js';
 import { parseLocation, isShortMapLink, mapsLink, locationToText } from '../util/location.js';
 import { LISTING_GROUPS, LISTING_VALUES, listingFilterOptions } from '../util/property-filters.js';
+import { sourceField, rememberSource, sourceBadge } from '../util/source-field.js';
 
 // "الحالة" فرز خاص بالعقارات (بلا معنى للعروض الخارجية) فيبقى معرَّفًا هنا؛ بقية المجموعات
 // مشتركة مع خريطة العقارات عبر util/property-filters.js فلا تنحرف الصفحتان عن بعضهما.
@@ -44,7 +45,7 @@ export async function render(container) {
   const focusId = routePropertyId();
   if (focusId) {
     const target = ctx.properties.find((p) => p.id === focusId);
-    if (target) openForm(ctx, target);
+    if (target) await openForm(ctx, target);
     else toast('العقار غير موجود، أو حُذف، أو لم يُعتمد بعد', 'error');
   }
 }
@@ -235,7 +236,7 @@ function renderGrid(ctx, items) {
         el('div', { class: 'card-meta' },
           el('span', {}, formatArea(p.area)),
           el('span', {}, owner || 'بلا مالك')),
-        el('div', { class: 'card-meta' }, completenessBadge(ctx, p)))));
+        el('div', { class: 'card-meta' }, completenessBadge(ctx, p), sourceBadge(p.referralSource)))));
   }
   return grid;
 }
@@ -330,6 +331,50 @@ function fieldInput(def, target) {
     placeholder: def.placeholder || '', step: def.input === 'number' ? 'any' : null,
     onInput: (e) => { target[def.key] = e.target.value; },
   });
+}
+
+/* ===== مشاركة العقار (المرحلة ٦): واتساب، مشاركة عبر تطبيقات أخرى (إن دعمها المتصفح)، ونسخ رابط عميق ===== */
+
+function shareSummary(ctx, p) {
+  const purpose = (p.purposes || []).map((k) => labelFor(ENUMS.purposes, k)).join(' / ');
+  const lines = [
+    `${typeLabel(ctx.lists, p.type)}${purpose ? ' — ' + purpose : ''}`,
+    [p.district, p.city].filter(Boolean).join('، ') || null,
+    `المساحة: ${formatArea(p.area)}`,
+    `السعر: ${formatSAR(p.price)}`,
+  ].filter(Boolean);
+  return lines.join('\n');
+}
+
+function shareLink(p) {
+  return `${location.origin}${location.pathname}#/properties/${p.id}`;
+}
+
+function openShareMenu(ctx, p) {
+  const link = shareLink(p);
+  const fullText = `${shareSummary(ctx, p)}\n${link}`;
+  const body = el('div', { class: 'share-menu' },
+    el('a', {
+      class: 'btn btn-ghost', href: `https://wa.me/?text=${encodeURIComponent(fullText)}`,
+      target: '_blank', rel: 'noopener noreferrer', text: '💬 واتساب',
+    }),
+    typeof navigator.share === 'function' ? el('button', {
+      type: 'button', class: 'btn btn-ghost', text: '📤 مشاركة عبر تطبيقات أخرى',
+      onClick: () => { navigator.share({ title: 'عقار', text: shareSummary(ctx, p), url: link }).catch(() => {}); },
+    }) : null,
+    el('button', {
+      type: 'button', class: 'btn btn-ghost', text: '🔗 نسخ الرابط',
+      onClick: async () => {
+        try {
+          await navigator.clipboard.writeText(link);
+          toast('نُسخ الرابط', 'success');
+        } catch (_) {
+          toast(`تعذر النسخ التلقائي — انسخه يدويًا: ${link}`, 'error', 8000);
+        }
+      },
+    }),
+  );
+  openModal({ title: 'مشاركة العقار', body });
 }
 
 async function openForm(ctx, existing) {
@@ -477,6 +522,7 @@ async function openForm(ctx, existing) {
 
   /* الملاحظات */
   const notesInput = el('textarea', { class: 'input', rows: 3, value: draft.notes || '' });
+  const source = sourceField(draft.referralSource, ctx.lists.sources);
 
   /* الصور */
   const fileInput = el('input', {
@@ -532,6 +578,7 @@ async function openForm(ctx, existing) {
       status: statusSelect.value,
       notes: notesInput.value.trim(),
       typeFields, extra,
+      referralSource: source.input.value, // تاق المصدر — غير `source` أدناه (مسار الإدخال)
       source: draft.source, captureStatus: draft.captureStatus, tourId: draft.tourId,
     };
   };
@@ -576,6 +623,7 @@ async function openForm(ctx, existing) {
       if (data.district && !(ctx.lists.districtsByCity[data.city] || []).includes(data.district)) {
         await addDistrict(data.city, data.district);
       }
+      await rememberSource(data.referralSource);
       modal.close();
       toast(isEdit ? 'تم حفظ التعديلات' : 'تمت إضافة العقار', 'success');
       await refresh(ctx);
@@ -615,6 +663,7 @@ async function openForm(ctx, existing) {
       el('label', { class: 'field field-full' }, el('span', { class: 'field-label', text: 'الموقع' }), locationInput, locationHint),
       labeled('صاحب العقار', ownerSelect),
       labeled('الحالة', el('div', { class: 'field-row' }, statusSelect, addStatusBtn)),
+      labeled('المصدر (وسيط الإحالة)', source.node, { hint: 'اختياري — لا يظهر شيء ما لم يُعبَّأ' }),
       newOwnerBox),
     typeBox,
     customBox,
@@ -628,12 +677,17 @@ async function openForm(ctx, existing) {
   renderCustomFields();
   renderImages();
 
+  const shareBtn = isEdit ? el('button', {
+    type: 'button', class: 'btn btn-ghost', text: '📤 مشاركة', onClick: () => openShareMenu(ctx, existing),
+  }) : null;
+
   const modal = openModal({
     title: isEdit ? 'تعديل العقار' : 'عقار جديد',
     body, size: 'wide',
     onClose: () => { for (const url of state.previewUrls) URL.revokeObjectURL(url); },
     footer: [
       deleteBtn,
+      shareBtn,
       el('span', { class: 'spacer' }),
       el('button', { type: 'button', class: 'btn btn-ghost', text: 'إلغاء', onClick: () => modal.close() }),
       saveBtn,

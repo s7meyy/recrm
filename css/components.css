@@ -333,3 +333,133 @@ input[type="date"].input, input[type="datetime-local"].input { direction: ltr; t
   .map-canvas { height: 420px; }
   .dashboard-grid { grid-template-columns: 1fr; }
 }
+
+/* تجميع العلامات (المرحلة ٦) */
+.map-cluster-icon { background: transparent; border: none; }
+.map-cluster-badge {
+  display: block; text-align: center; border-radius: 50%; background: var(--accent); color: #fff;
+  font-weight: 700; border: 3px solid #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  font-variant-numeric: tabular-nums;
+}
+.map-cluster-badge-mixed { background: linear-gradient(135deg, var(--accent) 50%, #6b4fa0 50%); }
+
+/* ===== البحث العام (المرحلة ٦) ===== */
+.search-modal-body { display: flex; flex-direction: column; gap: 12px; }
+.search-results { display: flex; flex-direction: column; gap: 14px; max-height: 60vh; overflow-y: auto; }
+.search-group h3 { font-size: var(--fs-sm); color: var(--muted); margin-bottom: 6px; }
+.search-result-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%;
+  text-align: start; padding: 8px 10px; margin-bottom: 6px; border: 1px solid var(--line);
+  border-radius: var(--radius); background: var(--surface); cursor: pointer; font: inherit; color: inherit;
+}
+.search-result-row:hover { border-color: var(--accent); background: var(--accent-soft); }
+.search-empty { padding: 12px 4px; }
+
+/* ===== مشاركة العقار (المرحلة ٦) ===== */
+.share-menu { display: flex; flex-direction: column; gap: 8px; }
+.share-menu .btn { justify-content: flex-start; }
+
+/* ===== صفحة المهام (المرحلة ٧) ===== */
+.task-board { display: flex; gap: 14px; align-items: flex-start; overflow-x: auto; padding-bottom: 8px; }
+.task-board-single { flex-direction: column; overflow-x: visible; }
+.task-list-col {
+  flex: 0 0 260px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-lg);
+  padding: 10px; display: flex; flex-direction: column; gap: 8px;
+}
+.task-board-single .task-list-col { flex: 1 1 auto; width: 100%; }
+.task-list-head { display: flex; align-items: center; gap: 8px; }
+.task-list-title { background: none; border: 0; font-weight: 700; cursor: pointer; padding: 2px 4px; text-align: start; flex: 1; }
+.task-list-title:hover { text-decoration: underline; }
+.task-list-body { display: flex; flex-direction: column; gap: 8px; min-height: 20px; }
+.task-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 10px; }
+.task-card.task-done { opacity: 0.6; }
+.task-card-top { display: flex; align-items: flex-start; gap: 8px; }
+.task-title-btn {
+  background: none; border: 0; text-align: start; font-weight: 600; color: var(--text);
+  cursor: pointer; padding: 0; flex: 1; white-space: normal;
+}
+.task-card.task-done .task-title-btn { text-decoration: line-through; color: var(--muted); }
+.task-card-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.task-card-actions { margin-top: 6px; flex-wrap: wrap; }
+.task-card-actions .btn { padding: 3px 8px; }
+.task-quick-add { display: flex; gap: 6px; }
+.task-quick-add .input { min-height: 32px; padding: 6px 8px; }
+
+/* ===== صفحة الأفكار والملاحظات (المرحلة ٧) ===== */
+.note-quick-capture { display: flex; gap: 8px; align-items: flex-start; margin-bottom: 16px; }
+.note-quick-capture textarea { flex: 1; }
+.notes-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+.note-card { border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+.note-card-top { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.note-text { border: 0; background: transparent; resize: none; font: inherit; color: inherit; padding: 0; min-height: 60px; }
+.note-text:focus { outline: none; }
+.note-colors { gap: 6px; }
+.note-color-dot { width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--line-strong); cursor: pointer; padding: 0; }
+.note-color-dot.active { box-shadow: 0 0 0 2px var(--accent); }
+.note-highlight { box-shadow: 0 0 0 3px var(--accent) !important; }
+
+@media (max-width: 640px) {
+  .task-list-col { flex: 0 0 82vw; }
+}
+
+/* ===== المرحلة ٨ — تصنيفا العميل المدمجان بلونين ثابتين ===== */
+/* لونان لا يُستعملان في أي شارة أخرى (الأخضر للحالات والكهرمان للتحذير)، فيُميَّزان بلمحة. */
+.badge.tag-serious { background: #e6e1f7; color: #453188; border: 1px solid #c9bff0; font-weight: 600; }
+.badge.tag-important { background: #fde3ea; color: #97123c; border: 1px solid #f6c2d1; font-weight: 600; }
+.chip.tag-serious.active { background: #453188; border-color: #453188; color: #fff; }
+.chip.tag-important.active { background: #97123c; border-color: #97123c; color: #fff; }
+/* صف مرفوع بالأولوية: شريط جانبي خفيف يفسّر سبب تصدّره القائمة. */
+.table tr.row-priority-2 td:first-child { box-shadow: inset -3px 0 0 #453188; }
+.table tr.row-priority-1 td:first-child { box-shadow: inset -3px 0 0 #97123c; }
+
+/* ===== المرحلة ٨ — تاق المصدر ===== */
+.badge-source { background: var(--surface-2); color: var(--muted); border: 1px dashed var(--line-strong); }
+
+/* ===== المرحلة ٨ — لوحة ترتيب صفحات القائمة الجانبية ===== */
+.page-order-list { display: flex; flex-direction: column; gap: 4px; }
+.page-order-row { display: flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: var(--radius); padding: 4px 8px; }
+.page-order-row .page-order-name { flex: 1; }
+.page-order-row .btn { padding: 2px 8px; }
+
+/* ===== المرحلة ٨ — الفواتير وعروض الأسعار ===== */
+.invoice-items td { vertical-align: middle; }
+.invoice-items .input { min-height: 32px; padding: 6px 8px; }
+.invoice-items td:nth-child(2) .input, .invoice-items td:nth-child(3) .input { max-width: 120px; }
+.invoice-total { margin-inline-start: auto; font-size: var(--fs-lg); }
+.invoice-total-value { color: var(--accent-text); }
+.company-logo-preview { max-height: 60px; border: 1px solid var(--line); border-radius: var(--radius); padding: 4px; background: #fff; }
+
+/* ===== المرحلة ٨ — ورقة الطباعة (التصدير الوحيد: PDF عبر طباعة المتصفح) ===== */
+/* الحاوية مخفية تمامًا على الشاشة، ولا تظهر إلا في ورقة الطباعة. */
+.print-root { display: none; }
+@media print {
+  /* التطبيق كله يختفي وتبقى الورقة وحدها؛ لا نافذة ولا قائمة ولا شريط. */
+  body.printing .app-shell,
+  body.printing #modal-root,
+  body.printing #toast-root,
+  body.printing #backup-banner { display: none !important; }
+  body.printing .print-root { display: block; }
+  body.printing { background: #fff; }
+  @page { size: A4; margin: 16mm; }
+  .print-doc { color: #000; font-size: 12pt; }
+  .print-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 16px; }
+  .print-company { display: flex; gap: 10px; align-items: flex-start; }
+  .print-logo { max-height: 70px; max-width: 160px; }
+  .print-company-name { font-size: 15pt; font-weight: 700; }
+  .print-company-line { font-size: 10pt; }
+  .print-meta { text-align: left; font-size: 10pt; }
+  .print-title { font-size: 18pt; margin: 0 0 6px; }
+  .print-party { margin-bottom: 12px; }
+  .print-party-label { font-size: 10pt; color: #444; }
+  .print-party-name { font-size: 13pt; font-weight: 700; }
+  /* الأرقام اللاتينية (جوال/بريد) تُعرض LTR داخل صفحة RTL فلا تنقلب خاناتها. */
+  .print-ltr { direction: ltr; unicode-bidi: embed; text-align: right; }
+  .print-statement { margin-bottom: 12px; white-space: pre-line; }
+  .print-table { width: 100%; border-collapse: collapse; }
+  .print-table th, .print-table td { border: 1px solid #000; padding: 6px 8px; text-align: right; }
+  .print-table th { background: #eee; }
+  .print-total { margin-top: 12px; text-align: left; font-size: 14pt; }
+  .print-notes { margin-top: 16px; white-space: pre-line; font-size: 11pt; }
+  .print-footer { margin-top: 24px; border-top: 1px solid #999; padding-top: 8px; font-size: 10pt; color: #333; white-space: pre-line; }
+  .print-table tr { break-inside: avoid; }
+}

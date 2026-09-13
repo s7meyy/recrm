@@ -1,7 +1,7 @@
 // مخططات الكيانات: الحقول، القيم الافتراضية، القوائم الثابتة، والحقول التي تظهر بحسب نوع العقار.
 // الحقول المشتركة لكل سجل (تضيفها طبقة البيانات): id, createdAt, updatedAt, createdBy, updatedBy, searchKey.
 
-export const STORES = ['clients', 'properties', 'tours', 'requests', 'matches', 'externalListings', 'deals', 'images', 'settings'];
+export const STORES = ['clients', 'properties', 'tours', 'requests', 'matches', 'externalListings', 'deals', 'images', 'settings', 'taskLists', 'tasks', 'notes', 'invoices'];
 
 export const ENUMS = {
   clientRoles: [
@@ -65,7 +65,50 @@ export const ENUMS = {
     { key: 'text', label: 'نص' },
     { key: 'number', label: 'رقم' },
   ],
+  linkTypes: [ // ربط اختياري للمهمة أو الفكرة بسجل آخر (المرحلة ٧)
+    { key: 'client', label: 'عميل' },
+    { key: 'property', label: 'عقار' },
+    { key: 'request', label: 'طلب' },
+  ],
+  invoiceTypes: [ // المستند المالي (المرحلة ٨) — نفس الكيان بمسمّيين وسلسلتَي ترقيم منفصلتين
+    { key: 'invoice', label: 'فاتورة' },
+    { key: 'quote', label: 'عرض سعر' },
+  ],
 };
+
+/**
+ * تصنيفا العميل المدمجان (المرحلة ٨): حاضران من أول تشغيل بلا إنشاء، لا يُحذفان،
+ * ولكل منهما لون ثابت (الصنف CSS) ووزن أولوية يرفع صاحبه أعلى القوائم.
+ * التصنيفات نصوص في `client.tags` (لا مفاتيح)، فالتطابق بالنص كما يكتبه المستخدم.
+ */
+export const BUILTIN_CLIENT_TAGS = [
+  { label: 'جادّ', cls: 'tag-serious', priority: 2 },
+  { label: 'مهم', cls: 'tag-important', priority: 1 },
+];
+
+/** صنف اللون الثابت لتصنيف مدمج، أو '' لأي تصنيف آخر (يبقى بالشكل المحايد الحالي). */
+export function clientTagClass(tag) {
+  return BUILTIN_CLIENT_TAGS.find((t) => t.label === tag)?.cls ?? '';
+}
+
+/**
+ * وزن أولوية العميل: ٢ لـ«جادّ» · ١ لـ«مهم» · ٠ لغيرهما (والحامل للاثنين يأخذ الأعلى).
+ * دالة خالصة تُستعمل في صفحات العملاء والطلبات والمطابقات لترتيب واحد متّسق.
+ */
+export function clientPriority(client) {
+  const tags = client?.tags || [];
+  let best = 0;
+  for (const t of BUILTIN_CLIENT_TAGS) if (tags.includes(t.label) && t.priority > best) best = t.priority;
+  return best;
+}
+
+/** مقارن ترتيب: الأولوية تنازليًا ثم آخر تعديل تنازليًا (الترتيب الأصلي للصفحات). */
+export function byClientPriority(clientOf) {
+  return (a, b) => {
+    const diff = clientPriority(clientOf(b)) - clientPriority(clientOf(a));
+    return diff !== 0 ? diff : (b.updatedAt || '').localeCompare(a.updatedAt || '');
+  };
+}
 
 export function labelFor(list, key) {
   return list.find((x) => x.key === key)?.label ?? (key || '');
@@ -138,6 +181,7 @@ export const SCHEMAS = {
       tags: [], // تصنيفات من إعدادات clientTags
       stage: 'new', // ENUMS.clientStages
       contacts: [], // [{ id, type, date, note, followUpAt, createdAt, createdBy }]
+      referralSource: '', // تاق المصدر (المرحلة ٨): الوسيط الذي أحال العميل — فارغ افتراضًا فلا يظهر شيء
     }),
   },
   properties: {
@@ -159,6 +203,7 @@ export const SCHEMAS = {
       captureContact: null, // { name, phone, note } مؤقت قبل الاعتماد (المرحلة ٢) — يُستهلك عند الاعتماد لربط/إنشاء العميل ثم يُصفَّر
       typeFields: {}, // الحقول بحسب النوع (TYPE_FIELD_GROUPS)
       extra: {}, // الحقول المخصصة التي يضيفها المستخدم
+      referralSource: '', // تاق المصدر (المرحلة ٨) — لا يخلط بـ source أعلاه (مسار الإدخال: جولة/يدوي/خارجي)
     }),
   },
   tours: {
@@ -181,6 +226,7 @@ export const SCHEMAS = {
       areaFlexibility: null, // نسبة مئوية لمرونة المساحة تتجاوز الإعداد العام (المرحلة ٣)
       areaFlexAmount: null, // مساحة بالمتر تتجاوز نسبة المساحة وحدّها الأدنى (المرحلة ٣)
       districtZones: [], // مفاتيح نطاقات الأحياء؛ تُوسَّع إلى أحياء عند المطابقة (المرحلة ٣)
+      referralSource: '', // تاق المصدر (المرحلة ٨): الوسيط الذي أحال الطلب
     }),
   },
   matches: {
@@ -218,4 +264,47 @@ export const SCHEMAS = {
       blob: null, thumb: null, width: null, height: null, size: 0, originalName: '', originalSize: null,
     }),
   },
+  taskLists: { // صفحة المهام (المرحلة ٧)
+    required: ['title'],
+    labels: { title: 'اسم القائمة' },
+    defaults: () => ({ title: '', order: 0 }),
+  },
+  tasks: { // صفحة المهام (المرحلة ٧)
+    required: ['listId', 'title'],
+    labels: { listId: 'القائمة', title: 'العنوان' },
+    defaults: () => ({
+      listId: null, title: '', notes: '', order: 0,
+      done: false, doneAt: null,
+      dueAt: null, // تاريخ ووقت التذكير (ISO) أو null
+      reminded: false, // مانع تكرار تنبيه المتصفح لهذه المهمة — يُصفَّر تلقائيًا إن غُيِّر dueAt
+      linkType: null, linkId: null, // ENUMS.linkTypes — ربط اختياري بعميل/عقار/طلب
+    }),
+  },
+  notes: { // صفحة الأفكار والملاحظات (المرحلة ٧)
+    required: ['text'],
+    labels: { text: 'نص الفكرة' },
+    defaults: () => ({
+      text: '', color: null, pinned: false, archived: false, tags: [],
+      linkType: null, linkId: null, // ENUMS.linkTypes
+    }),
+  },
+  invoices: { // الفواتير وعروض الأسعار (المرحلة ٨)
+    required: ['type', 'date'],
+    labels: { type: 'نوع المستند', date: 'التاريخ' },
+    defaults: () => ({
+      type: 'invoice', // ENUMS.invoiceTypes
+      number: '', // رقم المستند (يُقترح متسلسلًا عند الإنشاء ويبقى قابلًا للتعديل)
+      date: '', // ISO
+      clientId: null, // عميل مرتبط (اختياري)
+      clientName: '', clientPhone: '', // لقطة اسم/جوال وقت الإصدار: المستند المطبوع لا يتغير بحذف العميل أو تعديله
+      statement: '', // البيان: وصف عام أعلى الجدول
+      items: [], // [{ id, description, qty, unitPrice }]
+      notes: '', // شروط أو ملاحظات تُطبع أسفل المستند
+    }),
+  },
 };
+
+/** إجمالي المستند = مجموع (الكمية × سعر الوحدة). دالة خالصة؛ لا يُخزَّن أي مجموع محسوب. */
+export function invoiceTotal(invoice) {
+  return (invoice?.items || []).reduce((sum, it) => sum + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0);
+}

@@ -2,7 +2,7 @@
 // القوائم القابلة للإضافة = المدمج في schema.js + ما يضيفه المستخدم هنا.
 
 import { repo, newId, setCurrentUser } from './repository.js';
-import { BUILTIN_PROPERTY_TYPES, BUILTIN_PROPERTY_STATUSES, DEFAULT_COMPLETENESS } from './schema.js';
+import { BUILTIN_PROPERTY_TYPES, BUILTIN_PROPERTY_STATUSES, BUILTIN_CLIENT_TAGS, DEFAULT_COMPLETENESS } from './schema.js';
 import { RIYADH_DISTRICTS, RIYADH_SECTORS, DEFAULT_CITY } from './riyadh-districts.js';
 
 export const SETTINGS_KEYS = {
@@ -15,9 +15,12 @@ export const SETTINGS_KEYS = {
   backup: 'backup', // { lastExportAt }
   ui: 'ui', // { propertiesView: 'grid'|'table' }
   seed: 'seed', // { ids: { clients: [], properties: [], images: [] }, insertedAt } | null
+  followUp: 'followUp', // { staleContactDays: 14, notify: false } — المرحلة ٦ (تنبيهات المتابعة)
+  sidebarOrder: 'sidebarOrder', // ['dashboard', 'properties', …] ترتيب صفحات القائمة الجانبية (المرحلة ٨)
+  company: 'company', // بيانات الشركة والشعار وسلسلتا ترقيم المستندات (المرحلة ٨)
 };
 
-const EMPTY_LISTS = () => ({ propertyTypes: [], propertyStatuses: [], clientTags: [], cities: [], districts: {} });
+const EMPTY_LISTS = () => ({ propertyTypes: [], propertyStatuses: [], clientTags: [], cities: [], districts: {}, sources: [] });
 const shortKey = (prefix) => `${prefix}_${newId().replace(/-/g, '').slice(0, 8)}`;
 const norm = (s) => String(s ?? '').trim();
 const sortAr = (arr) => [...arr].sort((a, b) => a.localeCompare(b, 'ar'));
@@ -63,10 +66,13 @@ export async function getLists() {
     const builtin = city === DEFAULT_CITY ? RIYADH_DISTRICTS : [];
     districtsByCity[city] = sortAr(new Set([...builtin, ...(extras.districts[city] || [])]));
   }
+  const builtinTags = BUILTIN_CLIENT_TAGS.map((t) => t.label);
   return {
     propertyTypes: [...BUILTIN_PROPERTY_TYPES, ...extras.propertyTypes],
     propertyStatuses: [...BUILTIN_PROPERTY_STATUSES, ...extras.propertyStatuses],
-    clientTags: sortAr(extras.clientTags),
+    // المدمجان («جادّ» ثم «مهم») أولًا دائمًا بترتيب أولويتهما، ثم ما أضافه المستخدم مرتبًا عربيًا.
+    clientTags: [...builtinTags, ...sortAr(extras.clientTags.filter((t) => !builtinTags.includes(t)))],
+    sources: sortAr(extras.sources), // تاق المصدر (المرحلة ٨): قيم مستعملة سابقًا، للاقتراح فقط
     cities,
     districtsByCity,
     extras,
@@ -127,10 +133,13 @@ export async function removePropertyStatus(key) {
   await writeExtras(extras);
 }
 
+export const isBuiltinClientTag = (label) => BUILTIN_CLIENT_TAGS.some((t) => t.label === norm(label));
+
 export async function addClientTag(label) {
   const extras = await readExtras();
   const name = norm(label);
   if (!name) throw new Error('اسم التصنيف مطلوب');
+  if (isBuiltinClientTag(name)) return name; // مدمج أصلًا — لا يُكرَّر في إضافات المستخدم
   if (!extras.clientTags.includes(name)) {
     extras.clientTags.push(name);
     await writeExtras(extras);
@@ -139,11 +148,39 @@ export async function addClientTag(label) {
 }
 
 export async function removeClientTag(label) {
+  if (isBuiltinClientTag(label)) throw new Error('لا يمكن حذف التصنيفين المدمجين «جادّ» و«مهم»');
   const extras = await readExtras();
   const all = await repo.clients.list();
   const inUse = all.filter((c) => (c.tags || []).includes(label)).length;
   if (inUse) throw new Error(`لا يمكن الحذف: ${inUse} عميل بهذا التصنيف`);
   extras.clientTags = extras.clientTags.filter((t) => t !== label);
+  await writeExtras(extras);
+}
+
+/* ===== تاق المصدر (المرحلة ٨) ===== */
+
+/**
+ * قيم «المصدر» المستعملة سابقًا — اقتراحات فقط، لا قائمة مغلقة: الحقل نصّي حر على
+ * العقار والعميل والطلب، وأي قيمة جديدة تُضاف هنا تلقائيًا عند الحفظ (نفس أسلوب addClientTag).
+ */
+export async function getSources() {
+  return sortAr((await readExtras()).sources);
+}
+
+export async function addSource(label) {
+  const extras = await readExtras();
+  const name = norm(label);
+  if (!name) return '';
+  if (!extras.sources.includes(name)) {
+    extras.sources.push(name);
+    await writeExtras(extras);
+  }
+  return name;
+}
+
+export async function removeSource(label) {
+  const extras = await readExtras();
+  extras.sources = extras.sources.filter((x) => x !== label);
   await writeExtras(extras);
 }
 
@@ -227,6 +264,20 @@ export async function getUI() {
 export async function setUI(patch) {
   const ui = await getUI();
   return repo.settings.set(SETTINGS_KEYS.ui, { ...ui, ...patch });
+}
+
+/* ===== تنبيهات المتابعة (المرحلة ٦) ===== */
+
+const DEFAULT_FOLLOW_UP = { staleContactDays: 14, notify: false };
+
+export async function getFollowUpSettings() {
+  return repo.settings.get(SETTINGS_KEYS.followUp, DEFAULT_FOLLOW_UP);
+}
+export async function setFollowUpSettings(patch) {
+  const current = await getFollowUpSettings();
+  const next = { ...current, ...patch };
+  next.staleContactDays = Math.max(1, Math.round(Number(next.staleContactDays) || DEFAULT_FOLLOW_UP.staleContactDays));
+  return repo.settings.set(SETTINGS_KEYS.followUp, next);
 }
 
 /* ===== علامة البيانات التجريبية ===== */
@@ -369,4 +420,79 @@ export function expandZones(cityZones, zoneKeys = []) {
 /** اسم النطاق للعرض، أو null إن كان المفتاح لا يقابل نطاقًا موجودًا. */
 export function zoneLabel(cityZones, key) {
   return (cityZones || []).find((z) => z.key === key)?.label ?? null;
+}
+
+
+/* ===== ترتيب صفحات القائمة الجانبية (المرحلة ٨) ===== */
+
+/**
+ * الترتيب المحفوظ كما هو (مفاتيح صفحات). القراءة لا تُصلح شيئًا — الدمج مع الافتراضي
+ * في `orderedPageKeys` أدناه، فصفحةٌ تُضاف لاحقًا تظهر تلقائيًا بلا إعادة ضبط.
+ */
+export async function getSidebarOrder() {
+  const stored = await repo.settings.get(SETTINGS_KEYS.sidebarOrder, null);
+  return Array.isArray(stored) ? stored : [];
+}
+
+export async function setSidebarOrder(order) {
+  const clean = [...new Set((order || []).map(norm).filter(Boolean))];
+  await repo.settings.set(SETTINGS_KEYS.sidebarOrder, clean);
+  return clean;
+}
+
+export async function resetSidebarOrder() {
+  await repo.settings.remove(SETTINGS_KEYS.sidebarOrder);
+}
+
+/**
+ * دالة خالصة: المحفوظ أولًا (بلا المفاتيح التي لم تعد موجودة)، ثم أي صفحة جديدة
+ * بترتيبها الافتراضي في ذيل القائمة.
+ */
+export function orderedPageKeys(defaultKeys, savedOrder = []) {
+  const known = new Set(defaultKeys);
+  const head = (savedOrder || []).filter((k) => known.has(k));
+  const seen = new Set(head);
+  return [...head, ...defaultKeys.filter((k) => !seen.has(k))];
+}
+
+/* ===== بيانات الشركة وترقيم المستندات (المرحلة ٨) ===== */
+
+export const DEFAULT_COMPANY = {
+  name: '', phone: '', email: '', address: '', crNumber: '', // السجل التجاري/رقم الترخيص — نص حر يُطبع كما هو
+  logoImageId: null, // صورة في مخزن images (entity: 'company')
+  footerNote: '', // شروط أو تذييل يُطبع أسفل كل مستند
+  invoicePrefix: 'فاتورة ', quotePrefix: 'عرض سعر ', // بادئة الرقم المقترح لكل سلسلة
+  nextInvoiceNo: 1001, nextQuoteNo: 1001, // العدّاد التالي لكل سلسلة (يتقدم عند الحفظ فقط)
+};
+
+export async function getCompany() {
+  const stored = (await repo.settings.get(SETTINGS_KEYS.company, null)) || {};
+  return { ...DEFAULT_COMPANY, ...stored };
+}
+
+export async function setCompany(patch) {
+  const next = { ...(await getCompany()), ...patch };
+  next.nextInvoiceNo = Math.max(1, Math.round(Number(next.nextInvoiceNo) || DEFAULT_COMPANY.nextInvoiceNo));
+  next.nextQuoteNo = Math.max(1, Math.round(Number(next.nextQuoteNo) || DEFAULT_COMPANY.nextQuoteNo));
+  await repo.settings.set(SETTINGS_KEYS.company, next);
+  return next;
+}
+
+/** الرقم المقترح للمستند التالي من نوعه (اقتراح فقط — الحقل يبقى قابلًا للكتابة فوقه). */
+export function suggestInvoiceNumber(company, type) {
+  return type === 'quote'
+    ? `${company.quotePrefix}${company.nextQuoteNo}`
+    : `${company.invoicePrefix}${company.nextInvoiceNo}`;
+}
+
+/**
+ * يقدّم عدّاد السلسلة خطوة واحدة **فقط إذا** كان الرقم المحفوظ هو الرقم المقترح نفسه
+ * (فالكتابة اليدوية فوقه لا تحرّك العدّاد ولا تُحدث فجوة).
+ */
+export async function consumeInvoiceNumber(type, usedNumber) {
+  const company = await getCompany();
+  if (norm(usedNumber) !== suggestInvoiceNumber(company, type)) return company;
+  return setCompany(type === 'quote'
+    ? { nextQuoteNo: company.nextQuoteNo + 1 }
+    : { nextInvoiceNo: company.nextInvoiceNo + 1 });
 }

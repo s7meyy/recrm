@@ -3,13 +3,17 @@
 // التذكير: يُعدّ الاستحقاق قائمًا إذا وُجدت بيانات ولم يُصدَّر منذ 24 ساعة أو لم يُصدَّر قط.
 
 import { repo } from './repository.js';
+import { STORES } from './schema.js';
 import { getBackupInfo, setLastExport } from './settings.js';
 
 export const BACKUP_APP = 'motabiq';
 export const BACKUP_FORMAT = 1;
 export const REMINDER_HOURS = 24;
 
-const STORE_ORDER = ['settings', 'clients', 'properties', 'tours', 'requests', 'matches', 'externalListings', 'deals', 'images'];
+// كل المخازن، مشتقّة من STORES لا مكتوبة يدويًا: الإعدادات أولًا والصور آخرًا (أثقلها)،
+// وأي مخزن يُضاف لاحقًا يدخل النسخة تلقائيًا. (كانت مكتوبة يدويًا فسقطت منها مخازن
+// المرحلة ٧ الثلاثة، والاستيراد يمسح كل المخازن — فكان التصدير ثم الاستيراد يمحو المهام والأفكار.)
+const STORE_ORDER = ['settings', ...STORES.filter((s) => s !== 'settings' && s !== 'images'), 'images'];
 
 function bytesToBase64(bytes) {
   let binary = '';

@@ -63,7 +63,7 @@ export async function render(container) {
   const focusId = routeExternalId();
   if (focusId) {
     const target = ctx.items.find((x) => x.id === focusId);
-    if (target) openForm(ctx, target);
+    if (target) await openForm(ctx, target);
     else toast('العرض الخارجي غير موجود، أو حُذف', 'error');
   }
 }

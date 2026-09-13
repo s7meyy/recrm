@@ -9,6 +9,9 @@
 // بنفس مجموعات الفرز المستعملة في صفحة العقارات (المدينة/الحي/النوع/الغرض) عبر util/property-filters.js.
 // العقار بلا موقع يُستثنى من الخريطة مع بيان عدده أعلاها. النقر على عقار يفتح نموذج تعديله
 // (#/properties/<id>) والعرض الخارجي كذلك (#/external/<id>) — بلا تكرار لأي من النموذجين هنا.
+// تجميع العلامات (المرحلة ٦): تجميع بسيط بالمسافة بالبكسل مكتوب يدويًا (لا مكتبة
+// Leaflet.markercluster — بناؤها القديم UMD يصعب توافقه مع استيراد Leaflet كوحدة ES هنا)،
+// يعمل فقط حين يتجاوز عدد العلامات الظاهرة ١٥.
 
 import { repo } from '../data/repository.js';
 import { getLists, typeLabel, statusLabel } from '../data/settings.js';
@@ -18,6 +21,8 @@ import { el, clear, badge, checkbox } from '../util/dom.js';
 import { formatNumber } from '../util/format.js';
 
 const RIYADH_CENTER = [24.7136, 46.6753];
+const CLUSTER_THRESHOLD = 15; // تحت هذا العدد تُعرض العلامات فرادى بلا تجميع
+const CLUSTER_PIXEL_RADIUS = 44; // تجميع بسيط بالمسافة بالبكسل عند التكبير الحالي — بلا مكتبة خارجية
 
 const STATUS_COLOR = {
   agreed: '#1f7a3f', refused: '#b4432f', sold: '#0f6e56', rented: '#0f6e56', not_contacted: '#8a5a00',
@@ -196,6 +201,7 @@ async function initMap(ctx) {
   ctx.L = L;
   ctx.baseLayers = { streets, satellite };
   ctx.markersLayer = L.layerGroup().addTo(map);
+  map.on('zoomend', () => renderMarkers(ctx, { fit: false })); // إعادة تجميع العلامات فقط، بلا تحريك العرض
   renderMarkers(ctx);
 }
 
@@ -234,28 +240,84 @@ function externalMarker(ctx, x) {
   return marker;
 }
 
-function renderMarkers(ctx) {
-  if (!ctx.map || !ctx.markersLayer) return;
-  ctx.markersLayer.clearLayers();
-  const points = [];
-
+function itemsForMap(ctx) {
+  const items = [];
   for (const p of ctx.properties) {
     if (!passes(ctx, p)) continue;
-    propertyMarker(ctx, p).addTo(ctx.markersLayer);
-    points.push([p.location.lat, p.location.lng]);
+    items.push({ kind: 'property', data: p, lat: p.location.lat, lng: p.location.lng });
   }
   if (ctx.showExternal) {
     for (const x of ctx.externals) {
       if (!passes(ctx, x)) continue;
-      externalMarker(ctx, x).addTo(ctx.markersLayer);
-      points.push([x.location.lat, x.location.lng]);
+      items.push({ kind: 'external', data: x, lat: x.location.lat, lng: x.location.lng });
     }
+  }
+  return items;
+}
+
+function markerFor(ctx, item) {
+  return item.kind === 'property' ? propertyMarker(ctx, item.data) : externalMarker(ctx, item.data);
+}
+
+/**
+ * تجميع بسيط بالمسافة بالبكسل عند مستوى التكبير الحالي (بذرة + كل ما يقع ضمن نصف قطرها) —
+ * تقريب كافٍ لتفريق العلامات المتلاصقة بصريًا، بلا مكتبة تجميع خارجية.
+ */
+function clusterItems(ctx, items) {
+  const pts = items.map((item) => ({ item, pt: ctx.map.latLngToContainerPoint([item.lat, item.lng]) }));
+  const visited = new Array(pts.length).fill(false);
+  const clusters = [];
+  for (let i = 0; i < pts.length; i++) {
+    if (visited[i]) continue;
+    visited[i] = true;
+    const group = [pts[i]];
+    for (let j = i + 1; j < pts.length; j++) {
+      if (visited[j]) continue;
+      const dx = pts[i].pt.x - pts[j].pt.x;
+      const dy = pts[i].pt.y - pts[j].pt.y;
+      if (Math.sqrt(dx * dx + dy * dy) <= CLUSTER_PIXEL_RADIUS) { visited[j] = true; group.push(pts[j]); }
+    }
+    clusters.push(group);
+  }
+  return clusters;
+}
+
+function clusterMarker(ctx, group) {
+  const count = group.length;
+  const avgLat = group.reduce((s, g) => s + g.item.lat, 0) / count;
+  const avgLng = group.reduce((s, g) => s + g.item.lng, 0) / count;
+  const mixed = group.some((g) => g.item.kind === 'external') && group.some((g) => g.item.kind === 'property');
+  const size = count < 10 ? 34 : count < 30 ? 42 : 50;
+  const icon = ctx.L.divIcon({
+    className: 'map-cluster-icon',
+    html: `<div class="map-cluster-badge${mixed ? ' map-cluster-badge-mixed' : ''}" style="width:${size}px;height:${size}px;line-height:${size}px">${count}</div>`,
+    iconSize: [size, size],
+  });
+  const marker = ctx.L.marker([avgLat, avgLng], { icon });
+  marker.on('click', () => {
+    ctx.map.fitBounds(group.map((g) => [g.item.lat, g.item.lng]), { padding: [40, 40], maxZoom: ctx.map.getZoom() + 3 });
+  });
+  return marker;
+}
+
+function renderMarkers(ctx, { fit = true } = {}) {
+  if (!ctx.map || !ctx.markersLayer) return;
+  ctx.markersLayer.clearLayers();
+  const items = itemsForMap(ctx);
+
+  if (items.length > CLUSTER_THRESHOLD) {
+    for (const group of clusterItems(ctx, items)) {
+      (group.length === 1 ? markerFor(ctx, group[0].item) : clusterMarker(ctx, group)).addTo(ctx.markersLayer);
+    }
+  } else {
+    for (const item of items) markerFor(ctx, item).addTo(ctx.markersLayer);
   }
 
   if (ctx.nodes.count) {
     const total = ctx.properties.length + (ctx.showExternal ? ctx.externals.length : 0);
-    ctx.nodes.count.textContent = points.length === total ? `(${formatNumber(points.length)})` : `(${formatNumber(points.length)} من ${formatNumber(total)})`;
+    ctx.nodes.count.textContent = items.length === total ? `(${formatNumber(items.length)})` : `(${formatNumber(items.length)} من ${formatNumber(total)})`;
   }
-  if (points.length) ctx.map.fitBounds(points, { padding: [28, 28], maxZoom: 15 });
+  if (!fit) return; // إعادة تجميع بعد تكبير/تصغير فقط — لا تحريك العرض
+  if (items.length) ctx.map.fitBounds(items.map((it) => [it.lat, it.lng]), { padding: [28, 28], maxZoom: 15 });
   else ctx.map.setView(RIYADH_CENTER, 11);
 }

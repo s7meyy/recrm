@@ -65,8 +65,10 @@ const PREPARE = {
     rec.roles = uniq(rec.roles);
     rec.tags = uniq(rec.tags);
     rec.contacts = Array.isArray(rec.contacts) ? rec.contacts : [];
+    rec.referralSource = trim(rec.referralSource);
     rec.searchKey = buildSearchKey([
       rec.name, ...phoneSearchForms(rec.phone), ...phoneSearchForms(rec.phone2), rec.notes, ...rec.tags,
+      rec.referralSource,
     ]);
   },
   properties(rec) {
@@ -94,8 +96,10 @@ const PREPARE = {
     }
     rec.typeFields = obj(rec.typeFields);
     rec.extra = obj(rec.extra);
+    rec.referralSource = trim(rec.referralSource); // تاق المصدر — غير `source` (مسار الإدخال)
     rec.searchKey = buildSearchKey([
       rec.city, rec.district, rec.notes, ...Object.values(rec.typeFields), ...Object.values(rec.extra),
+      rec.referralSource,
     ]);
   },
   tours(rec) {
@@ -115,7 +119,8 @@ const PREPARE = {
     rec.areaFlexAmount = toNumberOrNull(rec.areaFlexAmount);
     rec.districtZones = uniq(rec.districtZones);
     rec.notes = trim(rec.notes);
-    rec.searchKey = buildSearchKey([rec.city, ...rec.districts, rec.notes]);
+    rec.referralSource = trim(rec.referralSource);
+    rec.searchKey = buildSearchKey([rec.city, ...rec.districts, rec.notes, rec.referralSource]);
   },
   matches(rec) {
     rec.score = toNumberOrNull(rec.score) ?? 0;
@@ -151,6 +156,44 @@ const PREPARE = {
   images(rec) {
     rec.size = toNumberOrNull(rec.size) ?? 0;
   },
+  taskLists(rec) {
+    rec.title = trim(rec.title);
+    rec.order = toNumberOrNull(rec.order) ?? 0;
+    rec.searchKey = buildSearchKey([rec.title]);
+  },
+  tasks(rec) {
+    rec.title = trim(rec.title);
+    rec.order = toNumberOrNull(rec.order) ?? 0;
+    rec.done = !!rec.done;
+    rec.searchKey = buildSearchKey([rec.title, rec.notes]);
+  },
+  notes(rec) {
+    rec.text = trim(rec.text);
+    rec.tags = [...new Set((rec.tags || []).map(trim).filter(Boolean))];
+    rec.searchKey = buildSearchKey([rec.text, ...rec.tags]);
+  },
+  invoices(rec) {
+    rec.type = trim(rec.type);
+    rec.number = trim(rec.number);
+    rec.statement = trim(rec.statement);
+    rec.notes = trim(rec.notes);
+    rec.clientId = rec.clientId || null;
+    rec.clientName = trim(rec.clientName);
+    rec.clientPhone = normalizePhone(rec.clientPhone);
+    // البنود: وصف ونصّان رقميان؛ البند بلا وصف ولا مبلغ يُسقط (صفوف فارغة من النموذج).
+    rec.items = (Array.isArray(rec.items) ? rec.items : [])
+      .map((it) => ({
+        id: it.id || newId(),
+        description: trim(it.description),
+        qty: toNumberOrNull(it.qty) ?? 1,
+        unitPrice: toNumberOrNull(it.unitPrice) ?? 0,
+      }))
+      .filter((it) => it.description || it.unitPrice);
+    rec.searchKey = buildSearchKey([
+      rec.number, rec.clientName, ...phoneSearchForms(rec.clientPhone), rec.statement, rec.notes,
+      ...rec.items.map((it) => it.description),
+    ]);
+  },
 };
 
 /* تحقق خاص بكل كيان (بعد الحقول المطلوبة العامة) */
@@ -176,6 +219,19 @@ const VALIDATE = {
   },
   externalListings(rec, errors) {
     if (!inEnum(ENUMS.externalStatuses, rec.status)) errors.push('حالة العرض الخارجي غير معروفة');
+  },
+  tasks(rec, errors) {
+    if (rec.linkType && !inEnum(ENUMS.linkTypes, rec.linkType)) errors.push('نوع الربط غير معروف');
+    if (rec.linkType && !rec.linkId) errors.push('يلزم تحديد السجل المرتبط');
+  },
+  notes(rec, errors) {
+    if (rec.linkType && !inEnum(ENUMS.linkTypes, rec.linkType)) errors.push('نوع الربط غير معروف');
+    if (rec.linkType && !rec.linkId) errors.push('يلزم تحديد السجل المرتبط');
+  },
+  invoices(rec, errors) {
+    if (!inEnum(ENUMS.invoiceTypes, rec.type)) errors.push('نوع المستند غير معروف');
+    if (!rec.items.length) errors.push('يلزم بند واحد على الأقل');
+    if (rec.items.some((it) => !it.description)) errors.push('كل بند يحتاج وصفًا');
   },
 };
 
@@ -204,6 +260,10 @@ const CASCADE = {
     if (rec?.screenshotImageId) await adapter.delete('images', rec.screenshotImageId);
     const mine = (await adapter.getAll('matches')).filter((m) => m.externalId === id);
     if (mine.length) await adapter.deleteMany('matches', mine.map((m) => m.id));
+  },
+  async taskLists(id) {
+    const tasks = await adapter.getByIndex('tasks', 'listId', id);
+    if (tasks.length) await adapter.deleteMany('tasks', tasks.map((t) => t.id));
   },
 };
 
@@ -312,14 +372,15 @@ const clients = Object.assign(makeEntity('clients'), {
    * @returns {Promise<{ properties: number, requests: number, deals: number, linked: boolean }>}
    */
   async deleteImpact(id) {
-    const [properties, requests, deals] = await Promise.all([
+    const [properties, requests, deals, invoices] = await Promise.all([
       adapter.getByIndex('properties', 'ownerId', id),
       adapter.getByIndex('requests', 'clientId', id),
       adapter.getByIndex('deals', 'clientId', id),
+      adapter.getByIndex('invoices', 'clientId', id),
     ]);
     return {
-      properties: properties.length, requests: requests.length, deals: deals.length,
-      linked: !!(properties.length || requests.length || deals.length),
+      properties: properties.length, requests: requests.length, deals: deals.length, invoices: invoices.length,
+      linked: !!(properties.length || requests.length || deals.length || invoices.length),
     };
   },
 
@@ -350,6 +411,11 @@ const clients = Object.assign(makeEntity('clients'), {
       await adapter.delete('requests', r.id);
     }
     for (const d of deals) await adapter.put('deals', { ...d, clientId: null, ...stamp });
+    // الفواتير وعروض الأسعار تبقى ويصير clientId = null (اسم العميل وجواله لقطة محفوظة داخل المستند
+    // منذ إصداره، فالمطبوع لا يتغير) — نفس منطق الصفقات: مستند مالي لا يُمحى بحذف عميل.
+    for (const inv of await adapter.getByIndex('invoices', 'clientId', id)) {
+      await adapter.put('invoices', { ...inv, clientId: null, ...stamp });
+    }
     await adapter.delete('clients', id);
   },
 
@@ -524,6 +590,10 @@ export const repo = {
   deals: makeEntity('deals'),
   images: makeEntity('images'),
   settings,
+  taskLists: makeEntity('taskLists'),
+  tasks: makeEntity('tasks'),
+  notes: makeEntity('notes'),
+  invoices: makeEntity('invoices'),
 
   /** وصول خام للمخازن (النسخ الاحتياطي والبيانات التجريبية). */
   raw: {

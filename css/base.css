@@ -61,27 +61,55 @@ button, input, select, textarea { font: inherit; color: inherit; }
   clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
 }
 
-/* ===== الشريط العلوي ===== */
-.topbar {
-  position: sticky; top: 0; z-index: 30;
-  background: var(--surface);
-  border-bottom: 1px solid var(--line);
+/* ===== هيكل التطبيق: قائمة جانبية (رفّ أيقونات يتوسّع) + منطقة المحتوى (المرحلة ٧) ===== */
+.app-shell { min-height: 100vh; }
+.sidebar-toggle-checkbox { display: none; }
+
+.sidebar {
+  position: fixed; top: 0; inset-inline-end: 0; height: 100vh; width: 60px;
+  background: var(--surface); border-inline-end: 1px solid var(--line);
+  display: flex; flex-direction: column; overflow-y: auto; overflow-x: hidden;
+  z-index: 35; transition: width 0.15s ease;
 }
-.topbar-inner {
-  max-width: 1240px; margin: 0 auto; padding: 0 16px;
-  height: 56px; display: flex; align-items: center; gap: 24px;
+.sidebar-toggle-checkbox:checked ~ .sidebar { width: 220px; }
+.sidebar-toggle-checkbox:checked ~ .sidebar .sidebar-label { display: inline; }
+.sidebar-toggle-checkbox:checked ~ .app-main { margin-inline-end: 220px; }
+
+.sidebar-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 8px; border-bottom: 1px solid var(--line); min-height: 56px; flex-shrink: 0; }
+.sidebar-brand { font-size: 20px; font-weight: 800; color: var(--accent); text-decoration: none; width: 32px; text-align: center; flex-shrink: 0; }
+.sidebar-expand-btn { font-size: 18px; flex-shrink: 0; cursor: pointer; }
+
+.sidebar-nav { display: flex; flex-direction: column; padding: 8px 6px; gap: 2px; }
+.sidebar-nav a {
+  display: flex; align-items: center; gap: 12px; padding: 9px 10px; border-radius: var(--radius);
+  text-decoration: none; color: var(--muted); font-weight: 600; white-space: nowrap; overflow: hidden;
 }
-.brand {
-  font-size: 21px; font-weight: 800; color: var(--accent);
-  text-decoration: none; letter-spacing: -0.01em;
+.sidebar-nav a:hover { background: var(--surface-2); color: var(--text); }
+.sidebar-nav a.active { color: var(--accent-text); background: var(--accent-soft); }
+.sidebar-icon { font-size: 19px; flex-shrink: 0; width: 22px; text-align: center; }
+.sidebar-label { display: none; }
+.sidebar-scrim { display: none; }
+.sidebar-open-btn { display: none; cursor: pointer; }
+
+.app-main { margin-inline-end: 60px; min-height: 100vh; transition: margin-inline-end 0.15s ease; }
+
+.topbar { position: sticky; top: 0; z-index: 20; background: var(--surface); border-bottom: 1px solid var(--line); }
+.topbar-inner { padding: 0 16px; height: 56px; display: flex; align-items: center; gap: 10px; }
+.topbar-search-btn { margin-inline-start: auto; font-size: 18px; }
+
+@media (max-width: 640px) {
+  .sidebar {
+    width: 240px; transform: translateX(100%); box-shadow: var(--shadow-modal); transition: transform 0.15s ease;
+  }
+  .sidebar-toggle-checkbox:checked ~ .sidebar { transform: translateX(0); width: 240px; }
+  .sidebar .sidebar-label { display: inline; }
+  .sidebar-expand-btn { display: none; }
+  .sidebar-toggle-checkbox:checked ~ .sidebar-scrim {
+    display: block; position: fixed; inset: 0; background: rgba(10, 15, 12, 0.4); z-index: 34; cursor: pointer;
+  }
+  .app-main, .sidebar-toggle-checkbox:checked ~ .app-main { margin-inline-end: 0; }
+  .sidebar-open-btn { display: inline-flex; align-items: center; justify-content: center; }
 }
-.nav { display: flex; gap: 2px; }
-.nav a {
-  text-decoration: none; color: var(--muted); font-weight: 600;
-  padding: 7px 12px; border-radius: var(--radius);
-}
-.nav a:hover { background: var(--surface-2); color: var(--text); }
-.nav a.active { color: var(--accent-text); background: var(--accent-soft); }
 
 /* ===== الصفحة ===== */
 .page { max-width: 1240px; margin: 0 auto; padding: 20px 16px 72px; }

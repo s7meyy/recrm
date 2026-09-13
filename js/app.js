@@ -5,6 +5,9 @@ import { ensureUser, getUI, setUI } from './data/settings.js';
 import { insertSeed } from './data/seed.js';
 import { backupStatus, exportBackup, downloadBlob, markExported } from './data/backup.js';
 import { revokeImageUrls } from './data/images.js';
+import { startFollowUpAlerts } from './util/follow-up-alerts.js';
+import { initGlobalSearch } from './util/global-search.js';
+import { applySidebarOrder } from './util/sidebar.js';
 import { el, clear, toast } from './util/dom.js';
 import { daysWord } from './util/format.js';
 import * as dashboardPage from './pages/dashboard.js';
@@ -15,9 +18,12 @@ import * as toursPage from './pages/tours.js';
 import * as requestsPage from './pages/requests.js';
 import * as matchesPage from './pages/matches.js';
 import * as externalPage from './pages/external.js';
+import * as invoicesPage from './pages/invoices.js';
+import * as tasksPage from './pages/tasks.js';
+import * as notesPage from './pages/notes.js';
 import * as settingsPage from './pages/settings.js';
 
-// سجل الصفحات: الصفحات اللاحقة تُضاف هنا وفي شريط التنقّل في index.html.
+// سجل الصفحات: الصفحات اللاحقة تُضاف هنا وفي القائمة الجانبية في index.html.
 const ROUTES = {
   dashboard: { title: 'الداشبورد', render: dashboardPage.render },
   properties: { title: 'العقارات', render: propertiesPage.render },
@@ -27,6 +33,9 @@ const ROUTES = {
   requests: { title: 'الطلبات العقارية', render: requestsPage.render },
   matches: { title: 'المطابقات', render: matchesPage.render },
   external: { title: 'العروض الخارجية', render: externalPage.render },
+  invoices: { title: 'الفواتير وعروض الأسعار', render: invoicesPage.render },
+  tasks: { title: 'المهام', render: tasksPage.render },
+  notes: { title: 'الأفكار والملاحظات', render: notesPage.render },
   settings: { title: 'الإعدادات', render: settingsPage.render },
 };
 const DEFAULT_ROUTE = 'properties';
@@ -43,7 +52,9 @@ async function navigate() {
   const name = routeName();
   const route = ROUTES[name];
   const page = document.getElementById('page');
-  document.querySelectorAll('.nav a').forEach((a) => a.classList.toggle('active', a.dataset.route === name));
+  document.querySelectorAll('.sidebar-nav a').forEach((a) => a.classList.toggle('active', a.dataset.route === name));
+  const sidebarToggle = document.getElementById('sidebar-toggle');
+  if (sidebarToggle) sidebarToggle.checked = false; // يطوي القائمة على الجوال بعد اختيار صفحة
   document.title = `${route.title} — مُطابِق`;
   revokeImageUrls();
   clear(page);
@@ -142,6 +153,9 @@ async function init() {
   });
 
   if (!location.hash) history.replaceState(null, '', `#/${DEFAULT_ROUTE}`);
+  await applySidebarOrder(); // ترتيب صفحات القائمة الجانبية المحفوظ من الإعدادات (المرحلة ٨)
+  initGlobalSearch();
+  startFollowUpAlerts();
   await navigate();
   refreshBanner();
 }

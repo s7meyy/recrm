@@ -9,26 +9,46 @@
   <link rel="stylesheet" href="./css/components.css">
 </head>
 <body>
-  <header class="topbar">
-    <div class="topbar-inner">
-      <a class="brand" href="#/properties">مُطابِق</a>
-      <nav class="nav" aria-label="الصفحات">
-        <a href="#/dashboard" data-route="dashboard">الداشبورد</a>
-        <a href="#/properties" data-route="properties">العقارات</a>
-        <a href="#/map" data-route="map">خريطة العقارات</a>
-        <a href="#/clients" data-route="clients">العملاء</a>
-        <a href="#/tours" data-route="tours">الجولات الميدانية</a>
-        <a href="#/requests" data-route="requests">الطلبات</a>
-        <a href="#/matches" data-route="matches">المطابقات</a>
-        <a href="#/external" data-route="external">العروض الخارجية</a>
-        <a href="#/settings" data-route="settings">الإعدادات</a>
+  <div class="app-shell">
+    <input type="checkbox" id="sidebar-toggle" class="sidebar-toggle-checkbox">
+    <aside class="sidebar" id="sidebar" aria-label="الصفحات">
+      <div class="sidebar-head">
+        <a class="brand sidebar-brand" href="#/properties">م</a>
+        <label for="sidebar-toggle" class="icon-btn sidebar-expand-btn" aria-label="توسيع القائمة أو طيّها">☰</label>
+      </div>
+      <nav class="sidebar-nav">
+        <a href="#/dashboard" data-route="dashboard" title="الداشبورد"><span class="sidebar-icon">📊</span><span class="sidebar-label">الداشبورد</span></a>
+        <a href="#/properties" data-route="properties" title="العقارات"><span class="sidebar-icon">🏠</span><span class="sidebar-label">العقارات</span></a>
+        <a href="#/map" data-route="map" title="خريطة العقارات"><span class="sidebar-icon">🗺️</span><span class="sidebar-label">خريطة العقارات</span></a>
+        <a href="#/clients" data-route="clients" title="العملاء"><span class="sidebar-icon">👤</span><span class="sidebar-label">العملاء</span></a>
+        <a href="#/tours" data-route="tours" title="الجولات الميدانية"><span class="sidebar-icon">🚗</span><span class="sidebar-label">الجولات الميدانية</span></a>
+        <a href="#/requests" data-route="requests" title="الطلبات"><span class="sidebar-icon">📋</span><span class="sidebar-label">الطلبات</span></a>
+        <a href="#/matches" data-route="matches" title="المطابقات"><span class="sidebar-icon">🔗</span><span class="sidebar-label">المطابقات</span></a>
+        <a href="#/external" data-route="external" title="العروض الخارجية"><span class="sidebar-icon">🌐</span><span class="sidebar-label">العروض الخارجية</span></a>
+        <a href="#/invoices" data-route="invoices" title="الفواتير وعروض الأسعار"><span class="sidebar-icon">🧾</span><span class="sidebar-label">الفواتير وعروض الأسعار</span></a>
+        <a href="#/tasks" data-route="tasks" title="المهام"><span class="sidebar-icon">✅</span><span class="sidebar-label">المهام</span></a>
+        <a href="#/notes" data-route="notes" title="الأفكار والملاحظات"><span class="sidebar-icon">💡</span><span class="sidebar-label">الأفكار والملاحظات</span></a>
+        <a href="#/settings" data-route="settings" title="الإعدادات"><span class="sidebar-icon">⚙️</span><span class="sidebar-label">الإعدادات</span></a>
       </nav>
+    </aside>
+    <label for="sidebar-toggle" class="sidebar-scrim" aria-hidden="true"></label>
+
+    <div class="app-main">
+      <header class="topbar">
+        <div class="topbar-inner">
+          <label for="sidebar-toggle" class="icon-btn sidebar-open-btn" aria-label="القائمة">☰</label>
+          <button type="button" id="global-search-btn" class="icon-btn topbar-search-btn" aria-label="بحث" title="بحث (/)">🔍</button>
+        </div>
+      </header>
+
+      <div id="backup-banner" class="banner" hidden></div>
+
+      <main id="page" class="page"></main>
     </div>
-  </header>
+  </div>
 
-  <div id="backup-banner" class="banner" hidden></div>
-
-  <main id="page" class="page"></main>
+  <!-- حاوية الطباعة: تبقى فارغة ومخفية، ولا تظهر إلا في ورقة الطباعة (المرحلة ٨) -->
+  <div id="print-root" class="print-root" aria-hidden="true"></div>
 
   <div id="modal-root"></div>
   <div id="toast-root" class="toast-root" aria-live="polite"></div>

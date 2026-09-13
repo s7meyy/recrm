@@ -1,20 +1,17 @@
-// صفحة "الداشبورد" (المرحلة ٥) — تقرأ من كل الكيانات دفعة واحدة (list() لكل مخزن) وتُجمِّع
-// في الذاكرة؛ لا حاجة لفهرس جديد ولا لرفع DB_VERSION لحجم بيانات وسيط واحد.
-//
-// حدّ "لم يُتواصل معه" ثابت STALE_CONTACT_DAYS = 14 يومًا (وفق قرارك اختيار الأرخص: بلا مفتاح
-// إعداد إضافي). معدل الاقتناص لكل جولة وترتيب الأحياء يُحسبان بإعادة استعمال tourStats المصدَّرة
-// من tours.js بدل تعريف مواز قد يختلف عنها. معدل التحويل ونطاق الإيراد وفق القسم ١٢ من عقد
-// البيانات: صفقة العرض الخارجي (بلا propertyId) تدخل الإيراد ولا تدخل معدل التحويل.
+// صفحة "الداشبورد" (المرحلة ٥، وحدّ "لم يُتواصل معه" صار قابلًا للتعديل من الإعدادات في
+// المرحلة ٦ — راجع getFollowUpSettings في settings.js). معدل الاقتناص لكل جولة وترتيب الأحياء
+// يُحسبان بإعادة استعمال tourStats المصدَّرة من tours.js بدل تعريف مواز قد يختلف عنها. معدل
+// التحويل ونطاق الإيراد وفق القسم ١٢ من عقد البيانات: صفقة العرض الخارجي (بلا propertyId) تدخل
+// الإيراد ولا تدخل معدل التحويل.
 
 import { repo } from '../data/repository.js';
 import { ENUMS, labelFor } from '../data/schema.js';
-import { getLists, getCompleteness, typeLabel, statusLabel } from '../data/settings.js';
+import { getLists, getCompleteness, getFollowUpSettings, typeLabel, statusLabel } from '../data/settings.js';
 import { tourStats } from './tours.js';
 import { el, clear, badge } from '../util/dom.js';
 import { formatNumber, formatSAR, daysBetween, relativeDays } from '../util/format.js';
 import { formatPhone, toInternational } from '../util/phone.js';
 
-const STALE_CONTACT_DAYS = 14;
 const DISTRICT_MIN_SAMPLE = 3;
 
 export async function render(container) {
@@ -23,14 +20,14 @@ export async function render(container) {
 }
 
 async function loadData() {
-  const [clients, properties, tours, matches, externals, deals, lists, completeness] = await Promise.all([
+  const [clients, properties, tours, matches, externals, deals, lists, completeness, followUp, tasks] = await Promise.all([
     repo.clients.list(), repo.properties.list(), repo.tours.list(), repo.matches.list(),
-    repo.externalListings.list(), repo.deals.list(), getLists(), getCompleteness(),
+    repo.externalListings.list(), repo.deals.list(), getLists(), getCompleteness(), getFollowUpSettings(), repo.tasks.list(),
   ]);
   const approved = properties.filter((p) => p.captureStatus === 'approved');
   const clientMap = new Map(clients.map((c) => [c.id, c]));
   const dealPropertyIds = new Set(deals.map((d) => d.propertyId).filter(Boolean));
-  return { clients, properties, approved, tours, matches, externals, deals, lists, completeness, clientMap, dealPropertyIds };
+  return { clients, properties, approved, tours, matches, externals, deals, lists, completeness, followUp, tasks, clientMap, dealPropertyIds };
 }
 
 /* ===== أدوات تجميع عامة ===== */
@@ -69,14 +66,14 @@ function panel(title, desc, ...content) {
 
 /* ===== المؤشرات ===== */
 
-function staleClients(clients) {
+function staleClients(clients, staleDays) {
   return clients
     .map((c) => {
       const last = repo.clients.lastContactAt(c);
       const days = last ? daysBetween(last) : null;
       return { client: c, last, days };
     })
-    .filter((x) => x.days == null || x.days > STALE_CONTACT_DAYS)
+    .filter((x) => x.days == null || x.days > staleDays)
     .sort((a, b) => (b.days ?? Infinity) - (a.days ?? Infinity));
 }
 
@@ -130,11 +127,12 @@ function statChip(value, label) {
 }
 
 function buildLayout(container, data) {
-  const { clients, properties, approved, tours, matches, externals, deals, lists, completeness, clientMap, dealPropertyIds } = data;
+  const { clients, properties, approved, tours, matches, externals, deals, lists, completeness, followUp, tasks, clientMap, dealPropertyIds } = data;
   clear(container);
 
   const pending = properties.filter((p) => p.captureStatus !== 'approved').length;
-  const stale = staleClients(clients);
+  const staleDays = followUp.staleContactDays;
+  const stale = staleClients(clients, staleDays);
   const deal = dealsSummary(deals, approved);
   const completePct = completenessPct(approved, completeness, clientMap);
 
@@ -157,11 +155,11 @@ function buildLayout(container, data) {
 
   /* عملاء لم يُتواصل معهم منذ أكثر من أسبوعين — الأهم */
   grid.append(panel(
-    `عملاء لم يُتواصل معهم منذ أكثر من ${formatNumber(STALE_CONTACT_DAYS)} يومًا (${formatNumber(stale.length)})`,
+    `عملاء لم يُتواصل معهم منذ أكثر من ${formatNumber(staleDays)} يومًا (${formatNumber(stale.length)})`,
     'مرتّبون: الأطول انقطاعًا أولًا. اتصل أو راسل مباشرة من هنا.',
     stale.length
       ? el('div', { class: 'stale-list' }, stale.slice(0, 12).map((x) => staleClientRow(x)))
-      : el('div', { class: 'muted small', text: 'لا يوجد — كل عملائك تم التواصل معهم خلال آخر أسبوعين.' }),
+      : el('div', { class: 'muted small', text: `لا يوجد — كل عملائك تم التواصل معهم خلال آخر ${formatNumber(staleDays)} يومًا.` }),
     stale.length > 12 ? el('div', { class: 'muted small', text: `+ ${formatNumber(stale.length - 12)} عميلًا آخر` }) : null,
   ));
 
@@ -220,6 +218,26 @@ function buildLayout(container, data) {
 
   /* الجولات الميدانية */
   grid.append(panel('الجولات الميدانية', null, ...tourSection({ tours, properties, clientMap, completeness, dealPropertyIds })));
+
+  /* المهام (المرحلة ٧) */
+  grid.append(panel('المهام', null, ...taskSection(tasks)));
+}
+
+function taskSection(tasks) {
+  const pending = tasks.filter((t) => !t.done);
+  const done = tasks.filter((t) => t.done);
+  const overdue = pending.filter((t) => t.dueAt && new Date(t.dueAt).getTime() < Date.now());
+  if (!tasks.length) {
+    return [el('div', { class: 'muted small', text: 'لا مهام بعد.' }),
+      el('a', { class: 'btn btn-sm', href: '#/tasks', text: 'افتح صفحة المهام →' })];
+  }
+  return [
+    el('div', { class: 'stat-strip' },
+      statChip(pending.length, 'مهمة متبقية'),
+      statChip(done.length, 'مهمة منجزة'),
+      statChip(overdue.length, 'متأخرة عن موعدها')),
+    el('a', { class: 'btn btn-sm', href: '#/tasks', text: 'افتح صفحة المهام →' }),
+  ];
 }
 
 function tourSection({ tours, properties, clientMap, completeness, dealPropertyIds }) {

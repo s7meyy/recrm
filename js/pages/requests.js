@@ -3,7 +3,8 @@
 // عدد المطابقات في القائمة يُحسب لحظيًا من محرك المطابقة (لا يُخزَّن).
 
 import { repo, ValidationError } from '../data/repository.js';
-import { ENUMS, labelFor } from '../data/schema.js';
+import { ENUMS, labelFor, clientPriority } from '../data/schema.js';
+import { sourceField, rememberSource, sourceBadge } from '../util/source-field.js';
 import { getLists, typeLabel, addDistrict, getZonesFor, zoneLabel } from '../data/settings.js';
 import { loadMatchingContext, candidatesFor, priceFlexFor, areaFlexFor } from '../data/matching.js';
 import {
@@ -25,6 +26,12 @@ const STATUS_STYLE = { active: 'badge-ok', paused: 'badge-warn', done: '' };
 
 export const clientName = (c) => (c ? (c.name || formatPhone(c.phone) || 'عميل بلا اسم') : 'عميل محذوف');
 
+// يقرأ #/requests/<id> (نفس نمط #/matches/<requestId> الموثّق) — يستعمله البحث العام (المرحلة ٦).
+function routeRequestIdParam() {
+  const m = /^#\/requests\/([^/?#]+)/.exec(location.hash || '');
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
 export async function render(container) {
   const ctx = {
     container, query: '',
@@ -33,14 +40,22 @@ export async function render(container) {
   };
   await loadData(ctx);
   buildLayout(ctx);
+  const focusId = routeRequestIdParam();
+  if (focusId) {
+    const target = ctx.requests.find((r) => r.id === focusId);
+    if (target) await openForm(ctx, target);
+    else toast('الطلب غير موجود، أو حُذف', 'error');
+  }
 }
 
 async function loadData(ctx) {
   const [lists, match] = await Promise.all([getLists(), loadMatchingContext({ withMatches: false })]);
   ctx.lists = lists;
   ctx.match = match;
-  ctx.requests = [...match.requests].sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
   ctx.clientsById = new Map(match.clients.map((c) => [c.id, c]));
+  // طلبات العملاء ذوي الأولوية («جادّ» ثم «مهم») أولًا، ثم آخر تعديل كما كان (المرحلة ٨).
+  const priorityOf = (r) => clientPriority(ctx.clientsById.get(r.clientId));
+  ctx.requests = [...match.requests].sort((a, b) => (priorityOf(b) - priorityOf(a)) || (b.updatedAt || '').localeCompare(a.updatedAt || ''));
   ctx.counts = new Map(ctx.requests.map((r) => [r.id, candidatesFor(r, match, { minScore: match.settings.minScore }).length]));
 }
 
@@ -158,8 +173,8 @@ function renderList(ctx) {
   const body = el('tbody', {}, items.map((r) => {
     const client = ctx.clientsById.get(r.clientId);
     const n = ctx.counts.get(r.id) || 0;
-    return el('tr', { onClick: () => openForm(ctx, r) },
-      el('td', { class: 'strong', text: clientName(client) }),
+    return el('tr', { class: `row-priority-${clientPriority(client)}`, onClick: () => openForm(ctx, r) },
+      el('td', { class: 'strong' }, clientName(client), sourceBadge(r.referralSource)),
       el('td', { text: typeLabel(ctx.lists, r.type) }),
       el('td', { text: labelFor(ENUMS.purposes, r.purpose) }),
       el('td', { text: r.city || '—' }),
@@ -242,6 +257,7 @@ async function openForm(ctx, existing) {
   const budgetInput = el('input', { class: 'input', type: 'number', min: '0', step: '1000', value: draft.budgetMax ?? '', onInput: () => updateHints() });
   const areaInput = el('input', { class: 'input', type: 'number', min: '0', step: '10', value: draft.area ?? '', onInput: () => updateHints() });
   const notesInput = el('textarea', { class: 'input', rows: 3, value: draft.notes || '' });
+  const source = sourceField(draft.referralSource, ctx.lists.sources);
 
   /* النطاقات والأحياء */
   let cityZones = [];
@@ -327,6 +343,7 @@ async function openForm(ctx, existing) {
       purpose: purposeSelect.value, budgetMax: num(budgetInput), area: num(areaInput),
       priceFlexibility: num(priceFlexPercent), priceFlexAmount: num(priceFlexAmount),
       areaFlexibility: num(areaFlexPercent), areaFlexAmount: num(areaFlexAmount),
+      referralSource: source.input.value,
     };
     const p = priceFlexFor(probe, settings);
     const a = areaFlexFor(probe, settings);
@@ -354,11 +371,13 @@ async function openForm(ctx, existing) {
       budgetMax: num(budgetInput), area: num(areaInput), notes: notesInput.value, status: statusSelect.value,
       priceFlexibility: num(priceFlexPercent), priceFlexAmount: num(priceFlexAmount),
       areaFlexibility: num(areaFlexPercent), areaFlexAmount: num(areaFlexAmount),
+      referralSource: source.input.value,
     };
     saveBtn.disabled = true;
     try {
       if (isEdit) await repo.requests.update(existing.id, data);
       else await repo.requests.create(data);
+      await rememberSource(data.referralSource);
       modal.close();
       toast(isEdit ? 'تم حفظ التعديلات' : 'أُضيف الطلب', 'success');
       await refresh(ctx);
@@ -413,6 +432,7 @@ async function openForm(ctx, existing) {
         fieldGroup('نطاقات الأحياء', zonesBox, { full: true }),
         fieldGroup('أحياء مفردة', el('div', {}, el('div', { class: 'field-row' }, districtInput, districtList,
           el('button', { type: 'button', class: 'btn btn-sm', text: 'إضافة', onClick: () => addDistrictValue(districtInput.value) })), districtsBox), { full: true }),
+        labeled('المصدر (وسيط الإحالة)', source.node, { hint: 'اختياري — لا يظهر شيء ما لم يُعبَّأ' }),
         labeled('الملاحظات', notesInput, { full: true })),
       el('div', { class: 'form-section' },
         el('h3', { class: 'form-section-title', text: 'مرونة خاصة بهذا الطلب (اختيارية — تتجاوز الإعداد العام)' }),

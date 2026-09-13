@@ -3,7 +3,10 @@
 // init, get, getAll, getByIndex, put, putMany, delete, deleteMany, clear, count, replaceAll.
 
 const DB_NAME = 'motabiq';
-const DB_VERSION = 1;
+// الإصدار ٢ (المرحلة ٧): أضاف مخازن taskLists/tasks/notes.
+// الإصدار ٣ (المرحلة ٨): أضاف مخزن invoices — upgrade() أدناه يُنشئ الناقص فقط
+// ولا يمسّ مخازن أو بيانات موجودة، فلا حاجة لأي ترحيل بيانات يدوي في الحالتين.
+const DB_VERSION = 3;
 
 const STORE_DEFS = {
   clients: { keyPath: 'id', indexes: ['phone', 'stage', 'updatedAt'] },
@@ -15,6 +18,10 @@ const STORE_DEFS = {
   deals: { keyPath: 'id', indexes: ['propertyId', 'clientId', 'date'] },
   images: { keyPath: 'id', indexes: ['entityId'] },
   settings: { keyPath: 'key', indexes: [] },
+  taskLists: { keyPath: 'id', indexes: ['order'] },
+  tasks: { keyPath: 'id', indexes: ['listId', 'done', 'dueAt'] },
+  notes: { keyPath: 'id', indexes: ['pinned', 'archived'] },
+  invoices: { keyPath: 'id', indexes: ['type', 'clientId', 'date'] },
 };
 
 let dbPromise = null;

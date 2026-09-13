@@ -8,7 +8,7 @@
 // وسجل مطابقتها يُكتب بـ externalId لا propertyId.
 
 import { repo } from '../data/repository.js';
-import { ENUMS, labelFor } from '../data/schema.js';
+import { ENUMS, labelFor, clientPriority, clientTagClass } from '../data/schema.js';
 import { getLists, typeLabel, statusLabel, zoneLabel } from '../data/settings.js';
 import { loadMatchingContext, candidatesFor, scoreOne, hardReasonLabel, priceFlexFor } from '../data/matching.js';
 import {
@@ -67,7 +67,9 @@ function requestsInView(ctx) {
   }
   return ctx.match.requests
     .filter((r) => r.status === 'active')
-    .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+    // العملاء ذوو الأولوية («جادّ» ثم «مهم») أولًا، ثم آخر تعديل كما كان (المرحلة ٨).
+    .sort((a, b) => (clientPriority(ctx.clientsById.get(b.clientId)) - clientPriority(ctx.clientsById.get(a.clientId)))
+      || (b.updatedAt || '').localeCompare(a.updatedAt || ''));
 }
 
 /** صفوف طلب واحد: المرشحون فوق الشريط + كل مطابقة محفوظة ولو خرجت من الترشيح. */
@@ -237,6 +239,8 @@ function renderList(ctx) {
     const block = el('section', { class: 'panel match-block' },
       el('div', { class: 'match-head' },
         el('h2', {}, clientName(client),
+          // تصنيفا الأولوية المدمجان يظهران هنا ليُفسّرا تصدُّر هذا الطلب القائمة (المرحلة ٨).
+          ...(client?.tags || []).filter((t) => clientTagClass(t)).map((t) => badge(t, clientTagClass(t))),
           request.status !== 'active' ? badge(labelFor(ENUMS.requestStatuses, request.status), 'badge-warn') : null),
         el('div', { class: 'row' },
           client?.phone ? el('a', { class: 'tel', href: `tel:${client.phone}`, text: formatPhone(client.phone) }) : null,

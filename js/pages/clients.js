@@ -1,8 +1,9 @@
 // صفحة العملاء: الأدوار المتعددة، المراحل، التصنيفات، وسجل التواصل بمواعيد المتابعة.
 
 import { repo, ValidationError } from '../data/repository.js';
-import { ENUMS, labelFor } from '../data/schema.js';
+import { ENUMS, labelFor, clientTagClass, clientPriority } from '../data/schema.js';
 import { getLists, addClientTag, typeLabel, statusLabel } from '../data/settings.js';
+import { sourceField, rememberSource, sourceBadge } from '../util/source-field.js';
 import {
   el, clear, labeled, fieldGroup, selectEl, checkbox, badge, openModal, confirmDialog,
   promptDialog, toast, emptyState, debounce,
@@ -18,6 +19,12 @@ const GROUPS = [['role', 'الدور'], ['stage', 'المرحلة'], ['tag', 'ا
 const VALUES = { role: (c) => c.roles || [], stage: (c) => [c.stage], tag: (c) => c.tags || [] };
 const STAGE_STYLE = { new: '', contacted: 'badge-accent', negotiating: 'badge-warn', won: 'badge-ok', closed: '' };
 
+// يقرأ #/clients/<id> (نفس نمط #/matches/<requestId> الموثّق) — يستعمله البحث العام (المرحلة ٦).
+function routeClientId() {
+  const m = /^#\/clients\/([^/?#]+)/.exec(location.hash || '');
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
 export async function render(container) {
   const ctx = {
     container, query: '',
@@ -26,11 +33,18 @@ export async function render(container) {
   };
   await loadData(ctx);
   buildLayout(ctx);
+  const focusId = routeClientId();
+  if (focusId) {
+    const target = ctx.clients.find((c) => c.id === focusId);
+    if (target) await openForm(ctx, target);
+    else toast('العميل غير موجود، أو حُذف', 'error');
+  }
 }
 
 async function loadData(ctx) {
   const [clients, properties, lists] = await Promise.all([repo.clients.list(), repo.properties.list(), getLists()]);
-  clients.sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+  // الأولوية أولًا («جادّ» ثم «مهم»)، ثم آخر تعديل كما كان (المرحلة ٨).
+  clients.sort((a, b) => (clientPriority(b) - clientPriority(a)) || (b.updatedAt || '').localeCompare(a.updatedAt || ''));
   ctx.clients = clients;
   ctx.properties = properties;
   ctx.lists = lists;
@@ -152,12 +166,12 @@ function renderList(ctx) {
     return;
   }
   const head = el('tr', {}, ['الاسم', 'الجوال', 'الأدوار', 'المرحلة', 'التصنيفات', 'آخر تواصل', 'المتابعة القادمة'].map((t) => el('th', { text: t })));
-  const body = el('tbody', {}, items.map((c) => el('tr', { onClick: () => openDetail(ctx, c.id) },
-    el('td', { class: 'strong' }, c.name || el('span', { class: 'muted', text: 'بلا اسم' })),
+  const body = el('tbody', {}, items.map((c) => el('tr', { class: `row-priority-${clientPriority(c)}`, onClick: () => openDetail(ctx, c.id) },
+    el('td', { class: 'strong' }, c.name || el('span', { class: 'muted', text: 'بلا اسم' }), sourceBadge(c.referralSource)),
     el('td', {}, phoneLink(c.phone)),
     el('td', {}, (c.roles || []).map((r) => labelFor(ENUMS.clientRoles, r)).join('، ') || '—'),
     el('td', {}, stageBadge(c.stage)),
-    el('td', {}, (c.tags || []).length ? c.tags.map((t) => badge(t)) : '—'),
+    el('td', {}, (c.tags || []).length ? c.tags.map((t) => badge(t, clientTagClass(t))) : '—'),
     el('td', {}, lastContactNode(c)),
     el('td', {}, followUpNode(c)))));
   area.append(el('div', { class: 'table-wrap' }, el('table', { class: 'table' }, el('thead', {}, head), body)));
@@ -179,7 +193,8 @@ async function openDetail(ctx, clientId) {
       el('div', { class: 'badges' },
         stageBadge(client.stage),
         ...(client.roles || []).map((r) => badge(labelFor(ENUMS.clientRoles, r), 'badge-accent')),
-        ...(client.tags || []).map((t) => badge(t))),
+        ...(client.tags || []).map((t) => badge(t, clientTagClass(t))),
+        sourceBadge(client.referralSource)),
       client.notes ? el('p', { class: 'muted', text: client.notes }) : null,
       el('div', { class: 'row' },
         el('span', { class: 'small muted' }, 'آخر تواصل: ', lastContactNode(client)),
@@ -267,6 +282,7 @@ async function openDetail(ctx, clientId) {
           if (impact.properties) lines.push(`عقاراته (${impact.properties}) تبقى في المخزون ويصبح مالكها غير مربوط.`);
           if (impact.requests) lines.push(`طلباته (${impact.requests}) تُحذف هي ومطابقاتها.`);
           if (impact.deals) lines.push(`صفقاته (${impact.deals}) تبقى محفوظة بلا عميل مربوط (حفظًا لتاريخ الصفقات).`);
+          if (impact.invoices) lines.push(`فواتيره وعروض أسعاره (${impact.invoices}) تبقى كما طُبعت باسمه وجواله المحفوظين فيها.`);
           const ok = await confirmDialog({
             title: 'حذف العميل', message: lines.join(' '), confirmText: 'حذف نهائي', danger: true,
           });
@@ -306,6 +322,7 @@ async function openForm(ctx, existing) {
   const rolesBox = el('div', { class: 'check-group' }, ENUMS.clientRoles.map((r) => checkbox(r.label, { name: 'role', value: r.key, checked: (draft.roles || []).includes(r.key) })));
   const stageSelect = selectEl({ options: ENUMS.clientStages.map((s) => ({ value: s.key, label: s.label })), value: draft.stage || 'new' });
   const notesInput = el('textarea', { class: 'input', rows: 3, value: draft.notes || '' });
+  const source = sourceField(draft.referralSource, ctx.lists.sources);
 
   const selectedTags = new Set(draft.tags || []);
   const tagsBox = el('div', { class: 'chips' });
@@ -314,7 +331,7 @@ async function openForm(ctx, existing) {
     for (const tag of ctx.lists.clientTags) {
       const active = selectedTags.has(tag);
       tagsBox.append(el('button', {
-        type: 'button', class: `chip${active ? ' active' : ''}`, text: tag,
+        type: 'button', class: `chip${active ? ' active' : ''} ${clientTagClass(tag)}`.trim(), text: tag,
         onClick: () => { if (active) selectedTags.delete(tag); else selectedTags.add(tag); renderTags(); },
       }));
     }
@@ -339,6 +356,7 @@ async function openForm(ctx, existing) {
       name: nameInput.value, phone: phoneInput.value, phone2: phone2Input.value,
       roles: [...rolesBox.querySelectorAll('input:checked')].map((i) => i.value),
       stage: stageSelect.value, tags: [...selectedTags], notes: notesInput.value,
+      referralSource: source.input.value,
     };
     saveBtn.disabled = true;
     try {
@@ -351,6 +369,7 @@ async function openForm(ctx, existing) {
       }
       if (isEdit) await repo.clients.update(existing.id, data);
       else await repo.clients.create(data);
+      await rememberSource(data.referralSource);
       modal.close();
       toast(isEdit ? 'تم حفظ التعديلات' : 'تمت إضافة العميل', 'success');
       await refresh(ctx);
@@ -373,6 +392,7 @@ async function openForm(ctx, existing) {
         labeled('المرحلة', stageSelect),
         fieldGroup('الأدوار', rolesBox, { full: true }),
         fieldGroup('التصنيفات', tagsBox, { full: true }),
+        labeled('المصدر (وسيط الإحالة)', source.node, { hint: 'اختياري — لا يظهر شيء ما لم يُعبَّأ' }),
         labeled('الملاحظات', notesInput, { full: true }))),
     footer: [
       el('button', { type: 'button', class: 'btn btn-ghost', text: 'إلغاء', onClick: () => modal.close() }),
