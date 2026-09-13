@@ -8,6 +8,7 @@ import { repo } from '../data/repository.js';
 import { ENUMS, labelFor, invoiceTotal } from '../data/schema.js';
 import { getLists, getCompleteness, getFollowUpSettings, typeLabel, statusLabel } from '../data/settings.js';
 import { tourStats } from './tours.js';
+import { buildPriceIndex } from '../util/price-stats.js';
 import { el, clear, badge } from '../util/dom.js';
 import { formatNumber, formatSAR, daysBetween, relativeDays } from '../util/format.js';
 import { formatPhone, toInternational } from '../util/phone.js';
@@ -217,6 +218,9 @@ function buildLayout(container, data) {
       el('dt', { text: 'معدل التحويل (عقار ← صفقة)' }), el('dd', { text: deal.conversion == null ? '—' : `${formatNumber(deal.conversion)}٪` })),
     el('div', { class: 'muted small', text: 'صفقات العروض الخارجية (بلا عقار من مخزونك) تدخل الإيراد والعمولة أعلاه، ولا تدخل معدل التحويل.' })));
 
+  /* مؤشر السوق من بياناتك (المرحلة ١١) */
+  grid.append(panel('مؤشر سعر المتر', null, ...priceSection({ properties, externals, deals, lists })));
+
   /* الفواتير وعروض الأسعار (المرحلة ١٠) */
   grid.append(panel('الفواتير وعروض الأسعار', null, ...invoiceSection(invoices)));
 
@@ -231,6 +235,29 @@ function buildLayout(container, data) {
  * مؤشرات المستندات المالية: الفواتير وعروض الأسعار منفصلان (عرض السعر ليس إيرادًا).
  * الإجمالي يُحسب من البنود لحظة العرض بـinvoiceTotal — لا مجموع مخزَّن (القسم ١٦).
  */
+/**
+ * وسيط سعر المتر لكل (حي × نوع) من مخزونك وعروضك وصفقاتك — لا مصدر خارجي.
+ * يُذكر حجم العيّنة دائمًا: رقمٌ من عيّنتين ليس كرقمٍ من عشرين، والقرار قرارك.
+ */
+function priceSection({ properties, externals, deals, lists }) {
+  const index = buildPriceIndex({ properties, externals, deals, minSample: 2 });
+  if (!index.rows.length) {
+    return [el('div', { class: 'muted small', text: 'لا عيّنة كافية بعد — يلزم عقاران على الأقل بسعر ومساحة في الحي والنوع نفسه.' })];
+  }
+  const rows = index.rows.slice(0, 10).map((r) => el('tr', {},
+    el('td', { text: r.district || r.city || '—' }),
+    el('td', { text: typeLabel(lists, r.type) }),
+    el('td', { class: 'num strong', text: `${formatNumber(Math.round(r.median))}` }),
+    el('td', { class: 'num', text: formatNumber(r.count) }),
+    el('td', { class: 'small muted', text: [r.sources.deal ? `${r.sources.deal} صفقة` : '', r.sources.external ? `${r.sources.external} خارجي` : ''].filter(Boolean).join(' · ') || 'مخزونك' })));
+  return [
+    el('div', { class: 'table-wrap' }, el('table', { class: 'table' },
+      el('thead', {}, el('tr', {}, ['الحي', 'النوع', 'وسيط سعر المتر', 'العيّنة', 'المصدر'].map((t) => el('th', { text: t })))),
+      el('tbody', {}, rows))),
+    el('div', { class: 'muted small', text: 'الوسيط لا المتوسط (فلا يفسده عرض شاذّ واحد). والصفقات المنجزة تدخل بسعرها النهائي لا المطلوب.' }),
+  ];
+}
+
 function invoiceSection(invoices) {
   if (!invoices.length) {
     return [el('div', { class: 'muted small', text: 'لا فواتير ولا عروض أسعار بعد.' }),

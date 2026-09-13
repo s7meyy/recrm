@@ -11,10 +11,11 @@
 import { repo } from '../data/repository.js';
 import { ENUMS, labelFor } from '../data/schema.js';
 import { getLists, typeLabel, getCompany, getPublishSettings, setPublishSettings } from '../data/settings.js';
-import { el, clear, labeled, checkbox, badge, toast, emptyState, confirmDialog, debounce } from '../util/dom.js';
+import { el, clear, labeled, selectEl, checkbox, badge, toast, emptyState, confirmDialog, debounce, openModal } from '../util/dom.js';
 import { formatSAR, formatArea, formatDateTime } from '../util/format.js';
 import { mapsLink } from '../util/location.js';
 import { matchesQuery } from '../util/arabic.js';
+import { newId } from '../data/repository.js';
 
 const PREVIEW_LIMIT = 400; // حد أعلى معقول لعدد العروض في لقطة واحدة
 
@@ -25,8 +26,8 @@ export async function render(container) {
 }
 
 async function loadData(ctx) {
-  const [properties, lists, company, publish] = await Promise.all([
-    repo.properties.list(), getLists(), getCompany(), getPublishSettings(),
+  const [properties, lists, company, publish, clients] = await Promise.all([
+    repo.properties.list(), getLists(), getCompany(), getPublishSettings(), repo.clients.list(),
   ]);
   // المعروض للاختيار: المخزون المعتمد فقط (نفس نطاق صفحة العقارات) — لا التقاطات غير معتمدة.
   ctx.properties = properties
@@ -35,6 +36,7 @@ async function loadData(ctx) {
   ctx.lists = lists;
   ctx.company = company;
   ctx.publish = publish;
+  ctx.clients = clients; // لازم لاختيار عميل القائمة المخصّصة (المرحلة ١١)
   ctx.selected = new Set(publish.listingIds);
   ctx.publishedRefs = new Map(publish.publishedRefs || []);
 }
@@ -55,10 +57,12 @@ function build(ctx) {
   const grid = el('div', { class: 'settings-grid' });
   ctx.nodes.settingsPanel = panelBody(grid, 'إعدادات النشر', 'مفتاح النشر يُضبط مرة واحدة، ويبقى محفوظًا في هذا الجهاز فقط.');
   ctx.nodes.statusPanel = panelBody(grid, 'الحالة', 'آخر نشر وما هو ظاهر للعملاء الآن.');
+  ctx.nodes.listsPanel = panelBody(grid, 'قوائم مخصّصة لعملاء', 'اختر عروضًا لعميل بعينه فيصله رابط خاص يعرض قائمته وحده — ويخبرك العدّاد هل فتحه.');
   ctx.container.append(grid);
 
   drawSettings(ctx);
   drawStatus(ctx);
+  drawClientLists(ctx);
 
   /* اختيار العقارات */
   ctx.nodes.count = el('span', { class: 'count' });
@@ -306,4 +310,143 @@ async function doPublish(ctx, btn) {
     btn.textContent = original;
     btn.disabled = false;
   }
+}
+
+
+/* ===== قوائم مخصّصة لعملاء (المرحلة ١١) ===== */
+
+const CLIENT_LIST_API = '/api/client-list';
+
+async function clientListCall(options = {}) {
+  const res = await fetch(CLIENT_LIST_API, { credentials: 'same-origin', ...options });
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 401) throw new Error('انتهت جلستك — حدّث الصفحة وسجّل الدخول ثم أعد المحاولة');
+  if (!res.ok) throw new Error(data.error || `تعذر الاتصال (${res.status})`);
+  return data;
+}
+
+async function drawClientLists(ctx) {
+  const body = ctx.nodes.listsPanel;
+  clear(body);
+  const listBox = el('div');
+
+  const draw = async () => {
+    clear(listBox);
+    let lists = [];
+    try {
+      lists = (await clientListCall()).lists || [];
+    } catch (err) {
+      listBox.append(el('p', { class: 'muted small', text: `تعذر قراءة القوائم: ${err.message}` }));
+      return;
+    }
+    if (!lists.length) { listBox.append(el('p', { class: 'muted small', text: 'لا قوائم مخصّصة بعد.' })); return; }
+    listBox.append(el('div', { class: 'table-wrap' }, el('table', { class: 'table' },
+      el('thead', {}, el('tr', {}, ['العميل', 'العروض', 'الفتحات', 'آخر فتح', ''].map((t) => el('th', { text: t })))),
+      el('tbody', {}, lists.map((l) => {
+        const url = `${location.origin}/offers/list.html?c=${l.slug}`;
+        return el('tr', {},
+          el('td', { class: 'strong', text: l.clientName || l.title || '—' }),
+          el('td', { text: String((l.refs || []).length) }),
+          el('td', {}, l.opens ? badge(`${l.opens}`, 'badge-ok') : el('span', { class: 'muted', text: 'لم يُفتح بعد' })),
+          el('td', { text: l.lastOpenAt ? formatDateTime(l.lastOpenAt) : '—' }),
+          el('td', {}, el('div', { class: 'row' },
+            el('a', { class: 'btn btn-ghost btn-sm', href: url, target: '_blank', rel: 'noopener', text: '↗' , title: 'فتح' }),
+            el('button', {
+              type: 'button', class: 'btn btn-ghost btn-sm', text: '📋', title: 'نسخ الرابط',
+              onClick: async () => {
+                try { await navigator.clipboard.writeText(url); toast('نُسخ رابط القائمة', 'success'); }
+                catch (_) { toast(url, 'info', 8000); }
+              },
+            }),
+            el('a', {
+              class: 'btn btn-ghost btn-sm', text: '💬', title: 'إرسال في واتساب', target: '_blank', rel: 'noopener',
+              href: `https://wa.me/?text=${encodeURIComponent(url)}`,
+            }),
+            el('button', {
+              type: 'button', class: 'btn btn-ghost btn-sm', text: '🗑️', title: 'حذف القائمة',
+              onClick: async () => {
+                const ok = await confirmDialog({ title: 'حذف القائمة', message: 'حذف هذه القائمة؟ الرابط سيتوقف فورًا.', confirmText: 'حذف', danger: true });
+                if (!ok) return;
+                await clientListCall({ method: 'DELETE', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ slug: l.slug }) });
+                await draw();
+              },
+            }))));
+      })))));
+  };
+
+  body.append(
+    el('div', { class: 'row' },
+      el('button', {
+        type: 'button', class: 'btn btn-primary', text: '+ قائمة لعميل',
+        onClick: () => openClientListForm(ctx, draw),
+      }),
+      el('button', { type: 'button', class: 'btn btn-ghost', text: 'تحديث', onClick: () => draw() })),
+    el('p', { class: 'muted small', text: 'القائمة تشير إلى عروض منشورة أصلًا — انشر أولًا ثم أنشئ القائمة.' }),
+    listBox);
+  await draw();
+}
+
+function openClientListForm(ctx, onSaved) {
+  const published = [...ctx.publishedRefs.entries()]
+    .map(([id, ref]) => ({ ref, property: ctx.properties.find((p) => p.id === id) }))
+    .filter((x) => x.property);
+
+  if (!published.length) {
+    toast('لا عروض منشورة بعد — اختر عقارات واضغط «نشر الآن» أولًا', 'error', 6000);
+    return;
+  }
+
+  const clientSelect = selectEl({
+    options: [...ctx.clients].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ar'))
+      .map((c) => ({ value: c.id, label: c.name || c.phone || 'عميل بلا اسم' })),
+    value: '', placeholder: 'اختر العميل (أو اكتب الاسم يدويًا)',
+    onChange: () => {
+      const c = ctx.clients.find((x) => x.id === clientSelect.value);
+      if (c) nameInput.value = c.name || c.phone || '';
+    },
+  });
+  const nameInput = el('input', { class: 'input', type: 'text', placeholder: 'الاسم كما يظهر في الصفحة' });
+  const noteInput = el('textarea', { class: 'input', rows: 2, placeholder: 'سطر ترحيبي يظهر للعميل (اختياري)' });
+  const picks = new Set();
+  const box = el('div', { class: 'check-group' }, published.map(({ ref, property }) => checkbox(
+    `${typeLabel(ctx.lists, property.type)} — ${[property.district, property.city].filter(Boolean).join('، ')} · ${formatSAR(property.price)}`,
+    { value: ref, onChange: (e) => { if (e.target.checked) picks.add(ref); else picks.delete(ref); } },
+  )));
+
+  const saveBtn = el('button', { type: 'button', class: 'btn btn-primary', text: 'أنشئ الرابط' });
+  saveBtn.addEventListener('click', async () => {
+    if (!picks.size) { toast('اختر عرضًا واحدًا على الأقل', 'error'); return; }
+    saveBtn.disabled = true;
+    try {
+      // رمز عشوائي غير قابل للتخمين — هو وحده ما يحمي القائمة (لا كلمة سر للعميل).
+      const slug = newId().replace(/-/g, '').slice(0, 16);
+      await clientListCall({
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ slug, refs: [...picks], clientName: nameInput.value.trim(), note: noteInput.value.trim() }),
+      });
+      modal.close();
+      toast('أُنشئت القائمة — انسخ رابطها من الجدول', 'success', 5000);
+      await onSaved();
+    } catch (err) {
+      toast(err.message, 'error', 6000);
+    } finally {
+      saveBtn.disabled = false;
+    }
+  });
+
+  const modal = openModal({
+    title: 'قائمة عروض لعميل',
+    size: 'wide',
+    body: el('div', {},
+      el('div', { class: 'form-grid' },
+        labeled('العميل', clientSelect),
+        labeled('الاسم في الصفحة', nameInput),
+        labeled('سطر ترحيبي', noteInput, { full: true })),
+      el('div', { class: 'field field-full' },
+        el('span', { class: 'field-label', text: 'العروض المنشورة — اختر ما يخصّ هذا العميل' }), box)),
+    footer: [
+      el('button', { type: 'button', class: 'btn btn-ghost', text: 'إلغاء', onClick: () => modal.close() }),
+      saveBtn,
+    ],
+  });
 }

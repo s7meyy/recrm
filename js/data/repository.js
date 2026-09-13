@@ -165,6 +165,7 @@ const PREPARE = {
     rec.title = trim(rec.title);
     rec.order = toNumberOrNull(rec.order) ?? 0;
     rec.done = !!rec.done;
+    rec.repeat = trim(rec.repeat) || 'none';
     rec.searchKey = buildSearchKey([rec.title, rec.notes]);
   },
   notes(rec) {
@@ -221,6 +222,7 @@ const VALIDATE = {
     if (!inEnum(ENUMS.externalStatuses, rec.status)) errors.push('حالة العرض الخارجي غير معروفة');
   },
   tasks(rec, errors) {
+    if (!inEnum(ENUMS.taskRepeats, rec.repeat)) errors.push('نوع التكرار غير معروف');
     if (rec.linkType && !inEnum(ENUMS.linkTypes, rec.linkType)) errors.push('نوع الربط غير معروف');
     if (rec.linkType && !rec.linkId) errors.push('يلزم تحديد السجل المرتبط');
   },

@@ -28,6 +28,54 @@
   --fs-price: 19px;
 }
 
+/* الوضع الليلي (المرحلة ١١): إعادة تعريف الرموز وحدها — لا قاعدة تخطيط تتكرر.
+   يُفعَّل بسمة data-theme على <html>: 'dark' أو 'light'، وبلا سمة يتبع تفضيل النظام. */
+:root[data-theme="dark"] {
+  --bg: #121714;
+  --surface: #1a211d;
+  --surface-2: #232b27;
+  --line: #2e3833;
+  --line-strong: #46534c;
+  --text: #e8eeea;
+  --muted: #9fb0a7;
+  --accent: #3fa88a;
+  --accent-hover: #4dbd9c;
+  --accent-soft: #17342c;
+  --accent-text: #8fe0c6;
+  --warn: #e0b062;
+  --warn-soft: #3a2f18;
+  --danger: #e58272;
+  --danger-soft: #3d211c;
+  --ok: #63c98a;
+  --ok-soft: #17331f;
+  --shadow-modal: 0 20px 60px rgba(0, 0, 0, 0.6);
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121714;
+    --surface: #1a211d;
+    --surface-2: #232b27;
+    --line: #2e3833;
+    --line-strong: #46534c;
+    --text: #e8eeea;
+    --muted: #9fb0a7;
+    --accent: #3fa88a;
+    --accent-hover: #4dbd9c;
+    --accent-soft: #17342c;
+    --accent-text: #8fe0c6;
+    --warn: #e0b062;
+    --warn-soft: #3a2f18;
+    --danger: #e58272;
+    --danger-soft: #3d211c;
+    --ok: #63c98a;
+    --ok-soft: #17331f;
+    --shadow-modal: 0 20px 60px rgba(0, 0, 0, 0.6);
+    color-scheme: dark;
+  }
+}
+
 * { box-sizing: border-box; }
 
 html {

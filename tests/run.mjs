@@ -1,0 +1,85 @@
+// مشغّل كل اختبارات كسّاب.
+//   node tests/run.mjs            كل الحزم
+//   node tests/run.mjs gate vault تصفية بالاسم
+//
+// يشغّل خادمَي اختبار: مقفلًا (بوابة دخول) ومفتوحًا (بلا بوابة)، ثم كل حزمة على الخادم المناسب،
+// ويجمع نتائج أسطر PASS/FAIL. يخرج بحالة غير صفرية إن فشل شيء — فيصلح للتشغيل الآلي.
+
+import { spawn } from 'node:child_process';
+import { setTimeout as sleep } from 'node:timers/promises';
+
+const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '');
+const LOCKED = 8234;
+const OPEN = 8235;
+
+// كل حزمة: الملف، والخادم الذي تعمل عليه (مقفل/مفتوح)
+const SUITES = [
+  ['gate-unit.mjs', null],            // بلا متصفح ولا خادم
+  ['push-unit.mjs', null],
+  ['app-pages.mjs', OPEN],
+  ['sidebar-order.mjs', OPEN],
+  ['source-and-priority.mjs', OPEN],
+  ['invoices.mjs', OPEN],
+  ['invoices-lifecycle.mjs', OPEN],
+  ['today-and-tools.mjs', OPEN],
+  ['gate-and-publish.mjs', LOCKED],
+  ['rename-and-vault.mjs', LOCKED],
+  ['offer-pwa-push.mjs', LOCKED],
+  ['client-links.mjs', LOCKED],
+];
+
+function startServer(port, open) {
+  const child = spawn(process.execPath, ['--import', `${ROOT}/tests/loader.mjs`, `${ROOT}/tests/server.mjs`], {
+    env: { ...process.env, TEST_PORT: String(port), TEST_OPEN: open ? '1' : '' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  child.stderr.on('data', (b) => { const t = String(b); if (!t.includes('ExperimentalWarning')) process.stderr.write(t); });
+  return child;
+}
+
+async function waitFor(port) {
+  for (let i = 0; i < 60; i++) {
+    try { await fetch(`http://127.0.0.1:${port}/offers/`); return true; } catch (_) { await sleep(250); }
+  }
+  throw new Error(`تعذر تشغيل خادم الاختبار على ${port}`);
+}
+
+function runSuite(file, port) {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, ['--import', `${ROOT}/tests/loader.mjs`, `${ROOT}/tests/${file}`], {
+      env: { ...process.env, TEST_URL: port ? `http://127.0.0.1:${port}` : undefined },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let out = '';
+    child.stdout.on('data', (b) => { out += b; });
+    child.stderr.on('data', (b) => { out += b; });
+    child.on('close', (code) => {
+      const pass = (out.match(/^PASS/gm) || []).length;
+      const fail = (out.match(/^FAIL/gm) || []).length;
+      resolve({ file, pass, fail, code, out });
+    });
+  });
+}
+
+const filter = process.argv.slice(2);
+const wanted = SUITES.filter(([f]) => !filter.length || filter.some((k) => f.includes(k)));
+
+const locked = startServer(LOCKED, false);
+const open = startServer(OPEN, true);
+await Promise.all([waitFor(LOCKED), waitFor(OPEN)]);
+
+let totalPass = 0;
+let totalFail = 0;
+for (const [file, port] of wanted) {
+  const r = await runSuite(file, port);
+  totalPass += r.pass;
+  totalFail += r.fail;
+  const bad = r.fail > 0 || (r.code !== 0 && r.pass === 0);
+  console.log(`${bad ? '✗' : '✓'} ${file.padEnd(26)} ${r.pass} PASS  ${r.fail} FAIL`);
+  if (bad) console.log(r.out.split('\n').filter((l) => /^FAIL|Error|error/.test(l)).slice(0, 6).map((l) => `    ${l}`).join('\n'));
+}
+
+locked.kill();
+open.kill();
+console.log(`\nالمجموع: ${totalPass} ناجح · ${totalFail} فاشل`);
+process.exit(totalFail ? 1 : 0);

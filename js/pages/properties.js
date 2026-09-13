@@ -18,6 +18,11 @@ import { parseLocation, isShortMapLink, mapsLink, locationToText } from '../util
 import { LISTING_GROUPS, LISTING_VALUES, listingFilterOptions } from '../util/property-filters.js';
 import { sourceField, rememberSource, sourceBadge } from '../util/source-field.js';
 import { announceMatches } from '../util/match-alert.js';
+import { getTemplates, getCompany } from '../data/settings.js';
+import { getCurrentUser } from '../data/repository.js';
+import { renderTemplate, templateValues, whatsappLink } from '../util/templates.js';
+import { buildPriceIndex, comparePrice } from '../util/price-stats.js';
+import { printProperty } from '../util/property-print.js';
 
 // "الحالة" فرز خاص بالعقارات (بلا معنى للعروض الخارجية) فيبقى معرَّفًا هنا؛ بقية المجموعات
 // مشتركة مع خريطة العقارات عبر util/property-filters.js فلا تنحرف الصفحتان عن بعضهما.
@@ -52,8 +57,9 @@ export async function render(container) {
 }
 
 async function loadData(ctx) {
-  const [properties, clients, lists, customFields, completeness] = await Promise.all([
+  const [properties, clients, lists, customFields, completeness, externals, deals] = await Promise.all([
     repo.properties.list(), repo.clients.list(), getLists(), getCustomFields(), getCompleteness(),
+    repo.externalListings.list(), repo.deals.list(),
   ]);
   // العقارات بانتظار المعالجة/الاعتماد (المرحلة ٢) لا تظهر هنا ولا تدخل أي مطابقة — راجعها من صفحة الجولات الميدانية.
   const approved = properties.filter((p) => p.captureStatus === 'approved');
@@ -64,6 +70,8 @@ async function loadData(ctx) {
   ctx.lists = lists;
   ctx.customFields = customFields;
   ctx.completeness = completeness;
+  // مؤشر سعر المتر من بياناتك أنت (المرحلة ١١): المخزون المعتمد + العروض النشطة + الصفقات.
+  ctx.priceIndex = buildPriceIndex({ properties, externals, deals });
 }
 
 async function refresh(ctx) {
@@ -237,7 +245,7 @@ function renderGrid(ctx, items) {
         el('div', { class: 'card-meta' },
           el('span', {}, formatArea(p.area)),
           el('span', {}, owner || 'بلا مالك')),
-        el('div', { class: 'card-meta' }, completenessBadge(ctx, p), sourceBadge(p.referralSource)))));
+        el('div', { class: 'card-meta' }, completenessBadge(ctx, p), sourceBadge(p.referralSource), ppmBadge(ctx, p)))));
   }
   return grid;
 }
@@ -351,18 +359,50 @@ function shareLink(p) {
   return `${location.origin}${location.pathname}#/properties/${p.id}`;
 }
 
-function openShareMenu(ctx, p) {
+/** شارة سعر المتر وموضعه من وسيط الحي — لا تظهر إن نقص سعر أو مساحة. */
+function ppmBadge(ctx, p) {
+  const cmp = comparePrice(p, ctx.priceIndex);
+  if (!cmp) return null;
+  const ppm = `${formatNumber(Math.round(cmp.ppm))} ريال/م²`;
+  return badge(cmp.median == null ? ppm : `${ppm} · ${cmp.label}`, cmp.tone || 'badge-outline');
+}
+
+let modalRef = null; // نافذة المشاركة الحالية — تُغلق قبل فتح نافذة الطباعة
+
+async function openShareMenu(ctx, p) {
   const link = shareLink(p);
   const fullText = `${shareSummary(ctx, p)}\n${link}`;
+  // القوالب (المرحلة ١١): رسالة جاهزة معبّأة ببيانات هذا العقار وصاحبه، تُرسل بنقرة.
+  const [templates, company] = await Promise.all([getTemplates(), getCompany()]);
+  const owner = ctx.clients.find((c) => c.id === p.ownerId) || null;
+  const values = templateValues({ client: owner, property: p, lists: ctx.lists, user: getCurrentUser(), company, link });
+  const templatesBox = el('div', { class: 'share-menu-templates' },
+    el('div', { class: 'field-label', text: 'رسالة جاهزة' }),
+    templates.map((t) => el('a', {
+      class: 'btn btn-ghost', target: '_blank', rel: 'noopener noreferrer',
+      href: whatsappLink(renderTemplate(t.body, values), owner?.phone || ''),
+      text: `💬 ${t.label}`,
+      title: owner?.phone ? `تُرسل إلى ${owner.name || owner.phone}` : 'تختار المستلم داخل واتساب',
+    })));
+
   const body = el('div', { class: 'share-menu' },
+    templatesBox,
+    el('div', { class: 'field-label', text: 'أو مشاركة مباشرة' }),
     el('a', {
       class: 'btn btn-ghost', href: `https://wa.me/?text=${encodeURIComponent(fullText)}`,
-      target: '_blank', rel: 'noopener noreferrer', text: '💬 واتساب',
+      target: '_blank', rel: 'noopener noreferrer', text: '💬 واتساب (ملخّص)',
     }),
     typeof navigator.share === 'function' ? el('button', {
       type: 'button', class: 'btn btn-ghost', text: '📤 مشاركة عبر تطبيقات أخرى',
       onClick: () => { navigator.share({ title: 'عقار', text: shareSummary(ctx, p), url: link }).catch(() => {}); },
     }) : null,
+    el('button', {
+      type: 'button', class: 'btn btn-ghost', text: '🖨️ بطاقة العقار (PDF / طباعة)',
+      onClick: async () => {
+        modalRef?.close();
+        await printProperty(p, { lists: ctx.lists, company });
+      },
+    }),
     el('button', {
       type: 'button', class: 'btn btn-ghost', text: '🔗 نسخ الرابط',
       onClick: async () => {
@@ -375,7 +415,7 @@ function openShareMenu(ctx, p) {
       },
     }),
   );
-  openModal({ title: 'مشاركة العقار', body });
+  modalRef = openModal({ title: 'مشاركة العقار', body });
 }
 
 async function openForm(ctx, existing) {

@@ -6,6 +6,7 @@ import { getSidebarOrder, orderedPageKeys } from '../data/settings.js';
 
 /** الترتيب الافتراضي = ترتيب الروابط في index.html نفسه. المفتاح هو اسم المسار في ROUTES. */
 export const SIDEBAR_PAGES = [
+  { key: 'today', label: 'يومي', icon: '☀️' },
   { key: 'dashboard', label: 'الداشبورد', icon: '📊' },
   { key: 'properties', label: 'العقارات', icon: '🏠' },
   { key: 'map', label: 'خريطة العقارات', icon: '🗺️' },

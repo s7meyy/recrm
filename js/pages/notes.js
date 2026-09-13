@@ -4,6 +4,7 @@
 
 import { repo } from '../data/repository.js';
 import { el, clear, badge, selectEl, openModal, confirmDialog, toast, emptyState } from '../util/dom.js';
+import { micButton } from '../util/voice.js';
 import { relativeDays } from '../util/format.js';
 import { clientName } from './requests.js';
 
@@ -131,7 +132,9 @@ function quickCapture(ctx) {
     await refresh(ctx);
   };
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); save(); } });
-  return el('div', { class: 'note-quick-capture' }, input, el('button', { type: 'button', class: 'btn btn-primary', text: 'حفظ', onClick: save }));
+  // زر الإملاء (المرحلة ١١) يظهر فقط حين يدعمه المتصفح.
+  return el('div', { class: 'note-quick-capture' }, input,
+    el('div', { class: 'row' }, micButton(input), el('button', { type: 'button', class: 'btn btn-primary', text: 'حفظ', onClick: save })));
 }
 
 function buildLayout(ctx) {

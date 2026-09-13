@@ -9,8 +9,10 @@ import { revokeImageUrls } from './data/images.js';
 import { startFollowUpAlerts } from './util/follow-up-alerts.js';
 import { initGlobalSearch } from './util/global-search.js';
 import { applySidebarOrder } from './util/sidebar.js';
+import { applyTheme } from './util/theme.js';
 import { el, clear, toast } from './util/dom.js';
 import { daysWord } from './util/format.js';
+import * as todayPage from './pages/today.js';
 import * as dashboardPage from './pages/dashboard.js';
 import * as propertiesPage from './pages/properties.js';
 import * as mapPage from './pages/map.js';
@@ -27,6 +29,7 @@ import * as settingsPage from './pages/settings.js';
 
 // سجل الصفحات: الصفحات اللاحقة تُضاف هنا وفي القائمة الجانبية في index.html.
 const ROUTES = {
+  today: { title: 'يومي', render: todayPage.render },
   dashboard: { title: 'الداشبورد', render: dashboardPage.render },
   properties: { title: 'العقارات', render: propertiesPage.render },
   map: { title: 'خريطة العقارات', render: mapPage.render },
@@ -41,7 +44,7 @@ const ROUTES = {
   notes: { title: 'الأفكار والملاحظات', render: notesPage.render },
   settings: { title: 'الإعدادات', render: settingsPage.render },
 };
-const DEFAULT_ROUTE = 'properties';
+const DEFAULT_ROUTE = 'today'; // صفحة «يومي» هي المقصد الأول عند الفتح (المرحلة ١١)
 
 let bannerDismissed = false;
 let renderToken = 0;
@@ -189,6 +192,7 @@ async function init() {
     toast(e.reason?.message || 'حدث خطأ غير متوقع', 'error');
   });
 
+  applyTheme((await getUI()).theme || 'system'); // قبل أول رسم كي لا يومض البياض
   if (!location.hash) history.replaceState(null, '', `#/${DEFAULT_ROUTE}`);
   await applySidebarOrder(); // ترتيب صفحات القائمة الجانبية المحفوظ من الإعدادات (المرحلة ٨)
   initGlobalSearch();

@@ -70,6 +70,12 @@ export const ENUMS = {
     { key: 'property', label: 'عقار' },
     { key: 'request', label: 'طلب' },
   ],
+  taskRepeats: [ // تكرار المهمة (المرحلة ١١): تُنشأ التالية عند إنجاز الحالية
+    { key: 'none', label: 'بلا تكرار' },
+    { key: 'daily', label: 'يوميًا' },
+    { key: 'weekly', label: 'أسبوعيًا' },
+    { key: 'monthly', label: 'شهريًا' },
+  ],
   invoiceTypes: [ // المستند المالي (المرحلة ٨) — نفس الكيان بمسمّيين وسلسلتَي ترقيم منفصلتين
     { key: 'invoice', label: 'فاتورة' },
     { key: 'quote', label: 'عرض سعر' },
@@ -277,6 +283,7 @@ export const SCHEMAS = {
       done: false, doneAt: null,
       dueAt: null, // تاريخ ووقت التذكير (ISO) أو null
       reminded: false, // مانع تكرار تنبيه المتصفح لهذه المهمة — يُصفَّر تلقائيًا إن غُيِّر dueAt
+      repeat: 'none', // ENUMS.taskRepeats — إنجاز المهمة المتكررة يُنشئ التالية بموعدها (المرحلة ١١)
       linkType: null, linkId: null, // ENUMS.linkTypes — ربط اختياري بعميل/عقار/طلب
     }),
   },

@@ -6,6 +6,7 @@ import { repo, ValidationError } from '../data/repository.js';
 import { ENUMS, labelFor, clientPriority } from '../data/schema.js';
 import { sourceField, rememberSource, sourceBadge } from '../util/source-field.js';
 import { getLists, typeLabel, addDistrict, getZonesFor, zoneLabel } from '../data/settings.js';
+import { parseRequestText } from '../data/listing-parse.js';
 import { loadMatchingContext, candidatesFor, priceFlexFor, areaFlexFor } from '../data/matching.js';
 import {
   el, clear, labeled, fieldGroup, selectEl, badge, openModal, confirmDialog, promptDialog,
@@ -75,6 +76,7 @@ function buildLayout(ctx) {
         class: 'input search', type: 'search', placeholder: 'بحث بالمدينة أو الحي أو الملاحظات…',
         onInput: debounce((e) => { ctx.query = e.target.value; renderFilters(ctx); renderList(ctx); }, 150),
       }),
+      el('button', { type: 'button', class: 'btn', text: '📋 لصق رسالة عميل', title: 'اقرأ طلبًا من رسالة واتساب', onClick: () => openPasteForm(ctx) }),
       el('button', { type: 'button', class: 'btn btn-primary', text: '+ إضافة طلب', onClick: () => openForm(ctx, null) }))));
   ctx.nodes.filters = el('div', { class: 'filters' });
   ctx.nodes.list = el('div');
@@ -210,9 +212,88 @@ async function quickClient(ctx) {
   }
 }
 
-async function openForm(ctx, existing) {
+/* ===== قراءة طلب من رسالة واتساب (المرحلة ١١) ===== */
+
+/**
+ * يلصق المستخدم رسالة العميل كما هي فتُقرأ **محليًا في المتصفح** (بلا شبكة ولا مفتاح)
+ * وتُفتح بها استمارة الطلب معبّأة. القراءة اقتراح لا حكم: كل حقل يبقى قابلًا للتعديل قبل الحفظ،
+ * ولا يُحفظ شيء إلا بضغطك على «حفظ» في الاستمارة.
+ */
+async function openPasteForm(ctx) {
+  const textarea = el('textarea', {
+    class: 'input', rows: 6,
+    placeholder: 'الصق رسالة العميل هنا…\nمثال: السلام عليكم، أبغى فلة للبيع بالياسمين أو النرجس، ميزانيتي ٢ مليون ومساحة ٤٠٠ متر تقريبًا',
+  });
+  const resultBox = el('div', { class: 'parse-result' });
+  let parsed = null;
+
+  const readIt = () => {
+    parsed = parseRequestText(textarea.value, {
+      districts: ctx.lists.districtsByCity[ctx.lists.cities[0]] || [],
+      types: ctx.lists.propertyTypes,
+      cities: ctx.lists.cities,
+    });
+    clear(resultBox);
+    if (!parsed.found.length && !parsed.warnings.length) {
+      resultBox.append(el('p', { class: 'muted small', text: 'لم يُقرأ شيء من النص — أكمل الاستمارة يدويًا.' }));
+    } else {
+      if (parsed.found.length) {
+        resultBox.append(el('div', { class: 'chips' },
+          parsed.found.map((f) => el('span', { class: 'chip chip-static' }, `${f.label}: ${f.text}`))));
+      }
+      for (const w of parsed.warnings) resultBox.append(el('p', { class: 'muted small', text: `⚠︎ ${w}` }));
+    }
+    openBtn.disabled = false;
+  };
+
+  const openBtn = el('button', {
+    type: 'button', class: 'btn btn-primary', text: 'افتح الاستمارة معبّأة', disabled: true,
+    onClick: async () => {
+      modal.close();
+      await openForm(ctx, null, parsed?.fields || {});
+    },
+  });
+
+  const modal = openModal({
+    title: 'طلب من رسالة عميل',
+    size: 'wide',
+    body: el('div', {},
+      el('p', { class: 'muted small', text: 'تُقرأ الرسالة في متصفحك فقط — لا تخرج البيانات من جهازك ولا تحتاج اتصالًا.' }),
+      textarea,
+      el('div', { class: 'row', style: { marginTop: '8px' } },
+        el('button', { type: 'button', class: 'btn', text: 'اقرأ الحقول من النص', onClick: readIt })),
+      resultBox),
+    footer: [
+      el('button', { type: 'button', class: 'btn btn-ghost', text: 'إلغاء', onClick: () => modal.close() }),
+      openBtn,
+    ],
+  });
+  setTimeout(() => textarea.focus(), 0);
+}
+
+/**
+ * @param {object|null} existing سجل للتعديل، أو null لطلب جديد
+ * @param {object} prefill حقول مقروءة من رسالة (المرحلة ١١) — تُعبّئ الاستمارة ولا تُحفظ وحدها
+ */
+async function openForm(ctx, existing, prefill = null) {
   const isEdit = !!existing;
   const draft = existing ? JSON.parse(JSON.stringify(existing)) : repo.requests.defaults();
+  if (prefill) {
+    // لا يُنشأ عميل تلقائيًا: إن عُرف جواله يُختار الموجود، وإلا تركنا الاختيار لك.
+    if (prefill.type) draft.type = prefill.type;
+    if (prefill.purpose) draft.purpose = prefill.purpose;
+    if (prefill.city) draft.city = prefill.city;
+    if (prefill.districts?.length) draft.districts = [...prefill.districts];
+    if (prefill.budgetMax != null) draft.budgetMax = prefill.budgetMax;
+    if (prefill.area != null) draft.area = prefill.area;
+    if (prefill.phone) {
+      const known = [...ctx.clientsById.values()].find((c) => c.phone === prefill.phone || c.phone2 === prefill.phone);
+      if (known) draft.clientId = known.id;
+      else draft.notes = [draft.notes, `جوال العميل من الرسالة: ${prefill.phone}${prefill.name ? ` (${prefill.name})` : ''}`].filter(Boolean).join('\n');
+    } else if (prefill.name) {
+      draft.notes = [draft.notes, `اسم العميل من الرسالة: ${prefill.name}`].filter(Boolean).join('\n');
+    }
+  }
   const settings = ctx.match.settings;
 
   const errorsBox = el('div', { class: 'form-errors', hidden: true });

@@ -10,11 +10,15 @@ import {
   getMatchingSettings, setMatchingSettings, DEFAULT_MATCHING, getZones, addZone, updateZone, removeZone,
   getFollowUpSettings, setFollowUpSettings,
   getSidebarOrder, setSidebarOrder, resetSidebarOrder, orderedPageKeys,
-  getCompany, setCompany, getVaultSettings, setVaultSettings,
+  getCompany, setCompany, getVaultSettings, setVaultSettings, getTemplates, setTemplates, resetTemplates,
 } from '../data/settings.js';
 import { listBackups, uploadBackup, restoreBackup } from '../data/vault.js';
 import { pushSupported, enablePush, disablePush, currentSubscription, syncReminders } from '../util/push.js';
+import { TEMPLATE_VARS } from '../util/templates.js';
+import { parseVCards, importContacts, buildCsv, CSV_EXPORTS } from '../data/exchange.js';
+import { typeLabel as typeLabelOf, statusLabel as statusLabelOf, getUI, setUI } from '../data/settings.js';
 import { SIDEBAR_PAGES, DEFAULT_PAGE_KEYS, pageLabel, applySidebarOrder } from '../util/sidebar.js';
+import { applyTheme } from '../util/theme.js';
 import { storeImage, getImageUrl, removeImage } from '../data/images.js';
 import { requestFollowUpPermission } from '../util/follow-up-alerts.js';
 import { exportBackup, downloadBlob, markExported, readBackupFile, importBackup } from '../data/backup.js';
@@ -33,6 +37,7 @@ export async function render(container) {
   container.append(grid);
   grid.append(
     panel('المستخدم الحالي', 'اسمك يُسجَّل على كل ما تنشئه أو تعدّله (تمهيدًا لتعدد المستخدمين لاحقًا).', userBody),
+    panel('المظهر', 'فاتح أو داكن، أو اتباع إعداد جهازك.', themeBody),
     panel('ترتيب صفحات القائمة الجانبية', 'رتّب الصفحات كما تريد رؤيتها في القائمة. كل الصفحات تبقى ظاهرة؛ الترتيب فقط هو ما يُحفظ.', sidebarOrderBody),
     panel('بيانات الشركة والمستندات', 'ما يُطبع أعلى الفاتورة وعرض السعر: الاسم والشعار وبيانات التواصل، وسلسلتا الترقيم التلقائي.', companyBody),
     panel('النسخ الاحتياطي', 'البيانات محفوظة في هذا المتصفح فقط. الملف الواحد يحوي كل شيء بما فيه الصور والإعدادات.', backupBody),
@@ -44,6 +49,8 @@ export async function render(container) {
     panel('نطاقات الأحياء', 'مجموعة أحياء بمسمّى واحد («شمال الدائري الشمالي») تُعرَّف مرة وتُستعمل في أي طلب. نطاقات الرياض الخمسة مسودّة تقريبية — راجعها وعدّلها.', zonesBody),
     panel('تعريف "مكتمل البيانات"', 'العقار يُعدّ مكتملًا عندما تتوفر فيه الحقول المحددة هنا.', completenessBody),
     panel('متابعة العملاء', 'حدّ "لم يُتواصل معه" في الداشبورد، وتنبيه المتصفح عند تجاوز عميل له.', followUpBody),
+    panel('استيراد وتصدير', 'استيراد جهات اتصالك عملاءَ دفعة واحدة، وتصدير جداولك إلى ملفات تفتحها في إكسل.', exchangeBody),
+    panel('قوالب رسائل واتساب', 'رسائل جاهزة تُرسل بنقرة من قائمة مشاركة العقار، وتُعبَّأ ببيانات العقار والعميل تلقائيًا.', templatesBody),
     panel('تنبيهات الخلفية', 'تذكير المهام يصلك على الجهاز حتى بعد إغلاق التبويب. لا يغادر جهازك إلا موعد التذكير — بلا عناوين ولا أسماء.', pushBody),
     panel('البيانات التجريبية', 'عملاء وعقارات للتجربة (مع سجل واحد لكل كيان من المراحل اللاحقة لاختبار طبقة البيانات)؛ تُدرج تلقائيًا عند أول تشغيل، ومسحها لا يمس بياناتك الحقيقية.', seedBody),
   );
@@ -801,4 +808,145 @@ async function pushBody(redraw) {
         onClick: async () => { await syncReminders(); toast('حُدّثت مواعيد التذكير على الخادم', 'success'); },
       }) : null),
     el('p', { class: 'muted small', text: 'يلزم أن يكون التطبيق مفتوحًا من رابطه الحقيقي (https)، وعلى آيفون يلزم تثبيته على الشاشة الرئيسية أولًا.' }));
+}
+
+
+/* ===== قوالب رسائل واتساب (المرحلة ١١) ===== */
+
+async function templatesBody(redraw) {
+  const templates = await getTemplates();
+  const rows = el('div', { class: 'template-list' });
+  const drafts = templates.map((t) => ({ ...t }));
+
+  const draw = () => {
+    clear(rows);
+    drafts.forEach((t, i) => {
+      const labelInput = el('input', { class: 'input', type: 'text', value: t.label });
+      const bodyInput = el('textarea', { class: 'input', rows: 5, value: t.body });
+      labelInput.addEventListener('input', () => { drafts[i].label = labelInput.value; });
+      bodyInput.addEventListener('input', () => { drafts[i].body = bodyInput.value; });
+      rows.append(el('div', { class: 'panel-block' },
+        el('div', { class: 'row' }, labelInput,
+          el('button', {
+            type: 'button', class: 'icon-btn', text: '✕', title: 'حذف القالب',
+            onClick: () => { drafts.splice(i, 1); draw(); },
+          })),
+        bodyInput));
+    });
+  };
+  draw();
+
+  return el('div', {},
+    el('p', { class: 'muted small' }, 'المتغيّرات المتاحة: ',
+      ...TEMPLATE_VARS.map((v) => el('code', { class: 'tpl-var', text: `{${v.key}}`, title: v.desc })),
+      ' — والسطر الذي يبقى بلا قيمة يُحذف من الرسالة تلقائيًا.'),
+    rows,
+    el('div', { class: 'row', style: { marginTop: '10px' } },
+      el('button', {
+        type: 'button', class: 'btn', text: '+ قالب جديد',
+        onClick: () => { drafts.push({ key: `tpl_${drafts.length + 1}`, label: 'قالب جديد', body: 'السلام عليكم {اسم_العميل}\n' }); draw(); },
+      }),
+      el('button', {
+        type: 'button', class: 'btn btn-primary', text: 'حفظ القوالب',
+        onClick: async () => {
+          try { await setTemplates(drafts); toast('حُفظت القوالب', 'success'); await redraw(); } catch (err) { errToast(err); }
+        },
+      }),
+      el('button', {
+        type: 'button', class: 'btn btn-ghost', text: 'إرجاع المدمجة',
+        onClick: async () => {
+          const ok = await confirmDialog({ title: 'إرجاع القوالب', message: 'استبدال قوالبك بالقوالب المدمجة؟', confirmText: 'إرجاع' });
+          if (!ok) return;
+          await resetTemplates();
+          await redraw();
+        },
+      })));
+}
+
+
+/* ===== الاستيراد والتصدير (المرحلة ١١) ===== */
+
+async function exchangeBody(redraw) {
+  const [lists, clients] = await Promise.all([getLists(), repo.clients.list()]);
+  const clientById = new Map(clients.map((c) => [c.id, c]));
+  const ctx = {
+    typeLabel: (key) => typeLabelOf(lists, key),
+    statusLabel: (key) => statusLabelOf(lists, key),
+    clientName: (id) => { const c = clientById.get(id); return c ? (c.name || c.phone || '') : ''; },
+  };
+
+  /* استيراد vCard */
+  const resultBox = el('div');
+  const fileInput = el('input', {
+    type: 'file', accept: '.vcf,text/vcard,text/x-vcard', class: 'visually-hidden',
+    onChange: async (e) => {
+      const file = e.target.files[0];
+      e.target.value = '';
+      if (!file) return;
+      try {
+        const contacts = parseVCards(await file.text());
+        if (!contacts.length) { toast('لم يُقرأ أي جهة اتصال من الملف', 'error'); return; }
+        const ok = await confirmDialog({
+          title: 'استيراد جهات الاتصال',
+          message: `قُرئت ${contacts.length} جهة اتصال. ستُضاف عملاء جددًا فقط — والجوال المسجَّل عندك مسبقًا يُتخطّى ولا يُعدَّل. المتابعة؟`,
+          confirmText: 'استيراد',
+        });
+        if (!ok) return;
+        const stats = await importContacts(contacts);
+        clear(resultBox);
+        resultBox.append(el('p', { class: 'muted small', text: `أُضيف ${stats.added} · تُخطّي ${stats.skipped} (مسجَّل مسبقًا) · تُجوهل ${stats.invalid} (بلا اسم ولا جوال)` }));
+        toast(`أُضيف ${stats.added} عميلًا`, 'success');
+        dataChanged();
+      } catch (err) { errToast(err); }
+    },
+  });
+
+  /* تصدير CSV */
+  const csvButtons = Object.entries(CSV_EXPORTS).map(([key, def]) => el('button', {
+    type: 'button', class: 'btn btn-sm', text: def.label,
+    onClick: async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      try {
+        const { blob, filename, count } = await buildCsv(key, ctx);
+        if (!count) { toast('لا بيانات لتصديرها', 'info'); return; }
+        downloadBlob(blob, filename);
+        toast(`صُدّر ${count} سجلًا`, 'success');
+      } catch (err) { errToast(err); } finally { btn.disabled = false; }
+    },
+  }));
+
+  return el('div', {},
+    el('div', { class: 'panel-block' },
+      el('h3', { text: 'استيراد جهات الاتصال' }),
+      el('p', { class: 'muted small', text: 'صدّر جهات اتصالك من الجوال كملف vcf ثم اختره هنا. يُقرأ في متصفحك فقط، ولا يُعدَّل أي عميل قائم.' }),
+      el('div', { class: 'row' },
+        el('button', { type: 'button', class: 'btn', text: 'اختر ملف vCard…', onClick: () => fileInput.click() }),
+        fileInput),
+      resultBox),
+    el('div', { class: 'panel-block' },
+      el('h3', { text: 'تصدير إلى إكسل (CSV)' }),
+      el('p', { class: 'muted small', text: 'ملف لكل جدول، بترميز يفتحه إكسل بالعربية مباشرة. للنسخ الاحتياطي الكامل استعمل التصدير أعلاه — CSV لا يحفظ الصور ولا يصلح للاستعادة.' }),
+      el('div', { class: 'row' }, csvButtons)));
+}
+
+
+/* ===== المظهر (المرحلة ١١) ===== */
+
+async function themeBody(redraw) {
+  const ui = await getUI();
+  const current = ui.theme || 'system';
+  const options = [
+    { key: 'system', label: '🖥️ يتبع الجهاز' },
+    { key: 'light', label: '☀️ فاتح' },
+    { key: 'dark', label: '🌙 داكن' },
+  ];
+  return el('div', { class: 'row' }, options.map((o) => el('button', {
+    type: 'button', class: `btn${o.key === current ? ' btn-primary' : ''}`, text: o.label,
+    onClick: async () => {
+      await setUI({ theme: o.key });
+      applyTheme(o.key); // فوريّ بلا إعادة تحميل
+      await redraw();
+    },
+  })));
 }

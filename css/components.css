@@ -462,6 +462,10 @@ input[type="date"].input, input[type="datetime-local"].input { direction: ltr; t
   .print-notes { margin-top: 16px; white-space: pre-line; font-size: 11pt; }
   .print-footer { margin-top: 24px; border-top: 1px solid #999; padding-top: 8px; font-size: 10pt; color: #333; white-space: pre-line; }
   .print-table tr { break-inside: avoid; }
+  /* بطاقة العقار (المرحلة ١١) */
+  .print-photos { display: grid; grid-template-columns: 1fr 1fr; gap: 6mm; margin-bottom: 8mm; }
+  .print-photo { width: 100%; height: 55mm; object-fit: cover; border: 1px solid #ccc; }
+  .print-table th { text-align: right; background: #f4f4f4; }
 }
 
 /* ===== المرحلة ١٠ — تنبيه المطابقات بعد حفظ عقار ===== */
@@ -469,3 +473,24 @@ input[type="date"].input, input[type="datetime-local"].input { direction: ltr; t
 .match-alert-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius); text-decoration: none; color: inherit; }
 .match-alert-row:hover { background: var(--surface-2); }
 .match-alert-score { background: var(--accent-soft); color: var(--accent-text); font-weight: 700; border-radius: 999px; padding: 2px 10px; min-width: 52px; text-align: center; }
+
+/* ===== المرحلة ١١ — صفحة «يومي» ===== */
+.today-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 16px; align-items: start; }
+.today-panel .today-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.today-panel .today-head h2 { margin: 0; }
+.today-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--line); }
+.today-row:last-child { border-bottom: 0; }
+.today-warn { border-inline-start: 3px solid var(--warn); }
+.today-ok { border-inline-start: 3px solid var(--accent); }
+
+/* ===== المرحلة ١١ — قوالب الرسائل في قائمة المشاركة ===== */
+.share-menu-templates { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.share-menu .field-label { margin-bottom: 4px; }
+.template-list .panel-block { margin-bottom: 10px; }
+.tpl-var { background: var(--surface-2); border-radius: 4px; padding: 1px 5px; margin-inline-end: 4px; font-size: 12px; }
+
+/* ===== المرحلة ١١ — سعر المتر ومؤشر السوق ===== */
+.badge.price-high { background: #fdeaea; color: #9a2b1e; }
+.badge.price-low { background: var(--ok-soft); color: var(--ok); }
+.badge.price-mid { background: var(--surface-2); color: var(--muted); }
+.mic-btn.mic-on { background: var(--danger-soft); color: var(--danger); }

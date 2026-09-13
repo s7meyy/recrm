@@ -247,3 +247,89 @@ export function parseListingText(text, { districts = [], types = [], cities = []
 
   return { fields, found, warnings };
 }
+
+/* ===== قراءة طلب عميل من رسالة واتساب (المرحلة ١١) ===== */
+
+const BUDGET_WORDS = String.raw`الميزانيه|ميزانيتي|ميزانيه|بحدود|حدود|ما يتجاوز|لا يتجاوز|الى|حتى|بحد اقصى|سقف|المبلغ|عندي`;
+
+/**
+ * يقرأ طلب عميل من نص حرّ (رسالة واتساب غالبًا): النوع والغرض والمدينة **وعدة أحياء**
+ * وسقف الميزانية والمساحة، مع اسم المرسل وجواله إن ذُكرا.
+ *
+ * يعيد استعمال `parseListingText` نفسه (لا منطق قراءة ثانٍ) ثم يعدّل ما يختلف في الطلب:
+ * الأحياء جمع لا مفرد، والسعر سقفٌ لا سعرَ عرض، والغرض واحد لا مجموعة.
+ * **دالة خالصة تعمل محليًا**: بلا شبكة ولا مفتاح ولا خروج بيانات من الجهاز.
+ *
+ * @returns {{ fields: object, found: Array, warnings: string[] }}
+ */
+export function parseRequestText(text, { districts = [], types = [], cities = [] } = {}) {
+  const base = parseListingText(text, { districts, types, cities });
+  const fields = {};
+  const found = [];
+  const warnings = [...base.warnings.filter((w) => !w.includes('رابط الخرائط'))];
+  const raw = String(text ?? '');
+  if (!raw.trim()) return { fields, found, warnings };
+
+  const t = prep(raw);
+  const body = t.replace(/(?:https?:\/\/|www\.)[^\s"'<>،؛)]+/gi, ' ');
+  const add = (key, label, value, display) => { fields[key] = value; found.push({ key, label, text: display }); };
+
+  if (base.fields.type) add('type', 'النوع', base.fields.type, base.found.find((f) => f.key === 'type')?.text || '');
+  if (base.fields.city) add('city', 'المدينة', base.fields.city, base.fields.city);
+  if (base.fields.purposes?.length) {
+    const key = base.fields.purposes[0];
+    const label = { sale: 'بيع', rent: 'إيجار', investment: 'استثمار' }[key];
+    add('purpose', 'الغرض', key, label);
+    if (base.fields.purposes.length > 1) warnings.push('النص يذكر أكثر من غرض — الطلب يقبل غرضًا واحدًا، فاختر الصحيح');
+  }
+
+  /* الأحياء: كلها لا أطولها (العميل يذكر عدة أحياء عادةً: «الياسمين أو النرجس») */
+  const bodyLoose = loose(body);
+  const hits = [];
+  for (const d of districts) {
+    if (!d || d.length < 3) continue;
+    const nd = prep(d);
+    if (body.includes(nd) || (nd.length >= 4 && bodyLoose.includes(loose(d)))) hits.push(d);
+  }
+  // إسقاط الاسم المتضمَّن في اسم أطول («النرجس» داخل «النرجس الشمالي») فلا يتكرر الحي مرتين
+  const picked = hits.filter((d) => !hits.some((o) => o !== d && prep(o).includes(prep(d))));
+  if (picked.length) add('districts', 'الأحياء', picked, picked.join('، '));
+
+  /* سقف الميزانية: كلمة ميزانية أولًا، وإلا السعر الذي قرأه المحلّل العام */
+  const budgetRe = rx(String.raw`(?:${BUDGET_WORDS})\D{0,12}(NUM)\s*(مليون|ملايين|الف|الاف)?`);
+  const m = budgetRe.exec(body);
+  let budget = null;
+  if (m) {
+    let value = toNumber(m[1]);
+    if (value != null) {
+      const unit = m[2] ? prep(m[2]) : '';
+      if (unit.startsWith('مليون') || unit.startsWith('ملايين')) value *= 1e6;
+      else if (unit.startsWith('الف') || unit.startsWith('الاف')) value *= 1000;
+      if (value >= 1000 && value <= 2e9) budget = Math.round(value);
+    }
+  }
+  if (budget == null && base.fields.price != null) budget = base.fields.price;
+  if (budget != null) add('budgetMax', 'سقف الميزانية', budget, `${budget.toLocaleString('en-US')} ريال`);
+
+  if (base.fields.area != null) add('area', 'المساحة المطلوبة', base.fields.area, `${base.fields.area.toLocaleString('en-US')} م²`);
+
+  /* جوال المرسل واسمه (للبحث عن عميل موجود أو إنشائه) */
+  if (base.fields.advertiserPhone) add('phone', 'جوال العميل', base.fields.advertiserPhone, base.fields.advertiserPhone);
+  const nameMatch = /(?:انا|اسمي|معك|معاك)\s+([\u0600-\u06FF]{2,}(?:\s+[\u0600-\u06FF]{2,}){0,2})/.exec(prep(raw));
+  if (nameMatch) {
+    // الاسم يتوقف عند أول فعل طلب («انا سعد ابغى فلة» = سعد، لا «سعد ابغى فلة»)
+    const STOP = ['ابغي', 'ابي', 'اريد', 'احتاج', 'ودي', 'ابحث', 'مطلوب', 'عندي', 'اسال', 'حاب'];
+    const words = [];
+    for (const w of nameMatch[1].trim().split(/\s+/)) {
+      if (STOP.includes(w)) break;
+      words.push(w);
+      if (words.length === 2) break; // اسم ثنائي يكفي
+    }
+    const name = words.join(' ').replace(/[،؛,.:]+$/, '').trim(); // علامة ترقيم لاصقة ليست من الاسم
+    if (name) add('name', 'اسم العميل', name, name);
+  }
+
+  if (!fields.type) warnings.push('لم يُعرف نوع العقار من النص — اختره بنفسك');
+  if (!fields.purpose) warnings.push('لم يُعرف الغرض (بيع/إيجار/استثمار) من النص — اختره بنفسك');
+  return { fields, found, warnings };
+}

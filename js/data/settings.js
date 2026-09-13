@@ -4,6 +4,7 @@
 import { repo, newId, setCurrentUser } from './repository.js';
 import { BUILTIN_PROPERTY_TYPES, BUILTIN_PROPERTY_STATUSES, BUILTIN_CLIENT_TAGS, DEFAULT_COMPLETENESS } from './schema.js';
 import { RIYADH_DISTRICTS, RIYADH_SECTORS, DEFAULT_CITY } from './riyadh-districts.js';
+import { DEFAULT_TEMPLATES } from '../util/templates.js';
 
 export const SETTINGS_KEYS = {
   matching: 'matching', // أوزان المعايير وحدود المرونة والحدّ الأدنى للظهور (المرحلة ٣)
@@ -13,13 +14,14 @@ export const SETTINGS_KEYS = {
   customFields: 'customFields', // [{ key, label, input: 'text'|'number', forTypes: [] }]
   completeness: 'completeness', // ['city', ...]
   backup: 'backup', // { lastExportAt }
-  ui: 'ui', // { propertiesView: 'grid'|'table' }
+  ui: 'ui', // { propertiesView, firstRunDone, tasksView, theme, lastVisitAt } — تفضيلات عرض لا بيانات عمل
   seed: 'seed', // { ids: { clients: [], properties: [], images: [] }, insertedAt } | null
   followUp: 'followUp', // { staleContactDays: 14, notify: false } — المرحلة ٦ (تنبيهات المتابعة)
   sidebarOrder: 'sidebarOrder', // ['dashboard', 'properties', …] ترتيب صفحات القائمة الجانبية (المرحلة ٨)
   company: 'company', // بيانات الشركة والشعار وسلسلتا ترقيم المستندات (المرحلة ٨)
   publish: 'publish', // الصفحة العامة: المفتاح والعروض المختارة وآخر نشر (المرحلة ٩)
   vault: 'vault', // النسخة السحابية المشفَّرة: العبارة السرّية والرفع التلقائي (المرحلة ١٠)
+  templates: 'templates', // قوالب رسائل واتساب (المرحلة ١١)
 };
 
 const EMPTY_LISTS = () => ({ propertyTypes: [], propertyStatuses: [], clientTags: [], cities: [], districts: {}, sources: [] });
@@ -547,4 +549,26 @@ export async function setVaultSettings(patch) {
   const next = { ...(await getVaultSettings()), ...patch };
   await repo.settings.set(SETTINGS_KEYS.vault, next);
   return next;
+}
+
+
+/* ===== قوالب رسائل واتساب (المرحلة ١١) ===== */
+
+/** القوالب المحفوظة، أو المدمجة عند أول قراءة (لا تُكتب حتى يعدّلها المستخدم). */
+export async function getTemplates() {
+  const stored = await repo.settings.get(SETTINGS_KEYS.templates, null);
+  return Array.isArray(stored) && stored.length ? stored : DEFAULT_TEMPLATES.map((t) => ({ ...t }));
+}
+
+export async function setTemplates(list) {
+  const clean = (list || [])
+    .map((t) => ({ key: norm(t.key) || shortKey('tpl'), label: norm(t.label), body: String(t.body ?? '') }))
+    .filter((t) => t.label && t.body);
+  await repo.settings.set(SETTINGS_KEYS.templates, clean);
+  return clean;
+}
+
+export async function resetTemplates() {
+  await repo.settings.remove(SETTINGS_KEYS.templates);
+  return DEFAULT_TEMPLATES.map((t) => ({ ...t }));
 }

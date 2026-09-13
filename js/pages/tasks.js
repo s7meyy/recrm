@@ -10,6 +10,7 @@ import { getUI, setUI } from '../data/settings.js';
 import {
   el, clear, badge, selectEl, checkbox, openModal, confirmDialog, promptDialog, toast, emptyState,
 } from '../util/dom.js';
+import { micButton } from '../util/voice.js';
 import { syncReminders } from '../util/push.js';
 import { formatDateTime, toInputDateTime, fromInputDateTime } from '../util/format.js';
 import { clientName } from './requests.js';
@@ -89,8 +90,38 @@ async function reorder(ctx, task, dir) {
   await refresh(ctx);
 }
 
+/** موعد التكرار التالي بعد موعد معلوم (أو بعد الآن إن لم يكن للمهمة موعد). */
+function nextDueAt(task) {
+  const base = task.dueAt ? new Date(task.dueAt) : new Date();
+  if (Number.isNaN(base.getTime())) return null;
+  const next = new Date(base);
+  if (task.repeat === 'daily') next.setDate(next.getDate() + 1);
+  else if (task.repeat === 'weekly') next.setDate(next.getDate() + 7);
+  else if (task.repeat === 'monthly') next.setMonth(next.getMonth() + 1);
+  else return null;
+  // موعد فات كثيرًا: يُدفع إلى أقرب موعد قادم بدل إغراقك بمتأخرات وهمية.
+  const now = Date.now();
+  while (next.getTime() <= now) {
+    if (task.repeat === 'daily') next.setDate(next.getDate() + 1);
+    else if (task.repeat === 'weekly') next.setDate(next.getDate() + 7);
+    else next.setMonth(next.getMonth() + 1);
+  }
+  return next.toISOString();
+}
+
 async function toggleDone(ctx, task, done) {
   await repo.tasks.update(task.id, { done, doneAt: done ? new Date().toISOString() : null });
+  // المهمة المتكررة (المرحلة ١١): تبقى المنجزة في مكانها للسجل، وتُنشأ نسخة جديدة بموعدها التالي.
+  if (done && task.repeat && task.repeat !== 'none') {
+    const dueAt = nextDueAt(task);
+    if (dueAt) {
+      await repo.tasks.create({
+        listId: task.listId, title: task.title, notes: task.notes, order: (task.order ?? 0),
+        dueAt, repeat: task.repeat, linkType: task.linkType, linkId: task.linkId,
+      });
+      toast(`مهمة متكررة — أُنشئت التالية في ${formatDateTime(dueAt)}`, 'info', 5000);
+    }
+  }
   await refresh(ctx);
 }
 
@@ -128,7 +159,7 @@ function quickAddRow(ctx, list) {
     await refresh(ctx);
   };
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
-  return el('div', { class: 'task-quick-add' }, input, el('button', { type: 'button', class: 'btn btn-sm', text: '+', onClick: add }));
+  return el('div', { class: 'task-quick-add' }, input, micButton(input), el('button', { type: 'button', class: 'btn btn-sm', text: '+', onClick: add }));
 }
 
 async function removeList(ctx, list) {
@@ -216,6 +247,9 @@ async function openTaskForm(ctx, task) {
   const listSelect = selectEl({ options: ctx.taskLists.map((l) => ({ value: l.id, label: l.title })), value: task.listId });
   const dueInput = el('input', { class: 'input', type: 'datetime-local', value: task.dueAt ? toInputDateTime(task.dueAt) : '' });
   const clearDueBtn = el('button', { type: 'button', class: 'btn btn-ghost btn-sm', text: 'بلا تذكير', onClick: () => { dueInput.value = ''; } });
+  const repeatSelect = selectEl({
+    options: ENUMS.taskRepeats.map((r) => ({ value: r.key, label: r.label })), value: task.repeat || 'none',
+  });
 
   const linkTypeSelect = selectEl({
     options: ENUMS.linkTypes.map((t) => ({ value: t.key, label: t.label })), value: task.linkType || '', placeholder: 'بلا ربط',
@@ -252,7 +286,7 @@ async function openTaskForm(ctx, task) {
       const newDueAt = fromInputDateTime(dueInput.value);
       const patch = {
         title: titleInput.value, notes: notesInput.value, listId: listSelect.value,
-        dueAt: newDueAt,
+        dueAt: newDueAt, repeat: repeatSelect.value,
         linkType: linkTypeSelect.value || null, linkId: linkTypeSelect.value ? currentLinkId : null,
       };
       if (newDueAt !== task.dueAt) patch.reminded = false; // موعد جديد يستحق تنبيهًا جديدًا
@@ -276,6 +310,7 @@ async function openTaskForm(ctx, task) {
       el('label', { class: 'field' }, el('span', { class: 'field-label', text: 'العنوان' }), titleInput),
       el('label', { class: 'field' }, el('span', { class: 'field-label', text: 'القائمة' }), listSelect),
       el('label', { class: 'field' }, el('span', { class: 'field-label', text: 'تذكير بتاريخ ووقت' }), el('div', { class: 'field-row' }, dueInput, clearDueBtn)),
+      el('label', { class: 'field' }, el('span', { class: 'field-label', text: 'التكرار' }), repeatSelect),
       el('label', { class: 'field' }, el('span', { class: 'field-label', text: 'ربط بسجل آخر' }), linkTypeSelect),
       linkIdWrap,
       el('label', { class: 'field' }, el('span', { class: 'field-label', text: 'ملاحظات' }), notesInput)));
