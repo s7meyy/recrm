@@ -17,6 +17,7 @@ const SUITES = [
   ['gate-unit.mjs', null],            // بلا متصفح ولا خادم
   ['push-unit.mjs', null],
   ['opportunity-unit.mjs', null],
+  ['pricing-unit.mjs', null],
   ['app-pages.mjs', OPEN],
   ['sidebar-order.mjs', OPEN],
   ['source-and-priority.mjs', OPEN],
@@ -25,6 +26,7 @@ const SUITES = [
   ['today-and-tools.mjs', OPEN],
   ['opportunities.mjs', OPEN],
   ['expenses-and-tools.mjs', OPEN],
+  ['pricing.mjs', OPEN],
   ['gate-and-publish.mjs', LOCKED],
   ['rename-and-vault.mjs', LOCKED],
   ['offer-pwa-push.mjs', LOCKED],

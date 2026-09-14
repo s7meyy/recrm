@@ -16,6 +16,7 @@ export const SIDEBAR_PAGES = [
   { key: 'requests', label: 'الطلبات', icon: '📋' },
   { key: 'matches', label: 'المطابقات', icon: '🔗' },
   { key: 'external', label: 'العروض الخارجية', icon: '🌐' },
+  { key: 'pricing', label: 'تقدير السعر', icon: '⚖️' },
   { key: 'invoices', label: 'الفواتير وعروض الأسعار', icon: '🧾' },
   { key: 'expenses', label: 'المصاريف', icon: '💸' },
   { key: 'publish', label: 'الصفحة العامة للعروض', icon: '🌍' },

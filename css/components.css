@@ -525,3 +525,11 @@ body.client-mode #client-mode-btn { background: var(--accent); color: #fff; }
 .goal-track { height: 8px; background: var(--surface-2); border-radius: 999px; overflow: hidden; }
 .goal-fill { height: 100%; background: var(--accent); border-radius: 999px; }
 .goal-fill.done { background: var(--ok); }
+
+/* ===== المرحلة ١٤ — بطاقة تقدير السعر ===== */
+.estimate-card { margin-top: 18px; }
+.estimate-head { display: flex; align-items: center; gap: 10px; justify-content: space-between; flex-wrap: wrap; }
+.estimate-range { margin: 6px 0 2px; }
+.estimate-main { font-size: 28px; font-weight: 700; color: var(--accent-text); }
+.estimate-facts { display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0 8px; }
+.warn-text { color: var(--warn); font-size: var(--fs-sm); margin-top: 6px; }

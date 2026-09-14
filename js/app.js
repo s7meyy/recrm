@@ -23,6 +23,7 @@ import * as toursPage from './pages/tours.js';
 import * as requestsPage from './pages/requests.js';
 import * as matchesPage from './pages/matches.js';
 import * as externalPage from './pages/external.js';
+import * as pricingPage from './pages/pricing.js';
 import * as invoicesPage from './pages/invoices.js';
 import * as expensesPage from './pages/expenses.js';
 import * as publishPage from './pages/publish.js';
@@ -42,6 +43,7 @@ const ROUTES = {
   requests: { title: 'الطلبات العقارية', render: requestsPage.render },
   matches: { title: 'المطابقات', render: matchesPage.render },
   external: { title: 'العروض الخارجية', render: externalPage.render },
+  pricing: { title: 'تقدير السعر', render: pricingPage.render },
   invoices: { title: 'الفواتير وعروض الأسعار', render: invoicesPage.render },
   expenses: { title: 'المصاريف', render: expensesPage.render },
   publish: { title: 'الصفحة العامة للعروض', render: publishPage.render },

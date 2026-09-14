@@ -251,14 +251,15 @@ function priceSection({ properties, externals, deals, lists }) {
   const rows = index.rows.slice(0, 10).map((r) => el('tr', {},
     el('td', { text: r.district || r.city || '—' }),
     el('td', { text: typeLabel(lists, r.type) }),
+    el('td', { class: 'small', text: r.purpose === 'rent' ? 'إيجار' : 'بيع' }),
     el('td', { class: 'num strong', text: `${formatNumber(Math.round(r.median))}` }),
     el('td', { class: 'num', text: formatNumber(r.count) }),
     el('td', { class: 'small muted', text: [r.sources.deal ? `${r.sources.deal} صفقة` : '', r.sources.external ? `${r.sources.external} خارجي` : ''].filter(Boolean).join(' · ') || 'مخزونك' })));
   return [
     el('div', { class: 'table-wrap' }, el('table', { class: 'table' },
-      el('thead', {}, el('tr', {}, ['الحي', 'النوع', 'وسيط سعر المتر', 'العيّنة', 'المصدر'].map((t) => el('th', { text: t })))),
+      el('thead', {}, el('tr', {}, ['الحي', 'النوع', 'الغرض', 'وسيط سعر المتر', 'العيّنة', 'المصدر'].map((t) => el('th', { text: t })))),
       el('tbody', {}, rows))),
-    el('div', { class: 'muted small', text: 'الوسيط لا المتوسط (فلا يفسده عرض شاذّ واحد). والصفقات المنجزة تدخل بسعرها النهائي لا المطلوب.' }),
+    el('div', { class: 'muted small', text: 'الوسيط لا المتوسط (فلا يفسده عرض شاذّ واحد). والصفقات المنجزة تدخل بسعرها النهائي لا المطلوب. والبيع مفصول عن الإيجار.' }),
   ];
 }
 

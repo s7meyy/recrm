@@ -1,4 +1,4 @@
-// سعر المتر ومؤشر السوق من بياناتك أنت (المرحلة ١١).
+// سعر المتر ومؤشر السوق من بياناتك أنت (المرحلة ١١، ووُسِّع في المرحلة ١٤).
 //
 // **لا مصدر خارجي ولا تقدير آلي:** كل رقم هنا وسيطٌ حسابي لما عندك فعلًا — مخزونك المعتمد،
 // والعروض الخارجية النشطة، وصفقاتك المنجزة. وهذا يجعل الرقم صادقًا وضيّقًا في آن: يفيدك في
@@ -22,41 +22,96 @@ export function median(values) {
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
-const key = (city, district, type) => `${city || ''}|${district || ''}|${type || ''}`;
+/** شريحة مئوية بالاستيفاء الخطي (q بين ٠ و١) — تُستعمل للربيعين في نطاق التقدير. */
+export function quantile(values, q) {
+  const sorted = values.filter((v) => Number.isFinite(v)).sort((a, b) => a - b);
+  if (!sorted.length) return null;
+  if (sorted.length === 1) return sorted[0];
+  const pos = (sorted.length - 1) * Math.min(Math.max(q, 0), 1);
+  const lo = Math.floor(pos);
+  const hi = Math.ceil(pos);
+  return lo === hi ? sorted[lo] : sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
+}
 
 /**
- * يبني مؤشر أسعار المتر لكل (مدينة، حي، نوع).
- * @param {{ properties: [], externals: [], deals: [], minSample?: number }} input
- * @returns {{ get(city, district, type): { median, count, sources } | null, rows: [] }}
+ * بيع أم إيجار؟ خلط الاثنين في وسيطٍ واحد يفسده تمامًا (مليون ريال بجانب أربعين ألفًا)،
+ * والحقل `price` رقم واحد فلا يحتمل الغرضين معًا. القاعدة: إيجارٌ إن ذُكر الإيجار ولم يُذكر البيع،
+ * وما عدا ذلك (بيع، استثمار، أو بلا غرض) يُحسب في كفّة البيع.
  */
-export function buildPriceIndex({ properties = [], externals = [], deals = [], minSample = 2 } = {}) {
-  const buckets = new Map();
-  const push = (item, source) => {
+export function purposeKey(item) {
+  const purposes = Array.isArray(item?.purposes) ? item.purposes : [];
+  return purposes.includes('rent') && !purposes.includes('sale') ? 'rent' : 'sale';
+}
+
+const key = (city, district, type, purpose) => `${city || ''}|${district || ''}|${type || ''}|${purpose || 'sale'}`;
+
+/**
+ * عيّنة أسعار المتر الخام: كل سجل صالح للحساب بمصدره، لتُبنى فوقها المؤشرات والتقديرات.
+ * الفلترة نفسها في كل مكان: مخزونك المعتمد فقط، والعروض الخارجية النشطة فقط، والصفقات بسعرها النهائي.
+ */
+export function priceSamples({ properties = [], externals = [], deals = [] } = {}) {
+  const out = [];
+  const push = (item, source, extra) => {
     const ppm = pricePerSqm(item);
     if (ppm == null) return;
-    const k = key(item.city, item.district, item.type);
-    if (!buckets.has(k)) buckets.set(k, { city: item.city || '', district: item.district || '', type: item.type || '', values: [], sources: { inventory: 0, external: 0, deal: 0 } });
-    const bucket = buckets.get(k);
-    bucket.values.push(ppm);
-    bucket.sources[source]++;
+    out.push({
+      source,
+      city: item.city || '',
+      district: item.district || '',
+      type: item.type || '',
+      purpose: purposeKey(item),
+      price: Number(item.price),
+      area: Number(item.area),
+      ppm,
+      ...extra,
+    });
   };
 
-  for (const p of properties) if (p.captureStatus === 'approved') push(p, 'inventory');
-  for (const x of externals) if (x.status === 'active') push(x, 'external');
+  for (const p of properties) {
+    if (p.captureStatus !== 'approved') continue;
+    push(p, 'inventory', { id: p.id, at: p.updatedAt || p.createdAt || '' });
+  }
+  for (const x of externals) {
+    if (x.status !== 'active') continue;
+    push(x, 'external', { id: x.id, at: x.postedAt || x.createdAt || '' });
+  }
   // الصفقة أصدق من أي عرض: سعرها نهائي لا مطلوب — تُحسب بسعرها النهائي ومساحة عقارها.
   for (const d of deals) {
     const property = properties.find((p) => p.id === d.propertyId);
     if (!property) continue;
-    push({ price: d.finalPrice, area: property.area, city: property.city, district: property.district, type: property.type }, 'deal');
+    push(
+      { price: d.finalPrice, area: property.area, city: property.city, district: property.district, type: property.type, purposes: property.purposes },
+      'deal',
+      { id: d.id, propertyId: property.id, at: d.date || '' },
+    );
+  }
+  return out;
+}
+
+/**
+ * يبني مؤشر أسعار المتر لكل (مدينة، حي، نوع، غرض).
+ * @param {{ properties: [], externals: [], deals: [], minSample?: number }} input
+ * @returns {{ get(city, district, type, purpose): { median, count, sources } | null, rows: [] }}
+ */
+export function buildPriceIndex({ properties = [], externals = [], deals = [], minSample = 2 } = {}) {
+  const buckets = new Map();
+  for (const s of priceSamples({ properties, externals, deals })) {
+    const k = key(s.city, s.district, s.type, s.purpose);
+    if (!buckets.has(k)) {
+      buckets.set(k, { city: s.city, district: s.district, type: s.type, purpose: s.purpose, values: [], sources: { inventory: 0, external: 0, deal: 0 } });
+    }
+    const bucket = buckets.get(k);
+    bucket.values.push(s.ppm);
+    bucket.sources[s.source]++;
   }
 
   const rows = [...buckets.values()]
-    .map((b) => ({ city: b.city, district: b.district, type: b.type, median: median(b.values), count: b.values.length, sources: b.sources }))
+    .map((b) => ({ city: b.city, district: b.district, type: b.type, purpose: b.purpose, median: median(b.values), count: b.values.length, sources: b.sources }))
     .filter((b) => b.median != null && b.count >= minSample)
     .sort((a, b) => b.count - a.count || (b.median - a.median));
 
-  const byKey = new Map(rows.map((r) => [key(r.city, r.district, r.type), r]));
-  return { rows, get: (city, district, type) => byKey.get(key(city, district, type)) || null };
+  const byKey = new Map(rows.map((r) => [key(r.city, r.district, r.type, r.purpose), r]));
+  return { rows, get: (city, district, type, purpose = 'sale') => byKey.get(key(city, district, type, purpose)) || null };
 }
 
 /**
@@ -66,7 +121,7 @@ export function buildPriceIndex({ properties = [], externals = [], deals = [], m
 export function comparePrice(item, index) {
   const ppm = pricePerSqm(item);
   if (ppm == null) return null;
-  const stat = index.get(item.city, item.district, item.type);
+  const stat = index.get(item.city, item.district, item.type, purposeKey(item));
   if (!stat || stat.count < 2) return { ppm, median: null, diffPct: null, label: 'لا عيّنة كافية للمقارنة', tone: '' };
   const diffPct = Math.round(((ppm - stat.median) / stat.median) * 100);
   const label = diffPct > 8 ? `أعلى من وسيط الحي بـ${diffPct}٪`
@@ -74,4 +129,65 @@ export function comparePrice(item, index) {
       : 'قريب من وسيط الحي';
   const tone = diffPct > 8 ? 'price-high' : diffPct < -8 ? 'price-low' : 'price-mid';
   return { ppm, median: stat.median, diffPct, label, tone, count: stat.count };
+}
+
+/**
+ * تقدير سعر عقارٍ لم يُسعَّر بعد (المرحلة ١٤): وسيط سعر المتر في حيّه × مساحته، ومعه نطاق الربيعين.
+ *
+ * ليس تثمينًا معتمدًا ولا يدّعي ذلك: لا يرى عمر المبنى ولا موقعه من الشارع ولا تشطيبه،
+ * إنما يقول «هذا ما تبيع به أنت والسوق حولك في هذا الحي». ولذلك:
+ *  - يفصل البيع عن الإيجار (خلطهما يفسد الوسيط تمامًا)،
+ *  - ويتراجع إلى مستوى المدينة إن لم تكفِ عيّنة الحي، **ويصرّح بأنه تراجع**،
+ *  - ويرفض التقدير أصلًا إن قلّت العيّنة عن الحد، فالصمت أصدق من رقمٍ من عيّنة واحدة.
+ *
+ * @param {{ city, district, type, purpose, area, excludeId? }} target
+ *   `excludeId`: معرّف العقار المقدَّر نفسه — يُستبعد من عيّنته فلا يقارن العقار بنفسه.
+ * @param {[]} samples ناتج priceSamples
+ * @returns {{ ok, basis, count, ppm: {median, low, high}, estimate, low, high, confidence, spread, comparables, excluded? }}
+ */
+export function estimatePrice(target, samples = [], { minSample = 3, comparables = 8 } = {}) {
+  const area = Number(target?.area);
+  const purpose = target?.purpose || 'sale';
+  const base = { ok: false, basis: null, count: 0, purpose, comparables: [] };
+  if (!Number.isFinite(area) || area <= 0) return { ...base, reason: 'area' };
+
+  // العقار المقدَّر لا يدخل عيّنته: سعره المطلوب هو ما نختبره، فإدخاله يجعل الرقم يصدّق نفسه.
+  const pool0 = target.excludeId ? samples.filter((s) => s.id !== target.excludeId && s.propertyId !== target.excludeId) : samples;
+  const sameKind = pool0.filter((s) => s.purpose === purpose && (!target.type || s.type === target.type) && (!target.city || s.city === target.city));
+  const inDistrict = target.district ? sameKind.filter((s) => s.district === target.district) : [];
+
+  let pool = inDistrict;
+  let basis = 'district';
+  if (pool.length < minSample) { pool = sameKind; basis = 'city'; }
+  if (pool.length < minSample) {
+    return { ...base, count: pool.length, reason: 'sample', minSample, comparables: pool.slice(0, comparables) };
+  }
+
+  const values = pool.map((s) => s.ppm);
+  const mid = median(values);
+  const low = quantile(values, 0.25);
+  const high = quantile(values, 0.75);
+  const spread = mid > 0 ? (high - low) / mid : 0;
+  // الثقة من شيئين لا من واحد: قرب العيّنة (حي أم مدينة) وتشتّتها. عيّنة واسعة متفرّقة ليست ثقة.
+  const confidence = basis === 'district' && pool.length >= 8 && spread <= 0.35 ? 'high'
+    : basis === 'district' && spread <= 0.6 ? 'medium'
+      : 'low';
+
+  const near = [...pool].sort((a, b) => Math.abs(a.area - area) - Math.abs(b.area - area) || String(b.at).localeCompare(String(a.at)));
+
+  return {
+    ok: true,
+    basis,
+    purpose,
+    count: pool.length,
+    area,
+    ppm: { median: mid, low, high },
+    estimate: mid * area,
+    low: low * area,
+    high: high * area,
+    spread,
+    confidence,
+    sources: pool.reduce((acc, s) => { acc[s.source]++; return acc; }, { inventory: 0, external: 0, deal: 0 }),
+    comparables: near.slice(0, comparables),
+  };
 }
