@@ -56,6 +56,29 @@ const DEFAULT_ROUTE = 'today'; // صفحة «يومي» هي المقصد الأ
 let bannerDismissed = false;
 let renderToken = 0;
 
+/* ===== القائمة الجانبية: الأسماء تظهر وتختفي، والأيقونات لا تختفي أبدًا (المرحلة ١٥) ===== */
+
+const isNarrow = () => window.matchMedia('(max-width: 640px)').matches;
+
+function setSidebarExpanded(on) {
+  const box = document.getElementById('sidebar-toggle');
+  if (box) box.checked = !!on;
+}
+
+/**
+ * يستعيد حالة القائمة المحفوظة ويحفظ كل تبديل — فلا تعود إلى الأيقونات وحدها بعد كل تنقّل.
+ * الافتراض: مفتوحة بأسمائها على الحاسوب، ومطوية على الجوال (حيث هي درج يغطي الصفحة).
+ */
+async function initSidebarState() {
+  const box = document.getElementById('sidebar-toggle');
+  if (!box) return;
+  const saved = (await getUI()).sidebarExpanded;
+  setSidebarExpanded(isNarrow() ? false : saved !== false);
+  box.addEventListener('change', () => {
+    if (!isNarrow()) setUI({ sidebarExpanded: box.checked }); // تفضيل الحاسوب وحده يُحفظ
+  });
+}
+
 function routeName() {
   const m = /^#\/([\w-]+)/.exec(location.hash || '');
   return m && ROUTES[m[1]] ? m[1] : DEFAULT_ROUTE;
@@ -67,8 +90,8 @@ async function navigate() {
   const page = document.getElementById('page');
   document.querySelectorAll('.sidebar-nav a').forEach((a) => a.classList.toggle('active', a.dataset.route === name));
   applyClientMode(clientModeOn()); // الروابط تُعاد بناؤها/تُرتَّب، فيُعاد تطبيق الإخفاء
-  const sidebarToggle = document.getElementById('sidebar-toggle');
-  if (sidebarToggle) sidebarToggle.checked = false; // يطوي القائمة على الجوال بعد اختيار صفحة
+  // الدرج على الجوال يُطوى بعد اختيار صفحة (وإلا غطّى الصفحة)، أما على الحاسوب فاختيارك يبقى.
+  if (isNarrow()) setSidebarExpanded(false);
   document.title = `${route.title} — كسّاب`;
   revokeImageUrls();
   clear(page);
@@ -203,6 +226,7 @@ async function init() {
   applyTheme((await getUI()).theme || 'system'); // قبل أول رسم كي لا يومض البياض
   if (!location.hash) history.replaceState(null, '', `#/${DEFAULT_ROUTE}`);
   await applySidebarOrder(); // ترتيب صفحات القائمة الجانبية المحفوظ من الإعدادات (المرحلة ٨)
+  await initSidebarState(); // قبل أول تنقّل كي لا تُطوى القائمة ثم تُفتح أمام عينك
   initGlobalSearch();
   initClientMode(); // وضع العرض للعميل (المرحلة ١٣)
   startFollowUpAlerts();

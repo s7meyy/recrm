@@ -117,18 +117,23 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .app-shell { min-height: 100vh; }
 .sidebar-toggle-checkbox { display: none; }
 
+/* القائمة على يمين الشاشة: `inset-inline-start` في صفحة RTL هو اليمين — وكان `inset-inline-end`
+   فتظهر على اليسار مخالفةً لاتجاه الصفحة (ومخالفةً لمنطق `translateX` في درج الجوال أدناه). */
 .sidebar {
-  position: fixed; top: 0; inset-inline-end: 0; height: 100vh; width: 60px;
+  position: fixed; top: 0; inset-inline-start: 0; height: 100vh; width: 60px;
   background: var(--surface); border-inline-end: 1px solid var(--line);
   display: flex; flex-direction: column; overflow-y: auto; overflow-x: hidden;
   z-index: 35; transition: width 0.15s ease;
 }
-.sidebar-toggle-checkbox:checked ~ .sidebar { width: 220px; }
+.sidebar-toggle-checkbox:checked ~ .sidebar { width: 240px; }
 .sidebar-toggle-checkbox:checked ~ .sidebar .sidebar-label { display: inline; }
-.sidebar-toggle-checkbox:checked ~ .app-main { margin-inline-end: 220px; }
+.sidebar-toggle-checkbox:checked ~ .app-main { margin-inline-start: 240px; }
 
-.sidebar-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 8px; border-bottom: 1px solid var(--line); min-height: 56px; flex-shrink: 0; }
-.sidebar-brand { font-size: 20px; font-weight: 800; color: var(--accent); text-decoration: none; width: 32px; text-align: center; flex-shrink: 0; }
+.sidebar-head { display: flex; align-items: center; justify-content: center; padding: 10px 8px; border-bottom: 1px solid var(--line); min-height: 56px; flex-shrink: 0; }
+.sidebar-brand { font-size: 20px; font-weight: 800; color: var(--accent); text-decoration: none; width: 32px; text-align: center; flex-shrink: 0; display: none; }
+/* في حال الطيّ يبقى زر الطيّ وحده: الرفّ ٦٠ بكسل لا يتسع للشعار والزر معًا فكان الزر يُقصّ. */
+.sidebar-toggle-checkbox:checked ~ .sidebar .sidebar-head { justify-content: space-between; }
+.sidebar-toggle-checkbox:checked ~ .sidebar .sidebar-brand { display: block; }
 .sidebar-expand-btn { font-size: 18px; flex-shrink: 0; cursor: pointer; }
 
 .sidebar-nav { display: flex; flex-direction: column; padding: 8px 6px; gap: 2px; }
@@ -139,27 +144,31 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .sidebar-nav a:hover { background: var(--surface-2); color: var(--text); }
 .sidebar-nav a.active { color: var(--accent-text); background: var(--accent-soft); }
 .sidebar-icon { font-size: 19px; flex-shrink: 0; width: 22px; text-align: center; }
-.sidebar-label { display: none; }
+.sidebar-label { display: none; font-size: var(--fs-sm); }
 .sidebar-scrim { display: none; }
 .sidebar-open-btn { display: none; cursor: pointer; }
 
-.app-main { margin-inline-end: 60px; min-height: 100vh; transition: margin-inline-end 0.15s ease; }
+.app-main { margin-inline-start: 60px; min-height: 100vh; transition: margin-inline-start 0.15s ease; }
 
 .topbar { position: sticky; top: 0; z-index: 20; background: var(--surface); border-bottom: 1px solid var(--line); }
 .topbar-inner { padding: 0 16px; height: 56px; display: flex; align-items: center; gap: 10px; }
 .topbar-search-btn { margin-inline-start: auto; font-size: 18px; }
 
 @media (max-width: 640px) {
-  .sidebar {
-    width: 240px; transform: translateX(100%); box-shadow: var(--shadow-modal); transition: transform 0.15s ease;
+  /* الدرج مطويٌّ بعرض صفر لا بـ`translateX` خارج الشاشة: المزاح خارجها يُطيل عرض الصفحة
+     فيظهر تمرير أفقي بضعة بكسلات، والعرض الصفري مع `overflow-x: hidden` يقصّه تمامًا. */
+  .sidebar { width: 0; border-inline-end: 0; }
+  .sidebar-toggle-checkbox:checked ~ .sidebar {
+    width: 240px; box-shadow: var(--shadow-modal); border-inline-end: 1px solid var(--line);
   }
-  .sidebar-toggle-checkbox:checked ~ .sidebar { transform: translateX(0); width: 240px; }
   .sidebar .sidebar-label { display: inline; }
+  .sidebar .sidebar-brand { display: block; }
+  .sidebar .sidebar-head { justify-content: space-between; }
   .sidebar-expand-btn { display: none; }
   .sidebar-toggle-checkbox:checked ~ .sidebar-scrim {
     display: block; position: fixed; inset: 0; background: rgba(10, 15, 12, 0.4); z-index: 34; cursor: pointer;
   }
-  .app-main, .sidebar-toggle-checkbox:checked ~ .app-main { margin-inline-end: 0; }
+  .app-main, .sidebar-toggle-checkbox:checked ~ .app-main { margin-inline-start: 0; }
   .sidebar-open-btn { display: inline-flex; align-items: center; justify-content: center; }
 }
 
