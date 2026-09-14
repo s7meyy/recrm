@@ -22,7 +22,7 @@ import { getTemplates, getCompany } from '../data/settings.js';
 import { getCurrentUser } from '../data/repository.js';
 import { renderTemplate, templateValues, whatsappLink } from '../util/templates.js';
 import { buildPriceIndex, comparePrice } from '../util/price-stats.js';
-import { printProperty } from '../util/property-print.js';
+import { printProperty, printPropertyCatalog, printAgreement } from '../util/property-print.js';
 
 // "الحالة" فرز خاص بالعقارات (بلا معنى للعروض الخارجية) فيبقى معرَّفًا هنا؛ بقية المجموعات
 // مشتركة مع خريطة العقارات عبر util/property-filters.js فلا تنحرف الصفحتان عن بعضهما.
@@ -39,7 +39,7 @@ function routePropertyId() {
 
 export async function render(container) {
   const ctx = {
-    container, query: '', view: 'grid',
+    container, query: '', view: 'grid', selected: new Set(),
     sort: { key: 'createdAt', dir: 'desc' },
     filters: Object.fromEntries(GROUPS.map(([k]) => [k, new Set()])),
     properties: [], clients: [], clientMap: new Map(),
@@ -108,10 +108,75 @@ function buildLayout(ctx) {
         el('button', { type: 'button', class: 'btn btn-primary', text: '+ إضافة عقار', onClick: () => openForm(ctx, null) }))),
   );
   ctx.nodes.filters = el('div', { class: 'filters' });
+  ctx.nodes.selectionBar = el('div', { class: 'selection-bar', hidden: true });
   ctx.nodes.list = el('div');
-  ctx.container.append(ctx.nodes.filters, ctx.nodes.list);
+  ctx.container.append(ctx.nodes.filters, ctx.nodes.selectionBar, ctx.nodes.list);
   renderFilters(ctx);
   renderList(ctx);
+}
+
+/**
+ * شريط التحديد (المرحلة ١٣): مقارنة جنبًا إلى جنب أو كتالوج مطبوع لعدة عقارات.
+ * يظهر فقط عند اختيار عقار — فلا يزاحم الواجهة في الاستعمال العادي.
+ */
+function renderSelectionBar(ctx) {
+  const bar = ctx.nodes.selectionBar;
+  if (!bar) return;
+  const ids = [...ctx.selected];
+  bar.hidden = ids.length === 0;
+  clear(bar);
+  if (!ids.length) return;
+  const chosen = () => ctx.properties.filter((p) => ctx.selected.has(p.id));
+  bar.append(
+    el('span', { class: 'strong', text: `${ids.length} عقار مختار` }),
+    el('button', {
+      type: 'button', class: 'btn btn-sm', text: '⇄ قارن',
+      onClick: () => (ids.length < 2 ? toast('اختر عقارين على الأقل للمقارنة', 'error') : openCompare(ctx, chosen())),
+    }),
+    el('button', {
+      type: 'button', class: 'btn btn-sm', text: '🖨️ كتالوج',
+      onClick: async () => {
+        const company = await getCompany();
+        await printPropertyCatalog(chosen(), { lists: ctx.lists, company });
+      },
+    }),
+    el('button', {
+      type: 'button', class: 'btn btn-ghost btn-sm', text: 'إلغاء التحديد',
+      onClick: () => { ctx.selected.clear(); renderList(ctx); renderSelectionBar(ctx); },
+    }));
+}
+
+/** مقارنة جنبًا إلى جنب: صفٌّ لكل معيار وعمودٌ لكل عقار — كما يقرؤها العميل. */
+function openCompare(ctx, items) {
+  const rows = [
+    ['النوع', (p) => typeLabel(ctx.lists, p.type)],
+    ['الحي', (p) => p.district || '—'],
+    ['المدينة', (p) => p.city || '—'],
+    ['الغرض', (p) => (p.purposes || []).map((k) => labelFor(ENUMS.purposes, k)).join('، ') || '—'],
+    ['المساحة', (p) => formatArea(p.area)],
+    ['السعر', (p) => formatSAR(p.price)],
+    ['سعر المتر', (p) => (p.price && p.area ? `${formatNumber(Math.round(p.price / p.area))} ريال` : '—')],
+    ['الحالة', (p) => statusLabel(ctx.lists, p.status)],
+    ['الصور', (p) => formatNumber((p.images || []).length)],
+    ['ملاحظات', (p) => p.notes || '—'],
+  ];
+  const modal = openModal({
+    title: `مقارنة ${items.length} عقارات`,
+    size: 'wide',
+    body: el('div', { class: 'table-wrap' }, el('table', { class: 'table compare-table' },
+      el('thead', {}, el('tr', {}, el('th', { text: 'المعيار' }),
+        ...items.map((p) => el('th', { text: `${typeLabel(ctx.lists, p.type)} — ${p.district || p.city || ''}` })))),
+      el('tbody', {}, rows.map(([label, get]) => el('tr', {},
+        el('th', { text: label }),
+        ...items.map((p) => el('td', { text: get(p) }))))))),
+    footer: [
+      el('button', {
+        type: 'button', class: 'btn', text: '🖨️ اطبع الكتالوج',
+        onClick: async () => { modal.close(); await printPropertyCatalog(items, { lists: ctx.lists, company: await getCompany() }); },
+      }),
+      el('button', { type: 'button', class: 'btn btn-primary', text: 'إغلاق', onClick: () => modal.close() }),
+    ],
+  });
 }
 
 /* ===== الفرز ===== */
@@ -170,6 +235,7 @@ function renderFilters(ctx) {
 /* ===== القائمة ===== */
 
 function renderList(ctx) {
+  renderSelectionBar(ctx);
   const items = ctx.properties.filter((p) => passes(ctx, p));
   ctx.nodes.count.textContent = items.length === ctx.properties.length
     ? `(${ctx.properties.length})`
@@ -233,7 +299,13 @@ function renderGrid(ctx, items) {
       imgBox.append(el('span', { class: 'card-noimg', text: typeLabel(ctx.lists, p.type) }));
     }
     const owner = ownerLabel(ctx, p);
-    grid.append(el('article', { class: 'card', onClick: () => openForm(ctx, p) },
+    const pick = el('input', {
+      type: 'checkbox', class: 'card-pick', title: 'اختر للمقارنة أو الكتالوج',
+      checked: ctx.selected.has(p.id),
+      onClick: (e) => { e.stopPropagation(); },
+      onChange: (e) => { if (e.target.checked) ctx.selected.add(p.id); else ctx.selected.delete(p.id); renderSelectionBar(ctx); },
+    });
+    grid.append(el('article', { class: 'card', onClick: () => openForm(ctx, p) }, pick,
       imgBox,
       el('div', { class: 'card-body' },
         el('div', { class: 'card-top' },
@@ -244,8 +316,10 @@ function renderGrid(ctx, items) {
         priceNode(p),
         el('div', { class: 'card-meta' },
           el('span', {}, formatArea(p.area)),
-          el('span', {}, owner || 'بلا مالك')),
-        el('div', { class: 'card-meta' }, completenessBadge(ctx, p), sourceBadge(p.referralSource), ppmBadge(ctx, p)))));
+          // بيانات المالك والمصدر تُخفى في «وضع العرض للعميل» (المرحلة ١٣).
+          el('span', { 'data-sensitive': true }, owner || 'بلا مالك')),
+        el('div', { class: 'card-meta' }, completenessBadge(ctx, p),
+          el('span', { 'data-sensitive': true }, sourceBadge(p.referralSource)), ppmBadge(ctx, p)))));
   }
   return grid;
 }
@@ -259,7 +333,7 @@ const COLUMNS = [
   { key: 'area', label: 'المساحة', get: (p) => formatArea(p.area), sort: (p) => p.area, num: true },
   { key: 'price', label: 'السعر', get: (p) => formatSAR(p.price), sort: (p) => p.price, num: true },
   { key: 'status', label: 'الحالة', render: (p, ctx) => statusBadge(ctx, p.status), sort: (p, ctx) => statusLabel(ctx.lists, p.status) },
-  { key: 'owner', label: 'صاحب العقار', get: (p, ctx) => ownerLabel(ctx, p) || '—', sort: (p, ctx) => ownerLabel(ctx, p) },
+  { key: 'owner', label: 'صاحب العقار', sensitive: true, get: (p, ctx) => ownerLabel(ctx, p) || '—', sort: (p, ctx) => ownerLabel(ctx, p) },
   { key: 'complete', label: 'الاكتمال', render: (p, ctx) => completenessBadge(ctx, p), sort: (p, ctx) => (completeness(ctx, p).complete ? 1 : 0), num: true },
   { key: 'createdAt', label: 'أُضيف في', get: (p) => formatDate(p.createdAt), sort: (p) => p.createdAt },
 ];
@@ -280,11 +354,13 @@ function sortItems(ctx, items) {
 }
 
 function renderTable(ctx, items) {
+  // العمود الحسّاس يُخفى في «وضع العرض للعميل» بصنف data-sensitive على الخلية والترويسة معًا.
   const head = el('tr', {}, COLUMNS.map((col) => {
     const sortable = !!col.sort;
     const active = ctx.sort.key === col.key;
     return el('th', {
       class: sortable ? 'sortable' : null,
+      'data-sensitive': col.sensitive || null,
       onClick: sortable ? () => {
         ctx.sort = { key: col.key, dir: active && ctx.sort.dir === 'asc' ? 'desc' : 'asc' };
         renderList(ctx);
@@ -292,7 +368,8 @@ function renderTable(ctx, items) {
     }, col.label, active ? el('span', { class: 'sort-mark', text: ctx.sort.dir === 'asc' ? '▲' : '▼' }) : null);
   }));
   const body = el('tbody', {}, sortItems(ctx, items).map((p) => el('tr', { onClick: () => openForm(ctx, p) },
-    COLUMNS.map((col) => el('td', { class: col.num ? 'num' : null }, col.render ? col.render(p, ctx) : col.get(p, ctx))))));
+    COLUMNS.map((col) => el('td', { class: col.num ? 'num' : null, 'data-sensitive': col.sensitive || null },
+      col.render ? col.render(p, ctx) : col.get(p, ctx))))));
   return el('div', { class: 'table-wrap' }, el('table', { class: 'table' }, el('thead', {}, head), body));
 }
 
@@ -397,10 +474,25 @@ async function openShareMenu(ctx, p) {
       onClick: () => { navigator.share({ title: 'عقار', text: shareSummary(ctx, p), url: link }).catch(() => {}); },
     }) : null,
     el('button', {
+      type: 'button', class: 'btn btn-ghost', text: '🎯 من يناسبه هذا العقار؟',
+      onClick: async () => {
+        modalRef?.close();
+        const found = await announceMatches(p, { title: 'من يناسبه هذا العقار؟' });
+        if (!found.length) toast('لا طلب نشط يطابق هذا العقار حاليًا', 'info');
+      },
+    }),
+    el('button', {
       type: 'button', class: 'btn btn-ghost', text: '🖨️ بطاقة العقار (PDF / طباعة)',
       onClick: async () => {
         modalRef?.close();
         await printProperty(p, { lists: ctx.lists, company });
+      },
+    }),
+    el('button', {
+      type: 'button', class: 'btn btn-ghost', text: '📝 اتفاقية وساطة (طباعة)',
+      onClick: async () => {
+        modalRef?.close();
+        await printAgreement(p, { lists: ctx.lists, company, owner });
       },
     }),
     el('button', {
@@ -575,16 +667,32 @@ async function openForm(ctx, existing) {
     clear(imagesBox);
     for (const url of state.previewUrls) URL.revokeObjectURL(url);
     state.previewUrls = [];
-    for (const id of draft.images) {
+    draft.images.forEach((id, index) => {
       const removed = state.removedImages.has(id);
       const img = el('img', { alt: '' });
       getImageUrl(id, { thumb: true }).then((url) => { if (url) img.src = url; });
-      imagesBox.append(el('div', { class: `img-tile${removed ? ' removed' : ''}` }, img,
+      // الأولى هي الغلاف: هي التي يراها العميل في الصفحة العامة وبطاقة الطباعة (المرحلة ١٣).
+      const isCover = index === 0;
+      imagesBox.append(el('div', { class: `img-tile${removed ? ' removed' : ''}${isCover ? ' is-cover' : ''}` }, img,
+        isCover ? el('span', { class: 'img-cover-tag', text: 'الغلاف' }) : null,
+        el('div', { class: 'img-tools' },
+          index > 0 ? el('button', {
+            type: 'button', class: 'img-tool', text: '→', title: 'قدّمها',
+            onClick: () => { const [x] = draft.images.splice(index, 1); draft.images.splice(index - 1, 0, x); renderImages(); },
+          }) : null,
+          index < draft.images.length - 1 ? el('button', {
+            type: 'button', class: 'img-tool', text: '←', title: 'أخّرها',
+            onClick: () => { const [x] = draft.images.splice(index, 1); draft.images.splice(index + 1, 0, x); renderImages(); },
+          }) : null,
+          !isCover ? el('button', {
+            type: 'button', class: 'img-tool', text: '★', title: 'اجعلها الغلاف',
+            onClick: () => { const [x] = draft.images.splice(index, 1); draft.images.unshift(x); renderImages(); },
+          }) : null),
         el('button', {
           type: 'button', class: 'img-remove', text: removed ? '↺' : '✕', title: removed ? 'تراجع عن الحذف' : 'حذف الصورة',
           onClick: () => { if (removed) state.removedImages.delete(id); else state.removedImages.add(id); renderImages(); },
         })));
-    }
+    });
     state.newFiles.forEach((file, index) => {
       const url = URL.createObjectURL(file);
       state.previewUrls.push(url);
@@ -645,6 +753,7 @@ async function openForm(ctx, existing) {
         if (found) toast(`رُبط العقار بعميل موجود بهذا الرقم: ${found.name || formatPhone(found.phone)}`);
         data.ownerId = owner.id;
       }
+      // ترتيب draft.images هو ترتيب العرض (أولها الغلاف) — يُحفظ كما رتّبته.
       data.images = draft.images.filter((id) => !state.removedImages.has(id));
       let rec = isEdit ? await repo.properties.update(existing.id, data) : await repo.properties.create(data);
       if (state.removedImages.size) await deleteImages([...state.removedImages]);
@@ -713,7 +822,7 @@ async function openForm(ctx, existing) {
     el('div', { class: 'form-section' },
       el('div', { class: 'form-grid one' },
         labeled('الملاحظات', notesInput),
-        fieldGroup('الصور', el('div', {}, imagesBox, el('span', { class: 'field-hint', text: 'تُضغط الصور تلقائيًا قبل الحفظ، ويمكن حذف أي صورة لاحقًا لتوفير المساحة.' }))))),
+        fieldGroup('الصور', el('div', {}, imagesBox, el('span', { class: 'field-hint', text: 'الصورة الأولى هي الغلاف الذي يراه العميل — رتّبها بالأسهم أو اضغط ★. وتُضغط الصور تلقائيًا قبل الحفظ.' }))))),
   );
 
   renderTypeFields();

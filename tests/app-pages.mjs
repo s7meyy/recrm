@@ -14,7 +14,7 @@ await page.waitForSelector('#page .page-head, #page .card, #page .empty', { time
 await page.waitForTimeout(800);
 
 // 1) كل الصفحات تُفتح بلا أخطاء
-const routes = ['dashboard','properties','map','clients','tours','requests','matches','external','invoices','tasks','notes','settings'];
+const routes = ['today','dashboard','opportunities','properties','map','clients','tours','requests','matches','external','invoices','expenses','publish','tasks','notes','settings'];
 for (const r of routes) {
   await page.evaluate(h => { location.hash = h; }, `#/${r}`);
   await page.waitForTimeout(600);
@@ -30,8 +30,8 @@ const dbInfo = await page.evaluate(async () => {
     rq.onsuccess = () => { const d = rq.result; res({ version: d.version, stores: [...d.objectStoreNames] }); d.close(); };
   });
 });
-ok('DB_VERSION = 3', dbInfo.version === 3, 'version=' + dbInfo.version);
-ok('مخزن invoices أُنشئ', dbInfo.stores.includes('invoices'), dbInfo.stores.join(','));
+ok('DB_VERSION = 4', dbInfo.version === 4, 'version=' + dbInfo.version);
+ok('مخزنا invoices وexpenses أُنشئا', dbInfo.stores.includes('invoices') && dbInfo.stores.includes('expenses'), dbInfo.stores.join(','));
 
 // 3) تصنيفا العميل المدمجان حاضران من أول تشغيل
 const tags = await page.evaluate(async () => (await import('/js/data/settings.js')).getLists().then(l => l.clientTags));

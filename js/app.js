@@ -10,6 +10,7 @@ import { startFollowUpAlerts } from './util/follow-up-alerts.js';
 import { initGlobalSearch } from './util/global-search.js';
 import { applySidebarOrder } from './util/sidebar.js';
 import { applyTheme } from './util/theme.js';
+import { initClientMode, applyClientMode, clientModeOn } from './util/client-mode.js';
 import { el, clear, toast } from './util/dom.js';
 import { daysWord } from './util/format.js';
 import * as todayPage from './pages/today.js';
@@ -23,6 +24,7 @@ import * as requestsPage from './pages/requests.js';
 import * as matchesPage from './pages/matches.js';
 import * as externalPage from './pages/external.js';
 import * as invoicesPage from './pages/invoices.js';
+import * as expensesPage from './pages/expenses.js';
 import * as publishPage from './pages/publish.js';
 import * as tasksPage from './pages/tasks.js';
 import * as notesPage from './pages/notes.js';
@@ -41,6 +43,7 @@ const ROUTES = {
   matches: { title: 'المطابقات', render: matchesPage.render },
   external: { title: 'العروض الخارجية', render: externalPage.render },
   invoices: { title: 'الفواتير وعروض الأسعار', render: invoicesPage.render },
+  expenses: { title: 'المصاريف', render: expensesPage.render },
   publish: { title: 'الصفحة العامة للعروض', render: publishPage.render },
   tasks: { title: 'المهام', render: tasksPage.render },
   notes: { title: 'الأفكار والملاحظات', render: notesPage.render },
@@ -61,6 +64,7 @@ async function navigate() {
   const route = ROUTES[name];
   const page = document.getElementById('page');
   document.querySelectorAll('.sidebar-nav a').forEach((a) => a.classList.toggle('active', a.dataset.route === name));
+  applyClientMode(clientModeOn()); // الروابط تُعاد بناؤها/تُرتَّب، فيُعاد تطبيق الإخفاء
   const sidebarToggle = document.getElementById('sidebar-toggle');
   if (sidebarToggle) sidebarToggle.checked = false; // يطوي القائمة على الجوال بعد اختيار صفحة
   document.title = `${route.title} — كسّاب`;
@@ -198,6 +202,7 @@ async function init() {
   if (!location.hash) history.replaceState(null, '', `#/${DEFAULT_ROUTE}`);
   await applySidebarOrder(); // ترتيب صفحات القائمة الجانبية المحفوظ من الإعدادات (المرحلة ٨)
   initGlobalSearch();
+  initClientMode(); // وضع العرض للعميل (المرحلة ١٣)
   startFollowUpAlerts();
   await navigate();
   refreshBanner();

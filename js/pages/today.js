@@ -6,7 +6,7 @@
 
 import { repo } from '../data/repository.js';
 import { ENUMS, labelFor, clientPriority, clientTagClass } from '../data/schema.js';
-import { getLists, getCompleteness, getFollowUpSettings, typeLabel, getUI, setUI } from '../data/settings.js';
+import { getLists, getCompleteness, getFollowUpSettings, typeLabel, getUI, setUI, getGoals } from '../data/settings.js';
 import { loadMatchingContext, candidatesFor, matchReadiness } from '../data/matching.js';
 import { buildOpportunityIndex, topOpportunities } from '../util/opportunity.js';
 import { el, clear, badge, emptyState } from '../util/dom.js';
@@ -22,9 +22,10 @@ export async function render(container) {
 }
 
 async function loadData() {
-  const [ui, lists, completeness, followUp, ctx, tasks, externals, invoices] = await Promise.all([
+  const [ui, lists, completeness, followUp, ctx, tasks, externals, invoices, goals, deals, expenses] = await Promise.all([
     getUI(), getLists(), getCompleteness(), getFollowUpSettings(),
     loadMatchingContext({ withMatches: true }), repo.tasks.list(), repo.externalListings.list(), repo.invoices.list(),
+    getGoals(), repo.deals.list(), repo.expenses.list(),
   ]);
   const since = ui.lastVisitAt || null;
   const clientsById = new Map(ctx.clients.map((c) => [c.id, c]));
@@ -73,8 +74,34 @@ async function loadData() {
   // أعلى الأحياء عجزًا (المرحلة ١٢) — نفس حساب صفحة «الفرص» بلا تكرار منطق.
   const opportunities = topOpportunities(buildOpportunityIndex(ctx, { minScore: ctx.settings.minScore }).rows, 3);
 
+  /* الأهداف الشهرية والتجديدات والعروض البائتة (المرحلة ١٣) */
+  const thisMonth = (iso) => {
+    const d = new Date(iso);
+    return !Number.isNaN(d.getTime()) && d.getFullYear() === new Date().getFullYear() && d.getMonth() === new Date().getMonth();
+  };
+  const monthDeals = deals.filter((d) => thisMonth(d.date));
+  const progress = {
+    goals,
+    deals: monthDeals.length,
+    commission: monthDeals.reduce((a, d) => a + (Number(d.commission) || 0), 0),
+    spent: expenses.filter((e) => thisMonth(e.date)).reduce((a, e) => a + (Number(e.amount) || 0), 0),
+  };
+  // تجديد الإيجار: العقد الذي ينتهي خلال ٤٥ يومًا (أو انتهى ولم يُتابَع).
+  const renewals = deals
+    .filter((d) => d.leaseEndAt)
+    .map((d) => ({ deal: d, days: daysBetween(new Date().toISOString(), d.leaseEndAt) }))
+    .filter((x) => x.days != null && x.days <= 45)
+    .sort((a, b) => a.days - b.days);
+  // العرض البائت: عقار معتمد لم يُحدَّث منذ الحدّ المضبوط في الإعدادات.
+  const staleListings = approved
+    .map((p) => ({ property: p, days: daysBetween(p.updatedAt, new Date().toISOString()) }))
+    .filter((x) => x.days != null && x.days >= goals.staleListingDays
+      && !['sold', 'rented'].includes(x.property.status))
+    .sort((a, b) => b.days - a.days);
+
   return {
     since, lists, followUps, stale, dueTasks, newMatches, incomplete, awaitingApproval, unreadyExternals, opportunities,
+    progress, renewals, staleListings,
     clientsById, tasksPending: tasks.filter((t) => !t.done).length,
     quotesOpen: invoices.filter((i) => i.type === 'quote').length,
   };
@@ -125,6 +152,15 @@ function build(container, d) {
   const grid = el('div', { class: 'today-grid' });
   container.append(grid);
 
+  /* الأهداف الشهرية (المرحلة ١٣) — لا تظهر ما لم تضبط هدفًا */
+  if (d.progress.goals.dealsPerMonth || d.progress.goals.commissionPerMonth) {
+    grid.append(section('هدف الشهر', null, el('div', {},
+      goalBar('صفقات', d.progress.deals, d.progress.goals.dealsPerMonth, (v) => String(v)),
+      goalBar('عمولات', d.progress.commission, d.progress.goals.commissionPerMonth, formatSAR),
+      el('p', { class: 'muted small', text: `مصاريف هذا الشهر: ${formatSAR(d.progress.spent)} · الصافي: ${formatSAR(d.progress.commission - d.progress.spent)}` })),
+    { href: '#/expenses', hrefText: 'المصاريف →' }));
+  }
+
   /* متابعات اليوم */
   grid.append(section('متابعات اليوم', d.followUps.length,
     d.followUps.length
@@ -165,6 +201,26 @@ function build(container, d) {
       : el('p', { class: 'muted small', text: 'لا أحد تجاوز الحدّ.' }),
     { href: '#/clients' }));
 
+  /* تجديد عقود الإيجار (المرحلة ١٣) */
+  if (d.renewals.length) {
+    grid.append(section('عقود إيجار تقترب نهايتها', d.renewals.length,
+      el('div', {}, d.renewals.slice(0, 6).map(({ deal, days }) => row(
+        `عقد ينتهي ${formatDate(deal.leaseEndAt)}`,
+        days < 0 ? `انتهى قبل ${daysWord(Math.abs(days))} — تابع التجديد` : `بعد ${daysWord(days)} — كلّم الطرفين مبكرًا`,
+        el('a', { class: 'btn btn-ghost btn-sm', href: '#/clients', text: 'العملاء' }))),
+      ), { tone: 'today-warn' }));
+  }
+
+  /* عروض بائتة (المرحلة ١٣) */
+  if (d.staleListings.length) {
+    grid.append(section('عروض بائتة تحتاج مراجعة', d.staleListings.length,
+      el('div', {}, d.staleListings.slice(0, 6).map(({ property, days }) => row(
+        `${typeLabel(d.lists, property.type)} — ${[property.district, property.city].filter(Boolean).join('، ')}`,
+        `لم يُحدَّث منذ ${daysWord(days)} — راجع السعر والتوفر`,
+        el('a', { class: 'btn btn-ghost btn-sm', href: `#/properties/${property.id}`, text: 'فتح' }))),
+      ), { href: '#/properties' }));
+  }
+
   /* فرص الاقتناص (المرحلة ١٢) */
   grid.append(section('أحياء يطلبها عملاؤك ولا تملك فيها', d.opportunities.length,
     d.opportunities.length
@@ -188,6 +244,17 @@ function build(container, d) {
 
   grid.append(section('يحتاج إكمالًا', chores.length,
     chores.length ? el('div', {}, chores) : el('p', { class: 'muted small', text: 'لا شيء ناقص — ممتاز.' })));
+}
+
+/** شريط تقدّم نحو هدف الشهر — يتجاوز ١٠٠٪ بلا كسر (تجاوزتَ هدفك). */
+function goalBar(label, value, goal, fmt) {
+  if (!goal) return null;
+  const pct = Math.min(100, Math.round((value / goal) * 100));
+  return el('div', { class: 'goal-row' },
+    el('div', { class: 'goal-head' },
+      el('span', { text: label }),
+      el('span', { class: 'muted small', text: `${fmt(value)} من ${fmt(goal)} (${pct}٪)` })),
+    el('div', { class: 'goal-track' }, el('div', { class: `goal-fill${value >= goal ? ' done' : ''}`, style: { width: `${pct}%` } })));
 }
 
 function chip(value, label) {

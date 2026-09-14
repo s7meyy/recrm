@@ -24,6 +24,7 @@ const SUITES = [
   ['invoices-lifecycle.mjs', OPEN],
   ['today-and-tools.mjs', OPEN],
   ['opportunities.mjs', OPEN],
+  ['expenses-and-tools.mjs', OPEN],
   ['gate-and-publish.mjs', LOCKED],
   ['rename-and-vault.mjs', LOCKED],
   ['offer-pwa-push.mjs', LOCKED],

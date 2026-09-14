@@ -78,6 +78,10 @@
 
 * { box-sizing: border-box; }
 
+/* سمة hidden تسبق أي قاعدة display لاحقة — بدونها يظهر عنصرٌ أُخفي بالسمة
+   لمجرد أن صنفه يحمل display:flex (حدث فعلًا مع شريط وضع العرض للعميل). */
+[hidden] { display: none !important; }
+
 html {
   font-family: var(--font);
   font-size: var(--fs);

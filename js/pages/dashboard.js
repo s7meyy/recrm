@@ -21,15 +21,15 @@ export async function render(container) {
 }
 
 async function loadData() {
-  const [clients, properties, tours, matches, externals, deals, lists, completeness, followUp, tasks, invoices] = await Promise.all([
+  const [clients, properties, tours, matches, externals, deals, lists, completeness, followUp, tasks, invoices, expenses] = await Promise.all([
     repo.clients.list(), repo.properties.list(), repo.tours.list(), repo.matches.list(),
     repo.externalListings.list(), repo.deals.list(), getLists(), getCompleteness(), getFollowUpSettings(), repo.tasks.list(),
-    repo.invoices.list(),
+    repo.invoices.list(), repo.expenses.list(),
   ]);
   const approved = properties.filter((p) => p.captureStatus === 'approved');
   const clientMap = new Map(clients.map((c) => [c.id, c]));
   const dealPropertyIds = new Set(deals.map((d) => d.propertyId).filter(Boolean));
-  return { clients, properties, approved, tours, matches, externals, deals, lists, completeness, followUp, tasks, invoices, clientMap, dealPropertyIds };
+  return { clients, properties, approved, tours, matches, externals, deals, lists, completeness, followUp, tasks, invoices, expenses, clientMap, dealPropertyIds };
 }
 
 /* ===== أدوات تجميع عامة ===== */
@@ -129,7 +129,7 @@ function statChip(value, label) {
 }
 
 function buildLayout(container, data) {
-  const { clients, properties, approved, tours, matches, externals, deals, lists, completeness, followUp, tasks, invoices, clientMap, dealPropertyIds } = data;
+  const { clients, properties, approved, tours, matches, externals, deals, lists, completeness, followUp, tasks, invoices, expenses, clientMap, dealPropertyIds } = data;
   clear(container);
 
   const pending = properties.filter((p) => p.captureStatus !== 'approved').length;
@@ -218,6 +218,10 @@ function buildLayout(container, data) {
       el('dt', { text: 'معدل التحويل (عقار ← صفقة)' }), el('dd', { text: deal.conversion == null ? '—' : `${formatNumber(deal.conversion)}٪` })),
     el('div', { class: 'muted small', text: 'صفقات العروض الخارجية (بلا عقار من مخزونك) تدخل الإيراد والعمولة أعلاه، ولا تدخل معدل التحويل.' })));
 
+  /* صافي الربح ولماذا تضيع الصفقات (المرحلة ١٣) */
+  grid.append(panel('صافي الربح', null, ...profitSection({ deals, expenses })));
+  grid.append(panel('لماذا تضيع الصفقات', null, ...rejectSection(matches)));
+
   /* مؤشر السوق من بياناتك (المرحلة ١١) */
   grid.append(panel('مؤشر سعر المتر', null, ...priceSection({ properties, externals, deals, lists })));
 
@@ -256,6 +260,50 @@ function priceSection({ properties, externals, deals, lists }) {
       el('tbody', {}, rows))),
     el('div', { class: 'muted small', text: 'الوسيط لا المتوسط (فلا يفسده عرض شاذّ واحد). والصفقات المنجزة تدخل بسعرها النهائي لا المطلوب.' }),
   ];
+}
+
+/** عمولاتك ناقص مصاريفك — سعر البيع نفسه ليس دخلك فلا يدخل هنا. */
+function profitSection({ deals, expenses }) {
+  const now = new Date();
+  const inRange = (iso, kind) => {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return false;
+    return kind === 'month' ? d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() : d.getFullYear() === now.getFullYear();
+  };
+  const sum = (list, key, kind) => list.filter((x) => inRange(x.date, kind)).reduce((a, x) => a + (Number(x[key]) || 0), 0);
+  const rows = [['month', 'هذا الشهر'], ['year', 'هذه السنة']].map(([kind, label]) => {
+    const commission = sum(deals, 'commission', kind);
+    const spent = sum(expenses, 'amount', kind);
+    return { label, commission, spent, net: commission - spent };
+  });
+  return [
+    el('dl', { class: 'kv' }, rows.flatMap((r) => [
+      el('dt', { text: `عمولات ${r.label}` }), el('dd', { text: formatSAR(r.commission) }),
+      el('dt', { text: `مصاريف ${r.label}` }), el('dd', { text: formatSAR(r.spent) }),
+      el('dt', { text: `صافي ${r.label}` }), el('dd', {}, badge(formatSAR(r.net), r.net < 0 ? 'badge-danger' : 'badge-ok')),
+    ])),
+    el('div', { class: 'muted small', text: 'الإيراد في لوحة «الصفقات» هو سعر البيع لا دخلك؛ الدخل هو العمولة، والصافي بعد المصاريف.' }),
+    el('a', { class: 'btn btn-sm', href: '#/expenses', text: 'افتح المصاريف →' }),
+  ];
+}
+
+/** أسباب رفض العملاء: نمطك الحقيقي يظهر بعد ثلاثين رفضًا لا بعد ثلاثة. */
+function rejectSection(matches) {
+  const rejected = matches.filter((m) => m.status === 'not_interested');
+  if (!rejected.length) return [el('div', { class: 'muted small', text: 'لا مطابقات مرفوضة بعد.' })];
+  const withReason = rejected.filter((m) => m.rejectReason);
+  const counts = countBy(withReason, (m) => labelFor(ENUMS.matchRejectReasons, m.rejectReason));
+  return [
+    el('div', { class: 'stat-strip' },
+      statChip(rejected.length, 'مطابقة مرفوضة'),
+      statChip(rejected.length - withReason.length, 'بلا سبب مسجَّل')),
+    withReason.length
+      ? breakdownColumn('الأسباب', counts)
+      : el('div', { class: 'muted small', text: 'لم يُسجَّل سبب لأي رفض بعد — يُسأل تلقائيًا عند اختيار «غير مهتم».' }),
+    withReason.length < 10
+      ? el('div', { class: 'muted small', text: 'العيّنة صغيرة: لا تبنِ قرارًا على أقل من عشرة أسباب.' })
+      : null,
+  ].filter(Boolean);
 }
 
 function invoiceSection(invoices) {

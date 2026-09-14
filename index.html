@@ -32,6 +32,7 @@
         <a href="#/matches" data-route="matches" title="المطابقات"><span class="sidebar-icon">🔗</span><span class="sidebar-label">المطابقات</span></a>
         <a href="#/external" data-route="external" title="العروض الخارجية"><span class="sidebar-icon">🌐</span><span class="sidebar-label">العروض الخارجية</span></a>
         <a href="#/invoices" data-route="invoices" title="الفواتير وعروض الأسعار"><span class="sidebar-icon">🧾</span><span class="sidebar-label">الفواتير وعروض الأسعار</span></a>
+        <a href="#/expenses" data-route="expenses" title="المصاريف"><span class="sidebar-icon">💸</span><span class="sidebar-label">المصاريف</span></a>
         <a href="#/publish" data-route="publish" title="الصفحة العامة للعروض"><span class="sidebar-icon">🌍</span><span class="sidebar-label">الصفحة العامة للعروض</span></a>
         <a href="#/tasks" data-route="tasks" title="المهام"><span class="sidebar-icon">✅</span><span class="sidebar-label">المهام</span></a>
         <a href="#/notes" data-route="notes" title="الأفكار والملاحظات"><span class="sidebar-icon">💡</span><span class="sidebar-label">الأفكار والملاحظات</span></a>
@@ -45,10 +46,12 @@
         <div class="topbar-inner">
           <label for="sidebar-toggle" class="icon-btn sidebar-open-btn" aria-label="القائمة">☰</label>
           <button type="button" id="global-search-btn" class="icon-btn topbar-search-btn" aria-label="بحث" title="بحث (/)">🔍</button>
+          <button type="button" id="client-mode-btn" class="icon-btn" aria-label="وضع العرض للعميل" title="وضع العرض للعميل: يخفي بيانات المالك وملاحظاتك">👁️</button>
         </div>
       </header>
 
       <div id="backup-banner" class="banner" hidden></div>
+      <div id="client-mode-banner" class="banner banner-client" hidden></div>
 
       <main id="page" class="page"></main>
     </div>

@@ -22,6 +22,7 @@ export const SETTINGS_KEYS = {
   publish: 'publish', // الصفحة العامة: المفتاح والعروض المختارة وآخر نشر (المرحلة ٩)
   vault: 'vault', // النسخة السحابية المشفَّرة: العبارة السرّية والرفع التلقائي (المرحلة ١٠)
   templates: 'templates', // قوالب رسائل واتساب (المرحلة ١١)
+  goals: 'goals', // أهداف شهرية (المرحلة ١٣)
 };
 
 const EMPTY_LISTS = () => ({ propertyTypes: [], propertyStatuses: [], clientTags: [], cities: [], districts: {}, sources: [] });
@@ -463,6 +464,10 @@ export function orderedPageKeys(defaultKeys, savedOrder = []) {
 
 export const DEFAULT_COMPANY = {
   name: '', phone: '', email: '', address: '', crNumber: '', // السجل التجاري/رقم الترخيص — نص حر يُطبع كما هو
+  // اتفاقية الوساطة (المرحلة ١٣): تُطبع من بيانات العقار والمالك + هذه البنود
+  commissionPercent: 2.5,
+  agreementDurationDays: 90,
+  agreementTerms: '',
   logoImageId: null, // صورة في مخزن images (entity: 'company')
   footerNote: '', // شروط أو تذييل يُطبع أسفل كل مستند
   invoicePrefix: 'فاتورة ', quotePrefix: 'عرض سعر ', // بادئة الرقم المقترح لكل سلسلة
@@ -571,4 +576,29 @@ export async function setTemplates(list) {
 export async function resetTemplates() {
   await repo.settings.remove(SETTINGS_KEYS.templates);
   return DEFAULT_TEMPLATES.map((t) => ({ ...t }));
+}
+
+
+/* ===== الأهداف الشهرية وحدّ العرض البائت (المرحلة ١٣) ===== */
+
+export const DEFAULT_GOALS = {
+  dealsPerMonth: 0, // 0 = بلا هدف (فلا يظهر شريط تقدّم يزعجك بلا داعٍ)
+  commissionPerMonth: 0,
+  staleListingDays: 60, // عقار لم يُحدَّث منذ هذه المدة يُعدّ بائتًا ويُنبَّه عليه
+};
+
+export async function getGoals() {
+  const stored = (await repo.settings.get(SETTINGS_KEYS.goals, null)) || {};
+  const num = (v, d) => (Number.isFinite(Number(v)) && v !== null && v !== '' ? Math.max(0, Number(v)) : d);
+  return {
+    dealsPerMonth: num(stored.dealsPerMonth, DEFAULT_GOALS.dealsPerMonth),
+    commissionPerMonth: num(stored.commissionPerMonth, DEFAULT_GOALS.commissionPerMonth),
+    staleListingDays: Math.max(7, num(stored.staleListingDays, DEFAULT_GOALS.staleListingDays)),
+  };
+}
+
+export async function setGoals(patch) {
+  const next = { ...(await getGoals()), ...patch };
+  await repo.settings.set(SETTINGS_KEYS.goals, next);
+  return next;
 }

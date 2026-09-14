@@ -124,6 +124,7 @@ const PREPARE = {
   },
   matches(rec) {
     rec.score = toNumberOrNull(rec.score) ?? 0;
+    rec.rejectReason = trim(rec.rejectReason) || null;
     rec.notes = trim(rec.notes);
     rec.searchKey = buildSearchKey([rec.notes]);
   },
@@ -173,6 +174,14 @@ const PREPARE = {
     rec.tags = [...new Set((rec.tags || []).map(trim).filter(Boolean))];
     rec.searchKey = buildSearchKey([rec.text, ...rec.tags]);
   },
+  expenses(rec) {
+    rec.amount = toNumberOrNull(rec.amount);
+    rec.category = trim(rec.category) || 'other';
+    rec.note = trim(rec.note);
+    rec.dealId = rec.dealId || null;
+    rec.propertyId = rec.propertyId || null;
+    rec.searchKey = buildSearchKey([rec.note]);
+  },
   invoices(rec) {
     rec.type = trim(rec.type);
     rec.number = trim(rec.number);
@@ -217,6 +226,11 @@ const VALIDATE = {
   matches(rec, errors) {
     if (!rec.propertyId && !rec.externalId) errors.push('المطابقة تحتاج عقارًا أو عرضًا خارجيًا');
     if (!inEnum(ENUMS.matchStatuses, rec.status)) errors.push('حالة المطابقة غير معروفة');
+    if (rec.rejectReason && !inEnum(ENUMS.matchRejectReasons, rec.rejectReason)) errors.push('سبب الرفض غير معروف');
+  },
+  expenses(rec, errors) {
+    if (!inEnum(ENUMS.expenseCategories, rec.category)) errors.push('تصنيف المصروف غير معروف');
+    if (rec.amount == null || rec.amount <= 0) errors.push('مبلغ المصروف يجب أن يكون أكبر من صفر');
   },
   externalListings(rec, errors) {
     if (!inEnum(ENUMS.externalStatuses, rec.status)) errors.push('حالة العرض الخارجي غير معروفة');
@@ -262,6 +276,12 @@ const CASCADE = {
     if (rec?.screenshotImageId) await adapter.delete('images', rec.screenshotImageId);
     const mine = (await adapter.getAll('matches')).filter((m) => m.externalId === id);
     if (mine.length) await adapter.deleteMany('matches', mine.map((m) => m.id));
+  },
+  async deals(id) {
+    // المصروف المرتبط بصفقة محذوفة يبقى (مصروفٌ صُرف فعلًا) ويُفكّ ربطه فقط.
+    for (const e of await adapter.getByIndex('expenses', 'dealId', id)) {
+      await adapter.put('expenses', { ...e, dealId: null, updatedAt: nowISO(), updatedBy: currentUser.id });
+    }
   },
   async taskLists(id) {
     const tasks = await adapter.getByIndex('tasks', 'listId', id);
@@ -596,6 +616,7 @@ export const repo = {
   tasks: makeEntity('tasks'),
   notes: makeEntity('notes'),
   invoices: makeEntity('invoices'),
+  expenses: makeEntity('expenses'),
 
   /** وصول خام للمخازن (النسخ الاحتياطي والبيانات التجريبية). */
   raw: {

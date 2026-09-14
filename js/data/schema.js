@@ -1,7 +1,7 @@
 // مخططات الكيانات: الحقول، القيم الافتراضية، القوائم الثابتة، والحقول التي تظهر بحسب نوع العقار.
 // الحقول المشتركة لكل سجل (تضيفها طبقة البيانات): id, createdAt, updatedAt, createdBy, updatedBy, searchKey.
 
-export const STORES = ['clients', 'properties', 'tours', 'requests', 'matches', 'externalListings', 'deals', 'images', 'settings', 'taskLists', 'tasks', 'notes', 'invoices'];
+export const STORES = ['clients', 'properties', 'tours', 'requests', 'matches', 'externalListings', 'deals', 'images', 'settings', 'taskLists', 'tasks', 'notes', 'invoices', 'expenses'];
 
 export const ENUMS = {
   clientRoles: [
@@ -69,6 +69,25 @@ export const ENUMS = {
     { key: 'client', label: 'عميل' },
     { key: 'property', label: 'عقار' },
     { key: 'request', label: 'طلب' },
+  ],
+  expenseCategories: [ // المصاريف (المرحلة ١٣) — صافي الربح = العمولات − هذه
+    { key: 'fuel', label: 'وقود ومواصلات' },
+    { key: 'ads', label: 'إعلانات وتسويق' },
+    { key: 'partner', label: 'عمولة وسيط شريك' },
+    { key: 'fees', label: 'رسوم حكومية' },
+    { key: 'office', label: 'مكتب واشتراكات' },
+    { key: 'hospitality', label: 'ضيافة' },
+    { key: 'other', label: 'أخرى' },
+  ],
+  matchRejectReasons: [ // سبب رفض المطابقة (المرحلة ١٣) — يكشف نمط ضياع الصفقات
+    { key: 'price', label: 'السعر مرتفع' },
+    { key: 'location', label: 'الموقع لا يناسب' },
+    { key: 'area', label: 'المساحة لا تناسب' },
+    { key: 'condition', label: 'حالة العقار أو مواصفاته' },
+    { key: 'slow', label: 'تأخّر الردّ أو المعاينة' },
+    { key: 'bought_elsewhere', label: 'اشترى من مكان آخر' },
+    { key: 'changed_mind', label: 'غيّر رأيه أو أجّل' },
+    { key: 'other', label: 'سبب آخر' },
   ],
   taskRepeats: [ // تكرار المهمة (المرحلة ١١): تُنشأ التالية عند إنجاز الحالية
     { key: 'none', label: 'بلا تكرار' },
@@ -242,6 +261,7 @@ export const SCHEMAS = {
       requestId: null, propertyId: null, externalId: null,
       score: 0, // 0–100
       status: 'new', // ENUMS.matchStatuses
+      rejectReason: null, // ENUMS.matchRejectReasons — يُسأل عند «غير مهتم» (المرحلة ١٣)
       priceUnknown: false, notes: '',
     }),
   },
@@ -260,6 +280,7 @@ export const SCHEMAS = {
     labels: { date: 'تاريخ الصفقة', finalPrice: 'السعر النهائي' },
     defaults: () => ({
       date: '', finalPrice: null, commission: null, propertyId: null, clientId: null, notes: '',
+      leaseEndAt: null, // نهاية عقد الإيجار (المرحلة ١٣) — يُذكَّر بالتجديد قبل شهر
     }),
   },
   images: {
@@ -293,6 +314,16 @@ export const SCHEMAS = {
     defaults: () => ({
       text: '', color: null, pinned: false, archived: false, tags: [],
       linkType: null, linkId: null, // ENUMS.linkTypes
+    }),
+  },
+  expenses: { // المصاريف (المرحلة ١٣): الإيراد بلا مصروف ليس ربحًا
+    required: ['date', 'amount'],
+    labels: { date: 'التاريخ', amount: 'المبلغ' },
+    defaults: () => ({
+      date: '', amount: null,
+      category: 'other', // ENUMS.expenseCategories
+      note: '',
+      dealId: null, propertyId: null, // ربط اختياري: مصروف يخصّ صفقة أو عقارًا بعينه
     }),
   },
   invoices: { // الفواتير وعروض الأسعار (المرحلة ٨)

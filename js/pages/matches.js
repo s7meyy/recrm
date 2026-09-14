@@ -300,19 +300,42 @@ function matchRow(ctx, request, row) {
 
 /* ===== تغيير الحالة ===== */
 
+/**
+ * يسأل عن سبب الرفض (المرحلة ١٣). التخطّي مسموح — السبب مفيد لا إلزامي،
+ * ولوحة «لماذا تضيع الصفقات» تُظهر كم رفضًا بلا سبب كي لا تُبنى نتيجة على عيّنة ناقصة.
+ */
+function askRejectReason() {
+  return new Promise((resolve) => {
+    let picked = null;
+    const buttons = el('div', { class: 'chips' }, ENUMS.matchRejectReasons.map((r) => el('button', {
+      type: 'button', class: 'chip', text: r.label,
+      onClick: () => { picked = r.key; modal.close(); },
+    })));
+    const modal = openModal({
+      title: 'لماذا لم يهتم؟',
+      body: el('div', {},
+        el('p', { class: 'muted small', text: 'سبب واحد يكفي. بعد عشرات الرفضات سيكشف لك النمط: أسعارك مرتفعة؟ أم متابعتك بطيئة؟' }),
+        buttons),
+      onClose: () => resolve(picked),
+      footer: [el('button', { type: 'button', class: 'btn btn-ghost', text: 'تخطَّ', onClick: () => modal.close() })],
+    });
+  });
+}
+
 async function setStatus(ctx, request, row, status) {
   try {
+    const rejectReason = status === 'not_interested' ? await askRejectReason() : null;
     if (status === 'new') {
       if (row.record) await repo.matches.remove(row.record.id);
       toast('أُعيدت إلى «جديدة»', 'success');
     } else if (row.record) {
-      await repo.matches.update(row.record.id, { status, score: row.score, priceUnknown: row.priceUnknown });
+      await repo.matches.update(row.record.id, { status, score: row.score, priceUnknown: row.priceUnknown, rejectReason });
     } else {
       await repo.matches.create({
         requestId: request.id,
         propertyId: row.kind === 'external' ? null : row.listing.id,
         externalId: row.kind === 'external' ? row.listing.id : null,
-        score: row.score, priceUnknown: row.priceUnknown, status,
+        score: row.score, priceUnknown: row.priceUnknown, status, rejectReason,
       });
     }
     if (status === 'won') await openDealForm(ctx, request, row);
@@ -343,6 +366,8 @@ function openDealForm(ctx, request, row) {
     const priceInput = el('input', { class: 'input', type: 'number', min: '0', step: '1000', value: p.price ?? '' });
     const commissionInput = el('input', { class: 'input', type: 'number', min: '0', step: '1000' });
     const notesInput = el('textarea', { class: 'input', rows: 2, value: externalNote });
+    // نهاية عقد الإيجار (المرحلة ١٣): تُذكَّر بالتجديد قبل شهر — عمولة تتكرر بلا مجهود جديد.
+    const leaseEndInput = el('input', { class: 'input', type: 'date' });
     const syncBox = checkbox(
       isExternal ? 'إغلاق الطلب (مُنجز) ووسم العرض الخارجي «لم يعد متاحًا»' : 'تحديث حالة العقار وإغلاق الطلب (مُنجز)',
       { checked: true },
@@ -367,6 +392,7 @@ function openDealForm(ctx, request, row) {
           date, finalPrice,
           commission: commissionInput.value === '' ? null : Number(commissionInput.value),
           propertyId: isExternal ? null : p.id, clientId: request.clientId, notes: notesInput.value,
+          leaseEndAt: fromInputDate(leaseEndInput.value),
         });
         if (syncBox.querySelector('input').checked) {
           if (isExternal) await repo.externalListings.update(p.id, { status: 'unavailable' });
@@ -414,6 +440,7 @@ function openDealForm(ctx, request, row) {
           labeled('تاريخ الصفقة', dateInput, { required: true }),
           labeled('السعر النهائي (ريال)', priceInput, { required: true }),
           labeled('العمولة (ريال)', commissionInput),
+          labeled('نهاية عقد الإيجار', leaseEndInput, { hint: 'للإيجار فقط — يُذكّرك بالتجديد قبل شهر' }),
           labeled('ملاحظات', notesInput, { full: true }),
           el('div', { class: 'field field-full' }, syncBox),
           el('div', { class: 'field field-full' }, invoiceBox))),

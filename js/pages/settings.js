@@ -11,6 +11,7 @@ import {
   getFollowUpSettings, setFollowUpSettings,
   getSidebarOrder, setSidebarOrder, resetSidebarOrder, orderedPageKeys,
   getCompany, setCompany, getVaultSettings, setVaultSettings, getTemplates, setTemplates, resetTemplates,
+  getGoals, setGoals,
 } from '../data/settings.js';
 import { listBackups, uploadBackup, restoreBackup } from '../data/vault.js';
 import { pushSupported, enablePush, disablePush, currentSubscription, syncReminders } from '../util/push.js';
@@ -48,6 +49,7 @@ export async function render(container) {
     panel('المطابقة', 'أوزان المعايير المرجّحة وحدود المرونة. المرونة في اتجاه واحد: الأرخص من الميزانية والأكبر من المساحة لا يُخصم منهما.', matchingBody),
     panel('نطاقات الأحياء', 'مجموعة أحياء بمسمّى واحد («شمال الدائري الشمالي») تُعرَّف مرة وتُستعمل في أي طلب. نطاقات الرياض الخمسة مسودّة تقريبية — راجعها وعدّلها.', zonesBody),
     panel('تعريف "مكتمل البيانات"', 'العقار يُعدّ مكتملًا عندما تتوفر فيه الحقول المحددة هنا.', completenessBody),
+    panel('الأهداف والتنبيهات', 'هدفك الشهري يظهر شريط تقدّم في «يومي»، وحدّ العرض البائت ينبّهك على المخزون الراكد.', goalsBody),
     panel('متابعة العملاء', 'حدّ "لم يُتواصل معه" في الداشبورد، وتنبيه المتصفح عند تجاوز عميل له.', followUpBody),
     panel('استيراد وتصدير', 'استيراد جهات اتصالك عملاءَ دفعة واحدة، وتصدير جداولك إلى ملفات تفتحها في إكسل.', exchangeBody),
     panel('قوالب رسائل واتساب', 'رسائل جاهزة تُرسل بنقرة من قائمة مشاركة العقار، وتُعبَّأ ببيانات العقار والعميل تلقائيًا.', templatesBody),
@@ -611,6 +613,31 @@ async function sidebarOrderBody(redraw) {
 
 /* ===== بيانات الشركة والمستندات (المرحلة ٨) ===== */
 
+async function goalsBody(redraw) {
+  const goals = await getGoals();
+  const num = (value, step = '1') => el('input', { class: 'input', type: 'number', min: '0', step, value });
+  const dealsInput = num(goals.dealsPerMonth);
+  const commissionInput = num(goals.commissionPerMonth, '1000');
+  const staleInput = num(goals.staleListingDays);
+  return el('div', {},
+    el('div', { class: 'form-grid' },
+      labeled('هدف الصفقات شهريًا', dealsInput, { hint: 'صفر = بلا هدف، فلا يظهر شريط' }),
+      labeled('هدف العمولات شهريًا (ريال)', commissionInput, { hint: 'صفر = بلا هدف' }),
+      labeled('العرض يُعدّ بائتًا بعد (يومًا)', staleInput, { hint: 'عقار لم يُحدَّث منذ هذه المدة يظهر في «يومي» لمراجعة سعره' })),
+    el('div', { class: 'row' }, el('button', {
+      type: 'button', class: 'btn btn-primary', text: 'حفظ الأهداف',
+      onClick: async () => {
+        try {
+          await setGoals({
+            dealsPerMonth: dealsInput.value, commissionPerMonth: commissionInput.value, staleListingDays: staleInput.value,
+          });
+          toast('حُفظت الأهداف', 'success');
+          await redraw();
+        } catch (err) { errToast(err); }
+      },
+    })));
+}
+
 async function companyBody(redraw) {
   const company = await getCompany();
   const text = (value, placeholder = '') => el('input', { class: 'input', type: 'text', value: value || '', placeholder });
@@ -619,6 +646,9 @@ async function companyBody(redraw) {
   const emailInput = el('input', { class: 'input', type: 'email', dir: 'ltr', value: company.email || '' });
   const addressInput = text(company.address);
   const crInput = text(company.crNumber, 'رقم السجل التجاري أو الترخيص');
+  const commissionInput = el('input', { class: 'input', type: 'number', min: '0', step: '0.25', value: company.commissionPercent ?? 2.5 });
+  const durationInput = el('input', { class: 'input', type: 'number', min: '1', step: '1', value: company.agreementDurationDays ?? 90 });
+  const termsInput = el('textarea', { class: 'input', rows: 4, value: company.agreementTerms || '', placeholder: 'بنود اتفاقية الوساطة كما تريد طباعتها (تُطبع كما هي — ليست مشورة قانونية)' });
   const footerInput = el('textarea', { class: 'input', rows: 2, value: company.footerNote || '', placeholder: 'سطر يُطبع أسفل كل مستند (شروط، شكر، حساب بنكي…)' });
   const invPrefix = text(company.invoicePrefix);
   const quotePrefix = text(company.quotePrefix);
@@ -674,6 +704,13 @@ async function companyBody(redraw) {
         el('div', { class: 'field field-full' }, el('span', { class: 'field-label', text: 'الشعار' }), logoBox),
         labeled('تذييل المستند', footerInput, { full: true }))),
     el('div', { class: 'panel-block' },
+      el('h3', { text: 'اتفاقية الوساطة' }),
+      el('p', { class: 'muted small', text: 'تُطبع من قائمة مشاركة العقار، وتُملأ ببيانات العقار ومالكه. البنود نصّ تكتبه أنت ويُطبع كما هو — ليست مشورة قانونية.' }),
+      el('div', { class: 'form-grid' },
+        labeled('نسبة العمولة ٪', commissionInput),
+        labeled('مدة الاتفاقية (يومًا)', durationInput),
+        labeled('بنود الاتفاقية', termsInput, { full: true }))),
+    el('div', { class: 'panel-block' },
       el('h3', { text: 'الترقيم التلقائي' }),
       el('p', { class: 'muted small', text: 'لكل نوع سلسلة مستقلة. الرقم يُقترح عند الإنشاء ويبقى قابلًا للكتابة فوقه، والعدّاد لا يتقدم إلا إذا حُفظ الرقم المقترح كما هو.' }),
       el('div', { class: 'form-grid' },
@@ -691,6 +728,9 @@ async function companyBody(redraw) {
               address: addressInput.value, crNumber: crInput.value, footerNote: footerInput.value,
               invoicePrefix: invPrefix.value, quotePrefix: quotePrefix.value,
               nextInvoiceNo: invNext.value, nextQuoteNo: quoteNext.value,
+              commissionPercent: Number(commissionInput.value) || 0,
+              agreementDurationDays: Number(durationInput.value) || 90,
+              agreementTerms: termsInput.value,
             });
             toast('حُفظت بيانات الشركة', 'success');
             await redraw();

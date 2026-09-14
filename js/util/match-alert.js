@@ -6,9 +6,11 @@
 // (التخزين الكسول للمطابقات كما هو منذ المرحلة ٣).
 
 import { loadMatchingContext, scoreOne } from '../data/matching.js';
-import { getMatchingSettings } from '../data/settings.js';
-import { el, openModal, toast } from './dom.js';
+import { getMatchingSettings, getLists, getCompany, getTemplates } from '../data/settings.js';
+import { getCurrentUser } from '../data/repository.js';
+import { el, openModal, toast, selectEl } from './dom.js';
 import { formatPhone } from '../util/phone.js';
+import { renderTemplate, templateValues, whatsappLink } from './templates.js';
 
 /**
  * يحسب الطلبات النشطة التي يطابقها العقار، مرتّبة بالنسبة تنازليًا.
@@ -29,7 +31,12 @@ export async function requestsMatching(property, { minScore = null } = {}) {
   return out.sort((a, b) => b.score - a.score);
 }
 
-/** يعرض النتيجة: نافذة إن وُجدت مطابقات، وصمت تام إن لم توجد (لا إزعاج بلا فائدة). */
+/**
+ * يعرض النتيجة، **ومعها زر واتساب جاهز لكل عميل** (المرحلة ١٣): الرسالة من قوالبك معبّأة
+ * ببيانات هذا العقار وهذا العميل، فتتحوّل المعلومة إلى فعل بنقرة.
+ * ملاحظة صريحة: واتساب لا يسمح بإرسال جماعي حقيقي — فهي نقرة لكل عميل، وهذا حدّ المنصة.
+ * وصمت تام إن لم توجد مطابقة (لا إزعاج بلا فائدة).
+ */
 export async function announceMatches(property, { title = 'هذا العقار يطابق طلبات قائمة' } = {}) {
   let matches = [];
   try {
@@ -40,21 +47,42 @@ export async function announceMatches(property, { title = 'هذا العقار �
   }
   if (!matches.length) return [];
 
-  const rows = matches.slice(0, 8).map(({ request, client, score }) => el('a', {
-    class: 'match-alert-row', href: `#/matches/${request.id}`,
-    onClick: () => modal.close(),
-  },
-  el('span', { class: 'match-alert-score', text: `${score}٪` }),
-  el('span', {},
-    el('strong', { text: client?.name || (client?.phone ? formatPhone(client.phone) : 'عميل بلا اسم') }),
-    el('span', { class: 'muted small', text: client?.phone ? ` · ${formatPhone(client.phone)}` : '' }))));
+  const [lists, company, templates] = await Promise.all([getLists(), getCompany(), getTemplates()]);
+  const user = getCurrentUser();
+  const link = `${location.origin}${location.pathname}#/properties/${property.id}`;
+  let template = templates[0];
+  const templateSelect = selectEl({
+    options: templates.map((t, i) => ({ value: String(i), label: t.label })), value: '0',
+    onChange: (e) => { template = templates[Number(e.target.value)] || templates[0]; draw(); },
+  });
+
+  const list = el('div', { class: 'match-alert-list' });
+  const draw = () => {
+    list.replaceChildren(...matches.slice(0, 12).map(({ request, client, score }) => {
+      const text = renderTemplate(template?.body || '', templateValues({ client, property, lists, user, company, link }));
+      return el('div', { class: 'match-alert-row' },
+        el('span', { class: 'match-alert-score', text: `${score}٪` }),
+        el('span', { class: 'match-alert-name' },
+          el('strong', { text: client?.name || (client?.phone ? formatPhone(client.phone) : 'عميل بلا اسم') }),
+          el('span', { class: 'muted small', text: client?.phone ? ` · ${formatPhone(client.phone)}` : ' · بلا جوال' })),
+        el('span', { class: 'row' },
+          client?.phone ? el('a', {
+            class: 'btn btn-primary btn-sm', text: '💬 أرسل', target: '_blank', rel: 'noopener noreferrer',
+            href: whatsappLink(text, client.phone),
+          }) : null,
+          el('a', { class: 'btn btn-ghost btn-sm', href: `#/matches/${request.id}`, text: 'الطلب', onClick: () => modal.close() })));
+    }));
+  };
+  draw();
 
   const modal = openModal({
     title,
+    size: 'wide',
     body: el('div', {},
-      el('p', { class: 'muted small', text: `${matches.length} طلب نشط يطابق هذا العقار. اضغط أي طلب لفتح مطابقاته.` }),
-      el('div', { class: 'match-alert-list' }, rows),
-      matches.length > rows.length ? el('p', { class: 'muted small', text: `و${matches.length - rows.length} طلبًا آخر.` }) : null),
+      el('p', { class: 'muted small', text: `${matches.length} طلب نشط يطابق هذا العقار. أرسل لكل عميل رسالة جاهزة من قوالبك، أو افتح طلبه.` }),
+      el('div', { class: 'row' }, el('span', { class: 'field-label', text: 'القالب' }), templateSelect),
+      list,
+      matches.length > 12 ? el('p', { class: 'muted small', text: `و${matches.length - 12} طلبًا آخر — افتح صفحة المطابقات لبقيتهم.` }) : null),
     footer: [el('button', { type: 'button', class: 'btn btn-primary', text: 'حسنًا', onClick: () => modal.close() })],
   });
   toast(`${matches.length} طلب نشط يطابق هذا العقار`, 'success', 4000);
