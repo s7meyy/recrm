@@ -57,6 +57,7 @@ export async function render(container) {
     panel('استيراد وتصدير', 'استيراد جهات اتصالك عملاءَ دفعة واحدة، وتصدير جداولك إلى ملفات تفتحها في إكسل.', exchangeBody),
     panel('قوالب رسائل واتساب', 'رسائل جاهزة تُرسل بنقرة من قائمة مشاركة العقار، وتُعبَّأ ببيانات العقار والعميل تلقائيًا.', templatesBody),
     panel('تنبيهات الخلفية', 'تذكير المهام يصلك على الجهاز حتى بعد إغلاق التبويب. لا يغادر جهازك إلا موعد التذكير — بلا عناوين ولا أسماء.', pushBody),
+    panel('سلة المحذوفات', 'نسخة من كل سجل حذفته خلال ثلاثين يومًا. يُستعاد السجل نفسه — أما ما حُذف تبعًا له (طلبات العميل مثلًا) فلا يعود.', trashBody),
     panel('البيانات التجريبية', 'عملاء وعقارات للتجربة (مع سجل واحد لكل كيان من المراحل اللاحقة لاختبار طبقة البيانات)؛ تُدرج تلقائيًا عند أول تشغيل، ومسحها لا يمس بياناتك الحقيقية.', seedBody),
   );
 }
@@ -109,10 +110,22 @@ async function backupBody(redraw) {
       if (!file) return;
       try {
         const { data, counts: fileCounts, exportedAt } = await readBackupFile(file);
-        const summary = `عملاء: ${fileCounts.clients} · عقارات: ${fileCounts.properties} · صور: ${fileCounts.images}`;
+        // مقارنة صريحة قبل الاستبدال (المرحلة ٢١): «سيُستبدل كل شيء» جملةٌ لا يقرؤها أحد،
+        // أما «١٢ عميلًا ← ٩» فرقمٌ يوقفك. والفقد يُحسب لكل كيان لا إجمالًا.
+        const current = await repo.counts();
+        const compare = ['clients', 'properties', 'requests', 'deals', 'invoices', 'images']
+          .map((key) => ({ key, now: current[key] ?? 0, next: fileCounts[key] ?? 0 }))
+          .filter((rowData) => rowData.now || rowData.next);
+        const losing = compare.filter((c) => c.next < c.now);
+        const label = { clients: 'العملاء', properties: 'العقارات', requests: 'الطلبات', deals: 'الصفقات', invoices: 'الفواتير', images: 'الصور' };
         const ok = await confirmDialog({
           title: 'استيراد نسخة احتياطية',
-          message: `النسخة من ${exportedAt ? formatDateTime(exportedAt) : 'تاريخ غير معروف'} (${summary}). سيُستبدل كل ما في هذا المتصفح بمحتواها. المتابعة؟`,
+          message: `النسخة من ${exportedAt ? formatDateTime(exportedAt) : 'تاريخ غير معروف'}.\n`
+            + `${compare.map((c) => `${label[c.key]}: ${c.now} ← ${c.next}`).join(' · ')}\n`
+            + (losing.length
+              ? `تحذير: ستفقد ${losing.map((c) => `${c.now - c.next} من ${label[c.key]}`).join('، ')} — وهذا لا يُستعاد إلا بنسخة أحدث.\n`
+              : '')
+            + 'الاستيراد يستبدل كل ما في هذا المتصفح بمحتوى الملف. المتابعة؟`'.replace('`', ''),
           confirmText: 'استبدال واستيراد', danger: true,
         });
         if (!ok) return;
@@ -161,13 +174,25 @@ async function storageBody() {
   const rows = [
     el('dt', { text: 'الصور' }), el('dd', { text: `${summary.count} صورة — ${formatBytes(summary.bytes)}` }),
   ];
+  let warning = null;
   if (navigator.storage?.estimate) {
     try {
       const est = await navigator.storage.estimate();
-      rows.push(el('dt', { text: 'المستخدم من المتصفح' }), el('dd', { text: `${formatBytes(est.usage || 0)} من ${formatBytes(est.quota || 0)} متاحة` }));
+      const usage = est.usage || 0;
+      const quota = est.quota || 0;
+      const pct = quota > 0 ? Math.round((usage / quota) * 100) : 0;
+      rows.push(el('dt', { text: 'المستخدم من المتصفح' }),
+        el('dd', { text: `${formatBytes(usage)} من ${formatBytes(quota)} متاحة${quota ? ` (${pct}٪)` : ''}` }));
+      // التحذير قبل الامتلاء لا بعده: الامتلاء **أثناء جولة ميدانية** يعني ضياع التقاط اليوم.
+      if (pct >= 80) {
+        warning = el('div', { class: 'notice notice-warn' },
+          el('strong', { text: `التخزين بلغ ${pct}٪ من المتاح. ` }),
+          'صدّر نسخة احتياطية الآن، ثم احذف صور العقارات المبيعة أو المؤجَّرة من نماذجها. ',
+          'وامتلاؤه أثناء جولة ميدانية يعني ضياع التقاط اليوم.');
+      }
     } catch (_) { /* غير مدعوم */ }
   }
-  return el('dl', { class: 'kv' }, rows);
+  return el('div', {}, warning, el('dl', { class: 'kv' }, rows));
 }
 
 /* ===== القوائم ===== */
@@ -537,6 +562,63 @@ async function followUpBody() {
           toast('تم الحفظ', 'success');
         } catch (err) { errToast(err); }
         updateNote();
+      },
+    })));
+}
+
+/* ===== سلة المحذوفات (المرحلة ٢١) ===== */
+
+const TRASH_LABELS = {
+  clients: 'عميل', properties: 'عقار', requests: 'طلب', deals: 'صفقة', invoices: 'مستند',
+  expenses: 'مصروف', tasks: 'مهمة', notes: 'ملاحظة', taskLists: 'قائمة مهام',
+  externalListings: 'عرض خارجي', tours: 'جولة',
+};
+
+function trashTitle(entry) {
+  const d = entry.data || {};
+  const name = d.name || d.title || d.number || d.text || d.district || d.city || d.date || '';
+  return `${TRASH_LABELS[entry.store] || entry.store}${name ? ` — ${String(name).slice(0, 40)}` : ''}`;
+}
+
+async function trashBody(redraw) {
+  const items = await repo.trash.list();
+  if (!items.length) {
+    return el('p', { class: 'muted small', text: 'السلة فارغة — لم تحذف شيئًا خلال الثلاثين يومًا الماضية.' });
+  }
+  return el('div', {},
+    el('div', {}, items.slice(0, 40).map((entry) => el('div', { class: 'trash-row' },
+      el('div', {},
+        el('div', { class: 'strong', text: trashTitle(entry) }),
+        el('div', { class: 'muted small', text: `حُذف ${formatDateTime(entry.deletedAt)}` })),
+      el('div', { class: 'row' },
+        el('button', {
+          type: 'button', class: 'btn btn-sm', text: 'استرجاع',
+          onClick: async () => {
+            try {
+              await repo.trash.restore(entry.id);
+              toast('أُعيد السجل', 'success');
+              dataChanged();
+              await redraw();
+            } catch (err) { errToast(err); }
+          },
+        }),
+        el('button', {
+          type: 'button', class: 'icon-btn', text: '✕', title: 'حذف نهائي',
+          onClick: async () => {
+            const ok = await confirmDialog({ title: 'حذف نهائي', message: `${trashTitle(entry)} — يُحذف بلا رجعة. المتابعة؟`, confirmText: 'حذف', danger: true });
+            if (!ok) return;
+            await repo.trash.remove(entry.id);
+            await redraw();
+          },
+        }))))),
+    items.length > 40 ? el('p', { class: 'muted small', text: `و${items.length - 40} غيرها.` }) : null,
+    el('div', { style: { marginTop: '10px' } }, el('button', {
+      type: 'button', class: 'btn btn-ghost btn-sm', text: 'إفراغ السلة',
+      onClick: async () => {
+        const ok = await confirmDialog({ title: 'إفراغ السلة', message: `حذف ${items.length} عنصرًا نهائيًا؟`, confirmText: 'إفراغ', danger: true });
+        if (!ok) return;
+        await repo.trash.clear();
+        await redraw();
       },
     })));
 }

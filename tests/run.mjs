@@ -35,6 +35,7 @@ const SUITES = [
   ['import-route-qr.mjs', OPEN],
   ['vat-and-contacts.mjs', OPEN],
   ['profile-and-quick.mjs', OPEN],
+  ['trash-and-storage.mjs', OPEN],
   ['gate-and-publish.mjs', LOCKED],
   ['rename-and-vault.mjs', LOCKED],
   ['offer-pwa-push.mjs', LOCKED],

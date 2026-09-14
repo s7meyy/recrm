@@ -264,6 +264,30 @@ const VALIDATE = {
   },
 };
 
+/* ===== سلة المحذوفات (المرحلة ٢١) ===== */
+
+const TRASH_DAYS = 30;
+// الصور قد تبلغ ميغابايتات، والملفات المؤقتة والمطابقات تُعاد حسابًا لا استرجاعًا.
+const TRASH_SKIP = ['images', 'matches'];
+
+/**
+ * ينسخ السجل إلى السلة قبل حذفه.
+ *
+ * **حدّه مكتوب وصريح: يُستعاد السجل نفسه لا ما حُذف تبعًا له.** حذف العميل يحذف طلباته
+ * بقاعدة CASCADE، واسترجاعه يعيده وحده — وهذا أصدق من وعدٍ باسترجاعٍ كامل لا يتحقق.
+ * وفشل النسخ لا يمنع الحذف: الحذف ما طلبتَه، والسلة زيادة.
+ */
+async function keepInTrash(store, id) {
+  if (TRASH_SKIP.includes(store)) return;
+  try {
+    const record = await adapter.get(store, id);
+    if (!record) return;
+    await adapter.put('trash', {
+      id: newId(), store, recordId: id, deletedAt: nowISO(), deletedBy: currentUser.id, data: record,
+    });
+  } catch (_) { /* السلة رفاهية لا شرط */ }
+}
+
 /* قواعد الحذف: ما يُنظَّف تلقائيًا وما يمنع الحذف (تُطبَّق قبل حذف السجل) */
 const CASCADE = {
   // حذف العميل ليس هنا: له دالة remove خاصة تشترط قرارًا صريحًا منك (انظر clients.remove أدناه).
@@ -375,6 +399,7 @@ function makeEntity(store) {
     /** يحذف السجل بعد تطبيق قواعد CASCADE (تنظيف المرتبط أو منع الحذف). */
     async remove(id) {
       if (CASCADE[store]) await CASCADE[store](id);
+      await keepInTrash(store, id); // شبكة أمان قبل الحذف (المرحلة ٢١)
       await adapter.delete(store, id);
     },
 
@@ -623,6 +648,55 @@ const settings = {
   },
 };
 
+/**
+ * سلة المحذوفات: عرضٌ واسترجاعٌ وكنس (المرحلة ٢١).
+ * ليست كيانًا كامل الأركان: لا مخطط ولا تحقّق — سجلّ محفوظ كما كان لحظة حذفه.
+ */
+const trash = {
+  /** الأحدث حذفًا أولًا، بعد كنس ما تجاوز المدة. */
+  async list() {
+    await trash.prune();
+    const all = await adapter.getAll('trash');
+    return all.sort((a, b) => (b.deletedAt || '').localeCompare(a.deletedAt || ''));
+  },
+
+  /** يمسح ما تجاوز ثلاثين يومًا — السلة شبكة أمان قصيرة لا أرشيف دائم. */
+  async prune(days = TRASH_DAYS) {
+    const cutoff = Date.now() - days * 86400000;
+    const old = (await adapter.getAll('trash')).filter((t) => new Date(t.deletedAt).getTime() < cutoff);
+    if (old.length) await adapter.deleteMany('trash', old.map((t) => t.id));
+    return old.length;
+  },
+
+  /**
+   * يعيد السجل إلى مخزنه بمعرّفه الأصلي (فترجع إليه روابط غيره إن بقيت).
+   * ويرفض إن كان المعرّف مشغولًا الآن — فلا يُطمَس سجلّ قائم باسم الاسترجاع.
+   */
+  async restore(trashId) {
+    const entry = await adapter.get('trash', trashId);
+    if (!entry) throw new Error('العنصر لم يعد في السلة');
+    const existing = await adapter.get(entry.store, entry.recordId);
+    if (existing) throw new Error('يوجد سجل بالمعرّف نفسه الآن — لم يُستبدل');
+    await adapter.put(entry.store, entry.data);
+    await adapter.delete('trash', trashId);
+    return entry;
+  },
+
+  async remove(trashId) {
+    await adapter.delete('trash', trashId);
+  },
+
+  async clear() {
+    const all = await adapter.getAll('trash');
+    if (all.length) await adapter.deleteMany('trash', all.map((t) => t.id));
+    return all.length;
+  },
+
+  async count() {
+    return adapter.count('trash');
+  },
+};
+
 export const repo = {
   /** يفتح التخزين. يمكن تمرير محوّل بديل: repo.init({ adapter }). */
   async init({ adapter: next = null } = {}) {
@@ -644,6 +718,7 @@ export const repo = {
   tasks: makeEntity('tasks'),
   notes: makeEntity('notes'),
   invoices: makeEntity('invoices'),
+  trash,
   expenses: makeEntity('expenses'),
 
   /** وصول خام للمخازن (النسخ الاحتياطي والبيانات التجريبية). */

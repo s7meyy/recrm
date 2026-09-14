@@ -20,7 +20,7 @@ const db = await page.evaluate(async () => new Promise((res) => {
   const rq = indexedDB.open('motabiq');
   rq.onsuccess = () => { const d = rq.result; res({ v: d.version, stores: [...d.objectStoreNames] }); d.close(); };
 }));
-ok('ترقية القاعدة إلى ٤ مع مخزن المصاريف', db.v === 4 && db.stores.includes('expenses'), `v${db.v}`);
+ok('مخزن المصاريف موجود بعد الترقية', db.v >= 4 && db.stores.includes('expenses'), `v${db.v}`);
 
 /* ===== ٣) المصاريف وصافي الربح ===== */
 console.log('\n--- المصاريف وصافي الربح ---');

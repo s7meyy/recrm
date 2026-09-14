@@ -30,7 +30,7 @@ const dbInfo = await page.evaluate(async () => {
     rq.onsuccess = () => { const d = rq.result; res({ version: d.version, stores: [...d.objectStoreNames] }); d.close(); };
   });
 });
-ok('DB_VERSION = 4', dbInfo.version === 4, 'version=' + dbInfo.version);
+ok('DB_VERSION = 5', dbInfo.version === 5, 'version=' + dbInfo.version);
 ok('مخزنا invoices وexpenses أُنشئا', dbInfo.stores.includes('invoices') && dbInfo.stores.includes('expenses'), dbInfo.stores.join(','));
 
 // 3) تصنيفا العميل المدمجان حاضران من أول تشغيل

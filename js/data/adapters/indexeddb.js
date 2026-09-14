@@ -8,8 +8,9 @@ const DB_NAME = 'motabiq';
 // الإصدار ٢ (المرحلة ٧): أضاف مخازن taskLists/tasks/notes.
 // الإصدار ٣ (المرحلة ٨): أضاف مخزن invoices.
 // الإصدار ٤ (المرحلة ١٣): أضاف مخزن expenses — upgrade() أدناه يُنشئ الناقص فقط
+// الإصدار ٥ (المرحلة ٢١): أضاف مخزن trash (سلة المحذوفات) — بالمنطق نفسه: الناقص فقط
 // ولا يمسّ مخازن أو بيانات موجودة، فلا حاجة لأي ترحيل بيانات يدوي في الحالتين.
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 
 const STORE_DEFS = {
   clients: { keyPath: 'id', indexes: ['phone', 'stage', 'updatedAt'] },
@@ -26,6 +27,7 @@ const STORE_DEFS = {
   notes: { keyPath: 'id', indexes: ['pinned', 'archived'] },
   invoices: { keyPath: 'id', indexes: ['type', 'clientId', 'date'] },
   expenses: { keyPath: 'id', indexes: ['date', 'category', 'dealId'] },
+  trash: { keyPath: 'id', indexes: ['store', 'deletedAt'] },
 };
 
 let dbPromise = null;
