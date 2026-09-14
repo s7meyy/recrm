@@ -17,7 +17,8 @@ import { repo } from '../data/repository.js';
 import { getLists, typeLabel, statusLabel } from '../data/settings.js';
 import { EXCLUDED_EXTERNAL_STATUSES } from '../data/matching.js';
 import { LISTING_GROUPS, LISTING_VALUES, listingFilterOptions } from '../util/property-filters.js';
-import { el, clear, badge, checkbox } from '../util/dom.js';
+import { el, clear, badge, checkbox, openModal, toast, appendChildren } from '../util/dom.js';
+import { orderRoute, routeLength, googleMapsRoute, MAX_STOPS } from '../util/route.js';
 import { formatNumber } from '../util/format.js';
 
 const RIYADH_CENTER = [24.7136, 46.6753];
@@ -108,7 +109,8 @@ function buildLayout(ctx) {
   ctx.container.append(
     el('div', { class: 'page-head' },
       el('h1', {}, 'خريطة العقارات ', ctx.nodes.count),
-      el('div', { class: 'head-actions' }, baseSeg, showExternalBox)),
+      el('div', { class: 'head-actions' }, baseSeg, showExternalBox,
+        el('button', { type: 'button', class: 'btn btn-sm', text: '🚗 خطّط جولة اليوم', onClick: () => openRoutePlanner(ctx) }))),
   );
 
   ctx.nodes.notice = el('div');
@@ -121,6 +123,93 @@ function buildLayout(ctx) {
   ctx.container.append(ctx.nodes.notice, ctx.nodes.filters, ctx.nodes.legend, ctx.nodes.mapCanvas);
   renderNotice(ctx);
   renderFilters(ctx);
+}
+
+/**
+ * تخطيط جولة اليوم (المرحلة ١٨): اختر محطاتك من الظاهر على الخريطة، فتُرتَّب بالأقرب
+ * فالأقرب وتُفتح في خرائط جوجل بمسار واحد.
+ *
+ * يعمل على **ما هو ظاهر بعد الفرز** لا على المخزون كله: الفرز نفسه هو أداة اختيارك.
+ */
+function openRoutePlanner(ctx) {
+  const items = itemsForMap(ctx).filter((i) => i.kind === 'property');
+  if (!items.length) {
+    toast('لا عقارات ظاهرة على الخريطة الآن — خفّف الفرز أولًا', 'info');
+    return;
+  }
+
+  const picked = new Set();
+  const boxes = new Map();
+  let origin = null; // موقعك الحالي إن سمحت به
+
+  const summary = el('div', { class: 'muted small', style: { marginTop: '10px' } });
+  const openBtn = el('button', { type: 'button', class: 'btn btn-primary', text: 'افتح في خرائط جوجل', disabled: true });
+
+  const refresh = () => {
+    const stops = items.filter((i) => picked.has(i.data.id))
+      .map((i) => ({ id: i.data.id, lat: i.lat, lng: i.lng, label: stopLabel(ctx, i.data) }));
+    const ordered = orderRoute(stops, origin);
+    const { url, dropped } = googleMapsRoute(ordered, origin);
+    openBtn.disabled = !url;
+    clear(summary);
+    if (!stops.length) { summary.append(el('span', { text: 'اختر محطتين على الأقل.' })); return; }
+    appendChildren(summary, [
+      el('div', { class: 'strong', text: `الترتيب: ${ordered.map((s, i) => `${i + 1}. ${s.label}`).join('  ←  ')}` }),
+      el('div', { text: `مسافة تقديرية: ${(routeLength(ordered, origin) / 1000).toFixed(1)} كم — مسافة هواء لا طريق، فالواقع أطول.` }),
+      dropped ? el('div', { class: 'warn-text', text: `خرائط جوجل تقبل ${MAX_STOPS} محطات في الرابط الواحد؛ سقطت ${dropped} من الآخر.` }) : null,
+      origin ? el('div', { text: 'البداية: موقعك الحالي.' }) : null,
+    ]);
+    openBtn.onclick = () => { if (url) window.open(url, '_blank', 'noopener'); };
+  };
+
+  const list = el('div', { class: 'route-list' }, items.map((item) => {
+    const box = checkbox(stopLabel(ctx, item.data), {
+      checked: false,
+      onChange: (e) => {
+        if (e.target.checked) picked.add(item.data.id); else picked.delete(item.data.id);
+        refresh();
+      },
+    });
+    boxes.set(item.data.id, box);
+    return box;
+  }));
+
+  const locBtn = el('button', {
+    type: 'button', class: 'btn btn-sm', text: '📍 ابدأ من موقعي',
+    onClick: () => {
+      if (!navigator.geolocation) { toast('متصفحك لا يدعم تحديد الموقع', 'error'); return; }
+      locBtn.disabled = true;
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          origin = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          locBtn.textContent = '📍 موقعك هو البداية';
+          refresh();
+        },
+        () => { locBtn.disabled = false; toast('تعذّر تحديد موقعك — ستبدأ الجولة من أول محطة', 'error'); },
+        { enableHighAccuracy: true, timeout: 8000 },
+      );
+    },
+  });
+
+  const modal = openModal({
+    title: 'جولة اليوم',
+    size: 'wide',
+    body: el('div', {},
+      el('p', { class: 'muted small', text: `اختر من ${formatNumber(items.length)} عقارًا ظاهرًا على الخريطة الآن. الترتيب بالأقرب فالأقرب — تقريبٌ سريع لا مسارٌ أمثل.` }),
+      el('div', { class: 'row' }, locBtn,
+        el('button', { type: 'button', class: 'btn btn-ghost btn-sm', text: 'مسح الاختيار', onClick: () => {
+          picked.clear();
+          for (const box of boxes.values()) box.querySelector('input').checked = false;
+          refresh();
+        } })),
+      list, summary),
+    footer: [openBtn, el('button', { type: 'button', class: 'btn btn-ghost', text: 'إغلاق', onClick: () => modal.close() })],
+  });
+  refresh();
+}
+
+function stopLabel(ctx, p) {
+  return [typeLabel(ctx.lists, p.type), p.district || p.city].filter(Boolean).join(' — ') || 'عقار';
 }
 
 function renderNotice(ctx) {

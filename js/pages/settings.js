@@ -16,7 +16,10 @@ import {
 import { listBackups, uploadBackup, restoreBackup } from '../data/vault.js';
 import { pushSupported, enablePush, disablePush, currentSubscription, syncReminders } from '../util/push.js';
 import { TEMPLATE_VARS } from '../util/templates.js';
-import { parseVCards, importContacts, buildCsv, CSV_EXPORTS } from '../data/exchange.js';
+import {
+  parseVCards, importContacts, buildCsv, CSV_EXPORTS,
+  parseCsv, CSV_IMPORTS, suggestMapping, previewImport, runImport,
+} from '../data/exchange.js';
 import { typeLabel as typeLabelOf, statusLabel as statusLabelOf, getUI, setUI } from '../data/settings.js';
 import { SIDEBAR_PAGES, DEFAULT_PAGE_KEYS, pageLabel, applySidebarOrder } from '../util/sidebar.js';
 import { applyTheme } from '../util/theme.js';
@@ -25,7 +28,7 @@ import { requestFollowUpPermission } from '../util/follow-up-alerts.js';
 import { exportBackup, downloadBlob, markExported, readBackupFile, importBackup } from '../data/backup.js';
 import { imagesSummary, formatBytes } from '../data/images.js';
 import { seedExists, insertSeed, clearSeed } from '../data/seed.js';
-import { el, clear, labeled, selectEl, checkbox, badge, confirmDialog, openModal, toast } from '../util/dom.js';
+import { el, clear, labeled, selectEl, checkbox, badge, confirmDialog, openModal, toast, appendChildren } from '../util/dom.js';
 import { clientTagClass } from '../data/schema.js';
 import { formatDateTime, relativeDays } from '../util/format.js';
 
@@ -960,7 +963,34 @@ async function exchangeBody(redraw) {
     },
   }));
 
+  /* استيراد CSV (المرحلة ١٨) */
+  const csvImportInput = el('input', {
+    type: 'file', accept: '.csv,text/csv', class: 'visually-hidden',
+    onChange: async (e) => {
+      const file = e.target.files[0];
+      const entity = csvEntitySelect.value;
+      e.target.value = '';
+      if (!file) return;
+      try {
+        const { headers, rows } = parseCsv(await file.text());
+        if (!rows.length) { toast('الملف فارغ أو بلا صفوف بعد العناوين', 'error'); return; }
+        openCsvMapping(entity, headers, rows, lists, dataChanged);
+      } catch (err) { errToast(err); }
+    },
+  });
+  const csvEntitySelect = selectEl({
+    options: Object.entries(CSV_IMPORTS).map(([key, def]) => ({ value: key, label: def.label })),
+    value: 'clients',
+  });
+
   return el('div', {},
+    el('div', { class: 'panel-block' },
+      el('h3', { text: 'استيراد من إكسل (CSV)' }),
+      el('p', { class: 'muted small', text: 'احفظ جدولك من إكسل بصيغة CSV ثم اختره هنا. تربط الأعمدة بحقولك، وترى معاينة قبل أي كتابة — والمكرّر يُتخطّى ولا يُعدَّل شيء قائم.' }),
+      el('div', { class: 'row' },
+        csvEntitySelect,
+        el('button', { type: 'button', class: 'btn', text: 'اختر ملف CSV…', onClick: () => csvImportInput.click() }),
+        csvImportInput)),
     el('div', { class: 'panel-block' },
       el('h3', { text: 'استيراد جهات الاتصال' }),
       el('p', { class: 'muted small', text: 'صدّر جهات اتصالك من الجوال كملف vcf ثم اختره هنا. يُقرأ في متصفحك فقط، ولا يُعدَّل أي عميل قائم.' }),
@@ -974,6 +1004,85 @@ async function exchangeBody(redraw) {
       el('div', { class: 'row' }, csvButtons)));
 }
 
+
+/**
+ * نافذة ربط أعمدة الملف بحقول التطبيق، ثم معاينة، ثم استيراد (المرحلة ١٨).
+ *
+ * ثلاث خطوات مقصودة: **لا كتابة قبل معاينة**. الاستيراد الأعمى في بياناتٍ لا نسخة منها
+ * إلا عندك خطرٌ لا يُحتمل، والتراجع عنه يعني حذفًا يدويًا لعشرات السجلات.
+ */
+function openCsvMapping(entity, headers, rows, lists, onDone) {
+  const def = CSV_IMPORTS[entity];
+  const suggested = suggestMapping(entity, headers);
+  const selects = {};
+  const grid = el('div', { class: 'form-grid' }, def.fields.map((f) => {
+    selects[f.key] = selectEl({
+      options: [{ value: '', label: '— لا يوجد —' }, ...headers.map((h) => ({ value: h, label: h }))],
+      value: suggested[f.key] || '',
+    });
+    return labeled(f.label, selects[f.key]);
+  }));
+
+  const previewBox = el('div', { style: { marginTop: '12px' } });
+  const mapping = () => Object.fromEntries(Object.entries(selects).map(([k, sel]) => [k, sel.value]).filter(([, v]) => v));
+
+  const importBtn = el('button', { type: 'button', class: 'btn btn-primary', text: 'استيراد', disabled: true });
+  let pending = null;
+
+  const showPreview = async () => {
+    try {
+      const result = await previewImport(entity, rows, mapping(), { lists });
+      pending = result.add;
+      importBtn.disabled = !result.add.length;
+      importBtn.textContent = result.add.length ? `استيراد ${result.add.length}` : 'لا جديد لاستيراده';
+      clear(previewBox);
+      appendChildren(previewBox, [
+        el('p', { class: 'strong', text: `سيُضاف ${result.add.length} · يُتخطّى ${result.skipped.length}` }),
+        result.skipped.length
+          ? el('p', { class: 'muted small', text: `المتخطّى: ${[...new Set(result.skipped.map((x) => x.why))].join(' · ')}` })
+          : null,
+        result.add.length
+          ? el('div', { class: 'table-wrap' }, el('table', { class: 'table' },
+            el('thead', {}, el('tr', {}, ['السطر', ...def.fields.map((f) => f.label)].map((t) => el('th', { text: t })))),
+            el('tbody', {}, result.add.slice(0, 5).map((item) => el('tr', {},
+              el('td', { class: 'muted', text: String(item.line) }),
+              ...def.fields.map((f) => el('td', { text: formatCell(item.rec[f.key], f, lists) })))))))
+          : null,
+        result.add.length > 5 ? el('p', { class: 'muted small', text: `— معاينة أول ٥ من ${result.add.length}` }) : null,
+      ]);
+    } catch (err) { errToast(err); }
+  };
+
+  for (const sel of Object.values(selects)) sel.addEventListener('change', showPreview);
+
+  importBtn.addEventListener('click', async () => {
+    importBtn.disabled = true;
+    try {
+      const { added, failed } = await runImport(entity, pending || []);
+      modal.close();
+      toast(failed.length ? `أُضيف ${added} · فشل ${failed.length}` : `أُضيف ${added} سجلًا`, failed.length ? 'error' : 'success');
+      if (failed.length) console.warn('صفوف مرفوضة', failed);
+      onDone();
+    } catch (err) { errToast(err); importBtn.disabled = false; }
+  });
+
+  const modal = openModal({
+    title: `استيراد ${def.label} من CSV`,
+    size: 'wide',
+    body: el('div', {},
+      el('p', { class: 'muted small', text: `قُرئ ${rows.length} صفًا و${headers.length} عمودًا. اربط كل حقل بعموده — والحقول المتروكة تبقى فارغة.` }),
+      grid, previewBox),
+    footer: [importBtn, el('button', { type: 'button', class: 'btn btn-ghost', text: 'إلغاء', onClick: () => modal.close() })],
+  });
+  showPreview();
+}
+
+/** عرض قيمة في المعاينة: المفاتيح تُعرض بأسمائها العربية لا بمفاتيحها. */
+function formatCell(value, field, lists) {
+  if (Array.isArray(value)) return value.map((k) => labelFor(ENUMS.purposes, k)).join('، ');
+  if (field.listKey && lists) return (lists[field.listKey] || []).find((x) => x.key === value)?.label || String(value ?? '');
+  return String(value ?? '');
+}
 
 /* ===== المظهر (المرحلة ١١) ===== */
 

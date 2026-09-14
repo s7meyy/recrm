@@ -564,3 +564,11 @@ body.client-mode #client-mode-btn { background: var(--accent); color: #fff; }
 .saved-apply:hover { text-decoration: underline; }
 .saved-del { background: none; border: 0; padding: 4px 8px 4px 4px; cursor: pointer; color: var(--muted); font: inherit; }
 .saved-del:hover { color: var(--danger); }
+
+/* ===== المرحلة ١٨ — جولة اليوم ===== */
+.route-list { display: flex; flex-direction: column; gap: 4px; max-height: 320px; overflow-y: auto; margin-top: 10px; padding: 8px; border: 1px solid var(--line); border-radius: var(--radius); }
+
+/* ===== المرحلة ١٨ — رمز QR ===== */
+.qr-block { display: inline-flex; flex-direction: column; align-items: center; gap: 6px; background: #fff; padding: 12px; border-radius: var(--radius); border: 1px solid var(--line); }
+.qr-block svg { width: 220px; height: 220px; max-width: 100%; }
+.qr-caption { font-size: 12px; color: #444; word-break: break-all; max-width: 240px; text-align: center; }

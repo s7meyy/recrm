@@ -15,6 +15,7 @@ import { el, clear, labeled, selectEl, checkbox, badge, toast, emptyState, confi
 import { formatSAR, formatArea, formatDateTime } from '../util/format.js';
 import { mapsLink } from '../util/location.js';
 import { matchesQuery } from '../util/arabic.js';
+import { qrBlock } from '../util/qr.js';
 import { newId } from '../data/repository.js';
 
 const PREVIEW_LIMIT = 400; // حد أعلى معقول لعدد العروض في لقطة واحدة
@@ -197,7 +198,51 @@ function shareButton(ctx, property) {
     el('a', {
       class: 'btn btn-ghost btn-sm', title: 'إرسال في واتساب', text: '💬',
       href: `https://wa.me/?text=${encodeURIComponent(url)}`, target: '_blank', rel: 'noopener',
-    }));
+    }),
+    qrButton(url, `${typeLabel(ctx.lists, property.type)} — ${property.district || property.city || ''}`));
+}
+
+/**
+ * رمز QR للرابط: يُمسح من شاشة جوالك أو من ورقة مطبوعة أو لوحة على العقار،
+ * فلا يُملى الرابط حرفًا حرفًا ولا يُكتب خطأً.
+ */
+function qrButton(url, title) {
+  return el('button', {
+    type: 'button', class: 'btn btn-ghost btn-sm', text: '▣', title: 'رمز QR',
+    onClick: async (e) => {
+      e.stopPropagation();
+      try {
+        const block = await qrBlock(url);
+        const modal = openModal({
+          title: `رمز QR — ${title}`,
+          body: el('div', { style: { textAlign: 'center' } }, block,
+            el('p', { class: 'muted small', style: { marginTop: '10px' }, text: 'امسحه بكاميرا العميل، أو اطبعه على لوحة العقار أو كتالوجك.' })),
+          footer: [
+            el('button', { type: 'button', class: 'btn btn-primary', text: '🖨️ طباعة', onClick: () => printQr(block, title, url) }),
+            el('button', { type: 'button', class: 'btn btn-ghost', text: 'إغلاق', onClick: () => modal.close() }),
+          ],
+        });
+      } catch (err) { toast(err.message || 'تعذّر بناء الرمز', 'error'); }
+    },
+  });
+}
+
+/** ورقة طباعة بسيطة: الرمز كبيرًا وتحته العنوان والرابط — تُقصّ وتُلصق. */
+function printQr(block, title, url) {
+  const frame = document.createElement('iframe');
+  frame.style.cssText = 'position:fixed;inset:0;width:0;height:0;border:0;';
+  document.body.append(frame);
+  const doc = frame.contentDocument;
+  doc.open();
+  doc.write(`<!doctype html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>${title}</title>
+<style>body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;text-align:center;padding:40px}
+svg{width:340px;height:340px}h1{font-size:20px;margin:18px 0 6px}
+.u{direction:ltr;font-size:12px;color:#555;word-break:break-all}</style></head>
+<body>${block.querySelector('svg').outerHTML}<h1>${title}</h1><div class="u">${url}</div></body></html>`);
+  doc.close();
+  frame.contentWindow.focus();
+  frame.contentWindow.print();
+  setTimeout(() => frame.remove(), 1000);
 }
 
 async function toggle(ctx, id, on) {
@@ -362,6 +407,7 @@ async function drawClientLists(ctx) {
               class: 'btn btn-ghost btn-sm', text: '💬', title: 'إرسال في واتساب', target: '_blank', rel: 'noopener',
               href: `https://wa.me/?text=${encodeURIComponent(url)}`,
             }),
+            qrButton(url, l.clientName || l.title || 'قائمة عروض'),
             el('button', {
               type: 'button', class: 'btn btn-ghost btn-sm', text: '🗑️', title: 'حذف القائمة',
               onClick: async () => {
