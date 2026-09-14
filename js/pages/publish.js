@@ -59,11 +59,13 @@ function build(ctx) {
   ctx.nodes.settingsPanel = panelBody(grid, 'إعدادات النشر', 'مفتاح النشر يُضبط مرة واحدة، ويبقى محفوظًا في هذا الجهاز فقط.');
   ctx.nodes.statusPanel = panelBody(grid, 'الحالة', 'آخر نشر وما هو ظاهر للعملاء الآن.');
   ctx.nodes.listsPanel = panelBody(grid, 'قوائم مخصّصة لعملاء', 'اختر عروضًا لعميل بعينه فيصله رابط خاص يعرض قائمته وحده — ويخبرك العدّاد هل فتحه.');
+  ctx.nodes.leadsPanel = panelBody(grid, 'طلبات من الصفحة العامة', 'زوّار تركوا أرقامهم في نموذج «اطلب معاينة». تحويل الطلب ينشئ عميلًا في قاعدتك ثم يُزيله من هنا.');
   ctx.container.append(grid);
 
   drawSettings(ctx);
   drawStatus(ctx);
   drawClientLists(ctx);
+  drawLeads(ctx);
 
   /* اختيار العقارات */
   ctx.nodes.count = el('span', { class: 'count' });
@@ -359,6 +361,93 @@ async function doPublish(ctx, btn) {
 
 
 /* ===== قوائم مخصّصة لعملاء (المرحلة ١١) ===== */
+
+/* ===== طلبات الصفحة العامة (المرحلة ٢٢) ===== */
+
+const LEAD_API = '/api/lead';
+
+async function leadCall(options = {}) {
+  const res = await fetch(LEAD_API, { credentials: 'same-origin', ...options });
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 401) throw new Error('انتهت جلستك — حدّث الصفحة وسجّل الدخول ثم أعد المحاولة');
+  if (!res.ok) throw new Error(data.error || `تعذر الاتصال (${res.status})`);
+  return data;
+}
+
+async function drawLeads(ctx) {
+  const body = ctx.nodes.leadsPanel;
+  clear(body);
+  body.append(el('p', { class: 'muted small', text: 'جارٍ التحميل…' }));
+  let leads = [];
+  try {
+    ({ leads = [] } = await leadCall());
+  } catch (err) {
+    clear(body);
+    body.append(el('p', { class: 'muted small', text: `تعذّر جلب الطلبات: ${err.message}` }));
+    return;
+  }
+  clear(body);
+  if (!leads.length) {
+    body.append(el('p', { class: 'muted small', text: 'لا طلبات بعد. النموذج ظاهر أسفل صفحة العروض العامة.' }));
+    return;
+  }
+
+  body.append(el('div', { class: 'table-wrap' }, el('table', { class: 'table' },
+    el('thead', {}, el('tr', {}, ['الاسم', 'الجوال', 'ما يبحث عنه', 'وصل', ''].map((t) => el('th', { text: t })))),
+    el('tbody', {}, leads.map((lead) => el('tr', {},
+      el('td', { class: 'strong', text: lead.name || 'بلا اسم' }),
+      el('td', {}, el('a', { class: 'tel', href: `tel:${lead.phone}`, text: lead.phone, dir: 'ltr' })),
+      el('td', { text: [lead.note, lead.ref ? `عن العرض ${lead.ref}` : ''].filter(Boolean).join(' · ') || '—' }),
+      el('td', { class: 'small muted', text: formatDateTime(lead.createdAt) }),
+      el('td', {}, el('div', { class: 'row' },
+        el('button', {
+          type: 'button', class: 'btn btn-sm', text: 'حوّله عميلًا',
+          onClick: () => convertLead(ctx, lead),
+        }),
+        el('a', {
+          class: 'btn btn-ghost btn-sm', text: '💬', title: 'واتساب', target: '_blank', rel: 'noopener',
+          href: `https://wa.me/${lead.phone.replace(/^0/, '966')}`,
+        }),
+        el('button', {
+          type: 'button', class: 'icon-btn', text: '✕', title: 'تجاهل وحذف',
+          onClick: async () => {
+            const ok = await confirmDialog({ title: 'حذف الطلب', message: `حذف طلب ${lead.name || lead.phone}؟`, confirmText: 'حذف', danger: true });
+            if (!ok) return;
+            await leadCall({ method: 'DELETE', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: lead.id }) });
+            await drawLeads(ctx);
+          },
+        })))))))));
+}
+
+/**
+ * تحويل الطلب إلى عميل: **لا يُنشأ عميل مكرّر** — إن كان الجوال مسجَّلًا عندك يُضاف نصّ
+ * الطلب إلى سجل تواصله بدل إنشاء سجل ثانٍ يشتّت تاريخه.
+ */
+async function convertLead(ctx, lead) {
+  try {
+    const clients = await repo.clients.list();
+    const existing = clients.find((c) => c.phone === lead.phone);
+    const note = [lead.note, lead.ref ? `عن العرض ${lead.ref}` : ''].filter(Boolean).join(' · ') || 'طلب من الصفحة العامة';
+    let client = existing;
+    if (existing) {
+      await repo.clients.addContact(existing.id, { type: 'whatsapp', date: lead.createdAt, note: `من الصفحة العامة: ${note}` });
+      toast('العميل مسجَّل مسبقًا — أُضيف الطلب إلى سجل تواصله', 'success');
+    } else {
+      client = await repo.clients.create({
+        name: lead.name || '', phone: lead.phone, roles: ['seeker'], stage: 'new',
+        referralSource: 'الصفحة العامة', notes: note,
+      });
+      await repo.clients.addContact(client.id, { type: 'whatsapp', date: lead.createdAt, note });
+      toast('أُنشئ العميل', 'success');
+    }
+    await leadCall({ method: 'DELETE', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: lead.id }) });
+    window.dispatchEvent(new CustomEvent('kassab:data-changed'));
+    await drawLeads(ctx);
+    if (client) location.hash = `#/client/${client.id}`;
+  } catch (err) {
+    toast(err.message || 'تعذّر التحويل', 'error');
+  }
+}
 
 const CLIENT_LIST_API = '/api/client-list';
 

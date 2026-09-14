@@ -28,6 +28,21 @@
     <div id="grid" class="grid"></div>
   </main>
 
+  <section class="wrap lead-box">
+    <h2>اطلب معاينة أو اسأل عن عقار</h2>
+    <p class="muted small">اترك رقمك ونتواصل معك. لا يُنشر رقمك ولا يظهر لأحد غير المكتب.</p>
+    <form id="lead-form" novalidate>
+      <div class="lead-grid">
+        <label>الاسم<input type="text" name="name" autocomplete="name" maxlength="60"></label>
+        <label>الجوال <span aria-hidden="true">*</span><input type="tel" name="phone" inputmode="tel" dir="ltr" autocomplete="tel" required maxlength="20"></label>
+      </div>
+      <label class="lead-full">ما الذي تبحث عنه؟<textarea name="note" rows="2" maxlength="400"></textarea></label>
+      <label class="lead-trap" aria-hidden="true" tabindex="-1">لا تملأ هذا الحقل<input type="text" name="website" tabindex="-1" autocomplete="off"></label>
+      <button type="submit" class="btn btn-primary" id="lead-send">إرسال</button>
+      <p id="lead-status" class="muted small" role="status"></p>
+    </form>
+  </section>
+
   <footer class="wrap footer">
     <p id="published-at" class="muted"></p>
     <p class="muted small">الأسعار والتفاصيل قابلة للتغيير — للتأكد تواصل معنا مباشرة.</p>

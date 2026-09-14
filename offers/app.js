@@ -133,3 +133,36 @@ async function load() {
 }
 
 load();
+
+/* ===== «اطلب معاينة» (المرحلة ٢٢) ===== */
+
+const leadForm = document.getElementById('lead-form');
+if (leadForm) {
+  const statusNode = document.getElementById('lead-status');
+  const sendBtn = document.getElementById('lead-send');
+  leadForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const data = Object.fromEntries(new FormData(leadForm).entries());
+    if (!String(data.phone || '').trim()) {
+      statusNode.textContent = 'اكتب رقم جوالك أولًا.';
+      return;
+    }
+    sendBtn.disabled = true;
+    statusNode.textContent = 'جارٍ الإرسال…';
+    try {
+      const res = await fetch('/api/lead', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ...data, ref: new URLSearchParams(location.search).get('ref') || '' }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || 'تعذّر الإرسال');
+      leadForm.reset();
+      statusNode.textContent = 'وصلنا طلبك — نتواصل معك قريبًا بإذن الله.';
+    } catch (err) {
+      statusNode.textContent = err.message || 'تعذّر الإرسال، حاول لاحقًا.';
+    } finally {
+      sendBtn.disabled = false;
+    }
+  });
+}

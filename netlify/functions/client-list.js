@@ -7,6 +7,7 @@
 
 import { getStore } from '@netlify/blobs';
 import { signedIn, unauthorized } from '../lib/auth.js';
+import { notifyAll } from '../lib/notify.js';
 
 const STORE = 'kassab-public';
 const PREFIX = 'list/';
@@ -33,9 +34,22 @@ export default async (request) => {
 
     // العدّاد لا يُحسب إلا لفتحة حقيقية من متصفح (لا لاستعلام المالك من لوحة التحكم).
     if (url.searchParams.get('count') === '1') {
-      await store.setJSON(PREFIX + slug, {
-        ...rec, opens: (rec.opens || 0) + 1, lastOpenAt: new Date().toISOString(),
-      });
+      const now = new Date().toISOString();
+      await store.setJSON(PREFIX + slug, { ...rec, opens: (rec.opens || 0) + 1, lastOpenAt: now });
+      // تنبيه فوري عند الفتح (المرحلة ٢٢): لحظة فتح العميل لرابطه أفضل لحظة للاتصال به.
+      // ويُرسل مرة واحدة كل ساعة للقائمة نفسها، فلا يزعجك من يتصفّح ذهابًا وإيابًا.
+      const lastNotify = rec.lastNotifyAt ? new Date(rec.lastNotifyAt).getTime() : 0;
+      if (Date.now() - lastNotify > 3600000) {
+        await store.setJSON(PREFIX + slug, {
+          ...rec, opens: (rec.opens || 0) + 1, lastOpenAt: now, lastNotifyAt: now,
+        });
+        await notifyAll({
+          title: 'عميلك فتح قائمة عروضه',
+          body: 'هذه أفضل لحظة للاتصال به.',
+          url: '/#/publish',
+          tag: `kassab-open-${slug}`,
+        }).catch(() => {});
+      }
     }
     return json({
       title: rec.title || '', note: rec.note || '', clientName: rec.clientName || '',

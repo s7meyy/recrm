@@ -40,6 +40,7 @@ const SUITES = [
   ['rename-and-vault.mjs', LOCKED],
   ['offer-pwa-push.mjs', LOCKED],
   ['client-links.mjs', LOCKED],
+  ['leads.mjs', LOCKED],
 ];
 
 function startServer(port, open) {

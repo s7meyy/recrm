@@ -55,3 +55,17 @@ h1 { margin: 0; font-size: clamp(22px, 4vw, 30px); }
 .offer-gallery img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; background: var(--accent-soft);
   border-radius: var(--radius); display: block; }
 .offer-gallery .noimg { background: var(--accent-soft); border-radius: var(--radius); aspect-ratio: 4/3; display: grid; place-items: center; color: var(--accent); }
+
+/* ===== نموذج «اطلب معاينة» (المرحلة ٢٢) ===== */
+.lead-box { margin-top: 28px; padding: 18px; border: 1px solid var(--line, #e3e7e4); border-radius: 12px; background: var(--surface, #fff); }
+.lead-box h2 { margin: 0 0 4px; font-size: 18px; }
+.lead-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 10px; margin-top: 10px; }
+.lead-box label { display: block; font-size: 13px; font-weight: 600; }
+.lead-box input, .lead-box textarea {
+  display: block; width: 100%; box-sizing: border-box; margin-top: 4px; padding: 9px 10px;
+  border: 1px solid var(--line, #d7ded9); border-radius: 8px; font: inherit; background: #fff; color: inherit;
+}
+.lead-full { margin-top: 10px; }
+.lead-box button { margin-top: 12px; }
+/* الفخّ: بعيد عن العين وعن قارئ الشاشة، ولا يعبّئه إلا آلة. */
+.lead-trap { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
