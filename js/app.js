@@ -193,6 +193,18 @@ async function seedOnFirstRun() {
 
 function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
+  // عامل خدمة جديد استلم الصفحة = ملفات التطبيق تبدّلت تحت قدميك، والصفحة المفتوحة تخلط
+  // القديم بالجديد. أعد تحميلها مرة واحدة — بشرطين يمنعان حلقة لا تنتهي:
+  // لا إعادة تحميل عند أول تسجيل (ليست تحديثًا)، ولا أكثر من مرة في التبويب الواحد.
+  const hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController) return;
+    try {
+      if (sessionStorage.getItem('kassab:sw-reloaded')) return;
+      sessionStorage.setItem('kassab:sw-reloaded', '1');
+    } catch (_) { return; } // تخزين الجلسة ممنوع (تصفح خاص): لا تُعد التحميل بلا حارس
+    location.reload();
+  });
   // النطاق الجذر كي يغطّي التطبيق كله؛ والفشل غير مؤثر (التطبيق يعمل بلا عامل خدمة).
   navigator.serviceWorker.register('/sw.js').catch((err) => console.warn('تعذر تسجيل عامل الخدمة', err));
 }

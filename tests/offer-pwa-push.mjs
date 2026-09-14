@@ -1,4 +1,7 @@
 import { chromium } from './pw.mjs';
+import fs from 'node:fs/promises';
+
+const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '');
 const BASE = process.env.TEST_URL || 'http://127.0.0.1:8234';
 const b = await chromium.launch();
 const ok = (n,c,x='') => console.log(`${c?'PASS':'FAIL'} — ${n}${x?' :: '+x:''}`);
@@ -77,6 +80,31 @@ const cached = await page.evaluate(async () => {
 ok('لا يُخزَّن شيء من الدوال أو الصفحة العامة أو الدخول',
   !cached.urls.some(u => u.startsWith('/api/') || u.startsWith('/offers') || u.startsWith('/__')),
   cached.urls.slice(0, 8).join(' '));
+
+/* التحديث يصل فعلًا: ملف يُطلب مرتين ويتغيّر على الخادم بينهما.
+   تحت «المخزن أولًا» القديمة كانت القراءة الثانية تُعيد النسخة القديمة أبدًا. */
+const probePath = `${ROOT}/css/__cache-probe.css`;
+await fs.writeFile(probePath, '.probe { color: red; } /* A */');
+const first = await page.evaluate(async () => (await fetch('/css/__cache-probe.css', { credentials: 'same-origin' })).text());
+ok('الملف يُقرأ أول مرة ويُخزَّن', first.includes('/* A */'), first.trim());
+await fs.writeFile(probePath, '.probe { color: blue; } /* B */');
+const second = await page.evaluate(async () => (await fetch('/css/__cache-probe.css', { credentials: 'same-origin' })).text());
+ok('**التحديث يصل بعد تغيّر الملف على الخادم**', second.includes('/* B */'), second.trim());
+const cachedProbe = await page.evaluate(async () => {
+  const keys = await caches.keys();
+  const c = await caches.open(keys[0]);
+  const hit = await c.match('/css/__cache-probe.css');
+  return hit ? await hit.text() : 'غير مخزَّن';
+});
+ok('المخزن نفسه تحدّث للعمل دون اتصال', cachedProbe.includes('/* B */'), cachedProbe.trim());
+// ودون اتصال يُخدَم من المخزن رغم أن القاعدة صارت «الشبكة أولًا»
+await ctx.setOffline(true);
+const offlineProbe = await page.evaluate(async () => {
+  try { return await (await fetch('/css/__cache-probe.css', { credentials: 'same-origin' })).text(); } catch (e) { return 'فشل: ' + e.message; }
+});
+await ctx.setOffline(false);
+ok('الملف يُخدَم من المخزن عند انقطاع الشبكة', offlineProbe.includes('/* B */'), offlineProbe.trim());
+await fs.rm(probePath, { force: true });
 
 console.log('\n--- ٧: تنبيهات الخلفية ---');
 const pushFlow = await page.evaluate(async () => {
