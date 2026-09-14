@@ -16,6 +16,7 @@ import { formatSAR, formatArea, formatDateTime } from '../util/format.js';
 import { mapsLink } from '../util/location.js';
 import { matchesQuery } from '../util/arabic.js';
 import { qrBlock } from '../util/qr.js';
+import { runPlans } from '../util/plans.js';
 import { newId } from '../data/repository.js';
 
 const PREVIEW_LIMIT = 400; // حد أعلى معقول لعدد العروض في لقطة واحدة
@@ -438,6 +439,7 @@ async function convertLead(ctx, lead) {
         referralSource: 'الصفحة العامة', notes: note,
       });
       await repo.clients.addContact(client.id, { type: 'whatsapp', date: lead.createdAt, note });
+      await runPlans('new_client', { title: client.name || client.phone, linkType: 'client', linkId: client.id });
       toast('أُنشئ العميل', 'success');
     }
     await leadCall({ method: 'DELETE', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: lead.id }) });

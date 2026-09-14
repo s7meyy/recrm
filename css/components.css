@@ -585,3 +585,7 @@ body.client-mode #client-mode-btn { background: var(--accent); color: #fff; }
 .notice-warn { background: var(--warn-soft); border-color: var(--warn); }
 .trash-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--line); }
 .trash-row:last-child { border-bottom: 0; }
+
+/* ===== المرحلة ٢٣ — خطوات خطة المتابعة ===== */
+.plan-step { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+.plan-step .input[type="text"] { flex: 1; min-width: 140px; }

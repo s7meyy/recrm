@@ -14,6 +14,7 @@ import {
   getCompany, suggestInvoiceNumber, consumeInvoiceNumber, getFollowUpSettings,
 } from '../data/settings.js';
 import { loadMatchingContext, candidatesFor, scoreOne, hardReasonLabel, priceFlexFor } from '../data/matching.js';
+import { runPlans } from '../util/plans.js';
 import {
   el, clear, labeled, selectEl, checkbox, badge, openModal, toast, emptyState,
 } from '../util/dom.js';
@@ -456,6 +457,10 @@ function openQuickMatch(ctx) {
  */
 async function scheduleAfterShowing(ctx, request, row) {
   try {
+    const client = ctx.clientsById?.get(request.clientId) || null;
+    // الخطة والمهمة المفردة إعدادان مستقلان: تعطيل أحدهما لا يعطّل الآخر.
+    await runPlans('after_showing', { title: clientName(client), linkType: client ? 'client' : null, linkId: client?.id || null });
+
     const { afterShowingDays } = await getFollowUpSettings();
     const days = Number(afterShowingDays) || 0;
     if (days <= 0) return;
@@ -463,7 +468,6 @@ async function scheduleAfterShowing(ctx, request, row) {
     const lists = (await repo.taskLists.list()).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
     const list = lists[0] || await repo.taskLists.create({ title: 'متابعات', order: 0 });
 
-    const client = ctx.clientsById?.get(request.clientId) || null;
     const p = row.listing;
     const where = [p.district, p.city].filter(Boolean).join('، ');
     const due = new Date();

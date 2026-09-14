@@ -30,13 +30,14 @@ await addClient('عميل عادي ز', '0500000001', null, 'وسيط أحمد')
 await addClient('عميل مهم ب', '0500000002', 'مهم', '');
 await addClient('عميل جاد أ', '0500000003', 'جادّ', 'وسيط أحمد');
 
-const names = await page.$$eval('.table tbody tr td:first-child', tds => tds.map(td => td.textContent.trim()));
+// عمود الاسم صار الثاني بعد «الأولوية» (المرحلة ٢٣) — نقرأ خلية الاسم بعنوانها لا بموضعها الثابت.
+const names = await page.$$eval('.table tbody tr', trs => trs.map(tr => tr.querySelector('td.strong')?.textContent.trim() || ''));
 ok('العميل «جادّ» أولًا ثم «مهم» ثم البقية', names[0].startsWith('عميل جاد') && names[1].startsWith('عميل مهم'), names.slice(0,3).join(' | '));
 
 const cls = await page.$$eval('.table tbody tr', trs => trs.slice(0,3).map(t => t.className));
 ok('صفوف الأولوية موسومة بصنفها', cls[0].includes('row-priority-2') && cls[1].includes('row-priority-1'), cls.join(' / '));
 
-const tagCls = await page.$$eval('.table tbody tr .badge', bs => bs.map(x=>x.className+':'+x.textContent));
+const tagCls = await page.$$eval('.table tbody tr td .badge', bs => bs.filter(x => !x.className.includes('badge-outline') || Number.isNaN(Number(x.textContent))).map(x=>x.className+':'+x.textContent));
 ok('لونا التصنيفين ثابتان (tag-serious / tag-important)',
    tagCls.some(x=>x.includes('tag-serious')) && tagCls.some(x=>x.includes('tag-important')), tagCls.slice(0,4).join(' | '));
 

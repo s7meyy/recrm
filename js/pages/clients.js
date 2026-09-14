@@ -2,7 +2,7 @@
 
 import { repo, ValidationError } from '../data/repository.js';
 import { ENUMS, labelFor, clientTagClass, clientPriority } from '../data/schema.js';
-import { getLists, addClientTag, typeLabel, statusLabel } from '../data/settings.js';
+import { getLists, addClientTag, typeLabel, statusLabel, getFollowUpSettings } from '../data/settings.js';
 import { sourceField, rememberSource, sourceBadge } from '../util/source-field.js';
 import {
   el, clear, labeled, fieldGroup, selectEl, checkbox, badge, openModal, confirmDialog,
@@ -13,6 +13,7 @@ import {
   toInputDateTime, fromInputDateTime, fromInputDate,
 } from '../util/format.js';
 import { matchesQuery } from '../util/arabic.js';
+import { scoreClient } from '../util/lead-score.js';
 import { formatPhone } from '../util/phone.js';
 
 const GROUPS = [['role', 'الدور'], ['stage', 'المرحلة'], ['tag', 'التصنيف']];
@@ -42,7 +43,20 @@ export async function render(container) {
 }
 
 async function loadData(ctx) {
-  const [clients, properties, lists] = await Promise.all([repo.clients.list(), repo.properties.list(), getLists()]);
+  const [clients, properties, lists, requests, followUp] = await Promise.all([
+    repo.clients.list(), repo.properties.list(), getLists(), repo.requests.list(), getFollowUpSettings(),
+  ]);
+  // درجة الأولوية (المرحلة ٢٣): تُحسب من سجلات موجودة — لا تخزين ولا نموذج.
+  const byClient = new Map();
+  for (const r of requests) {
+    if (!byClient.has(r.clientId)) byClient.set(r.clientId, []);
+    byClient.get(r.clientId).push(r);
+  }
+  ctx.scores = new Map(clients.map((c) => [c.id, scoreClient(c, {
+    requests: byClient.get(c.id) || [],
+    lastContactAt: repo.clients.lastContactAt(c),
+    staleDays: followUp.staleContactDays,
+  })]));
   // الأولوية أولًا («جادّ» ثم «مهم»)، ثم آخر تعديل كما كان (المرحلة ٨).
   clients.sort((a, b) => (clientPriority(b) - clientPriority(a)) || (b.updatedAt || '').localeCompare(a.updatedAt || ''));
   ctx.clients = clients;
@@ -165,8 +179,9 @@ function renderList(ctx) {
     area.append(emptyState('لا نتائج تطابق الفرز أو البحث.'));
     return;
   }
-  const head = el('tr', {}, ['الاسم', 'الجوال', 'الأدوار', 'المرحلة', 'التصنيفات', 'آخر تواصل', 'المتابعة القادمة'].map((t) => el('th', { text: t })));
+  const head = el('tr', {}, ['الأولوية', 'الاسم', 'الجوال', 'الأدوار', 'المرحلة', 'التصنيفات', 'آخر تواصل', 'المتابعة القادمة'].map((t) => el('th', { text: t })));
   const body = el('tbody', {}, items.map((c) => el('tr', { class: `row-priority-${clientPriority(c)}`, onClick: () => openDetail(ctx, c.id) },
+    el('td', {}, scoreBadge(ctx, c)),
     el('td', { class: 'strong' }, c.name || el('span', { class: 'muted', text: 'بلا اسم' }), sourceBadge(c.referralSource)),
     el('td', {}, phoneLink(c.phone)),
     el('td', {}, (c.roles || []).map((r) => labelFor(ENUMS.clientRoles, r)).join('، ') || '—'),
@@ -175,6 +190,15 @@ function renderList(ctx) {
     el('td', {}, lastContactNode(c)),
     el('td', {}, followUpNode(c)))));
   area.append(el('div', { class: 'table-wrap' }, el('table', { class: 'table' }, el('thead', {}, head), body)));
+}
+
+/** شارة الدرجة مع سببها في التلميح — درجةٌ لا تُشرح لا تُصحَّح. */
+function scoreBadge(ctx, client) {
+  const result = ctx.scores?.get(client.id);
+  if (!result) return el('span', { class: 'muted', text: '—' });
+  const tone = result.score >= 60 ? 'badge-ok' : result.score >= 30 ? 'badge-warn' : 'badge-outline';
+  const why = result.reasons.map((r) => `${r.weight > 0 ? '+' : ''}${r.weight} ${r.label}`).join('\n');
+  return badge(String(result.score), tone, { title: why || 'لا إشارات بعد' });
 }
 
 /* ===== تفاصيل العميل وسجل التواصل ===== */

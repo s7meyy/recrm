@@ -7,6 +7,7 @@ import { ENUMS, labelFor, clientPriority } from '../data/schema.js';
 import { sourceField, rememberSource, sourceBadge } from '../util/source-field.js';
 import { getLists, typeLabel, addDistrict, getZonesFor, zoneLabel } from '../data/settings.js';
 import { parseRequestText } from '../data/listing-parse.js';
+import { runPlans } from '../util/plans.js';
 import { loadMatchingContext, candidatesFor, priceFlexFor, areaFlexFor } from '../data/matching.js';
 import { priceSamples, budgetRealityGap } from '../util/price-stats.js';
 import {
@@ -257,13 +258,65 @@ async function openPasteForm(ctx) {
       for (const w of parsed.warnings) resultBox.append(el('p', { class: 'muted small', text: `⚠︎ ${w}` }));
     }
     openBtn.disabled = false;
+    // بلا جوال لا إنشاء مباشر: عميلٌ لا تستطيع الاتصال به سجلٌّ ناقص لا فائدة فيه.
+    quickBtn.disabled = !parsed?.fields?.phone;
+    quickBtn.title = parsed?.fields?.phone ? '' : 'لم يُقرأ جوال من الرسالة — أكمل الاستمارة يدويًا';
   };
 
   const openBtn = el('button', {
-    type: 'button', class: 'btn btn-primary', text: 'افتح الاستمارة معبّأة', disabled: true,
+    type: 'button', class: 'btn', text: 'افتح الاستمارة معبّأة', disabled: true,
     onClick: async () => {
       modal.close();
       await openForm(ctx, null, parsed?.fields || {});
+    },
+  });
+
+  /**
+   * إنشاء العميل وطلبه بضغطة (المرحلة ٢٣).
+   *
+   * الأنظمة التي تلتقط العملاء من البوّابات آليًا تُباع باشتراك شهري كبير، وهذا ٨٠٪ من
+   * قيمتها بلا اشتراك: تلصق رسالة الاستفسار فيُقرأ الاسم والجوال والمواصفات معًا.
+   * و**لا يُنشأ عميل مكرّر**: الجوال المسجَّل يُستعمل سجلّه ويُضاف الطلب إليه.
+   * ويبقى الزر معطَّلًا ما لم يُقرأ جوال، لأن عميلًا بلا جوال لا يُتصل به.
+   */
+  const quickBtn = el('button', {
+    type: 'button', class: 'btn btn-primary', text: 'أنشئ العميل والطلب', disabled: true,
+    onClick: async () => {
+      const fields = parsed?.fields || {};
+      quickBtn.disabled = true;
+      try {
+        const clients = await repo.clients.list();
+        const phone = fields.phone || '';
+        let client = phone ? clients.find((c) => c.phone === phone) : null;
+        const isNew = !client;
+        if (!client) {
+          client = await repo.clients.create({
+            name: fields.name || '', phone, roles: ['seeker'], stage: 'new',
+            referralSource: fields.source || '', notes: textarea.value.trim().slice(0, 500),
+          });
+        }
+        await repo.clients.addContact(client.id, {
+          type: 'whatsapp', date: new Date().toISOString(), note: 'استفسار ملصوق',
+        });
+        if (isNew) await runPlans('new_client', { title: fields.name || phone, linkType: 'client', linkId: client.id });
+        const request = await repo.requests.create({
+          clientId: client.id,
+          city: fields.city || ctx.lists.cities[0] || 'الرياض',
+          districts: fields.districts || [],
+          type: fields.type || '',
+          purpose: fields.purpose || 'sale',
+          budgetMax: fields.budgetMax ?? null,
+          area: fields.area ?? null,
+          status: 'active',
+        });
+        modal.close();
+        toast(isNew ? 'أُنشئ العميل وطلبه' : 'العميل مسجَّل — أُضيف له الطلب', 'success');
+        window.dispatchEvent(new CustomEvent('kassab:data-changed'));
+        location.hash = `#/matches/${request.id}`;
+      } catch (err) {
+        toast((err.errors || [err.message]).join('، '), 'error');
+        quickBtn.disabled = false;
+      }
     },
   });
 
@@ -279,6 +332,7 @@ async function openPasteForm(ctx) {
     footer: [
       el('button', { type: 'button', class: 'btn btn-ghost', text: 'إلغاء', onClick: () => modal.close() }),
       openBtn,
+      quickBtn,
     ],
   });
   setTimeout(() => textarea.focus(), 0);

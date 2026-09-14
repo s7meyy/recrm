@@ -24,6 +24,7 @@ export const SETTINGS_KEYS = {
   templates: 'templates', // قوالب رسائل واتساب (المرحلة ١١)
   goals: 'goals', // أهداف شهرية (المرحلة ١٣)
   savedSearches: 'savedSearches', // بحوث محفوظة لكل صفحة (المرحلة ١٧)
+  plans: 'plans', // خطط المتابعة المتسلسلة (المرحلة ٢٣)
 };
 
 const EMPTY_LISTS = () => ({ propertyTypes: [], propertyStatuses: [], clientTags: [], cities: [], districts: {}, sources: [] });
@@ -276,7 +277,11 @@ export async function setUI(patch) {
 
 // `afterShowingDays` (المرحلة ١٧): تُنشأ مهمة متابعة تلقائيًا بعد تعليم المطابقة «عُرضت».
 // صفر = معطَّل. والصفقات تموت بالصمت بعد المعاينة أكثر مما تموت بالسعر.
-const DEFAULT_FOLLOW_UP = { staleContactDays: 14, notify: false, afterShowingDays: 3 };
+const DEFAULT_FOLLOW_UP = {
+  staleContactDays: 14, notify: false, afterShowingDays: 3,
+  // «ينتظرون ردّك» (المرحلة ٢٣): عميل جديد بلا تواصل مسجَّل بعد هذه الدقائق. صفر = معطَّل.
+  replyWithinMinutes: 60,
+};
 
 export async function getFollowUpSettings() {
   return repo.settings.get(SETTINGS_KEYS.followUp, DEFAULT_FOLLOW_UP);
@@ -286,6 +291,7 @@ export async function setFollowUpSettings(patch) {
   const next = { ...current, ...patch };
   next.staleContactDays = Math.max(1, Math.round(Number(next.staleContactDays) || DEFAULT_FOLLOW_UP.staleContactDays));
   next.afterShowingDays = Math.max(0, Math.round(Number(next.afterShowingDays) || 0)); // صفر مقصود = معطَّل
+  next.replyWithinMinutes = Math.max(0, Math.round(Number(next.replyWithinMinutes) || 0));
   return repo.settings.set(SETTINGS_KEYS.followUp, next);
 }
 
@@ -639,4 +645,63 @@ export async function removeSavedSearch(page, id) {
   const next = list.filter((x) => x.id !== id);
   await repo.settings.set(SETTINGS_KEYS.savedSearches, { ...all, [page]: next });
   return next;
+}
+
+/* ===== خطط المتابعة المتسلسلة (المرحلة ٢٣) ===== */
+
+/**
+ * الخطة سلسلة خطوات بأيامها ونوعها، تُطلق عند حدثٍ فتُنشأ مهامها دفعة واحدة.
+ *
+ * أبرز ما تتباهى به الأنظمة العالمية («Smart Plans»)، ومحرك المهام عندك يكفيه.
+ * و`trigger` هو الحدث: `new_client` عند تسجيل عميل جديد، و`after_showing` بعد المعاينة.
+ * القائمة فارغة افتراضيًا **عمدًا**: خطة لم تكتبها بنفسك تُغرق مهامك بما لا تنوي فعله.
+ */
+export const PLAN_TRIGGERS = [
+  { key: 'new_client', label: 'عند تسجيل عميل جديد' },
+  { key: 'after_showing', label: 'بعد عرض عقار على العميل' },
+  { key: 'manual', label: 'يدويًا فقط' },
+];
+
+export const PLAN_STEP_TYPES = [
+  { key: 'call', label: 'اتصال' },
+  { key: 'whatsapp', label: 'رسالة واتساب' },
+  { key: 'visit', label: 'زيارة أو معاينة' },
+  { key: 'other', label: 'أخرى' },
+];
+
+/** خطة جاهزة تُقترح عند أول إنشاء — تُعدَّل أو تُحذف، ولا تعمل حتى تُفعّلها. */
+export const SAMPLE_PLAN = {
+  name: 'متابعة عميل جديد',
+  trigger: 'new_client',
+  enabled: false,
+  steps: [
+    { day: 0, type: 'call', title: 'اتصال تعارف وتأكيد المطلوب' },
+    { day: 2, type: 'whatsapp', title: 'إرسال عروض مناسبة' },
+    { day: 5, type: 'call', title: 'متابعة: هل ناسبه شيء؟' },
+    { day: 14, type: 'whatsapp', title: 'تذكير أخير قبل الأرشفة' },
+  ],
+};
+
+export async function getPlans() {
+  const stored = await repo.settings.get(SETTINGS_KEYS.plans, null);
+  return Array.isArray(stored) ? stored : [];
+}
+
+export async function setPlans(plans) {
+  const clean = (Array.isArray(plans) ? plans : []).map((plan) => ({
+    id: plan.id || shortKey('plan'),
+    name: norm(plan.name) || 'خطة بلا اسم',
+    trigger: PLAN_TRIGGERS.some((t) => t.key === plan.trigger) ? plan.trigger : 'manual',
+    enabled: !!plan.enabled,
+    steps: (Array.isArray(plan.steps) ? plan.steps : [])
+      .map((step) => ({
+        day: Math.max(0, Math.round(Number(step.day) || 0)),
+        type: PLAN_STEP_TYPES.some((t) => t.key === step.type) ? step.type : 'other',
+        title: norm(step.title) || 'خطوة بلا عنوان',
+      }))
+      .sort((a, b) => a.day - b.day)
+      .slice(0, 20),
+  })).filter((plan) => plan.steps.length);
+  await repo.settings.set(SETTINGS_KEYS.plans, clean);
+  return clean;
 }

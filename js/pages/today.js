@@ -10,6 +10,7 @@ import { getLists, getCompleteness, getFollowUpSettings, typeLabel, getUI, setUI
 import { loadMatchingContext, candidatesFor, matchReadiness } from '../data/matching.js';
 import { buildOpportunityIndex, topOpportunities } from '../util/opportunity.js';
 import { receivables } from '../util/receivables.js';
+import { awaitingReply } from '../util/lead-score.js';
 import { el, clear, badge, emptyState, confirmDialog, toast, openModal, labeled } from '../util/dom.js';
 import { formatSAR, formatDate, formatDateTime, relativeDays, daysBetween, daysWord } from '../util/format.js';
 import { formatPhone, toInternational } from '../util/phone.js';
@@ -30,6 +31,8 @@ async function loadData() {
   ]);
   const since = ui.lastVisitAt || null;
   const due = receivables({ invoices, deals }); // المستحقات (المرحلة ١٧)
+  // عملاء جدد بلا ردّ (المرحلة ٢٣): «سرعة الردّ» أقوى ما تبيعه الأنظمة الكبرى، وحسابه بسيط.
+  const waiting = awaitingReply(ctx.clients, { minutes: followUp.replyWithinMinutes ?? 60 });
   const clientsById = new Map(ctx.clients.map((c) => [c.id, c]));
   const now = Date.now();
 
@@ -104,7 +107,7 @@ async function loadData() {
   return {
     since, lists, followUps, stale, dueTasks, newMatches, incomplete, awaitingApproval, unreadyExternals, opportunities,
     progress, renewals, staleListings,
-    clientsById, tasksPending: tasks.filter((t) => !t.done).length,
+    clientsById, waiting, tasksPending: tasks.filter((t) => !t.done).length,
     quotesOpen: invoices.filter((i) => i.type === 'quote').length,
     due,
   };
@@ -231,6 +234,18 @@ function build(container, d) {
       goalBar('عمولات', d.progress.commission, d.progress.goals.commissionPerMonth, formatSAR),
       el('p', { class: 'muted small', text: `مصاريف هذا الشهر: ${formatSAR(d.progress.spent)} · الصافي: ${formatSAR(d.progress.commission - d.progress.spent)}` })),
     { href: '#/expenses', hrefText: 'المصاريف →' }));
+  }
+
+  /* عملاء ينتظرون ردّك (المرحلة ٢٣) — أول لوحة لأن التأخير هنا يكلّف عميلًا لا وقتًا */
+  if (d.waiting.length) {
+    grid.append(section('ينتظرون ردّك', d.waiting.length,
+      el('div', {},
+        el('p', { class: 'muted small', text: 'سُجّلوا ولم يُسجَّل معهم أي تواصل. سجّل المكالمة بعدها فيخرجون من هنا.' }),
+        ...d.waiting.slice(0, 8).map(({ client, waitedMinutes }) => row(
+          clientName(client),
+          waitedMinutes < 120 ? `منذ ${waitedMinutes} دقيقة` : `منذ ${Math.round(waitedMinutes / 60)} ساعة`,
+          clientActions(client)))),
+      { href: '#/clients', hrefText: 'العملاء →', tone: 'today-warn' }));
   }
 
   /* مستحقات لم تُقبض (المرحلة ١٧) — لا تظهر اللوحة إن لم يكن لك شيء عند أحد */

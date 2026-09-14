@@ -25,6 +25,7 @@ import { SIDEBAR_PAGES, DEFAULT_PAGE_KEYS, pageLabel, applySidebarOrder } from '
 import { applyTheme } from '../util/theme.js';
 import { storeImage, getImageUrl, removeImage } from '../data/images.js';
 import { requestFollowUpPermission } from '../util/follow-up-alerts.js';
+import { getPlans, setPlans, PLAN_TRIGGERS, PLAN_STEP_TYPES, SAMPLE_PLAN } from '../data/settings.js';
 import { exportBackup, downloadBlob, markExported, readBackupFile, importBackup } from '../data/backup.js';
 import { imagesSummary, formatBytes } from '../data/images.js';
 import { seedExists, insertSeed, clearSeed } from '../data/seed.js';
@@ -55,6 +56,7 @@ export async function render(container) {
     panel('الأهداف والتنبيهات', 'هدفك الشهري يظهر شريط تقدّم في «يومي»، وحدّ العرض البائت ينبّهك على المخزون الراكد.', goalsBody),
     panel('متابعة العملاء', 'حدّ "لم يُتواصل معه" في الداشبورد، وتنبيه المتصفح عند تجاوز عميل له.', followUpBody),
     panel('استيراد وتصدير', 'استيراد جهات اتصالك عملاءَ دفعة واحدة، وتصدير جداولك إلى ملفات تفتحها في إكسل.', exchangeBody),
+    panel('خطط المتابعة', 'سلسلة خطوات بأيامها تُنشأ مهامها تلقائيًا عند حدث — بدل أن تتذكّر أنت. لا تعمل خطة حتى تُفعّلها.', plansBody),
     panel('قوالب رسائل واتساب', 'رسائل جاهزة تُرسل بنقرة من قائمة مشاركة العقار، وتُعبَّأ ببيانات العقار والعميل تلقائيًا.', templatesBody),
     panel('تنبيهات الخلفية', 'تذكير المهام يصلك على الجهاز حتى بعد إغلاق التبويب. لا يغادر جهازك إلا موعد التذكير — بلا عناوين ولا أسماء.', pushBody),
     panel('سلة المحذوفات', 'نسخة من كل سجل حذفته خلال ثلاثين يومًا. يُستعاد السجل نفسه — أما ما حُذف تبعًا له (طلبات العميل مثلًا) فلا يعود.', trashBody),
@@ -564,6 +566,88 @@ async function followUpBody() {
         updateNote();
       },
     })));
+}
+
+/* ===== خطط المتابعة (المرحلة ٢٣) ===== */
+
+async function plansBody(redraw) {
+  const plans = await getPlans();
+  const wrap = el('div', {});
+
+  if (!plans.length) {
+    wrap.append(el('p', { class: 'muted small', text: 'لا خطط بعد. الخطة الجاهزة أدناه مقترح — عدّله أو احذفه، ولن يعمل حتى تُفعّله.' }));
+  }
+
+  for (const plan of plans) {
+    const nameInput = el('input', { class: 'input', type: 'text', value: plan.name });
+    const triggerSelect = selectEl({
+      options: PLAN_TRIGGERS.map((t) => ({ value: t.key, label: t.label })), value: plan.trigger,
+    });
+    const enabledBox = checkbox('مفعَّلة', { checked: plan.enabled });
+    const stepsWrap = el('div', {});
+    const steps = plan.steps.map((step) => ({ ...step }));
+
+    const drawSteps = () => {
+      clear(stepsWrap);
+      steps.forEach((step, i) => {
+        const dayInput = el('input', { class: 'input', type: 'number', min: '0', step: '1', value: step.day, style: { width: '80px' }, onInput: (e) => { step.day = Number(e.target.value); } });
+        const typeSelect = selectEl({ options: PLAN_STEP_TYPES.map((t) => ({ value: t.key, label: t.label })), value: step.type, onChange: (e) => { step.type = e.target.value; } });
+        const titleInput = el('input', { class: 'input', type: 'text', value: step.title, onInput: (e) => { step.title = e.target.value; } });
+        stepsWrap.append(el('div', { class: 'plan-step' },
+          el('span', { class: 'muted small', text: 'بعد' }), dayInput, el('span', { class: 'muted small', text: 'يومًا' }),
+          typeSelect, titleInput,
+          el('button', { type: 'button', class: 'icon-btn', text: '✕', title: 'حذف الخطوة', onClick: () => { steps.splice(i, 1); drawSteps(); } })));
+      });
+      stepsWrap.append(el('button', {
+        type: 'button', class: 'btn btn-ghost btn-sm', text: '+ خطوة',
+        onClick: () => { steps.push({ day: 1, type: 'call', title: '' }); drawSteps(); },
+      }));
+    };
+    drawSteps();
+
+    wrap.append(el('div', { class: 'panel-block' },
+      el('div', { class: 'form-grid' },
+        labeled('اسم الخطة', nameInput),
+        labeled('متى تُطلق', triggerSelect),
+        el('div', { class: 'field' }, el('span', { class: 'field-label', text: 'الحالة' }), enabledBox)),
+      stepsWrap,
+      el('div', { class: 'row', style: { marginTop: '8px' } },
+        el('button', {
+          type: 'button', class: 'btn btn-primary btn-sm', text: 'حفظ',
+          onClick: async () => {
+            const next = (await getPlans()).map((x) => (x.id === plan.id
+              ? { ...x, name: nameInput.value, trigger: triggerSelect.value, enabled: enabledBox.querySelector('input').checked, steps }
+              : x));
+            await setPlans(next);
+            toast('حُفظت الخطة', 'success');
+            await redraw();
+          },
+        }),
+        el('button', {
+          type: 'button', class: 'btn btn-ghost btn-sm', text: 'حذف الخطة',
+          onClick: async () => {
+            const ok = await confirmDialog({ title: 'حذف الخطة', message: `حذف «${plan.name}»؟ المهام المُنشأة سابقًا تبقى.`, confirmText: 'حذف', danger: true });
+            if (!ok) return;
+            await setPlans((await getPlans()).filter((x) => x.id !== plan.id));
+            await redraw();
+          },
+        }))));
+  }
+
+  wrap.append(el('div', { style: { marginTop: '10px' } }, el('button', {
+    type: 'button', class: 'btn', text: plans.length ? '+ خطة جديدة' : '+ أضف الخطة الجاهزة',
+    onClick: async () => {
+      const base = plans.length
+        ? { name: 'خطة جديدة', trigger: 'manual', enabled: false, steps: [{ day: 1, type: 'call', title: 'اتصال متابعة' }] }
+        : SAMPLE_PLAN;
+      await setPlans([...(await getPlans()), base]);
+      await redraw();
+    },
+  })));
+
+  wrap.append(el('p', { class: 'muted small', style: { marginTop: '8px' } },
+    'المهام تُنشأ في أول قوائمك (أو قائمة «متابعات» تُنشأ عند الحاجة)، ولا تتكرر الخطة على السجل نفسه مرتين.'));
+  return wrap;
 }
 
 /* ===== سلة المحذوفات (المرحلة ٢١) ===== */

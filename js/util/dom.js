@@ -32,8 +32,8 @@ export function clear(node) {
   while (node.firstChild) node.removeChild(node.firstChild);
 }
 
-export function badge(text, cls = '') {
-  return el('span', { class: `badge ${cls}`.trim(), text });
+export function badge(text, cls = '', { title = null } = {}) {
+  return el('span', { class: `badge ${cls}`.trim(), text, ...(title ? { title } : {}) });
 }
 
 /** حقل بعنوان (label يلف عنصر إدخال واحد). */
