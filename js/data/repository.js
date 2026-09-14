@@ -3,7 +3,7 @@
 // ثم تمرّر إلى المحوّل (IndexedDB الآن، خادم لاحقًا عبر setAdapter).
 
 import { indexedDbAdapter } from './adapters/indexeddb.js';
-import { SCHEMAS, ENUMS, STORES, invoiceTotal } from './schema.js';
+import { SCHEMAS, ENUMS, STORES, invoiceGrandTotal } from './schema.js';
 import { buildSearchKey, matchesQuery } from '../util/arabic.js';
 import { normalizePhone, phoneSearchForms } from '../util/phone.js';
 import { distanceMeters } from '../util/location.js';
@@ -84,6 +84,9 @@ const PREPARE = {
     rec.ownerId = rec.ownerId || null;
     rec.tourId = rec.tourId || null;
     rec.signboardImageId = rec.signboardImageId || null;
+    rec.priceHistory = (Array.isArray(rec.priceHistory) ? rec.priceHistory : [])
+      .filter((h) => h && h.at)
+      .map((h) => ({ at: h.at, price: toNumberOrNull(h.price) }));
     if (rec.captureContact && typeof rec.captureContact === 'object') {
       const cc = {
         name: trim(rec.captureContact.name),
@@ -254,7 +257,7 @@ const VALIDATE = {
     if (!rec.items.length) errors.push('يلزم بند واحد على الأقل');
     if (rec.items.some((it) => !it.description)) errors.push('كل بند يحتاج وصفًا');
     // المقبوض أكبر من الإجمالي خطأ إدخال غالبًا، ولو مُرِّر لصار المستحق سالبًا فيفسد التقادم.
-    if (rec.paidAmount != null && rec.paidAmount > invoiceTotal(rec) + 0.5) {
+    if (rec.paidAmount != null && rec.paidAmount > invoiceGrandTotal(rec) + 0.5) {
       errors.push('المقبوض أكبر من إجمالي المستند');
     }
     if (rec.paidAmount != null && rec.type === 'quote') errors.push('عرض السعر لا يُقبض؛ حوّله إلى فاتورة أولًا');
@@ -349,6 +352,21 @@ function makeEntity(store) {
         createdAt: current.createdAt, createdBy: current.createdBy,
         updatedAt: nowISO(), updatedBy: currentUser.id,
       };
+      // تاريخ السعر (المرحلة ١٩): يُسجَّل هنا لا في الصفحة، فيشمل كل مسار تعديل —
+      // النموذج، والاعتماد، والاستيراد — ولا يعتمد على تذكّر كل صفحة أن تسجّله.
+      if (store === 'properties' && 'price' in patch) {
+        const before = toNumberOrNull(current.price);
+        const after = toNumberOrNull(rec.price);
+        if (before !== after) {
+          const history = Array.isArray(current.priceHistory) ? current.priceHistory : [];
+          // السجل نقاطُ سعرٍ على خطّ زمن لا قائمةَ تغييرات: أول نقطة هي السعر **قبل** أول
+          // تعديل، وإلا لم يُعرف من أين هبط. فتُزرع عند أول تغيير إن كان له سعر سابق.
+          const seeded = history.length === 0 && before != null
+            ? [{ at: current.updatedAt || current.createdAt, price: before }]
+            : history;
+          rec.priceHistory = [...seeded, { at: rec.updatedAt, price: after }];
+        }
+      }
       prepare(rec);
       await adapter.put(store, rec);
       return rec;

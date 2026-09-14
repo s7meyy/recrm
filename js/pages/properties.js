@@ -11,7 +11,7 @@ import {
   el, clear, labeled, fieldGroup, selectEl, checkbox, badge, openModal, confirmDialog,
   promptDialog, toast, emptyState, debounce,
 } from '../util/dom.js';
-import { formatSAR, formatArea, formatDate, formatNumber } from '../util/format.js';
+import { formatSAR, formatArea, formatDate, formatNumber, daysWord } from '../util/format.js';
 import { matchesQuery } from '../util/arabic.js';
 import { formatPhone } from '../util/phone.js';
 import { parseLocation, isShortMapLink, mapsLink, locationToText } from '../util/location.js';
@@ -21,7 +21,7 @@ import { announceMatches } from '../util/match-alert.js';
 import { getTemplates, getCompany, getSavedSearches, addSavedSearch, removeSavedSearch } from '../data/settings.js';
 import { getCurrentUser } from '../data/repository.js';
 import { renderTemplate, templateValues, whatsappLink } from '../util/templates.js';
-import { buildPriceIndex, comparePrice } from '../util/price-stats.js';
+import { buildPriceIndex, comparePrice, priceTrend } from '../util/price-stats.js';
 import { printProperty, printPropertyCatalog, printAgreement } from '../util/property-print.js';
 
 // "الحالة" فرز خاص بالعقارات (بلا معنى للعروض الخارجية) فيبقى معرَّفًا هنا؛ بقية المجموعات
@@ -380,7 +380,7 @@ function renderGrid(ctx, items) {
           // بيانات المالك والمصدر تُخفى في «وضع العرض للعميل» (المرحلة ١٣).
           el('span', { 'data-sensitive': true }, owner || 'بلا مالك')),
         el('div', { class: 'card-meta' }, completenessBadge(ctx, p),
-          el('span', { 'data-sensitive': true }, sourceBadge(p.referralSource)), ppmBadge(ctx, p)))));
+          el('span', { 'data-sensitive': true }, sourceBadge(p.referralSource)), ppmBadge(ctx, p), trendBadge(p)))));
   }
   return grid;
 }
@@ -495,6 +495,20 @@ function shareSummary(ctx, p) {
 
 function shareLink(p) {
   return `${location.origin}${location.pathname}#/properties/${p.id}`;
+}
+
+/**
+ * شارة حركة السعر: «خُفّض ٨٪ · ثابت منذ ٤٥ يومًا». لا تظهر إن لم يتحرك السعر قط،
+ * فالعقار الجديد لا تاريخ له ولا فائدة في شارة فارغة.
+ */
+function trendBadge(p) {
+  const t = priceTrend(p);
+  if (!t) return null;
+  const parts = [];
+  if (t.dropPct > 0) parts.push(`خُفّض ${t.dropPct}٪`);
+  else if (t.dropPct < 0) parts.push(`رُفع ${Math.abs(t.dropPct)}٪`);
+  parts.push(`ثابت منذ ${daysWord(t.days)}`);
+  return badge(parts.join(' · '), t.dropPct > 0 ? 'badge-ok' : 'badge-outline');
 }
 
 /** شارة سعر المتر وموضعه من وسيط الحي — لا تظهر إن نقص سعر أو مساحة. */

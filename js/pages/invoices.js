@@ -3,7 +3,9 @@
 // بلا مكتبة وبلا تصدير صورة (مؤجَّل صراحة بقرار المالك).
 
 import { repo, ValidationError } from '../data/repository.js';
-import { ENUMS, labelFor, invoiceTotal, invoiceCollection, invoiceRemaining, invoicePaid, COLLECTION_LABELS } from '../data/schema.js';
+import { ENUMS, labelFor, invoiceTotal, invoiceVat, invoiceGrandTotal, invoiceCollection, invoiceRemaining, invoicePaid, COLLECTION_LABELS } from '../data/schema.js';
+import { zatcaTlvBase64, zatcaReady } from '../util/zatca.js';
+import { qrSvg } from '../util/qr.js';
 import { getCompany, suggestInvoiceNumber, consumeInvoiceNumber } from '../data/settings.js';
 import { getImageUrl } from '../data/images.js';
 import {
@@ -131,7 +133,7 @@ function renderList(ctx) {
     el('td', {}, badge(typeLabelOf(inv.type), inv.type === 'quote' ? 'badge-accent' : 'badge-ok')),
     el('td', { text: formatDate(inv.date) }),
     el('td', { text: clientName(ctx.clientsById.get(inv.clientId)) || inv.clientName || '—' }),
-    el('td', { class: 'strong', text: money(invoiceTotal(inv)) }),
+    el('td', { class: 'strong', text: money(invoiceGrandTotal(inv)) }),
     el('td', {}, collectionBadge(inv)),
     el('td', {}, el('div', { class: 'row' },
       invoiceCollection(inv) === 'quote' || invoiceCollection(inv) === 'paid' ? null : el('button', {
@@ -165,7 +167,7 @@ function renderSummary(ctx) {
  * فلا يُطلب منك كتابة رقمٍ يعرفه النظام.
  */
 function openCollect(ctx, inv) {
-  const total = invoiceTotal(inv);
+  const total = invoiceGrandTotal(inv);
   const already = invoicePaid(inv);
   const remaining = invoiceRemaining(inv);
   const errorsBox = el('div', { class: 'form-errors', hidden: true });
@@ -234,6 +236,13 @@ async function openForm(ctx, existing, newType = 'invoice') {
   });
   const dateInput = el('input', { class: 'input', type: 'date', value: toInputDate(draft.date || null) });
   const dueInput = el('input', { class: 'input', type: 'date', value: draft.dueAt ? toInputDate(draft.dueAt) : '' });
+  // النسبة تُنسخ من إعداداتك عند الإنشاء وتبقى محفوظة في المستند، فلا تتغير أرقام مستند قديم.
+  const defaultVat = company?.vatNumber ? (company.vatRate ?? 15) : null;
+  const vatInput = el('input', {
+    class: 'input', type: 'number', min: '0', max: '100', step: '0.5',
+    value: (isEdit ? draft.vatRate : defaultVat) ?? '',
+    onInput: () => recalcTotal(),
+  });
   const statementInput = el('textarea', { class: 'input', rows: 2, value: draft.statement || '', placeholder: 'مثال: عمولة وساطة على بيع أرض بحي الياسمين' });
   const notesInput = el('textarea', { class: 'input', rows: 2, value: draft.notes || '', placeholder: 'شروط الدفع أو أي ملاحظة تُطبع أسفل المستند' });
 
@@ -259,7 +268,13 @@ async function openForm(ctx, existing, newType = 'invoice') {
   const itemsBody = el('tbody');
   const totalNode = el('strong', { class: 'invoice-total-value' });
 
-  const recalcTotal = () => { totalNode.textContent = money(invoiceTotal({ items })); };
+  const recalcTotal = () => {
+    const draftInv = { items, vatRate: vatInput.value === '' ? null : Number(vatInput.value) };
+    const vat = invoiceVat(draftInv);
+    totalNode.textContent = vat > 0
+      ? `${money(invoiceTotal(draftInv))} + ضريبة ${money(vat)} = ${money(invoiceGrandTotal(draftInv))}`
+      : money(invoiceTotal(draftInv));
+  };
 
   const drawItems = () => {
     clear(itemsBody);
@@ -303,6 +318,7 @@ async function openForm(ctx, existing, newType = 'invoice') {
     number: numberInput.value,
     date: fromInputDate(dateInput.value),
     dueAt: dueInput.value ? fromInputDate(dueInput.value) : null,
+    vatRate: vatInput.value === '' ? null : Number(vatInput.value),
     clientId: clientSelect.value || null,
     clientName: clientNameInput.value,
     clientPhone: clientPhoneInput.value,
@@ -374,6 +390,9 @@ async function openForm(ctx, existing, newType = 'invoice') {
         labeled('الرقم', numberInput, { hint: 'مقترح تلقائيًا ويمكن الكتابة فوقه؛ الكتابة اليدوية لا تحرّك العدّاد' }),
         labeled('التاريخ', dateInput, { required: true }),
         labeled('تاريخ الاستحقاق', dueInput, { hint: 'اختياري — يُحسب عليه تأخّر التحصيل بدل تاريخ الإصدار' }),
+        labeled('نسبة ضريبة القيمة المضافة (٪)', vatInput, {
+          hint: company?.vatNumber ? 'اتركه فارغًا لمستند معفيّ' : 'اكتب رقمك الضريبي في الإعدادات أولًا ليظهر في المستند ورمزه',
+        }),
         labeled('العميل المرتبط', clientSelect),
         labeled('الاسم في المستند', clientNameInput, { hint: 'يُطبع كما هو ولو تغيّر العميل لاحقًا' }),
         labeled('الجوال في المستند', clientPhoneInput),
@@ -425,7 +444,36 @@ export async function printInvoice(invoice, company, client = null) {
     { text: company?.email, ltr: true },
     { text: company?.address, ltr: false },
     { text: company?.crNumber ? `السجل التجاري: ${company.crNumber}` : '', ltr: false },
+    { text: company?.vatNumber ? `الرقم الضريبي: ${company.vatNumber}` : '', ltr: false },
   ].filter((l) => l.text);
+
+  /* الضريبة (المرحلة ١٩): سطور منفصلة — البنود ثم الضريبة ثم المستحقّ. */
+  const vat = invoiceVat(invoice);
+  const totalsBlock = vat > 0
+    ? el('div', { class: 'print-totals' },
+      el('div', {}, el('span', { text: 'الإجمالي قبل الضريبة' }), el('span', { text: money(invoiceTotal(invoice)) })),
+      el('div', {}, el('span', { text: `ضريبة القيمة المضافة (${invoice.vatRate}٪)` }), el('span', { text: money(vat) })),
+      el('div', { class: 'print-total-row' }, el('span', { text: 'الإجمالي المستحَقّ' }), el('strong', { text: money(invoiceGrandTotal(invoice)) })))
+    : el('div', { class: 'print-total' }, 'الإجمالي: ', el('strong', { text: money(invoiceTotal(invoice)) }));
+
+  /* رمز الفاتورة الضريبية المبسّطة: لا يُبنى إلا باكتمال شرطه (اسم بائع ورقم ضريبي وضريبة فعلية). */
+  let zatcaBlock = null;
+  const isTaxInvoice = invoice.type === 'invoice' && vat > 0 && zatcaReady({ sellerName: company?.name, vatNumber: company?.vatNumber });
+  if (isTaxInvoice) {
+    try {
+      const payload = zatcaTlvBase64({
+        sellerName: company.name,
+        vatNumber: company.vatNumber,
+        timestamp: new Date(invoice.date || Date.now()).toISOString(),
+        total: invoiceGrandTotal(invoice),
+        vat,
+      });
+      const holder = el('div', { class: 'print-zatca' });
+      holder.innerHTML = await qrSvg(payload, { cellSize: 3, margin: 1 });
+      holder.append(el('div', { class: 'print-zatca-label', text: 'فاتورة ضريبية مبسّطة' }));
+      zatcaBlock = holder;
+    } catch (_) { /* تعذّر بناء الرمز لا يمنع الطباعة */ }
+  }
 
   root.append(el('article', { class: 'print-doc' },
     el('header', { class: 'print-head' },
@@ -437,7 +485,7 @@ export async function printInvoice(invoice, company, client = null) {
             class: `print-company-line${line.ltr ? ' print-ltr' : ''}`, text: line.text,
           })))),
       el('div', { class: 'print-meta' },
-        el('h1', { class: 'print-title', text: typeLabelOf(invoice.type) }),
+        el('h1', { class: 'print-title', text: isTaxInvoice ? 'فاتورة ضريبية مبسّطة' : typeLabelOf(invoice.type) }),
         el('div', { text: `الرقم: ${invoice.number || '—'}` }),
         el('div', { text: `التاريخ: ${formatDate(invoice.date)}` }))),
     (name || phone) ? el('section', { class: 'print-party' },
@@ -448,7 +496,8 @@ export async function printInvoice(invoice, company, client = null) {
     el('table', { class: 'print-table' },
       el('thead', {}, el('tr', {}, ['#', 'الوصف', 'الكمية', 'سعر الوحدة', 'الإجمالي'].map((t) => el('th', { text: t })))),
       el('tbody', {}, rows)),
-    el('div', { class: 'print-total' }, 'الإجمالي: ', el('strong', { text: money(invoiceTotal(invoice)) })),
+    totalsBlock,
+    zatcaBlock,
     invoice.notes ? el('section', { class: 'print-notes', text: invoice.notes }) : null,
     company?.footerNote ? el('footer', { class: 'print-footer', text: company.footerNote }) : null));
 

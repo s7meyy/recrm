@@ -5,7 +5,7 @@
 // الإيراد ولا تدخل معدل التحويل.
 
 import { repo } from '../data/repository.js';
-import { ENUMS, labelFor, invoiceTotal } from '../data/schema.js';
+import { ENUMS, labelFor, invoiceGrandTotal } from '../data/schema.js';
 import { getLists, getCompleteness, getFollowUpSettings, typeLabel, statusLabel } from '../data/settings.js';
 import { tourStats } from './tours.js';
 import { buildPriceIndex } from '../util/price-stats.js';
@@ -353,7 +353,7 @@ function invoiceSection(invoices) {
   };
   const bills = invoices.filter((x) => x.type === 'invoice');
   const quotes = invoices.filter((x) => x.type === 'quote');
-  const sum = (list) => list.reduce((acc, x) => acc + invoiceTotal(x), 0);
+  const sum = (list) => list.reduce((acc, x) => acc + invoiceGrandTotal(x), 0);
   return [
     el('div', { class: 'stat-strip' },
       statChip(bills.length, 'فاتورة'),

@@ -7,7 +7,7 @@
 // ٢) **التقادم من تاريخ الاستحقاق لا من تاريخ الإصدار** حين يُذكر، فالفاتورة المؤجَّلة
 //    باتفاقٍ ليست متأخرة. وبغياب الاستحقاق يُحسب على تاريخ المستند — أقرب المتاح.
 
-import { invoiceTotal, invoiceRemaining, invoiceCollection } from '../data/schema.js';
+import { invoiceGrandTotal, invoiceRemaining, invoiceCollection } from '../data/schema.js';
 
 const DAY = 86400000;
 
@@ -51,7 +51,7 @@ export function invoiceReceivables(invoices = [], now = new Date()) {
         clientId: inv.clientId || null,
         name: inv.clientName || '',
         number: inv.number || '',
-        total: invoiceTotal(inv),
+        total: invoiceGrandTotal(inv),
         remaining: invoiceRemaining(inv),
         state,
         basis,

@@ -8,6 +8,7 @@ import { sourceField, rememberSource, sourceBadge } from '../util/source-field.j
 import { getLists, typeLabel, addDistrict, getZonesFor, zoneLabel } from '../data/settings.js';
 import { parseRequestText } from '../data/listing-parse.js';
 import { loadMatchingContext, candidatesFor, priceFlexFor, areaFlexFor } from '../data/matching.js';
+import { priceSamples, budgetRealityGap } from '../util/price-stats.js';
 import {
   el, clear, labeled, fieldGroup, selectEl, badge, openModal, confirmDialog, promptDialog,
   toast, emptyState, debounce,
@@ -58,6 +59,8 @@ async function loadData(ctx) {
   const priorityOf = (r) => clientPriority(ctx.clientsById.get(r.clientId));
   ctx.requests = [...match.requests].sort((a, b) => (priorityOf(b) - priorityOf(a)) || (b.updatedAt || '').localeCompare(a.updatedAt || ''));
   ctx.counts = new Map(ctx.requests.map((r) => [r.id, candidatesFor(r, match, { minScore: match.settings.minScore }).length]));
+  // عيّنة الأسعار لفحص واقعية الميزانية (المرحلة ١٩) — تُبنى مرة مع بقية بيانات الصفحة.
+  ctx.priceSamples = priceSamples({ properties: match.properties, externals: match.externals, deals: await repo.deals.list() });
 }
 
 async function refresh(ctx) {
@@ -275,6 +278,25 @@ async function openPasteForm(ctx) {
  * @param {object|null} existing سجل للتعديل، أو null لطلب جديد
  * @param {object} prefill حقول مقروءة من رسالة (المرحلة ١١) — تُعبّئ الاستمارة ولا تُحفظ وحدها
  */
+/**
+ * فحص واقعية الميزانية (المرحلة ١٩): تُقارن بوسيط سعر المتر في الحي والنوع المطلوبين.
+ *
+ * القيمة كلها في **التوقيت**: أن تعرف أن الميزانية أقلّ من السوق بالثلث **لحظة تسجيل الطلب**
+ * لا بعد شهرين من البحث. ولا يمنع الحفظ ولا يحكم — عميلك قد يجد فرصة، والسوق ليس قانونًا.
+ * ولا يظهر أصلًا ما لم تكن العيّنة كافية (نفس حدّ صفحة التقدير).
+ */
+function updateRealityCheck(ctx, probe, node) {
+  node.hidden = true;
+  if (!ctx.priceSamples) return;
+  const gap = budgetRealityGap(probe, ctx.priceSamples);
+  if (!gap) return;
+  node.hidden = false;
+  node.className = 'field-hint field-full warn-text';
+  node.textContent = `تنبيه: ميزانية هذا الطلب أقلّ من المتوقَّع في ${gap.district} بنحو ${gap.gapPct}٪ `
+    + `(المتوقَّع ${formatSAR(Math.round(gap.expected))} لمساحة ${formatArea(probe.area)}، بعيّنة ${gap.count}). `
+    + 'اعرفها الآن لا بعد شهرين من البحث — قد يلزم توسيع الأحياء أو تصغير المساحة أو رفع السقف.';
+}
+
 async function openForm(ctx, existing, prefill = null) {
   const isEdit = !!existing;
   const draft = existing ? JSON.parse(JSON.stringify(existing)) : repo.requests.defaults();
@@ -417,6 +439,7 @@ async function openForm(ctx, existing, prefill = null) {
   const areaFlexAmount = el('input', { class: 'input', type: 'number', min: '0', step: '10', value: draft.areaFlexAmount ?? '', onInput: () => updateHints() });
   const priceHint = el('p', { class: 'field-hint field-full' });
   const areaHint = el('p', { class: 'field-hint field-full' });
+  const realityHint = el('p', { class: 'field-hint field-full', hidden: true });
 
   const num = (input) => (input.value === '' ? null : Number(input.value));
   const updateHints = () => {
@@ -435,6 +458,7 @@ async function openForm(ctx, existing, prefill = null) {
     areaHint.textContent = probe.area == null
       ? 'بلا مساحة مطلوبة لا تدخل المساحة في الحساب أصلًا.'
       : `المرونة المطبَّقة: ${formatArea(Math.round(a.value))} (${src[a.source]}) — يُقبل حتى ${formatArea(Math.round(Math.max(0, probe.area - a.value)))} بنسبة متدرّجة.`;
+    updateRealityCheck(ctx, probe, realityHint);
   };
 
   await loadZones();
@@ -523,7 +547,7 @@ async function openForm(ctx, existing, prefill = null) {
           priceHint,
           labeled('نسبة مرونة المساحة ٪', areaFlexPercent),
           labeled('أو مساحة بالمتر', areaFlexAmount, { hint: 'المساحة تغلب النسبة والحدّ الأدنى' }),
-          areaHint))),
+          areaHint, realityHint))),
     footer,
   });
 }

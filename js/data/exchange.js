@@ -3,7 +3,7 @@
 
 import { repo } from './repository.js';
 import { normalizePhone } from '../util/phone.js';
-import { invoiceTotal, labelFor, ENUMS } from './schema.js';
+import { invoiceTotal, invoiceVat, invoiceGrandTotal, labelFor, ENUMS } from './schema.js';
 import { formatDate } from '../util/format.js';
 
 /* ===== استيراد جهات الاتصال (vCard) ===== */
@@ -158,7 +158,9 @@ export const CSV_EXPORTS = {
       { label: 'التاريخ', get: (i) => formatDate(i.date) },
       { label: 'العميل', get: (i) => i.clientName },
       { label: 'البيان', get: (i) => i.statement },
-      { label: 'الإجمالي', get: (i) => invoiceTotal(i) },
+      { label: 'قبل الضريبة', get: (i) => invoiceTotal(i) },
+      { label: 'الضريبة', get: (i) => invoiceVat(i) || '' },
+      { label: 'الإجمالي', get: (i) => invoiceGrandTotal(i) },
     ],
   },
 };

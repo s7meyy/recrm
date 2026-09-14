@@ -229,6 +229,9 @@ export const SCHEMAS = {
       typeFields: {}, // الحقول بحسب النوع (TYPE_FIELD_GROUPS)
       extra: {}, // الحقول المخصصة التي يضيفها المستخدم
       referralSource: '', // تاق المصدر (المرحلة ٨) — لا يخلط بـ source أعلاه (مسار الإدخال: جولة/يدوي/خارجي)
+      // تاريخ السعر (المرحلة ١٩): [{ at, price }] يُضاف إليه تلقائيًا عند كل تغيير سعر.
+      // يجيب: كم خفّض المالك؟ وكم مضى على هذا السعر؟ — وكلاهما ورقة تفاوض.
+      priceHistory: []
     }),
   },
   tours: {
@@ -343,6 +346,10 @@ export const SCHEMAS = {
       // null = لم يُقبض شيء. وعرض السعر لا يُحصَّل أصلًا (ليس مستحقًا حتى يصير فاتورة).
       paidAmount: null, paidAt: null,
       dueAt: null, // تاريخ الاستحقاق — يُحسب عليه التقادم، وبغيابه يُحسب على تاريخ المستند
+      // ضريبة القيمة المضافة (المرحلة ١٩): نسبة مئوية تُنسخ من إعداداتك عند الإنشاء وتبقى
+      // محفوظة في المستند — فالمستند المطبوع لا تتغيّر أرقامه لو غيّرت النسبة لاحقًا.
+      // null = بلا ضريبة (غير مسجَّل، أو مستند معفيّ).
+      vatRate: null
     }),
   },
 };
@@ -354,6 +361,18 @@ export function invoiceTotal(invoice) {
 
 /* ===== التحصيل (المرحلة ١٧) ===== */
 
+/** مبلغ ضريبة القيمة المضافة على المستند. صفر إن لم تُحدَّد نسبة. */
+export function invoiceVat(invoice) {
+  const rate = Number(invoice?.vatRate);
+  if (!Number.isFinite(rate) || rate <= 0) return 0;
+  return invoiceTotal(invoice) * (rate / 100);
+}
+
+/** الإجمالي المستحَقّ فعلًا: البنود + الضريبة. هو ما يُقبض وما يُطبع وما يُحسب في المستحقات. */
+export function invoiceGrandTotal(invoice) {
+  return invoiceTotal(invoice) + invoiceVat(invoice);
+}
+
 /** المقبوض من مستند، صفرًا إن لم يُقبض شيء. */
 export function invoicePaid(invoice) {
   const paid = Number(invoice?.paidAmount);
@@ -363,7 +382,7 @@ export function invoicePaid(invoice) {
 /** المتبقّي على المستند. عرض السعر ليس مستحقًا فمتبقّيه صفر دائمًا. */
 export function invoiceRemaining(invoice) {
   if (invoice?.type === 'quote') return 0;
-  return Math.max(0, invoiceTotal(invoice) - invoicePaid(invoice));
+  return Math.max(0, invoiceGrandTotal(invoice) - invoicePaid(invoice));
 }
 
 /**
@@ -372,7 +391,7 @@ export function invoiceRemaining(invoice) {
  */
 export function invoiceCollection(invoice) {
   if (invoice?.type === 'quote') return 'quote';
-  const total = invoiceTotal(invoice);
+  const total = invoiceGrandTotal(invoice); // العميل يدفع الإجمالي شاملًا الضريبة لا البنود وحدها
   if (total <= 0) return 'paid';
   const paid = invoicePaid(invoice);
   if (paid <= 0) return 'unpaid';

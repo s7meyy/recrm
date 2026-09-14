@@ -474,6 +474,8 @@ export const DEFAULT_COMPANY = {
   agreementTerms: '',
   logoImageId: null, // صورة في مخزن images (entity: 'company')
   footerNote: '', // شروط أو تذييل يُطبع أسفل كل مستند
+  // ضريبة القيمة المضافة (المرحلة ١٩): فارغ = غير مسجَّل، فلا ضريبة ولا رمز في المستندات.
+  vatNumber: '', vatRate: 15,
   invoicePrefix: 'فاتورة ', quotePrefix: 'عرض سعر ', // بادئة الرقم المقترح لكل سلسلة
   nextInvoiceNo: 1001, nextQuoteNo: 1001, // العدّاد التالي لكل سلسلة (يتقدم عند الحفظ فقط)
 };

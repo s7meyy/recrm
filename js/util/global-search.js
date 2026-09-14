@@ -3,7 +3,7 @@
 // منطق بحث جديد هنا، فقط واجهة تجمع الكيانات الخمسة في نافذة واحدة.
 
 import { repo } from '../data/repository.js';
-import { ENUMS, labelFor, invoiceTotal } from '../data/schema.js';
+import { ENUMS, labelFor, invoiceGrandTotal } from '../data/schema.js';
 import { getLists, typeLabel, statusLabel } from '../data/settings.js';
 import { el, clear, badge, openModal, debounce } from './dom.js';
 import { formatNumber, formatDateTime } from './format.js';
@@ -57,7 +57,7 @@ function noteRow(n) {
 
 function invoiceRow(inv) {
   return resultRow(inv.number || 'بلا رقم',
-    [inv.clientName, `${formatNumber(invoiceTotal(inv))} ريال`].filter(Boolean).join(' · '),
+    [inv.clientName, `${formatNumber(invoiceGrandTotal(inv))} ريال`].filter(Boolean).join(' · '),
     labelFor(ENUMS.invoiceTypes, inv.type),
     () => { location.hash = `#/invoices/${inv.id}`; closeModal(); });
 }

@@ -653,6 +653,8 @@ async function companyBody(redraw) {
   const emailInput = el('input', { class: 'input', type: 'email', dir: 'ltr', value: company.email || '' });
   const addressInput = text(company.address);
   const crInput = text(company.crNumber, 'رقم السجل التجاري أو الترخيص');
+  const vatNumberInput = el('input', { class: 'input', type: 'text', dir: 'ltr', value: company.vatNumber || '', placeholder: '١٥ رقمًا' });
+  const vatRateInput = el('input', { class: 'input', type: 'number', min: '0', max: '100', step: '0.5', value: company.vatRate ?? 15 });
   const commissionInput = el('input', { class: 'input', type: 'number', min: '0', step: '0.25', value: company.commissionPercent ?? 2.5 });
   const durationInput = el('input', { class: 'input', type: 'number', min: '1', step: '1', value: company.agreementDurationDays ?? 90 });
   const termsInput = el('textarea', { class: 'input', rows: 4, value: company.agreementTerms || '', placeholder: 'بنود اتفاقية الوساطة كما تريد طباعتها (تُطبع كما هي — ليست مشورة قانونية)' });
@@ -708,6 +710,8 @@ async function companyBody(redraw) {
         labeled('البريد', emailInput),
         labeled('العنوان', addressInput),
         labeled('السجل التجاري', crInput),
+        labeled('الرقم الضريبي', vatNumberInput, { hint: 'اتركه فارغًا إن لم تكن مسجَّلًا في ضريبة القيمة المضافة — عندها لا ضريبة ولا رمز في مستنداتك' }),
+        labeled('نسبة الضريبة (٪)', vatRateInput, { hint: 'تُقترح على الفواتير الجديدة، وتبقى محفوظة في كل مستند كما أصدرته' }),
         el('div', { class: 'field field-full' }, el('span', { class: 'field-label', text: 'الشعار' }), logoBox),
         labeled('تذييل المستند', footerInput, { full: true }))),
     el('div', { class: 'panel-block' },
@@ -733,6 +737,7 @@ async function companyBody(redraw) {
             await setCompany({
               name: nameInput.value, phone: phoneInput.value, email: emailInput.value,
               address: addressInput.value, crNumber: crInput.value, footerNote: footerInput.value,
+              vatNumber: vatNumberInput.value.trim(), vatRate: Number(vatRateInput.value) || 0,
               invoicePrefix: invPrefix.value, quotePrefix: quotePrefix.value,
               nextInvoiceNo: invNext.value, nextQuoteNo: quoteNext.value,
               commissionPercent: Number(commissionInput.value) || 0,

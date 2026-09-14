@@ -191,3 +191,49 @@ export function estimatePrice(target, samples = [], { minSample = 3, comparables
     comparables: near.slice(0, comparables),
   };
 }
+
+/**
+ * حركة سعر عقار من سجلّه (المرحلة ١٩).
+ *
+ * سؤالان يسألهما الوسيط قبل كل تفاوض: **كم خفّض المالك؟** و**كم مضى على هذا السعر؟**
+ * والثاني ورقة تفاوض بذاته: سعرٌ لم يتحرك تسعة أشهر يقول إن المالك متمسّك أو السوق رفضه.
+ *
+ * @returns {{ changes, since, days, dropPct } | null} null إن لم يتغيّر السعر قط.
+ */
+export function priceTrend(property, now = Date.now()) {
+  const history = Array.isArray(property?.priceHistory) ? property.priceHistory.filter((h) => h?.at) : [];
+  if (!history.length) return null;
+  if (history.length < 2) return null; // نقطة واحدة = سعرٌ لم يتحرك بعد
+  const last = history[history.length - 1];
+  const current = Number(property.price);
+  const firstRecorded = Number(history[0].price); // أول نقطة = السعر قبل أول تعديل
+  const dropPct = Number.isFinite(firstRecorded) && firstRecorded > 0 && Number.isFinite(current)
+    ? Math.round(((firstRecorded - current) / firstRecorded) * 100)
+    : null;
+  const days = Math.max(0, Math.floor((now - new Date(last.at).getTime()) / 86400000));
+  return { changes: history.length - 1, since: last.at, days, dropPct }; // النقاط ناقصَ واحدة = عدد التغييرات
+}
+
+/**
+ * فجوة ميزانية طلب عن المتوقَّع في حيّه (المرحلة ١٩) — دالة خالصة ليست في الصفحة.
+ *
+ * تشترط: حيًّا واحدًا محددًا (الطلب على خمسة أحياء لا يُحاسَب على أغلاها)، ومساحة، وسقف
+ * ميزانية، وعيّنة **على مستوى الحي** لا المدينة. وتصمت فيما دون ١٥٪ لأن ذلك يبتلعه التفاوض.
+ *
+ * @returns {{ gapPct, expected, count, district } | null}
+ */
+export function budgetRealityGap(request, samples, { minGapPct = 15 } = {}) {
+  const districts = request?.districts || [];
+  if (!request?.budgetMax || !request?.area || !request?.type || districts.length !== 1) return null;
+  const est = estimatePrice({
+    city: request.city,
+    district: districts[0],
+    type: request.type,
+    purpose: request.purpose === 'rent' ? 'rent' : 'sale',
+    area: request.area,
+  }, samples);
+  if (!est.ok || est.basis !== 'district') return null;
+  const gapPct = Math.round(((est.estimate - request.budgetMax) / est.estimate) * 100);
+  if (gapPct < minGapPct) return null;
+  return { gapPct, expected: est.estimate, count: est.count, district: districts[0] };
+}

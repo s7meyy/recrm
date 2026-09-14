@@ -10,7 +10,7 @@ import { getLists, getCompleteness, getFollowUpSettings, typeLabel, getUI, setUI
 import { loadMatchingContext, candidatesFor, matchReadiness } from '../data/matching.js';
 import { buildOpportunityIndex, topOpportunities } from '../util/opportunity.js';
 import { receivables } from '../util/receivables.js';
-import { el, clear, badge, emptyState, confirmDialog, toast } from '../util/dom.js';
+import { el, clear, badge, emptyState, confirmDialog, toast, openModal, labeled } from '../util/dom.js';
 import { formatSAR, formatDate, formatDateTime, relativeDays, daysBetween, daysWord } from '../util/format.js';
 import { formatPhone, toInternational } from '../util/phone.js';
 import { clientName } from './requests.js';
@@ -151,14 +151,60 @@ function clientActions(client) {
   const actions = el('div', { class: 'row' });
   if (client?.phone) {
     actions.append(
-      el('a', { class: 'btn btn-ghost btn-sm', href: `tel:${client.phone}`, text: '📞' , title: 'اتصال' }),
+      el('a', {
+        class: 'btn btn-ghost btn-sm', href: `tel:${client.phone}`, text: '📞', title: 'اتصال',
+        onClick: () => askLogContact(client, 'call'),
+      }),
       el('a', {
         class: 'btn btn-ghost btn-sm', title: 'واتساب', text: '💬',
         href: `https://wa.me/${toInternational(client.phone)}`, target: '_blank', rel: 'noopener noreferrer',
+        onClick: () => askLogContact(client, 'whatsapp'),
       }));
   }
   actions.append(el('a', { class: 'btn btn-ghost btn-sm', href: `#/clients/${client.id}`, text: 'فتح' }));
   return actions;
+}
+
+/**
+ * تسجيل التواصل بعد الاتصال (المرحلة ١٩).
+ *
+ * كان الاتصال من هنا **لا يُسجَّل**، فيبقى العميل في «لم يُتواصل معهم» وأنت كلّمته للتوّ —
+ * وثلاث لوحات تبني على `lastContactAt`: المتابعات، والمتأخرون، وحدّ الداشبورد. فتكذب كلها.
+ *
+ * والنافذة تُفتح **بعد** فتح المهاتفة لا قبلها (بمهلة قصيرة)، فلا تعترض طريق المكالمة،
+ * و«لم أتواصل» خيارٌ صريح لأن الضغط على الزر ليس دليلًا على أن أحدًا ردّ.
+ */
+function askLogContact(client, type) {
+  setTimeout(() => {
+    const noteInput = el('input', { class: 'input', type: 'text', placeholder: 'خلاصة المكالمة (اختياري)' });
+    const followInput = el('input', { class: 'input', type: 'date' });
+    const save = async () => {
+      try {
+        await repo.clients.addContact(client.id, {
+          type,
+          date: new Date().toISOString(),
+          note: noteInput.value.trim(),
+          followUpAt: followInput.value ? new Date(`${followInput.value}T09:00:00`).toISOString() : null,
+        });
+        modal.close();
+        toast('سُجّل التواصل', 'success');
+        window.dispatchEvent(new CustomEvent('kassab:data-changed'));
+        build(document.getElementById('page'), await loadData());
+      } catch (err) { toast(err.message || 'تعذّر التسجيل', 'error'); }
+    };
+    const modal = openModal({
+      title: `تسجيل ${type === 'call' ? 'المكالمة' : 'الرسالة'} — ${clientName(client)}`,
+      body: el('div', {},
+        el('p', { class: 'muted small', text: 'يُحدَّث «آخر تواصل» فلا يظهر العميل متأخرًا وأنت كلّمته.' }),
+        el('div', { class: 'form-grid' },
+          labeled('ملاحظة', noteInput, { full: true }),
+          labeled('موعد المتابعة القادم', followInput, { hint: 'اختياري — يظهر في «متابعات اليوم»' }))),
+      footer: [
+        el('button', { type: 'button', class: 'btn btn-primary', text: 'سجّل', onClick: save }),
+        el('button', { type: 'button', class: 'btn btn-ghost', text: 'لم أتواصل', onClick: () => modal.close() }),
+      ],
+    });
+  }, 700);
 }
 
 function build(container, d) {
