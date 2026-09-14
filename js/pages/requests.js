@@ -47,6 +47,16 @@ export async function render(container) {
     const target = ctx.requests.find((r) => r.id === focusId);
     if (target) await openForm(ctx, target);
     else toast('الطلب غير موجود، أو حُذف', 'error');
+    return;
+  }
+  // مسودّة قادمة من «البحث السريع» في صفحة المطابقات (المرحلة ٢٠): تُستهلك مرة ثم تُمحى،
+  // فلا تُفتح الاستمارة من تلقاء نفسها في كل زيارة لاحقة للصفحة.
+  if (/[?&]new=quick/.test(location.hash || '')) {
+    let draft = null;
+    try { draft = JSON.parse(sessionStorage.getItem('kassab:quick-request') || 'null'); } catch (_) { draft = null; }
+    try { sessionStorage.removeItem('kassab:quick-request'); } catch (_) { /* تصفح خاص */ }
+    history.replaceState(null, '', '#/requests');
+    if (draft) await openForm(ctx, null, draft);
   }
 }
 

@@ -161,7 +161,7 @@ function clientActions(client) {
         onClick: () => askLogContact(client, 'whatsapp'),
       }));
   }
-  actions.append(el('a', { class: 'btn btn-ghost btn-sm', href: `#/clients/${client.id}`, text: 'فتح' }));
+  actions.append(el('a', { class: 'btn btn-ghost btn-sm', href: `#/client/${client.id}`, text: 'الملف', title: 'ملف العميل الكامل' }));
   return actions;
 }
 

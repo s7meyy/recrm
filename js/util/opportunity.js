@@ -6,7 +6,7 @@
 //
 // دوال خالصة: تأخذ سياق المطابقة الجاهز ولا تلمس التخزين ولا تعيد حساب شيء يخص المحرك.
 
-import { candidatesFor, requestDistricts } from '../data/matching.js';
+import { hasCandidate, requestDistricts } from '../data/matching.js';
 
 const norm = (s) => String(s ?? '').trim();
 const key = (city, district, type) => `${city}|${district}|${type}`;
@@ -41,11 +41,12 @@ export function buildOpportunityIndex(ctx, { minScore = 0 } = {}) {
     const districts = requestDistricts(request, ctx.zonesByCity?.[city] || []);
     // طلب بلا حي محدَّد يعني «أي حي»، فلا يُنسب إلى حي بعينه ولا يفتعل عجزًا وهميًا.
     if (!districts.length) continue;
-    const candidateCount = candidatesFor(request, ctx, { minScore }).length;
+    // السؤال هنا «أله مرشح أصلًا» لا «كم مرشحًا»، فالخروج عند الأول يكفي (المرحلة ٢٠).
+    const unmet = !hasCandidate(request, ctx, { minScore });
     for (const district of districts) {
       const row = touch(city, norm(district), norm(request.type));
       row.demand++;
-      if (candidateCount === 0) {
+      if (unmet) {
         row.unmet++;
         row.requests.push({ id: request.id, clientId: request.clientId, budgetMax: request.budgetMax, area: request.area });
       }

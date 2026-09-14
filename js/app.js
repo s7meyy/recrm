@@ -29,6 +29,7 @@ import * as expensesPage from './pages/expenses.js';
 import * as publishPage from './pages/publish.js';
 import * as tasksPage from './pages/tasks.js';
 import * as notesPage from './pages/notes.js';
+import * as clientPage from './pages/client.js';
 import * as healthPage from './pages/health.js';
 import * as settingsPage from './pages/settings.js';
 
@@ -50,6 +51,7 @@ const ROUTES = {
   publish: { title: 'الصفحة العامة للعروض', render: publishPage.render },
   tasks: { title: 'المهام', render: tasksPage.render },
   notes: { title: 'الأفكار والملاحظات', render: notesPage.render },
+  client: { title: 'ملف العميل', render: clientPage.render },
   health: { title: 'صحة البيانات', render: healthPage.render },
   settings: { title: 'الإعدادات', render: settingsPage.render },
 };

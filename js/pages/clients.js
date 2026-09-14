@@ -300,6 +300,11 @@ async function openDetail(ctx, clientId) {
       el('span', { class: 'spacer' }),
       el('button', { type: 'button', class: 'btn btn-ghost', text: 'إغلاق', onClick: () => modal.close() }),
       el('button', { type: 'button', class: 'btn', text: 'تعديل البيانات', onClick: () => { modal.close(); openForm(ctx, client); } }),
+      el('a', {
+        class: 'btn btn-primary', href: `#/client/${client.id}`, text: 'الملف الكامل',
+        title: 'طلباته ومطابقاته وصفقاته وفواتيره ومستحقاته في شاشة واحدة',
+        onClick: () => modal.close(),
+      }),
     ],
   });
 }

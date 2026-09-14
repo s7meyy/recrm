@@ -126,6 +126,7 @@ function buildLayout(ctx) {
   const head = el('div', { class: 'page-head' },
     el('h1', {}, 'المطابقات ', ctx.nodes.count),
     el('div', { class: 'head-actions' },
+      el('button', { type: 'button', class: 'btn btn-primary', text: '⚡ بحث سريع', onClick: () => openQuickMatch(ctx) }),
       el('a', { class: 'btn', href: '#/requests', text: 'الطلبات العقارية' })));
   ctx.nodes.controls = el('div', { class: 'filters' });
   ctx.nodes.list = el('div');
@@ -347,6 +348,101 @@ async function setStatus(ctx, request, row, status) {
     toast(err.message || 'تعذر تغيير الحالة', 'error');
     await refresh(ctx);
   }
+}
+
+/**
+ * بحث سريع بالمواصفات بلا إنشاء طلب (المرحلة ٢٠).
+ *
+ * يتصل بك عميل: «عندك في النرجس تحت مليونين؟» — وكان الجواب يقتضي **تسجيل طلب كامل** أولًا
+ * ليعمل المحرك. هذه النافذة تبني طلبًا **مؤقتًا في الذاكرة** وتمرّره على المحرك نفسه
+ * (فلا حساب مواز ولا نتائج تخالف صفحة المطابقات)، ولا تكتب شيئًا في التخزين.
+ * وإن كان المتصل جادًّا فزرّ «احفظه طلبًا» ينقلك إلى استمارة الطلب معبَّأة.
+ */
+function openQuickMatch(ctx) {
+  const lists = ctx.lists;
+  const citySelect = selectEl({ options: lists.cities.map((c) => ({ value: c, label: c })), value: lists.cities[0] || 'الرياض' });
+  const districtSelect = selectEl({
+    options: (lists.districtsByCity[lists.cities[0]] || []).map((d) => ({ value: d, label: d })),
+    placeholder: 'كل الأحياء', value: '',
+  });
+  citySelect.addEventListener('change', () => {
+    const options = (lists.districtsByCity[citySelect.value] || []).map((d) => ({ value: d, label: d }));
+    clear(districtSelect);
+    districtSelect.append(el('option', { value: '', text: 'كل الأحياء' }), ...options.map((o) => el('option', { value: o.value, text: o.label })));
+    run();
+  });
+  const typeSelect = selectEl({ options: lists.propertyTypes.map((t) => ({ value: t.key, label: t.label })), value: lists.propertyTypes[0]?.key || '' });
+  const purposeSelect = selectEl({ options: ENUMS.purposes.map((p) => ({ value: p.key, label: p.label })), value: 'sale' });
+  const budgetInput = el('input', { class: 'input', type: 'number', min: '0', step: '10000', placeholder: 'سقف الميزانية' });
+  const areaInput = el('input', { class: 'input', type: 'number', min: '0', step: '10', placeholder: 'المساحة المطلوبة' });
+  const results = el('div');
+
+  const draft = () => ({
+    city: citySelect.value,
+    districts: districtSelect.value ? [districtSelect.value] : [],
+    districtZones: [],
+    type: typeSelect.value,
+    purpose: purposeSelect.value,
+    budgetMax: budgetInput.value === '' ? null : Number(budgetInput.value),
+    area: areaInput.value === '' ? null : Number(areaInput.value),
+    status: 'active',
+  });
+
+  const run = () => {
+    const rows = candidatesFor(draft(), ctx.match, { minScore: ctx.match.settings.minScore });
+    clear(results);
+    if (!rows.length) {
+      results.append(emptyState('لا مرشّح بهذه المواصفات — وسّع الحي أو ارفع السقف، أو سجّله طلبًا لتُنبَّه حين يدخل مخزونك ما يناسبه.'));
+      return;
+    }
+    results.append(
+      el('p', { class: 'muted small', text: `${formatNumber(rows.length)} مرشّحًا بالمحرك نفسه — أعلاها نسبةً أولًا.` }),
+      el('div', { class: 'table-wrap' }, el('table', { class: 'table' },
+        el('thead', {}, el('tr', {}, ['النسبة', 'النوع', 'الحي', 'المساحة', 'السعر', ''].map((t) => el('th', { text: t })))),
+        el('tbody', {}, rows.slice(0, 12).map((r) => el('tr', {},
+          el('td', {}, badge(`${r.score}٪`, r.score >= 80 ? 'badge-ok' : '')),
+          el('td', { text: typeLabel(lists, r.listing.type) }),
+          el('td', { text: r.listing.district || r.listing.city || '—' }),
+          el('td', { class: 'num', text: formatArea(r.listing.area) }),
+          el('td', { class: 'num', text: r.listing.price == null ? 'غير معروف' : formatSAR(r.listing.price) }),
+          el('td', {}, el('a', {
+            class: 'btn btn-ghost btn-sm', text: 'افتح',
+            href: r.kind === 'external' ? `#/external/${r.listing.id}` : `#/properties/${r.listing.id}`,
+            onClick: () => modal.close(),
+          }))))))));
+  };
+
+  for (const node of [districtSelect, typeSelect, purposeSelect]) node.addEventListener('change', run);
+  for (const node of [budgetInput, areaInput]) node.addEventListener('input', run);
+
+  const modal = openModal({
+    title: 'بحث سريع — بلا تسجيل طلب',
+    size: 'wide',
+    body: el('div', {},
+      el('p', { class: 'muted small', text: 'للجواب أثناء المكالمة. لا يُحفظ شيء — والمحرك هو نفسه محرك صفحة المطابقات بقواطعه وأوزانه.' }),
+      el('div', { class: 'form-grid' },
+        labeled('المدينة', citySelect),
+        labeled('الحي', districtSelect),
+        labeled('النوع', typeSelect),
+        labeled('الغرض', purposeSelect),
+        labeled('سقف الميزانية', budgetInput),
+        labeled('المساحة', areaInput)),
+      results),
+    footer: [
+      el('button', {
+        type: 'button', class: 'btn btn-primary', text: 'احفظه طلبًا',
+        onClick: () => {
+          const d = draft();
+          modal.close();
+          // الاستمارة تقرأ المسودّة من العنوان (نفس نمط «لصق رسالة عميل» في المرحلة ١١).
+          sessionStorage.setItem('kassab:quick-request', JSON.stringify(d));
+          location.hash = '#/requests?new=quick';
+        },
+      }),
+      el('button', { type: 'button', class: 'btn btn-ghost', text: 'إغلاق', onClick: () => modal.close() }),
+    ],
+  });
+  run();
 }
 
 /**

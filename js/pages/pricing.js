@@ -12,6 +12,7 @@ import { getLists, typeLabel } from '../data/settings.js';
 import { priceSamples, estimatePrice, purposeKey } from '../util/price-stats.js';
 import { el, clear, labeled, selectEl, badge, emptyState, toast } from '../util/dom.js';
 import { formatSAR, formatArea, formatNumber, formatDate } from '../util/format.js';
+import { monthlyInstallment } from '../util/finance.js';
 
 const MIN_SAMPLE = 3;
 
@@ -153,7 +154,46 @@ function draw(ctx) {
         onClick: () => copySummary(ctx, result),
       }))));
 
+  area.append(installmentPanel(Math.round(result.estimate)));
   area.append(comparablesTable(ctx, result.comparables, 'العقارات المقارَنة — من أين جاء الرقم'));
+}
+
+/**
+ * «كم القسط؟» (المرحلة ٢٠) — السؤال الذي يلي السعر مباشرة عند كل مشترٍ.
+ * استرشادي لا عرض تمويل، وهذا مكتوب تحته: النِّسب تختلف بين البنوك وبحسب ملف العميل.
+ */
+function installmentPanel(defaultPrice) {
+  const priceInput = el('input', { class: 'input', type: 'number', min: '0', step: '1000', value: defaultPrice });
+  const downInput = el('input', { class: 'input', type: 'number', min: '0', step: '1000', value: Math.round(defaultPrice * 0.1) });
+  const rateInput = el('input', { class: 'input', type: 'number', min: '0', max: '20', step: '0.25', value: 5 });
+  const yearsInput = el('input', { class: 'input', type: 'number', min: '1', max: '30', step: '1', value: 20 });
+  const out = el('div', { class: 'stat-strip', style: { marginTop: '12px' } });
+
+  const recalc = () => {
+    clear(out);
+    const r = monthlyInstallment({
+      price: Number(priceInput.value), downPayment: Number(downInput.value),
+      annualRate: Number(rateInput.value), years: Number(yearsInput.value),
+    });
+    if (!r) { out.append(el('p', { class: 'muted small', text: 'اكتب سعرًا ومدة، ودفعةً أولى أقلّ من السعر.' })); return; }
+    out.append(
+      fact(formatSAR(Math.round(r.monthly)), 'القسط الشهري'),
+      fact(formatSAR(Math.round(r.principal)), 'مبلغ التمويل'),
+      fact(formatSAR(Math.round(r.cost)), 'كلفة التمويل على المدة'));
+  };
+  for (const input of [priceInput, downInput, rateInput, yearsInput]) input.addEventListener('input', recalc);
+
+  const panel = el('div', { class: 'panel', style: { marginTop: '18px' } },
+    el('h2', { class: 'section-title', text: 'وكم قسطه؟' }),
+    el('div', { class: 'form-grid' },
+      labeled('السعر', priceInput),
+      labeled('الدفعة الأولى', downInput),
+      labeled('نسبة الهامش السنوية (٪)', rateInput),
+      labeled('المدة (سنوات)', yearsInput)),
+    out,
+    el('p', { class: 'muted small', text: 'حساب استرشادي بمعادلة القسط الثابت — ليس عرض تمويل. لا يشمل الرسوم الإدارية ولا التأمين ولا الدعم السكني، والنِّسب تختلف بين البنوك وبحسب ملف العميل.' }));
+  recalc();
+  return panel;
 }
 
 function fact(value, label) {

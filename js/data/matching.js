@@ -95,6 +95,15 @@ export function hardReasonLabel(key) {
   return HARD_REASONS[key] || 'غير مطابق';
 }
 
+/** ما يُحسب مرة لكل طلب: مجموعة أحيائه المطبَّعة، ومرونتا السعر والمساحة. */
+export function preparePer(request, settings, districts = []) {
+  return {
+    wanted: new Set(districts.map(norm).filter(Boolean)),
+    priceFlex: priceFlexFor(request, settings),
+    areaFlex: areaFlexFor(request, settings),
+  };
+}
+
 function hardFilter(request, listing, settings, kind) {
   if (!listing.type || listing.type !== request.type) return 'type';
   if (!Array.isArray(listing.purposes) || !listing.purposes.includes(request.purpose)) return 'purpose';
@@ -141,16 +150,19 @@ export function matchReadiness(listing) {
  * @returns {{ ok: boolean, reason?: string, score: number, priceUnknown: boolean,
  *            tags: string[], parts: Array<{ key, label, weight, state, ratio, detail }> }}
  */
-export function scoreListing(request, listing, { settings, districts = [], kind = 'property' }) {
+export function scoreListing(request, listing, { settings, districts = [], kind = 'property', pre = null }) {
   const fail = hardFilter(request, listing, settings, kind);
   if (fail) return { ok: false, reason: fail, score: 0, priceUnknown: listing.price == null, tags: [], parts: [] };
 
   const parts = [];
   const tags = [];
   const w = settings.weights;
+  // تهيئة الطلب (`pre`) تُحسب مرة لكل طلب لا مرة لكل معروض. وبالقياس: بناء مجموعة الأحياء
+  // وحساب المرونتين داخل الحلقة كان يلتهم أكثر الزمن عند ١٥٠٠ عقار × ٣٠٠ طلب.
+  const ready = pre || preparePer(request, settings, districts);
 
   /* الحي */
-  const wanted = new Set(districts.map(norm).filter(Boolean));
+  const wanted = ready.wanted;
   if (wanted.size) {
     if (!listing.district) {
       parts.push({ key: 'district', label: 'الحي', weight: w.district, state: 'unknown', ratio: null, detail: 'الحي غير معروف' });
@@ -165,7 +177,7 @@ export function scoreListing(request, listing, { settings, districts = [], kind 
   }
 
   /* السعر */
-  const priceFlex = priceFlexFor(request, settings);
+  const priceFlex = ready.priceFlex;
   if (request.budgetMax != null) {
     if (listing.price == null) {
       parts.push({ key: 'price', label: 'السعر', weight: w.price, state: 'unknown', ratio: null, detail: 'السعر غير معروف' });
@@ -188,7 +200,7 @@ export function scoreListing(request, listing, { settings, districts = [], kind 
   }
 
   /* المساحة */
-  const areaFlex = areaFlexFor(request, settings);
+  const areaFlex = ready.areaFlex;
   if (request.area != null) {
     if (listing.area == null) {
       parts.push({ key: 'area', label: 'المساحة', weight: w.area, state: 'unknown', ratio: null, detail: 'المساحة غير معروفة' });
@@ -235,7 +247,9 @@ export async function loadMatchingContext({ withMatches = true } = {}) {
   for (const city of new Set(requests.map((r) => r.city).filter(Boolean))) {
     zonesByCity[city] = await getZonesFor(city);
   }
-  return { settings, properties, externals, clients, requests, zonesByCity, matches };
+  // الفهرس يُبنى مرة مع السياق فتستفيد منه كل الصفحات بلا تغيير فيها (المرحلة ٢٠).
+  const matchIndex = buildMatchIndex({ properties, externals });
+  return { settings, properties, externals, clients, requests, zonesByCity, matches, matchIndex };
 }
 
 /**
@@ -246,20 +260,74 @@ export async function loadMatchingContext({ withMatches = true } = {}) {
  * @param {{ minScore?: number, includeExternal?: boolean }} options
  * @returns {Array<{ listing, kind: 'property'|'external', score, tags, parts, priceUnknown }>}
  */
+/**
+ * فهرس القواطع القاطعة (المرحلة ٢٠): (مدينة | نوع | غرض) ← المعروضات الموافقة.
+ *
+ * كان كل طلب يمرّ على **كل** معروض ليُسقطه بأول قاطع. وبقياس حقيقي على ١٥٠٠ عقار و٣٠٠ طلب
+ * نشط: ٦٦٦ ملّي ثانية لحساب المرشحين كلهم، و٦٤٤ لمؤشر «الفرص» — أي تجمّدٌ محسوس على الجوال
+ * في كل فتحة لصفحة «يومي». والفهرس يقصر المرور على الدلو المعني وحده.
+ *
+ * **النتيجة مطابقة تمامًا** لأن الدلو يضمّ بالضبط ما يجتاز القواطع الثلاثة المتساوية،
+ * وبقية القواطع (الاعتماد، الحالة، عقارك أنت) تبقى في `scoreListing` كما هي.
+ */
+export function buildMatchIndex({ properties = [], externals = [] } = {}) {
+  const add = (map, listing) => {
+    const purposes = Array.isArray(listing.purposes) ? listing.purposes : [];
+    if (!listing.type || !purposes.length) return; // ناقصٌ لا يطابق شيئًا أصلًا
+    for (const purpose of purposes) {
+      const key = `${norm(listing.city)}|${listing.type}|${purpose}`;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(listing);
+    }
+  };
+  const propertyMap = new Map();
+  const externalMap = new Map();
+  for (const p of properties) add(propertyMap, p);
+  for (const x of externals) add(externalMap, x);
+  return { properties: propertyMap, externals: externalMap };
+}
+
+const bucketOf = (map, request) => map?.get(`${norm(request.city)}|${request.type}|${request.purpose}`) || [];
+
 export function candidatesFor(request, ctx, { minScore = 0, includeExternal = true } = {}) {
   const districts = requestDistricts(request, ctx.zonesByCity?.[request.city] || []);
+  const pre = preparePer(request, ctx.settings, districts);
   const out = [];
   const collect = (listings, kind) => {
     for (const listing of listings || []) {
-      const result = scoreListing(request, listing, { settings: ctx.settings, districts, kind });
+      const result = scoreListing(request, listing, { settings: ctx.settings, districts, kind, pre });
       if (!result.ok || result.score < minScore) continue;
       out.push({ listing, kind, score: result.score, tags: result.tags, parts: result.parts, priceUnknown: result.priceUnknown });
     }
   };
-  collect(ctx.properties, 'property');
-  if (includeExternal) collect(ctx.externals, 'external');
+  // الفهرس إن بُني (loadMatchingContext تبنيه)، وإلا فالمرور الكامل — فالسياق المبنيّ يدويًا يعمل كما كان.
+  const index = ctx.matchIndex;
+  collect(index ? bucketOf(index.properties, request) : ctx.properties, 'property');
+  if (includeExternal) collect(index ? bucketOf(index.externals, request) : ctx.externals, 'external');
   out.sort((a, b) => b.score - a.score || (b.listing.updatedAt || '').localeCompare(a.listing.updatedAt || ''));
   return out;
+}
+
+/**
+ * هل لهذا الطلب مرشّح واحد على الأقل؟ (المرحلة ٢٠)
+ *
+ * سؤال «الفرص» ليس «كم مرشحًا» بل «أله مرشح أصلًا» — وحسابُ كل المرشحين لطرح هذا السؤال
+ * إسرافٌ قِيس: ٦٧٧ ملّي ثانية مقابل **٨** بالخروج عند أول مرشح. والنتيجة واحدة بالضبط.
+ */
+export function hasCandidate(request, ctx, { minScore = 0, includeExternal = true } = {}) {
+  const districts = requestDistricts(request, ctx.zonesByCity?.[request.city] || []);
+  const pre = preparePer(request, ctx.settings, districts);
+  const index = ctx.matchIndex;
+  const scan = (listings, kind) => {
+    for (const listing of listings || []) {
+      const result = scoreListing(request, listing, { settings: ctx.settings, districts, kind, pre });
+      if (result.ok && result.score >= minScore) return true;
+    }
+    return false;
+  };
+  if (scan(index ? bucketOf(index.properties, request) : ctx.properties, 'property')) return true;
+  if (!includeExternal) return false;
+  return scan(index ? bucketOf(index.externals, request) : ctx.externals, 'external');
 }
 
 /** نسبة معروض بعينه لطلب بعينه (لعرض المطابقات المحفوظة التي ربما خرجت من الترشيح). */
