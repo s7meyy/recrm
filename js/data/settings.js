@@ -23,6 +23,7 @@ export const SETTINGS_KEYS = {
   vault: 'vault', // النسخة السحابية المشفَّرة: العبارة السرّية والرفع التلقائي (المرحلة ١٠)
   templates: 'templates', // قوالب رسائل واتساب (المرحلة ١١)
   goals: 'goals', // أهداف شهرية (المرحلة ١٣)
+  savedSearches: 'savedSearches', // بحوث محفوظة لكل صفحة (المرحلة ١٧)
 };
 
 const EMPTY_LISTS = () => ({ propertyTypes: [], propertyStatuses: [], clientTags: [], cities: [], districts: {}, sources: [] });
@@ -273,7 +274,9 @@ export async function setUI(patch) {
 
 /* ===== تنبيهات المتابعة (المرحلة ٦) ===== */
 
-const DEFAULT_FOLLOW_UP = { staleContactDays: 14, notify: false };
+// `afterShowingDays` (المرحلة ١٧): تُنشأ مهمة متابعة تلقائيًا بعد تعليم المطابقة «عُرضت».
+// صفر = معطَّل. والصفقات تموت بالصمت بعد المعاينة أكثر مما تموت بالسعر.
+const DEFAULT_FOLLOW_UP = { staleContactDays: 14, notify: false, afterShowingDays: 3 };
 
 export async function getFollowUpSettings() {
   return repo.settings.get(SETTINGS_KEYS.followUp, DEFAULT_FOLLOW_UP);
@@ -282,6 +285,7 @@ export async function setFollowUpSettings(patch) {
   const current = await getFollowUpSettings();
   const next = { ...current, ...patch };
   next.staleContactDays = Math.max(1, Math.round(Number(next.staleContactDays) || DEFAULT_FOLLOW_UP.staleContactDays));
+  next.afterShowingDays = Math.max(0, Math.round(Number(next.afterShowingDays) || 0)); // صفر مقصود = معطَّل
   return repo.settings.set(SETTINGS_KEYS.followUp, next);
 }
 
@@ -600,5 +604,37 @@ export async function getGoals() {
 export async function setGoals(patch) {
   const next = { ...(await getGoals()), ...patch };
   await repo.settings.set(SETTINGS_KEYS.goals, next);
+  return next;
+}
+
+/* ===== بحوث محفوظة (المرحلة ١٧) ===== */
+
+/**
+ * تركيبة فرز وبحث تحفظها باسم وتستدعيها بنقرة.
+ * الشكل: `{ [pageKey]: [{ id, name, state }] }` — مفتاحٌ لكل صفحة، فإضافة صفحة أخرى
+ * لاحقًا لا تمسّ هذه الدوال. و`state` غرضٌ حرّ تفهمه الصفحة وحدها (شكله عقدٌ بينها وبين نفسها).
+ */
+export async function getSavedSearches(page) {
+  const all = await repo.settings.get(SETTINGS_KEYS.savedSearches, {});
+  const list = Array.isArray(all?.[page]) ? all[page] : [];
+  return list.filter((x) => x && x.id && x.name);
+}
+
+export async function addSavedSearch(page, name, state) {
+  const clean = norm(name);
+  if (!clean) throw new Error('اكتب اسمًا للبحث');
+  const all = await repo.settings.get(SETTINGS_KEYS.savedSearches, {});
+  const list = Array.isArray(all?.[page]) ? all[page] : [];
+  // الاسم نفسه يستبدل السابق: «فلل النرجس» مرتين بحالتين مختلفتين إرباكٌ لا فائدة فيه.
+  const next = [...list.filter((x) => x.name !== clean), { id: shortKey('search'), name: clean, state }];
+  await repo.settings.set(SETTINGS_KEYS.savedSearches, { ...all, [page]: next });
+  return next;
+}
+
+export async function removeSavedSearch(page, id) {
+  const all = await repo.settings.get(SETTINGS_KEYS.savedSearches, {});
+  const list = Array.isArray(all?.[page]) ? all[page] : [];
+  const next = list.filter((x) => x.id !== id);
+  await repo.settings.set(SETTINGS_KEYS.savedSearches, { ...all, [page]: next });
   return next;
 }

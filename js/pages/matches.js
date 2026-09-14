@@ -11,7 +11,7 @@ import { repo } from '../data/repository.js';
 import { ENUMS, labelFor, clientPriority, clientTagClass } from '../data/schema.js';
 import {
   getLists, typeLabel, statusLabel, zoneLabel,
-  getCompany, suggestInvoiceNumber, consumeInvoiceNumber,
+  getCompany, suggestInvoiceNumber, consumeInvoiceNumber, getFollowUpSettings,
 } from '../data/settings.js';
 import { loadMatchingContext, candidatesFor, scoreOne, hardReasonLabel, priceFlexFor } from '../data/matching.js';
 import {
@@ -338,6 +338,7 @@ async function setStatus(ctx, request, row, status) {
         score: row.score, priceUnknown: row.priceUnknown, status, rejectReason,
       });
     }
+    if (status === 'presented' && row.record?.status !== 'presented') await scheduleAfterShowing(ctx, request, row);
     if (status === 'won') await openDealForm(ctx, request, row);
     window.dispatchEvent(new CustomEvent('kassab:data-changed'));
     await refresh(ctx);
@@ -345,6 +346,45 @@ async function setStatus(ctx, request, row, status) {
     console.error(err);
     toast(err.message || 'تعذر تغيير الحالة', 'error');
     await refresh(ctx);
+  }
+}
+
+/**
+ * متابعة تلقائية بعد المعاينة (المرحلة ١٧).
+ *
+ * الصفقة تموت بالصمت بعد المعاينة أكثر مما تموت بالسعر، وتذكّرُك بنفسك ليس خطة.
+ * فعند تعليم المطابقة «عُرضت» تُنشأ مهمة بموعد بعد المدة المضبوطة في الإعدادات
+ * (صفر = معطَّل)، مربوطة بالعميل. ولا تُنشأ مرتين لأن الشرط يقتضي تغيّر الحالة إلى «عُرضت».
+ *
+ * وفشل الإنشاء لا يُسقط تغيير الحالة: تسجيل ما فعلته أهمّ من تذكير كمالي.
+ */
+async function scheduleAfterShowing(ctx, request, row) {
+  try {
+    const { afterShowingDays } = await getFollowUpSettings();
+    const days = Number(afterShowingDays) || 0;
+    if (days <= 0) return;
+
+    const lists = (await repo.taskLists.list()).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    const list = lists[0] || await repo.taskLists.create({ title: 'متابعات', order: 0 });
+
+    const client = ctx.clientsById?.get(request.clientId) || null;
+    const p = row.listing;
+    const where = [p.district, p.city].filter(Boolean).join('، ');
+    const due = new Date();
+    due.setDate(due.getDate() + days);
+    due.setHours(10, 0, 0, 0); // عاشرة الصباح: موعدٌ يُتصل فيه، لا لحظة إنشاء المهمة
+
+    await repo.tasks.create({
+      listId: list.id,
+      title: `متابعة بعد المعاينة — ${clientName(client)}`,
+      notes: `${typeLabel(ctx.lists, p.type)}${where ? ` — ${where}` : ''}${p.price ? ` · ${formatSAR(p.price)}` : ''}`,
+      dueAt: due.toISOString(),
+      linkType: client ? 'client' : null,
+      linkId: client ? client.id : null,
+    });
+    toast(`أُنشئت مهمة متابعة بعد ${days} أيام`, 'success');
+  } catch (err) {
+    console.warn('تعذر إنشاء مهمة المتابعة', err);
   }
 }
 

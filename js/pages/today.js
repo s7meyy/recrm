@@ -9,7 +9,8 @@ import { ENUMS, labelFor, clientPriority, clientTagClass } from '../data/schema.
 import { getLists, getCompleteness, getFollowUpSettings, typeLabel, getUI, setUI, getGoals } from '../data/settings.js';
 import { loadMatchingContext, candidatesFor, matchReadiness } from '../data/matching.js';
 import { buildOpportunityIndex, topOpportunities } from '../util/opportunity.js';
-import { el, clear, badge, emptyState } from '../util/dom.js';
+import { receivables } from '../util/receivables.js';
+import { el, clear, badge, emptyState, confirmDialog, toast } from '../util/dom.js';
 import { formatSAR, formatDate, formatDateTime, relativeDays, daysBetween, daysWord } from '../util/format.js';
 import { formatPhone, toInternational } from '../util/phone.js';
 import { clientName } from './requests.js';
@@ -28,6 +29,7 @@ async function loadData() {
     getGoals(), repo.deals.list(), repo.expenses.list(),
   ]);
   const since = ui.lastVisitAt || null;
+  const due = receivables({ invoices, deals }); // المستحقات (المرحلة ١٧)
   const clientsById = new Map(ctx.clients.map((c) => [c.id, c]));
   const now = Date.now();
 
@@ -104,10 +106,34 @@ async function loadData() {
     progress, renewals, staleListings,
     clientsById, tasksPending: tasks.filter((t) => !t.done).length,
     quotesOpen: invoices.filter((i) => i.type === 'quote').length,
+    due,
   };
 }
 
 /* ===== العرض ===== */
+
+/** عبارة التأخّر: «تأخّر ١٢ يومًا» أصدق من تاريخٍ يُحسب في الذهن. */
+function dueWhen(r) {
+  if (r.days > 0) return `تأخّر ${daysWord(r.days)}${r.dated ? '' : ' عن تاريخه'}`;
+  if (r.days === 0) return 'يستحق اليوم';
+  return `يستحق بعد ${daysWord(-r.days)}`;
+}
+
+/** قبض العمولة من «يومي» مباشرة: لا صفحة للصفقات، وفتح المطابقات لأجل هذا تكلّف خطوات. */
+async function markCommissionPaid(event, r) {
+  event.preventDefault();
+  const ok = await confirmDialog({
+    title: 'قبض العمولة',
+    message: `تأكيد قبض عمولة ${formatSAR(r.remaining)} لصفقة ${formatDate(r.basis)}؟`,
+    confirmText: 'قُبضت',
+  });
+  if (!ok) return;
+  await repo.deals.update(r.id, { commissionPaidAt: new Date().toISOString() });
+  toast('سُجّل قبض العمولة', 'success');
+  window.dispatchEvent(new CustomEvent('kassab:data-changed'));
+  const container = document.getElementById('page');
+  build(container, await loadData());
+}
 
 function section(title, count, body, { href = null, hrefText = null, tone = '' } = {}) {
   return el('section', { class: `panel today-panel ${tone}`.trim() },
@@ -159,6 +185,25 @@ function build(container, d) {
       goalBar('عمولات', d.progress.commission, d.progress.goals.commissionPerMonth, formatSAR),
       el('p', { class: 'muted small', text: `مصاريف هذا الشهر: ${formatSAR(d.progress.spent)} · الصافي: ${formatSAR(d.progress.commission - d.progress.spent)}` })),
     { href: '#/expenses', hrefText: 'المصاريف →' }));
+  }
+
+  /* مستحقات لم تُقبض (المرحلة ١٧) — لا تظهر اللوحة إن لم يكن لك شيء عند أحد */
+  if (d.due.rows.length) {
+    grid.append(section('مستحقات لم تُقبض', d.due.rows.length,
+      el('div', {},
+        el('p', { class: 'strong', text: `${formatSAR(d.due.total)} لك عند الناس`
+          + (d.due.overdueCount ? ` — منها ${formatSAR(d.due.overdueTotal)} تجاوزت استحقاقها` : '') }),
+        ...d.due.rows.slice(0, 8).map((r) => row(
+          r.kind === 'commission' ? `عمولة صفقة ${formatDate(r.basis)}` : `فاتورة ${r.number || 'بلا رقم'}`,
+          `${formatSAR(r.remaining)} · ${dueWhen(r)}${r.state === 'partial' ? ' · مقبوضة جزئيًا' : ''}`
+            + (r.clientId && d.clientsById.get(r.clientId) ? ` · ${clientName(d.clientsById.get(r.clientId))}` : ''),
+          r.kind === 'commission'
+            ? el('button', {
+              type: 'button', class: 'btn btn-ghost btn-sm', text: 'قُبضت',
+              onClick: (e) => markCommissionPaid(e, r),
+            })
+            : el('a', { class: 'btn btn-ghost btn-sm', href: `#/invoices/${r.id}`, text: 'فتح' })))),
+      { href: '#/invoices', hrefText: 'الفواتير →', tone: d.due.overdueCount ? 'today-warn' : '' }));
   }
 
   /* متابعات اليوم */

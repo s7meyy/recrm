@@ -27,7 +27,12 @@ const lastIdx = await rows.count() - 1;
 await rows.nth(lastIdx).locator('button[title="أعلى"]').click();
 await page.waitForTimeout(500);
 const after = await navOrder();
-ok('القائمة الجانبية تحرّكت فورًا بعد ↑', after[after.length-1] === 'notes' && after[after.length-2] === 'settings', after.slice(-3).join(','));
+// التحقق بالإزاحة لا بأسماء بعينها: إضافة صفحة جديدة لا تكسر الاختبار (كسرَته «صحة البيانات» مرة).
+const wasLast = before[before.length - 1];
+const wasBeforeLast = before[before.length - 2];
+ok('القائمة الجانبية تحرّكت فورًا بعد ↑',
+  after[after.length - 2] === wasLast && after[after.length - 1] === wasBeforeLast,
+  `${before.slice(-2).join(',')} → ${after.slice(-2).join(',')}`);
 
 // زر ↑ في الصف الأول معطّل وزر ↓ في الأخير معطّل
 ok('↑ معطّل في أول صف', await rows.nth(0).locator('button[title="أعلى"]').isDisabled());

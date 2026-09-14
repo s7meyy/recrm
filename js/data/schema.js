@@ -281,6 +281,7 @@ export const SCHEMAS = {
     defaults: () => ({
       date: '', finalPrice: null, commission: null, propertyId: null, clientId: null, notes: '',
       leaseEndAt: null, // نهاية عقد الإيجار (المرحلة ١٣) — يُذكَّر بالتجديد قبل شهر
+      commissionPaidAt: null, // متى قُبضت العمولة (المرحلة ١٧) — null = لم تُقبض بعد
     }),
   },
   images: {
@@ -338,6 +339,10 @@ export const SCHEMAS = {
       statement: '', // البيان: وصف عام أعلى الجدول
       items: [], // [{ id, description, qty, unitPrice }]
       notes: '', // شروط أو ملاحظات تُطبع أسفل المستند
+      // التحصيل (المرحلة ١٧): المقبوض رقمٌ لا راية، فالدفعة الجزئية واقعٌ يوميّ.
+      // null = لم يُقبض شيء. وعرض السعر لا يُحصَّل أصلًا (ليس مستحقًا حتى يصير فاتورة).
+      paidAmount: null, paidAt: null,
+      dueAt: null, // تاريخ الاستحقاق — يُحسب عليه التقادم، وبغيابه يُحسب على تاريخ المستند
     }),
   },
 };
@@ -346,3 +351,34 @@ export const SCHEMAS = {
 export function invoiceTotal(invoice) {
   return (invoice?.items || []).reduce((sum, it) => sum + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0);
 }
+
+/* ===== التحصيل (المرحلة ١٧) ===== */
+
+/** المقبوض من مستند، صفرًا إن لم يُقبض شيء. */
+export function invoicePaid(invoice) {
+  const paid = Number(invoice?.paidAmount);
+  return Number.isFinite(paid) && paid > 0 ? paid : 0;
+}
+
+/** المتبقّي على المستند. عرض السعر ليس مستحقًا فمتبقّيه صفر دائمًا. */
+export function invoiceRemaining(invoice) {
+  if (invoice?.type === 'quote') return 0;
+  return Math.max(0, invoiceTotal(invoice) - invoicePaid(invoice));
+}
+
+/**
+ * حالة التحصيل: `quote` (ليس مستحقًا) · `paid` · `partial` · `unpaid`.
+ * الإجمالي صفر (مستند بلا بنود) يُعدّ مقبوضًا فلا يظهر في المستحقات إزعاجًا.
+ */
+export function invoiceCollection(invoice) {
+  if (invoice?.type === 'quote') return 'quote';
+  const total = invoiceTotal(invoice);
+  if (total <= 0) return 'paid';
+  const paid = invoicePaid(invoice);
+  if (paid <= 0) return 'unpaid';
+  return paid + 0.5 >= total ? 'paid' : 'partial'; // نصف ريال تسامحٌ في التقريب لا فرق حقيقي
+}
+
+export const COLLECTION_LABELS = {
+  unpaid: 'لم يُقبض', partial: 'مقبوض جزئيًا', paid: 'مقبوض', quote: 'عرض سعر',
+};

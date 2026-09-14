@@ -22,6 +22,7 @@ export const SIDEBAR_PAGES = [
   { key: 'publish', label: 'الصفحة العامة للعروض', icon: '🌍' },
   { key: 'tasks', label: 'المهام', icon: '✅' },
   { key: 'notes', label: 'الأفكار والملاحظات', icon: '💡' },
+  { key: 'health', label: 'صحة البيانات', icon: '🩺' },
   { key: 'settings', label: 'الإعدادات', icon: '⚙️' },
 ];
 

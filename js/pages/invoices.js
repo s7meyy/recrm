@@ -3,13 +3,14 @@
 // بلا مكتبة وبلا تصدير صورة (مؤجَّل صراحة بقرار المالك).
 
 import { repo, ValidationError } from '../data/repository.js';
-import { ENUMS, labelFor, invoiceTotal } from '../data/schema.js';
+import { ENUMS, labelFor, invoiceTotal, invoiceCollection, invoiceRemaining, invoicePaid, COLLECTION_LABELS } from '../data/schema.js';
 import { getCompany, suggestInvoiceNumber, consumeInvoiceNumber } from '../data/settings.js';
 import { getImageUrl } from '../data/images.js';
 import {
   el, clear, labeled, selectEl, badge, openModal, confirmDialog, toast, emptyState, debounce,
 } from '../util/dom.js';
 import { formatDate, formatNumber, toInputDate, fromInputDate } from '../util/format.js';
+import { receivables } from '../util/receivables.js';
 import { formatPhone } from '../util/phone.js';
 import { matchesQuery } from '../util/arabic.js';
 
@@ -24,7 +25,7 @@ function routeInvoiceId() {
 }
 
 export async function render(container) {
-  const ctx = { container, query: '', type: '', invoices: [], clients: [], company: null, nodes: {} };
+  const ctx = { container, query: '', type: '', collection: '', invoices: [], clients: [], company: null, nodes: {} };
   await loadData(ctx);
   buildLayout(ctx);
   const focusId = routeInvoiceId();
@@ -63,23 +64,49 @@ function buildLayout(ctx) {
     options: [{ value: '', label: 'الكل' }, ...ENUMS.invoiceTypes.map((t) => ({ value: t.key, label: t.label }))],
     value: '', onChange: (e) => { ctx.type = e.target.value; renderList(ctx); },
   });
+  const collectionFilter = selectEl({
+    options: [
+      { value: '', label: 'كل حالات التحصيل' },
+      { value: 'due', label: 'لم يُقبض أو جزئيًا' },
+      { value: 'unpaid', label: COLLECTION_LABELS.unpaid },
+      { value: 'partial', label: COLLECTION_LABELS.partial },
+      { value: 'paid', label: COLLECTION_LABELS.paid },
+    ],
+    value: '', onChange: (e) => { ctx.collection = e.target.value; renderList(ctx); },
+  });
   ctx.container.append(
     el('div', { class: 'page-head' },
       el('h1', {}, 'الفواتير وعروض الأسعار', ctx.nodes.count),
       el('div', { class: 'row' },
         el('button', { type: 'button', class: 'btn btn-primary', text: '+ فاتورة جديدة', onClick: () => openForm(ctx, null, 'invoice') }),
         el('button', { type: 'button', class: 'btn', text: '+ عرض سعر', onClick: () => openForm(ctx, null, 'quote') }))),
-    el('div', { class: 'toolbar' }, search, typeFilter),
+    el('div', { class: 'toolbar' }, search, typeFilter, collectionFilter),
   );
+  ctx.nodes.summary = el('div');
   ctx.nodes.list = el('div');
-  ctx.container.append(ctx.nodes.list);
+  ctx.container.append(ctx.nodes.summary, ctx.nodes.list);
   renderList(ctx);
 }
 
 function passes(ctx, inv) {
   if (ctx.type && inv.type !== ctx.type) return false;
   if (ctx.query.length && !matchesQuery(inv.searchKey || '', ctx.query)) return false;
+  if (ctx.collection) {
+    const state = invoiceCollection(inv);
+    if (ctx.collection === 'due' ? !(state === 'unpaid' || state === 'partial') : state !== ctx.collection) return false;
+  }
   return true;
+}
+
+const COLLECTION_STYLE = { unpaid: 'badge-danger', partial: 'badge-warn', paid: 'badge-ok', quote: 'badge-outline' };
+
+/** شارة التحصيل: تقول المتبقّي لا الحالة وحدها — «مقبوض جزئيًا» بلا رقم لا يفيد. */
+function collectionBadge(inv) {
+  const state = invoiceCollection(inv);
+  const label = state === 'partial'
+    ? `${COLLECTION_LABELS.partial} · باقٍ ${money(invoiceRemaining(inv))}`
+    : COLLECTION_LABELS[state];
+  return badge(label, COLLECTION_STYLE[state] || '');
 }
 
 function renderList(ctx) {
@@ -87,6 +114,7 @@ function renderList(ctx) {
   ctx.nodes.count.textContent = items.length === ctx.invoices.length
     ? `(${ctx.invoices.length})`
     : `(${items.length} من ${ctx.invoices.length})`;
+  renderSummary(ctx);
   const area = ctx.nodes.list;
   clear(area);
   if (!ctx.invoices.length) {
@@ -97,19 +125,88 @@ function renderList(ctx) {
     area.append(emptyState('لا نتائج تطابق البحث أو الفرز.'));
     return;
   }
-  const head = el('tr', {}, ['الرقم', 'النوع', 'التاريخ', 'العميل', 'البنود', 'الإجمالي', ''].map((t) => el('th', { text: t })));
+  const head = el('tr', {}, ['الرقم', 'النوع', 'التاريخ', 'العميل', 'الإجمالي', 'التحصيل', ''].map((t) => el('th', { text: t })));
   const body = el('tbody', {}, items.map((inv) => el('tr', { onClick: () => openForm(ctx, inv) },
     el('td', { class: 'strong', text: inv.number || '—' }),
     el('td', {}, badge(typeLabelOf(inv.type), inv.type === 'quote' ? 'badge-accent' : 'badge-ok')),
     el('td', { text: formatDate(inv.date) }),
     el('td', { text: clientName(ctx.clientsById.get(inv.clientId)) || inv.clientName || '—' }),
-    el('td', { text: String((inv.items || []).length) }),
     el('td', { class: 'strong', text: money(invoiceTotal(inv)) }),
-    el('td', {}, el('button', {
-      type: 'button', class: 'btn btn-ghost btn-sm', text: '🖨️ طباعة',
-      onClick: (e) => { e.stopPropagation(); printInvoice(inv, ctx.company, ctx.clientsById.get(inv.clientId)); },
-    })))));
+    el('td', {}, collectionBadge(inv)),
+    el('td', {}, el('div', { class: 'row' },
+      invoiceCollection(inv) === 'quote' || invoiceCollection(inv) === 'paid' ? null : el('button', {
+        type: 'button', class: 'btn btn-sm', text: '💰 قبض',
+        onClick: (e) => { e.stopPropagation(); openCollect(ctx, inv); },
+      }),
+      el('button', {
+        type: 'button', class: 'btn btn-ghost btn-sm', text: '🖨️ طباعة',
+        onClick: (e) => { e.stopPropagation(); printInvoice(inv, ctx.company, ctx.clientsById.get(inv.clientId)); },
+      }))))));
   area.append(el('div', { class: 'table-wrap' }, el('table', { class: 'table' }, el('thead', {}, head), body)));
+}
+
+/** شريط مختصر أعلى القائمة: كم لك عند الناس، وكم منه متأخر. */
+function renderSummary(ctx) {
+  const area = ctx.nodes.summary;
+  clear(area);
+  const { total, overdueTotal, overdueCount } = receivables({ invoices: ctx.invoices });
+  if (total <= 0) return;
+  area.append(el('div', { class: 'stat-strip' },
+    el('div', { class: 'stat-chip' },
+      el('div', { class: 'stat-num', text: money(total) }),
+      el('div', { class: 'stat-label', text: 'مستحق لم يُقبض' })),
+    overdueCount ? el('div', { class: 'stat-chip' },
+      el('div', { class: 'stat-num', text: money(overdueTotal) }),
+      el('div', { class: 'stat-label', text: `متأخر عن استحقاقه (${formatNumber(overdueCount)})` })) : null));
+}
+
+/**
+ * نافذة القبض: مبلغ وتاريخ، ومعها زر «قُبض كاملًا» لأن هذه هي الحالة الغالبة
+ * فلا يُطلب منك كتابة رقمٍ يعرفه النظام.
+ */
+function openCollect(ctx, inv) {
+  const total = invoiceTotal(inv);
+  const already = invoicePaid(inv);
+  const remaining = invoiceRemaining(inv);
+  const errorsBox = el('div', { class: 'form-errors', hidden: true });
+  const amountInput = el('input', { class: 'input', type: 'number', min: '0', step: '1', value: remaining });
+  const dateInput = el('input', { class: 'input', type: 'date', value: toInputDate() });
+
+  const save = async (fullAmount) => {
+    errorsBox.hidden = true;
+    const added = fullAmount != null ? fullAmount : Number(amountInput.value);
+    if (!Number.isFinite(added) || added <= 0) {
+      clear(errorsBox);
+      errorsBox.append(el('div', { text: 'اكتب مبلغًا أكبر من صفر' }));
+      errorsBox.hidden = false;
+      return;
+    }
+    try {
+      await repo.invoices.update(inv.id, { paidAmount: already + added, paidAt: fromInputDate(dateInput.value) });
+      modal.close();
+      toast('سُجّل القبض', 'success');
+      window.dispatchEvent(new CustomEvent('kassab:data-changed'));
+      await refresh(ctx);
+    } catch (err) {
+      clear(errorsBox);
+      errorsBox.append(el('ul', {}, (err instanceof ValidationError ? err.errors : [err.message]).map((m) => el('li', { text: m }))));
+      errorsBox.hidden = false;
+    }
+  };
+
+  const modal = openModal({
+    title: `قبض ${inv.number ? `الفاتورة ${inv.number}` : 'الفاتورة'}`,
+    body: el('div', {}, errorsBox,
+      el('p', { class: 'muted small', text: `الإجمالي ${money(total)}${already ? ` · المقبوض سابقًا ${money(already)}` : ''} · المتبقّي ${money(remaining)}` }),
+      el('div', { class: 'form-grid' },
+        labeled('المبلغ المقبوض الآن', amountInput),
+        labeled('تاريخ القبض', dateInput))),
+    footer: [
+      el('button', { type: 'button', class: 'btn btn-primary', text: `قُبض كاملًا (${money(remaining)})`, onClick: () => save(remaining) }),
+      el('button', { type: 'button', class: 'btn', text: 'حفظ المبلغ المكتوب', onClick: () => save(null) }),
+      el('button', { type: 'button', class: 'btn btn-ghost', text: 'إلغاء', onClick: () => modal.close() }),
+    ],
+  });
 }
 
 /* ===== النموذج ===== */
@@ -136,6 +233,7 @@ async function openForm(ctx, existing, newType = 'invoice') {
     onChange: () => { if (!isEdit) numberInput.value = suggestInvoiceNumber(company, typeSelect.value); },
   });
   const dateInput = el('input', { class: 'input', type: 'date', value: toInputDate(draft.date || null) });
+  const dueInput = el('input', { class: 'input', type: 'date', value: draft.dueAt ? toInputDate(draft.dueAt) : '' });
   const statementInput = el('textarea', { class: 'input', rows: 2, value: draft.statement || '', placeholder: 'مثال: عمولة وساطة على بيع أرض بحي الياسمين' });
   const notesInput = el('textarea', { class: 'input', rows: 2, value: draft.notes || '', placeholder: 'شروط الدفع أو أي ملاحظة تُطبع أسفل المستند' });
 
@@ -204,6 +302,7 @@ async function openForm(ctx, existing, newType = 'invoice') {
     type: typeSelect.value,
     number: numberInput.value,
     date: fromInputDate(dateInput.value),
+    dueAt: dueInput.value ? fromInputDate(dueInput.value) : null,
     clientId: clientSelect.value || null,
     clientName: clientNameInput.value,
     clientPhone: clientPhoneInput.value,
@@ -274,6 +373,7 @@ async function openForm(ctx, existing, newType = 'invoice') {
         labeled('النوع', typeSelect),
         labeled('الرقم', numberInput, { hint: 'مقترح تلقائيًا ويمكن الكتابة فوقه؛ الكتابة اليدوية لا تحرّك العدّاد' }),
         labeled('التاريخ', dateInput, { required: true }),
+        labeled('تاريخ الاستحقاق', dueInput, { hint: 'اختياري — يُحسب عليه تأخّر التحصيل بدل تاريخ الإصدار' }),
         labeled('العميل المرتبط', clientSelect),
         labeled('الاسم في المستند', clientNameInput, { hint: 'يُطبع كما هو ولو تغيّر العميل لاحقًا' }),
         labeled('الجوال في المستند', clientPhoneInput),

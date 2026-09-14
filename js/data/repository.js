@@ -3,7 +3,7 @@
 // ثم تمرّر إلى المحوّل (IndexedDB الآن، خادم لاحقًا عبر setAdapter).
 
 import { indexedDbAdapter } from './adapters/indexeddb.js';
-import { SCHEMAS, ENUMS, STORES } from './schema.js';
+import { SCHEMAS, ENUMS, STORES, invoiceTotal } from './schema.js';
 import { buildSearchKey, matchesQuery } from '../util/arabic.js';
 import { normalizePhone, phoneSearchForms } from '../util/phone.js';
 import { distanceMeters } from '../util/location.js';
@@ -190,6 +190,11 @@ const PREPARE = {
     rec.clientId = rec.clientId || null;
     rec.clientName = trim(rec.clientName);
     rec.clientPhone = normalizePhone(rec.clientPhone);
+    // التحصيل (المرحلة ١٧): صفر أو فراغ = لم يُقبض شيء، فلا فرق بينهما في التخزين.
+    rec.paidAmount = toNumberOrNull(rec.paidAmount);
+    if (rec.paidAmount != null && rec.paidAmount <= 0) rec.paidAmount = null;
+    rec.paidAt = rec.paidAmount == null ? null : (rec.paidAt || new Date().toISOString());
+    rec.dueAt = rec.dueAt || null;
     // البنود: وصف ونصّان رقميان؛ البند بلا وصف ولا مبلغ يُسقط (صفوف فارغة من النموذج).
     rec.items = (Array.isArray(rec.items) ? rec.items : [])
       .map((it) => ({
@@ -248,6 +253,11 @@ const VALIDATE = {
     if (!inEnum(ENUMS.invoiceTypes, rec.type)) errors.push('نوع المستند غير معروف');
     if (!rec.items.length) errors.push('يلزم بند واحد على الأقل');
     if (rec.items.some((it) => !it.description)) errors.push('كل بند يحتاج وصفًا');
+    // المقبوض أكبر من الإجمالي خطأ إدخال غالبًا، ولو مُرِّر لصار المستحق سالبًا فيفسد التقادم.
+    if (rec.paidAmount != null && rec.paidAmount > invoiceTotal(rec) + 0.5) {
+      errors.push('المقبوض أكبر من إجمالي المستند');
+    }
+    if (rec.paidAmount != null && rec.type === 'quote') errors.push('عرض السعر لا يُقبض؛ حوّله إلى فاتورة أولًا');
   },
 };
 

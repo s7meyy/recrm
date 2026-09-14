@@ -9,8 +9,9 @@ import { ENUMS, labelFor, invoiceTotal } from '../data/schema.js';
 import { getLists, getCompleteness, getFollowUpSettings, typeLabel, statusLabel } from '../data/settings.js';
 import { tourStats } from './tours.js';
 import { buildPriceIndex } from '../util/price-stats.js';
+import { conversionFunnel } from '../util/funnel.js';
 import { el, clear, badge } from '../util/dom.js';
-import { formatNumber, formatSAR, daysBetween, relativeDays } from '../util/format.js';
+import { formatNumber, formatSAR, daysBetween, relativeDays, countWord } from '../util/format.js';
 import { formatPhone, toInternational } from '../util/phone.js';
 
 const DISTRICT_MIN_SAMPLE = 3;
@@ -21,15 +22,15 @@ export async function render(container) {
 }
 
 async function loadData() {
-  const [clients, properties, tours, matches, externals, deals, lists, completeness, followUp, tasks, invoices, expenses] = await Promise.all([
+  const [clients, properties, tours, matches, externals, deals, lists, completeness, followUp, tasks, invoices, expenses, requests] = await Promise.all([
     repo.clients.list(), repo.properties.list(), repo.tours.list(), repo.matches.list(),
     repo.externalListings.list(), repo.deals.list(), getLists(), getCompleteness(), getFollowUpSettings(), repo.tasks.list(),
-    repo.invoices.list(), repo.expenses.list(),
+    repo.invoices.list(), repo.expenses.list(), repo.requests.list(),
   ]);
   const approved = properties.filter((p) => p.captureStatus === 'approved');
   const clientMap = new Map(clients.map((c) => [c.id, c]));
   const dealPropertyIds = new Set(deals.map((d) => d.propertyId).filter(Boolean));
-  return { clients, properties, approved, tours, matches, externals, deals, lists, completeness, followUp, tasks, invoices, expenses, clientMap, dealPropertyIds };
+  return { clients, properties, approved, tours, matches, externals, deals, lists, completeness, followUp, tasks, invoices, expenses, requests, clientMap, dealPropertyIds };
 }
 
 /* ===== أدوات تجميع عامة ===== */
@@ -129,7 +130,7 @@ function statChip(value, label) {
 }
 
 function buildLayout(container, data) {
-  const { clients, properties, approved, tours, matches, externals, deals, lists, completeness, followUp, tasks, invoices, expenses, clientMap, dealPropertyIds } = data;
+  const { clients, properties, approved, tours, matches, externals, deals, lists, completeness, followUp, tasks, invoices, expenses, requests, clientMap, dealPropertyIds } = data;
   clear(container);
 
   const pending = properties.filter((p) => p.captureStatus !== 'approved').length;
@@ -220,6 +221,7 @@ function buildLayout(container, data) {
 
   /* صافي الربح ولماذا تضيع الصفقات (المرحلة ١٣) */
   grid.append(panel('صافي الربح', null, ...profitSection({ deals, expenses })));
+  grid.append(panel('أين تضيع: قمع التحويل', null, ...funnelSection({ requests, matches })));
   grid.append(panel('لماذا تضيع الصفقات', null, ...rejectSection(matches)));
 
   /* مؤشر السوق من بياناتك (المرحلة ١١) */
@@ -261,6 +263,38 @@ function priceSection({ properties, externals, deals, lists }) {
       el('tbody', {}, rows))),
     el('div', { class: 'muted small', text: 'الوسيط لا المتوسط (فلا يفسده عرض شاذّ واحد). والصفقات المنجزة تدخل بسعرها النهائي لا المطلوب. والبيع مفصول عن الإيجار.' }),
   ];
+}
+
+/**
+ * قمع التحويل: كم طلبًا يبلغ كل مرحلة، وأين أكبر سقوط.
+ * الوحدة «طلب» في كل المراحل — ولذلك لا تصعد نسبةٌ فوق المئة أبدًا.
+ */
+const REQUEST_FORMS = ['طلب واحد', 'طلبان', 'طلبات', 'طلبًا'];
+
+function funnelSection({ requests, matches }) {
+  const { stages, worst, totals } = conversionFunnel({ requests, matches });
+  if (!stages[0].count) {
+    return [el('div', { class: 'muted small', text: 'لا طلبات بعد — القمع يبدأ من أول طلب تسجّله.' })];
+  }
+  const top = stages[0].count;
+  const rows = stages.map((st) => el('div', { class: 'funnel-row' },
+    el('span', { class: 'funnel-name', text: st.label }),
+    el('span', { class: 'funnel-bar' }, el('span', {
+      class: 'funnel-fill', style: { width: `${Math.round((st.count / top) * 100)}%` },
+    })),
+    el('span', { class: 'funnel-num' },
+      el('span', { class: 'strong', text: formatNumber(st.count) }),
+      st.rate == null ? null : el('span', { class: 'muted small', text: ` ${Math.round(st.rate * 100)}٪` }))));
+
+  const tail = [];
+  if (worst) {
+    tail.push(el('div', { class: 'funnel-drop small' },
+      el('strong', { text: `أكبر سقوط: ${countWord(worst.lost, REQUEST_FORMS)} عند «${worst.label}». ` }), worst.advice));
+  }
+  tail.push(el('div', { class: 'muted small' },
+    totals.overall == null ? '' : `التحويل الكلّي: ${Math.round(totals.overall * 100)}٪ من طلباتك أُبرمت. `,
+    'الطلبات الموقوفة مستثناة، والمُنجزة محسوبة (فهي موضع الفوز نفسه).'));
+  return [...rows, ...tail];
 }
 
 /** عمولاتك ناقص مصاريفك — سعر البيع نفسه ليس دخلك فلا يدخل هنا. */

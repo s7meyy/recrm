@@ -14,7 +14,7 @@ await page.waitForSelector('#page .page-head, #page .card, #page .empty', { time
 await page.waitForTimeout(800);
 
 // 1) كل الصفحات تُفتح بلا أخطاء
-const routes = ['today','dashboard','opportunities','properties','map','clients','tours','requests','matches','external','pricing','invoices','expenses','publish','tasks','notes','settings'];
+const routes = ['today','dashboard','opportunities','properties','map','clients','tours','requests','matches','external','pricing','invoices','expenses','publish','tasks','notes','health','settings'];
 for (const r of routes) {
   await page.evaluate(h => { location.hash = h; }, `#/${r}`);
   await page.waitForTimeout(600);

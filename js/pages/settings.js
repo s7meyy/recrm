@@ -497,6 +497,7 @@ async function followUpBody() {
   const fu = await getFollowUpSettings();
   const daysInput = el('input', { class: 'input', type: 'number', min: '1', step: '1', value: fu.staleContactDays });
   const notifyBox = checkbox('نبّهني عبر المتصفح عند تجاوز عميل لهذا الحدّ', { checked: fu.notify });
+  const afterShowingInput = el('input', { class: 'input', type: 'number', min: '0', step: '1', value: fu.afterShowingDays ?? 3 });
   const note = el('div', { class: 'muted small' });
 
   function updateNote() {
@@ -510,7 +511,10 @@ async function followUpBody() {
   return el('div', {},
     el('div', { class: 'form-grid' },
       labeled('لم يُتواصَل معه منذ (أيام)', daysInput),
-      el('div', { class: 'field' }, el('span', { class: 'field-label', text: 'تنبيه المتصفح' }), notifyBox)),
+      el('div', { class: 'field' }, el('span', { class: 'field-label', text: 'تنبيه المتصفح' }), notifyBox),
+      labeled('متابعة تلقائية بعد المعاينة (أيام)', afterShowingInput, {
+        hint: 'عند تعليم مطابقة بـ«عُرضت» تُنشأ مهمة متابعة بعد هذه المدة. صفر = معطَّل.',
+      })),
     note,
     el('p', { class: 'muted small', style: { marginTop: '4px' } },
       'قيد مهم: التنبيه يعمل فقط أثناء بقاء هذا التبويب مفتوحًا في المتصفح — لا تنبيهات بعد إغلاقه؛ ذلك يحتاج خادمًا حقيقيًا، خارج نطاق التطبيق الحالي.'),
@@ -526,7 +530,7 @@ async function followUpBody() {
           }
         }
         try {
-          await setFollowUpSettings({ staleContactDays: daysInput.value, notify });
+          await setFollowUpSettings({ staleContactDays: daysInput.value, notify, afterShowingDays: afterShowingInput.value });
           toast('تم الحفظ', 'success');
         } catch (err) { errToast(err); }
         updateNote();

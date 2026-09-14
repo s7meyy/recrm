@@ -18,7 +18,7 @@ import { parseLocation, isShortMapLink, mapsLink, locationToText } from '../util
 import { LISTING_GROUPS, LISTING_VALUES, listingFilterOptions } from '../util/property-filters.js';
 import { sourceField, rememberSource, sourceBadge } from '../util/source-field.js';
 import { announceMatches } from '../util/match-alert.js';
-import { getTemplates, getCompany } from '../data/settings.js';
+import { getTemplates, getCompany, getSavedSearches, addSavedSearch, removeSavedSearch } from '../data/settings.js';
 import { getCurrentUser } from '../data/repository.js';
 import { renderTemplate, templateValues, whatsappLink } from '../util/templates.js';
 import { buildPriceIndex, comparePrice } from '../util/price-stats.js';
@@ -84,7 +84,7 @@ function buildLayout(ctx) {
   clear(ctx.container);
   const search = el('input', {
     class: 'input search', type: 'search', placeholder: 'بحث: الحي، الملاحظات، رقم المخطط، اسم المالك أو جواله…',
-    onInput: debounce((e) => { ctx.query = e.target.value; renderFilters(ctx); renderList(ctx); }, 150),
+    onInput: debounce((e) => { ctx.query = e.target.value; renderFilters(ctx); renderList(ctx); renderSaved(ctx); }, 150),
   });
   const segButtons = {};
   const seg = el('div', { class: 'seg' }, [['grid', 'شبكة'], ['table', 'جدول']].map(([key, label]) => {
@@ -107,10 +107,13 @@ function buildLayout(ctx) {
         search, seg,
         el('button', { type: 'button', class: 'btn btn-primary', text: '+ إضافة عقار', onClick: () => openForm(ctx, null) }))),
   );
+  ctx.nodes.search = search;
+  ctx.nodes.saved = el('div', { class: 'saved-row' });
   ctx.nodes.filters = el('div', { class: 'filters' });
   ctx.nodes.selectionBar = el('div', { class: 'selection-bar', hidden: true });
   ctx.nodes.list = el('div');
-  ctx.container.append(ctx.nodes.filters, ctx.nodes.selectionBar, ctx.nodes.list);
+  ctx.container.append(ctx.nodes.saved, ctx.nodes.filters, ctx.nodes.selectionBar, ctx.nodes.list);
+  renderSaved(ctx);
   renderFilters(ctx);
   renderList(ctx);
 }
@@ -194,6 +197,63 @@ function passes(ctx, p, exceptGroup = null) {
   return true;
 }
 
+/* ===== بحوث محفوظة (المرحلة ١٧) ===== */
+
+const SEARCH_PAGE = 'properties';
+
+/** حالة الفرز الحالية في شكلٍ يُحفظ (المجموعات إلى مصفوفات). */
+function currentSearchState(ctx) {
+  return {
+    query: ctx.query || '',
+    filters: Object.fromEntries(GROUPS.map(([g]) => [g, [...ctx.filters[g]]])),
+  };
+}
+
+/** تطبيق حالة محفوظة. المجموعات المجهولة (فرزٌ حُذف لاحقًا) تُتجاهل بلا خطأ. */
+function applySearchState(ctx, state) {
+  ctx.query = state?.query || '';
+  if (ctx.nodes.search) ctx.nodes.search.value = ctx.query;
+  for (const [g] of GROUPS) {
+    ctx.filters[g].clear();
+    for (const v of state?.filters?.[g] || []) ctx.filters[g].add(v);
+  }
+  renderFilters(ctx);
+  renderList(ctx);
+}
+
+async function renderSaved(ctx) {
+  const wrap = ctx.nodes.saved;
+  if (!wrap) return;
+  const items = await getSavedSearches(SEARCH_PAGE);
+  clear(wrap);
+  const hasFilter = ctx.query || GROUPS.some(([g]) => ctx.filters[g].size);
+  wrap.append(...items.map((item) => el('span', { class: 'saved-chip' },
+    el('button', { type: 'button', class: 'saved-apply', text: item.name, onClick: () => applySearchState(ctx, item.state) }),
+    el('button', {
+      type: 'button', class: 'saved-del', text: '✕', title: 'حذف البحث المحفوظ',
+      onClick: async () => {
+        const ok = await confirmDialog({ title: 'حذف بحث محفوظ', message: `حذف «${item.name}»؟`, confirmText: 'حذف', danger: true });
+        if (!ok) return;
+        await removeSavedSearch(SEARCH_PAGE, item.id);
+        renderSaved(ctx);
+      },
+    }))));
+  if (hasFilter) {
+    wrap.append(el('button', {
+      type: 'button', class: 'btn btn-ghost btn-sm', text: '★ احفظ هذا البحث',
+      onClick: async () => {
+        const name = await promptDialog({ title: 'حفظ البحث', label: 'اسم البحث', placeholder: 'فلل النرجس بيع', confirmText: 'حفظ' });
+        if (!name) return;
+        try {
+          await addSavedSearch(SEARCH_PAGE, name, currentSearchState(ctx));
+          toast('حُفظ البحث', 'success');
+          renderSaved(ctx);
+        } catch (err) { toast(err.message, 'error'); }
+      },
+    }));
+  }
+}
+
 function optionsFor(ctx, group) {
   if (group === 'status') return ctx.lists.propertyStatuses.map((s) => ({ value: s.key, label: s.label }));
   return listingFilterOptions(group, { items: ctx.properties, lists: ctx.lists, filters: ctx.filters });
@@ -219,6 +279,7 @@ function renderFilters(ctx) {
           }
           renderFilters(ctx);
           renderList(ctx);
+          renderSaved(ctx);
         },
       }, opt.label, el('span', { class: 'chip-count', text: String(n) })));
     }
@@ -227,7 +288,7 @@ function renderFilters(ctx) {
   if (GROUPS.some(([g]) => ctx.filters[g].size)) {
     wrap.append(el('div', {}, el('button', {
       type: 'button', class: 'btn btn-ghost btn-sm', text: 'مسح الفرز',
-      onClick: () => { for (const [g] of GROUPS) ctx.filters[g].clear(); renderFilters(ctx); renderList(ctx); },
+      onClick: () => { for (const [g] of GROUPS) ctx.filters[g].clear(); renderFilters(ctx); renderList(ctx); renderSaved(ctx); },
     })));
   }
 }

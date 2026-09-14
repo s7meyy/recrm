@@ -95,6 +95,19 @@ export function daysWord(n) {
   return `${x} يومًا`;
 }
 
+/**
+ * عدد معدودًا بالعربية الصحيحة (المرحلة ١٧): «٦ طلبات» لا «6 طلب».
+ * @param {number} n العدد
+ * @param {[string, string, string, string]} forms [مفرد، مثنّى، جمع قلّة (٣–١٠)، تمييز مفرد منصوب (١١+)]
+ */
+export function countWord(n, [one, two, few, many]) {
+  const x = Math.abs(Math.round(Number(n) || 0));
+  if (x === 1) return one;
+  if (x === 2) return two;
+  if (x % 100 >= 3 && x % 100 <= 10) return `${formatNumber(x)} ${few}`;
+  return `${formatNumber(x)} ${many}`;
+}
+
 /** "اليوم" / "أمس" / "قبل 3 أيام" / "غدًا" / "بعد 5 أيام" */
 export function relativeDays(iso) {
   const diff = daysBetween(iso);
