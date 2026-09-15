@@ -45,6 +45,7 @@ export async function render(container) {
   grid.append(
     panel('المستخدم الحالي', 'اسمك يُسجَّل على كل ما تنشئه أو تعدّله (تمهيدًا لتعدد المستخدمين لاحقًا).', userBody),
     panel('المظهر', 'فاتح أو داكن، أو اتباع إعداد جهازك.', themeBody),
+    panel('القفل التلقائي', 'يقفل التطبيق بعد مدّة بلا نشاط — لأن جوالًا على طاولة مجلس يعني قائمة عملائك مكشوفة. معطَّل حتى تضبط مدّته.', autoLockBody),
     panel('ترتيب صفحات القائمة الجانبية', 'رتّب الصفحات كما تريد رؤيتها في القائمة. كل الصفحات تبقى ظاهرة؛ الترتيب فقط هو ما يُحفظ.', sidebarOrderBody),
     panel('بيانات الشركة والمستندات', 'ما يُطبع أعلى الفاتورة وعرض السعر: الاسم والشعار وبيانات التواصل، وسلسلتا الترقيم التلقائي.', companyBody),
     panel('النسخ الاحتياطي', 'البيانات محفوظة في هذا المتصفح فقط. الملف الواحد يحوي كل شيء بما فيه الصور والإعدادات.', backupBody),
@@ -1342,6 +1343,28 @@ function formatCell(value, field, lists) {
   if (Array.isArray(value)) return value.map((k) => labelFor(ENUMS.purposes, k)).join('، ');
   if (field.listKey && lists) return (lists[field.listKey] || []).find((x) => x.key === value)?.label || String(value ?? '');
   return String(value ?? '');
+}
+
+/* ===== القفل التلقائي (المرحلة ٣٢) ===== */
+
+async function autoLockBody(redraw) {
+  const ui = await getUI();
+  const minutes = Number(ui.autoLockMinutes) || 0;
+  const input = el('input', { class: 'input', type: 'number', min: '0', max: '240', step: '1', value: minutes });
+  return el('div', {},
+    el('div', { class: 'form-grid' },
+      labeled('يقفل بعد (دقيقة)', input, { hint: 'صفر = لا قفل. ويظهر إنذار قبله بعشرين ثانية تضغط فيه «ابقَ مفتوحًا».' })),
+    el('p', { class: 'muted small', text: 'القفل تسجيل خروج فعليّ من بوابة الدخول — لا شاشة تُخفي المحتوى. وتعود بكلمة السر نفسها، وبياناتك في الجهاز لا تتأثر.' }),
+    el('div', { class: 'row' },
+      el('button', {
+        type: 'button', class: 'btn btn-primary', text: 'حفظ',
+        onClick: async () => {
+          const value = Math.max(0, Math.min(240, Math.round(Number(input.value) || 0)));
+          await setUI({ autoLockMinutes: value });
+          toast(value ? `سيُقفل بعد ${value} دقيقة بلا نشاط — يبدأ عند إعادة فتح التطبيق` : 'أُلغي القفل التلقائي', 'success', 6000);
+          await redraw();
+        },
+      })));
 }
 
 /* ===== المظهر (المرحلة ١١) ===== */

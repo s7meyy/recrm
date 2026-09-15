@@ -91,6 +91,11 @@ export const ENUMS = {
     { key: 'changed_mind', label: 'غيّر رأيه أو أجّل' },
     { key: 'other', label: 'سبب آخر' },
   ],
+  contactTimes: [ // أفضل وقت للاتصال (المرحلة ٣٢)
+    { key: 'morning', label: 'صباحًا' },
+    { key: 'afternoon', label: 'بعد الظهر' },
+    { key: 'evening', label: 'مساءً' },
+  ],
   showingStatuses: [ // المعاينة (المرحلة ٢٧)
     { key: 'scheduled', label: 'مجدولة' },
     { key: 'done', label: 'تمّت' },
@@ -220,6 +225,9 @@ export const SCHEMAS = {
       stage: 'new', // ENUMS.clientStages
       contacts: [], // [{ id, type, date, note, followUpAt, createdAt, createdBy }]
       referralSource: '', // تاق المصدر (المرحلة ٨): الوسيط الذي أحال العميل — فارغ افتراضًا فلا يظهر شيء
+      // تفضيلات التواصل (المرحلة ٣٢): من طلب ألّا تتصل به لا تُلحّ عليه لوحاتك.
+      doNotContact: false,
+      bestTime: '', // ENUMS.contactTimes — فارغ = بلا تفضيل
     }),
   },
   properties: {
@@ -311,6 +319,8 @@ export const SCHEMAS = {
       partnerName: '', partnerShare: null, partnerPaidAt: null,
       // طلب التقييم بعد الصفقة (المرحلة ٢٥): متى طلبتَه — null = لم يُطلب بعد.
       reviewRequestedAt: null,
+      // ذكرى الصفقة السنوية (المرحلة ٣٢): متى هنّأتَه بها آخر مرّة.
+      anniversaryGreetedAt: null,
     }),
   },
   showings: { // المعاينات (المرحلة ٢٧): الموعد وما قاله العميل بعده

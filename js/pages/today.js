@@ -13,9 +13,10 @@ import { receivables } from '../util/receivables.js';
 import { awaitingReply } from '../util/lead-score.js';
 import { upcomingShowings, needFeedback } from '../util/showings.js';
 import { expiringAgreements } from '../util/agreements.js';
+import { dealAnniversaries } from '../util/calendar.js';
 import { runPlans } from '../util/plans.js';
 import { el, clear, badge, emptyState, confirmDialog, toast, openModal, labeled, selectEl } from '../util/dom.js';
-import { formatSAR, formatDate, formatDateTime, relativeDays, daysBetween, daysWord } from '../util/format.js';
+import { formatSAR, formatDate, formatDateTime, formatNumber, relativeDays, daysBetween, daysWord } from '../util/format.js';
 import { formatPhone, toInternational } from '../util/phone.js';
 import { clientName } from './requests.js';
 import { audioNoteField } from '../util/audio-note.js';
@@ -37,7 +38,9 @@ async function loadData() {
   const since = ui.lastVisitAt || null;
   const due = receivables({ invoices, deals }); // المستحقات (المرحلة ١٧)
   // عملاء جدد بلا ردّ (المرحلة ٢٣): «سرعة الردّ» أقوى ما تبيعه الأنظمة الكبرى، وحسابه بسيط.
-  const waiting = awaitingReply(ctx.clients, { minutes: followUp.replyWithinMinutes ?? 60 });
+  // «لا تتصل» (المرحلة ٣٢): من طلب ألّا تتصل به لا تُلحّ عليه اللوحات — ويبقى في قوائمه.
+  const reachable = ctx.clients.filter((c) => !c.doNotContact);
+  const waiting = awaitingReply(reachable, { minutes: followUp.replyWithinMinutes ?? 60 });
   const clientsById = new Map(ctx.clients.map((c) => [c.id, c]));
   const now = Date.now();
 
@@ -48,7 +51,7 @@ async function loadData() {
     .sort((a, b) => (a.at || '').localeCompare(b.at || ''));
 
   /* عملاء تجاوزوا حدّ عدم التواصل */
-  const stale = ctx.clients
+  const stale = reachable
     .map((c) => ({ client: c, last: repo.clients.lastContactAt(c) }))
     .filter((x) => !['won', 'closed'].includes(x.client.stage))
     .map((x) => ({ ...x, days: x.last ? daysBetween(x.last, new Date().toISOString()) : null }))
@@ -119,6 +122,8 @@ async function loadData() {
     reviews: company.reviewUrl ? reviewCandidates(deals) : [],
     reviewUrl: company.reviewUrl || '',
     company,
+    // ذكرى الصفقة السنوية (المرحلة ٣٢)
+    anniversaries: dealAnniversaries(deals),
     // اتفاقيات توشك أو انتهت (المرحلة ٣١)
     agreements: expiringAgreements(ctx.properties, { defaultDays: company.agreementDurationDays || 90 }),
     // المعاينات (المرحلة ٢٧): القادمة خلال ٤٨ ساعة، والتي مضت بلا انطباع.
@@ -166,6 +171,31 @@ function playbookBox() {
     draw();
   }).catch(() => { clear(body); body.append(el('p', { class: 'muted small', text: 'تعذّر تحميل النصوص.' })); });
   return box;
+}
+
+/**
+ * تهنئة بذكرى الصفقة (المرحلة ٣٢) — بالقاعدة نفسها: **تُعرض قبل الإرسال ولا تُرسل نيابةً عنك**.
+ */
+async function greetAnniversary(deal, client, years, company) {
+  const name = client?.name ? ` ${client.name}` : '';
+  const text = `السلام عليكم${name}، مرّ اليوم ${years === 1 ? 'عام' : `${years} أعوام`} على صفقتك`
+    + `${company?.name ? ` مع ${company.name}` : ''}. أسأل الله أن تكون مباركة.\n`
+    + 'وإن احتجت شيئًا في العقار — بيعًا أو شراءً أو استشارة — فأنا في خدمتك.';
+  const ok = await confirmDialog({
+    title: 'تهنئة بذكرى الصفقة',
+    message: `ستُفتح محادثة ${clientName(client)} بهذه الرسالة:\n\n${text}`,
+    confirmText: 'افتح واتساب',
+  });
+  if (!ok) return;
+  const phone = toInternational(client?.phone || '');
+  if (phone) window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, '_blank', 'noopener');
+  else toast('العميل بلا جوال', 'info');
+  await repo.deals.update(deal.id, { anniversaryGreetedAt: new Date().toISOString() });
+  if (client?.id) {
+    await repo.clients.addContact(client.id, { type: 'whatsapp', date: new Date().toISOString(), note: 'تهنئة بذكرى الصفقة' }).catch(() => {});
+  }
+  window.dispatchEvent(new CustomEvent('kassab:data-changed'));
+  build(document.getElementById('page'), await loadData());
 }
 
 /** عنوان المعاينة: العقار الذي ستعاينه، من مخزونك أو من العروض الخارجية. */
@@ -448,6 +478,31 @@ function build(container, d) {
               })
               : el('a', { class: 'btn btn-ghost btn-sm', href: `#/invoices/${r.id}`, text: 'فتح' })))),
       { href: '#/invoices', hrefText: 'الفواتير →', tone: d.due.overdueCount ? 'today-warn' : '' }));
+  }
+
+  /* ذكرى الصفقة (المرحلة ٣٢): أرخص إحالة في الوساطة كلمةٌ في يومها */
+  if (d.anniversaries.length) {
+    grid.append(section('ذكرى صفقة', d.anniversaries.length,
+      el('div', {},
+        el('p', { class: 'muted small', text: 'مرّ عام على صفقتهم. كلمةٌ في يومها تعيدهم إليك — وتجلب من يسألونه عنك.' }),
+        ...d.anniversaries.slice(0, 5).map(({ deal, years }) => {
+          const client = d.clientsById.get(deal.clientId);
+          return row(
+            clientName(client),
+            `${formatNumber(years)} ${years === 1 ? 'سنة' : 'سنوات'} على صفقته · ${formatDate(deal.date)}`,
+            el('div', { class: 'row' },
+              el('button', {
+                type: 'button', class: 'btn btn-sm', text: 'هنّئه',
+                onClick: () => greetAnniversary(deal, client, years, d.company),
+              }),
+              el('button', {
+                type: 'button', class: 'btn btn-ghost btn-sm', text: 'تخطَّ',
+                onClick: async () => {
+                  await repo.deals.update(deal.id, { anniversaryGreetedAt: new Date().toISOString() });
+                  build(document.getElementById('page'), await loadData());
+                },
+              })));
+        }))));
   }
 
   /* اتفاقيات الوساطة (المرحلة ٣١): عقارٌ انتهت اتفاقيته قد تخسره وأنت لا تدري */

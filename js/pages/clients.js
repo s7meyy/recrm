@@ -222,7 +222,9 @@ async function openDetail(ctx, clientId) {
         stageBadge(client.stage),
         ...(client.roles || []).map((r) => badge(labelFor(ENUMS.clientRoles, r), 'badge-accent')),
         ...(client.tags || []).map((t) => badge(t, clientTagClass(t))),
-        sourceBadge(client.referralSource)),
+        sourceBadge(client.referralSource),
+        client.doNotContact ? badge('لا تتصل', 'badge-danger') : null,
+        client.bestTime ? badge(`يفضّل ${labelFor(ENUMS.contactTimes, client.bestTime)}`, '') : null),
       client.notes ? el('p', { class: 'muted', text: client.notes }) : null,
       el('div', { class: 'row' },
         el('span', { class: 'small muted' }, 'آخر تواصل: ', lastContactNode(client)),
@@ -364,6 +366,12 @@ async function openForm(ctx, existing) {
   const stageSelect = selectEl({ options: ENUMS.clientStages.map((s) => ({ value: s.key, label: s.label })), value: draft.stage || 'new' });
   const notesInput = el('textarea', { class: 'input', rows: 3, value: draft.notes || '' });
   const source = sourceField(draft.referralSource, ctx.lists.sources);
+  // تفضيلات التواصل (المرحلة ٣٢)
+  const dncBox = checkbox('لا تتصل به (طلب ذلك)', { checked: !!draft.doNotContact });
+  const bestTimeSelect = selectEl({
+    options: ENUMS.contactTimes.map((t) => ({ value: t.key, label: t.label })),
+    placeholder: 'بلا تفضيل', value: draft.bestTime || '',
+  });
 
   const selectedTags = new Set(draft.tags || []);
   const tagsBox = el('div', { class: 'chips' });
@@ -398,6 +406,8 @@ async function openForm(ctx, existing) {
       roles: [...rolesBox.querySelectorAll('input:checked')].map((i) => i.value),
       stage: stageSelect.value, tags: [...selectedTags], notes: notesInput.value,
       referralSource: source.input.value,
+      doNotContact: dncBox.querySelector('input').checked,
+      bestTime: bestTimeSelect.value,
     };
     saveBtn.disabled = true;
     try {
@@ -434,6 +444,9 @@ async function openForm(ctx, existing) {
         fieldGroup('الأدوار', rolesBox, { full: true }),
         fieldGroup('التصنيفات', tagsBox, { full: true }),
         labeled('المصدر (وسيط الإحالة)', source.node, { hint: 'اختياري — لا يظهر شيء ما لم يُعبَّأ' }),
+        labeled('أفضل وقت للاتصال', bestTimeSelect, { hint: 'يظهر لك قبل أن تتصل' }),
+        el('div', { class: 'field field-full' }, dncBox,
+          el('span', { class: 'field-hint', text: 'يُخرجه من لوحات «المتأخرون» و«ينتظرون ردّك» — ويبقى في قوائمه وسجلّه كما هو.' })),
         labeled('الملاحظات', notesInput, { full: true }))),
     footer: [
       el('button', { type: 'button', class: 'btn btn-ghost', text: 'إلغاء', onClick: () => modal.close() }),

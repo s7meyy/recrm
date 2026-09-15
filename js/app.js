@@ -10,6 +10,7 @@ import { startFollowUpAlerts } from './util/follow-up-alerts.js';
 import { initGlobalSearch } from './util/global-search.js';
 import { applySidebarOrder } from './util/sidebar.js';
 import { applyTheme } from './util/theme.js';
+import { startAutoLock } from './util/auto-lock.js';
 import { initClientMode, applyClientMode, clientModeOn } from './util/client-mode.js';
 import { el, clear, toast } from './util/dom.js';
 import { daysWord } from './util/format.js';
@@ -24,6 +25,7 @@ import * as requestsPage from './pages/requests.js';
 import * as matchesPage from './pages/matches.js';
 import * as externalPage from './pages/external.js';
 import * as pricingPage from './pages/pricing.js';
+import * as calendarPage from './pages/calendar.js';
 import * as invoicesPage from './pages/invoices.js';
 import * as expensesPage from './pages/expenses.js';
 import * as publishPage from './pages/publish.js';
@@ -46,6 +48,7 @@ const ROUTES = {
   matches: { title: 'المطابقات', render: matchesPage.render },
   external: { title: 'العروض الخارجية', render: externalPage.render },
   pricing: { title: 'تقدير السعر', render: pricingPage.render },
+  calendar: { title: 'التقويم', render: calendarPage.render },
   invoices: { title: 'الفواتير وعروض الأسعار', render: invoicesPage.render },
   expenses: { title: 'المصاريف', render: expensesPage.render },
   publish: { title: 'الصفحة العامة للعروض', render: publishPage.render },
@@ -246,10 +249,32 @@ async function init() {
   initGlobalSearch();
   initClientMode(); // وضع العرض للعميل (المرحلة ١٣)
   startFollowUpAlerts();
+  await initAutoLock(); // القفل التلقائي بعد خمول (المرحلة ٣٢)
   await navigate();
   refreshBanner();
   autoVaultBackup(); // بلا await: لا يؤخّر ظهور الصفحة
   registerServiceWorker();
+}
+
+/**
+ * القفل التلقائي (المرحلة ٣٢): معطَّل حتى تضبط مدّته، وبإنذارٍ قبله.
+ *
+ * **والقفل تسجيل خروج فعليّ من البوابة** لا شاشة تُخفي المحتوى: شاشةٌ فوق الصفحة بلا حذف
+ * الكوكي أمانٌ موهوم — من يغلقها يرى كل شيء.
+ */
+async function initAutoLock() {
+  const minutes = Number((await getUI()).autoLockMinutes) || 0;
+  if (!minutes) return;
+  startAutoLock({
+    minutes,
+    onWarn: (seconds, stay) => {
+      const box = el('div', { class: 'toast toast-error auto-lock-warn' },
+        el('span', { text: `سيُقفل التطبيق بعد ${seconds} ثانية لعدم النشاط.` }),
+        el('button', { type: 'button', class: 'btn btn-sm', text: 'ابقَ مفتوحًا', onClick: () => { stay(); box.remove(); } }));
+      document.getElementById('toast-root')?.append(box);
+      setTimeout(() => box.remove(), seconds * 1000);
+    },
+  });
 }
 
 init();

@@ -79,3 +79,45 @@ export function suggestKeeper(a, b) {
   if (sa !== sb) return sa > sb ? a : b;
   return String(a.createdAt || '') <= String(b.createdAt || '') ? a : b; // تعادلا: الأقدم
 }
+
+/* ===== عرضٌ خارجي يطابق مخزونك (المرحلة ٣٢) ===== */
+
+/**
+ * عروض خارجية يُشتبه أنها **عقارك أنت** معلنًا في السوق.
+ *
+ * معناه أحد أمرين وكلاهما يستحق أن تعرفه: وسيطٌ آخر يسوّق عرضك (وربما بسعرٍ غير سعرك)،
+ * أو أنك رصدتَ عرضًا خارجيًا لعقارٍ عندك أصلًا فتحسبه مرّتين في مؤشر السعر.
+ *
+ * **الشرط ضيّق بقصد:** المدينة والحي والنوع نفسها، والمساحة والسعر ضمن هامشٍ صغير.
+ * وتوسيعه يُنتج تنبيهات كاذبة تُفقد اللوحة قيمتها — والتنبيه الكاذب أسوأ من لا تنبيه.
+ */
+export function externalDuplicates({ properties = [], externals = [], areaPct = 5, pricePct = 5 } = {}) {
+  const near = (a, b, pct) => {
+    const x = Number(a);
+    const y = Number(b);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || x <= 0 || y <= 0) return false;
+    return Math.abs(x - y) / Math.max(x, y) * 100 <= pct;
+  };
+  const norm = (v) => normalizeArabic(String(v ?? '')).trim();
+  const mine = properties.filter((p) => p.captureStatus === 'approved' && p.district && p.type);
+  const out = [];
+
+  for (const ext of externals) {
+    if (ext.status !== 'active' || !ext.district || !ext.type) continue;
+    for (const p of mine) {
+      if (norm(p.city) !== norm(ext.city) || norm(p.district) !== norm(ext.district)) continue;
+      if (p.type !== ext.type) continue;
+      if (!near(p.area, ext.area, areaPct)) continue;
+      // السعر قد يغيب في أحدهما: غيابه لا يمنع الشبهة، لكن اختلافه الكبير يمنعها.
+      const bothPriced = Number(p.price) > 0 && Number(ext.price) > 0;
+      if (bothPriced && !near(p.price, ext.price, pricePct)) continue;
+      out.push({
+        property: p,
+        external: ext,
+        samePrice: bothPriced && Number(p.price) === Number(ext.price),
+        priceGap: bothPriced ? Number(ext.price) - Number(p.price) : null,
+      });
+    }
+  }
+  return out;
+}

@@ -66,6 +66,8 @@ const PREPARE = {
     rec.tags = uniq(rec.tags);
     rec.contacts = Array.isArray(rec.contacts) ? rec.contacts : [];
     rec.referralSource = trim(rec.referralSource);
+    rec.doNotContact = !!rec.doNotContact; // تفضيلات التواصل (المرحلة ٣٢)
+    rec.bestTime = inEnum(ENUMS.contactTimes, rec.bestTime) ? rec.bestTime : '';
     rec.searchKey = buildSearchKey([
       rec.name, ...phoneSearchForms(rec.phone), ...phoneSearchForms(rec.phone2), rec.notes, ...rec.tags,
       rec.referralSource,

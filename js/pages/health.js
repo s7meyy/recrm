@@ -6,8 +6,9 @@
 import { repo } from '../data/repository.js';
 import { getLists, typeLabel } from '../data/settings.js';
 import { healthReport } from '../util/health.js';
+import { externalDuplicates } from '../util/duplicates.js';
 import { el, clear, badge, emptyState } from '../util/dom.js';
-import { formatNumber } from '../util/format.js';
+import { formatNumber, formatSAR } from '../util/format.js';
 
 const LINK_BY_KEY = {
   'property-unmatched': (id) => `#/properties/${id}`,
@@ -39,8 +40,31 @@ export async function render(container) {
       'الموقع. فحين ينقص الحقل تظن أن لا فرص ولا مطابقات، وأنت من حرمها مادّتها. ',
       'وهذه الصفحة تدلّ ولا تُصلح: لا تحذف ولا تعدّل شيئًا من تلقاء نفسها.'));
 
+  // عروض خارجية يُشتبه أنها عقارك (المرحلة ٣٢) — تُعرض قبل بقيّة الملاحظات لأنها الأهم.
+  const dups = externalDuplicates({ properties, externals });
+  if (dups.length) {
+    container.append(el('section', { class: 'panel health-group' },
+      el('div', { class: 'today-head' },
+        el('h2', {}, 'عروض خارجية تشبه مخزونك ', badge(formatNumber(dups.length), 'badge-warn')),
+        el('a', { class: 'small', href: '#/external', text: 'العروض الخارجية →' })),
+      el('p', { class: 'muted small', text: 'المدينة والحي والنوع نفسها، والمساحة والسعر متقاربان. إمّا وسيطٌ آخر يسوّق عرضك — وربما بسعر غير سعرك — وإمّا أنك رصدتَ عقارك مرّتين فيُحسب مرّتين في مؤشر السعر.' }),
+      el('div', { class: 'health-items' }, dups.slice(0, 10).map((x) => el('a', {
+        class: 'health-item', href: `#/properties/${x.property.id}`,
+      },
+        el('span', { class: 'strong', text: `${typeLabel(lists, x.property.type)} — ${[x.property.district, x.property.city].filter(Boolean).join('، ')}` }),
+        el('span', {
+          class: 'muted small',
+          text: x.priceGap == null
+            ? 'أحدهما بلا سعر — راجعه بنفسك'
+            : (x.priceGap === 0
+              ? 'بالسعر نفسه'
+              : `المعلن ${x.priceGap > 0 ? 'أعلى' : 'أقل'} بـ${formatSAR(Math.abs(x.priceGap))}`),
+        })))),
+      dups.length > 10 ? el('p', { class: 'muted small', text: `و${formatNumber(dups.length - 10)} غيرها.` }) : null));
+  }
+
   if (!report.groups.length) {
-    container.append(emptyState('لا ملاحظات — بياناتك كاملة بحسب كل فحوص هذه الصفحة.'));
+    if (!dups.length) container.append(emptyState('لا ملاحظات — بياناتك كاملة بحسب كل فحوص هذه الصفحة.'));
     return;
   }
 
