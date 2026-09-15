@@ -1031,7 +1031,10 @@ function evidenceSection(ctx, property) {
       el('h4', { class: 'evidence-title', text: 'رحلة السعر' }),
       el('ul', { class: 'simple-list' }, drops.map((d) => el('li', {},
         el('span', { text: formatDate(d.at) }),
-        el('span', { class: 'num', text: `${formatSAR(d.from)} ← ${formatSAR(d.to)} (−${formatNumber(Math.round(d.cut * 100))}٪)` })))))
+        // النسبة جزيرةٌ وحدها: «−٤٪» بين قوسين داخل سطرٍ عربي يقلب الاتجاهُ الثنائي
+        // ترتيبَ إشارتها وعلامتها فتُقرأ «(٪4−)». و`num` تعزلها (`unicode-bidi: isolate`).
+        el('span', { class: 'num' }, `${formatSAR(d.from)} ← ${formatSAR(d.to)} `,
+          el('span', { class: 'num', text: `(−${formatNumber(Math.round(d.cut * 100))}٪)` }))))))
     : null;
 
   return el('div', { class: 'form-section evidence-box' },
