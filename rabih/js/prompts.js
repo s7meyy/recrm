@@ -7,6 +7,7 @@ import { topicStats, uncovered } from './lexicon.js';
 import { recentVsOlder, topicAges, alerts, monthly } from './recency.js';
 import { entitiesBlock } from './entities.js';
 import { repliesBlock } from './replies.js';
+import { contextBlock } from './peak.js';
 import { categoryById } from './data/categories.js';
 
 /** ميثاق ثابت يتصدّر كل رسالة — هو خط الدفاع الأول ضد الاختراع والهلوسة. */
@@ -92,6 +93,9 @@ export function buildDataBlock(place, ctx = {}) {
 
   const rep = repliesBlock(place);
   if (rep) lines.push(rep);
+
+  const ctxBlock = contextBlock(place);
+  if (ctxBlock) lines.push(ctxBlock);
 
   const warn = alerts(place);
   if (warn.length) {

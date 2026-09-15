@@ -2,8 +2,9 @@
 // شجرة الأرشيف منطقية لا فيزيائية: المنطقة ← المدينة ← التصنيف ← الحي ← التقرير.
 
 const DB_NAME = 'rabih';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE = 'jobs';
+const SNAPS = 'snapshots';
 
 let dbPromise = null;
 
@@ -19,6 +20,11 @@ function open() {
         s.createIndex('byCategory', 'ctx.categoryId');
         s.createIndex('byUpdated', 'updatedAt');
       }
+      // النسخ المُسلَّمة في مخزن مستقل: حجمها كبير، فلا تُثقل تصدير الأرشيف ولا قراءته.
+      if (!db.objectStoreNames.contains(SNAPS)) {
+        const s = db.createObjectStore(SNAPS, { keyPath: 'id' });
+        s.createIndex('byJob', 'jobId');
+      }
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -26,11 +32,11 @@ function open() {
   return dbPromise;
 }
 
-const tx = async (mode, fn) => {
+const tx = async (mode, fn, storeName = STORE) => {
   const db = await open();
   return new Promise((resolve, reject) => {
-    const t = db.transaction(STORE, mode);
-    const store = t.objectStore(STORE);
+    const t = db.transaction(storeName, mode);
+    const store = t.objectStore(storeName);
     let result;
     try { result = fn(store); } catch (e) { reject(e); return; }
     t.oncomplete = () => resolve(result?.result !== undefined ? result.result : result);
@@ -84,4 +90,37 @@ export function jobPath(job) {
   const c = job.ctx || {};
   return [c.regionName, c.cityName, c.categoryName, c.districtName]
     .filter(Boolean).join(' / ');
+}
+
+/* ───── النسخ المُسلَّمة ─────
+   الأرشيف يُعيد بناء التقرير عند كل فتح، فتغيُّر القاموس أو القالب أو الهوية
+   يجعله مختلفًا عمّا بيد العميل. النسخة المجمَّدة سجلٌّ لما سُلِّم فعلًا. */
+
+export async function saveSnapshot(snap) {
+  snap.id ||= 'S' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+  snap.at ||= new Date().toISOString();
+  await tx('readwrite', (s) => s.put(snap), SNAPS);
+  return snap;
+}
+
+export async function snapshotsOf(jobId) {
+  const all = await tx('readonly', (s) => s.getAll(), SNAPS);
+  return (all || [])
+    .filter((x) => x.jobId === jobId)
+    .sort((a, b) => String(b.at).localeCompare(String(a.at)));
+}
+
+export const getSnapshot = (id) => tx('readonly', (s) => s.get(id), SNAPS);
+
+export const deleteSnapshot = (id) => tx('readwrite', (s) => s.delete(id), SNAPS);
+
+export async function allSnapshots() {
+  const all = await tx('readonly', (s) => s.getAll(), SNAPS);
+  return (all || []).sort((a, b) => String(b.at).localeCompare(String(a.at)));
+}
+
+/** بيانات النسخ بلا محتواها — للعرض في الأرشيف بلا تحميل ميغابايتات. */
+export async function snapshotIndex() {
+  const all = await allSnapshots();
+  return all.map(({ html, ...meta }) => ({ ...meta, size: (html || '').length }));
 }

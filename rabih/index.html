@@ -20,6 +20,7 @@
       <button type="button" data-go="compare">المقارنة</button>
       <button type="button" data-go="settings">الإعدادات</button>
       <button type="button" data-go="archive">الأرشيف</button>
+      <button type="button" id="btn-tour">جولة</button>
       <button type="button" data-go="about">كيف يعمل</button>
     </nav>
   </div>
@@ -86,8 +87,15 @@
         <div class="note">إن لم تجد الحي في القائمة فأضفه — يُحفَظ في متصفحك ويظهر في المرات القادمة.</div>
       </div>
 
+      <div class="field" id="bulk-field" hidden>
+        <label for="bulk-list">قائمة المحلات — سطر لكل محل: <code>الاسم | الرابط | الحي</code></label>
+        <textarea id="bulk-list" class="tall" placeholder="مقهى الدرب | https://maps.app.goo.gl/xxx | الملقا&#10;كوفي النرجس | https://maps.app.goo.gl/yyy | النرجس"></textarea>
+        <div class="note">تُنشأ التقارير بالمدينة والتصنيف المختارين أعلاه، وتُوضَع في الطابور بالترتيب.</div>
+        <div class="row"><button type="button" class="btn sm" id="btn-bulk-create">إنشاء الدفعة</button></div>
+      </div>
       <div id="new-msg"></div>
       <div class="row end">
+        <button type="button" class="btn ghost" id="btn-bulk">إنشاء دفعة…</button>
         <button type="button" class="btn gold" id="btn-start">ابدأ →</button>
       </div>
     </div>
@@ -128,6 +136,19 @@
         <div class="field"><label for="d-hours">ساعات العمل (سطر لكل يوم)</label><textarea id="d-hours" placeholder="الأحد: 7ص – 12م&#10;الاثنين: 7ص – 12م"></textarea></div>
         <div class="field"><label for="d-attrs">المميزات المعلنة (سطر لكل ميزة)</label><textarea id="d-attrs" placeholder="توصيل&#10;مواقف مجانية&#10;جلسات عائلية"></textarea></div>
       </div>
+      <div class="grid c2">
+        <div class="field">
+          <label for="d-qna">الأسئلة والأجوبة من صفحة قوقل</label>
+          <textarea id="d-qna" placeholder="سؤال&#10;جوابه&#10;&#10;سؤال بلا جواب"></textarea>
+          <div class="note">سطر للسؤال وما بعده جوابه، وسطر فارغ بين كل سؤالين. السؤال بلا جواب مؤشّر بنفسه.</div>
+        </div>
+        <div class="field">
+          <label for="d-peak">أوقات الذروة</label>
+          <textarea id="d-peak" placeholder="الخميس: 8ص=20, 6م=80, 7م=95&#10;الجمعة: 4م=30, 9م=100"></textarea>
+          <div class="note">اسم اليوم ثم الساعة=نسبة الازدحام. تربط شكوى الانتظار بساعتها فتصير التوصية محدَّدة.</div>
+        </div>
+      </div>
+      <div id="context-box"></div>
       <div class="field"><label for="d-notes">ملاحظاتك أنت (تُعامَل كبيانات موثوقة)</label><textarea id="d-notes" placeholder="أي معلومة تعرفها عن المنشأة وتريد أن يأخذها التحليل بالحسبان."></textarea></div>
     </div>
 
@@ -189,6 +210,12 @@
       </div>
     </div>
 
+    <div class="card" id="agreement-card" hidden>
+      <h2>اتفاق النماذج</h2>
+      <p class="hint">قبل الدمج: أين اتفق الثلاثة وأين انفرد واحد. هذا يجعل الدمج مراجعةً لا تفويضًا.</p>
+      <div id="agreement-box"></div>
+    </div>
+
     <div id="pipeline-steps"></div>
 
     <div class="row end">
@@ -207,6 +234,12 @@
       <div class="field">
         <label for="r-md">نص التقرير الموحَّد</label>
         <textarea id="r-md" class="tall"></textarea>
+      </div>
+      <div class="row" id="history-row">
+        <button type="button" class="btn ghost sm" id="btn-undo" disabled>تراجع</button>
+        <button type="button" class="btn ghost sm" id="btn-redo" disabled>إعادة</button>
+        <span class="spacer"></span>
+        <span class="badge" id="history-depth"></span>
       </div>
       <div id="completeness-box"></div>
       <div class="grid c2">
@@ -227,7 +260,9 @@
         <button type="button" class="btn ghost" id="btn-download-html">تنزيل HTML</button>
         <button type="button" class="btn ghost" id="btn-download-md">تنزيل النص</button>
         <button type="button" class="btn ghost" id="btn-download-xlsx">تنزيل Excel</button>
+        <button type="button" class="btn gold" id="btn-freeze">تجميد النسخة المُسلَّمة</button>
       </div>
+      <div id="snapshots-box"></div>
     </div>
 
     <div class="card">

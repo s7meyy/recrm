@@ -24,6 +24,17 @@ page.on('pageerror', e => errors.push('PAGEERROR: ' + e.message));
 try {
   await page.goto('http://localhost:8099/', { waitUntil: 'networkidle' });
   console.log('١) الإقلاع');
+  await page.waitForTimeout(1100);
+  const tourUp = await page.isVisible('#tour').catch(() => false);
+  tourUp ? ok('الجولة تظهر لأول زائر') : bad('ظهور الجولة');
+  const tourSteps = await page.textContent('#tour .tour-step');
+  /1 من \d+/.test(tourSteps) ? ok('عدّاد الجولة: ' + tourSteps) : bad('عدّاد الجولة', tourSteps);
+  await page.click('#tour [data-act="next"]');
+  await page.waitForTimeout(400);
+  (await page.textContent('#tour .tour-step')).includes('2 من') ? ok('التنقّل في الجولة') : bad('تنقّل الجولة');
+  await page.click('#tour [data-act="skip"]');
+  await page.waitForTimeout(300);
+  !(await page.isVisible('#tour').catch(() => false)) ? ok('تخطّي الجولة يغلقها') : bad('تخطّي الجولة');
   await page.waitForFunction(() => document.querySelectorAll('#f-region option').length > 1, null, { timeout: 5000 });
   const regions = await page.$$eval('#f-region option', o => o.length);
   regions === 14 ? ok(`المناطق ${regions - 1}`) : bad('عدد المناطق', regions);
@@ -124,6 +135,17 @@ try {
   const reps = await page.textContent('#replies-box');
   reps.includes('الرد على الشكاوى') ? ok('تحليل ردود المالك يعمل') : bad('تحليل الردود', reps.slice(0,70));
 
+  console.log('٤-هـ) الحقول المستكملة');
+  await page.fill('#d-qna', 'هل يوجد قسم عائلي؟\nنعم يوجد\n\nهل تفتحون الجمعة؟\n\nكم سعر اللاتيه؟');
+  await page.fill('#d-peak', 'الخميس: 8ص=20, 6م=80, 7م=95, 8م=90\nالجمعة: 4م=30, 9م=100');
+  await page.locator('#d-peak').blur();
+  await page.waitForTimeout(500);
+  const ctxb = await page.textContent('#context-box');
+  ctxb.includes('ذروة الازدحام') ? ok('أوقات الذروة: ' + (ctxb.match(/الخميس[^·]*/) || [''])[0].trim().slice(0,30)) : bad('أوقات الذروة', ctxb.slice(0,70));
+  ctxb.includes('بلا جواب') ? ok('الأسئلة بلا جواب مرصودة') : bad('الأسئلة', ctxb.slice(0,70));
+  ctxb.includes('لغة التعليقات') ? ok('توزيع اللغات محسوب') : bad('اللغات', ctxb.slice(0,70));
+  ctxb.includes('شكوى تتعلق بالازدحام') ? ok('الشكوى مربوطة بنافذة الذروة') : bad('ربط الذروة');
+
   console.log('٥) خط النماذج');
   await page.click('#btn-to-pipeline');
   await page.waitForTimeout(400);
@@ -178,6 +200,21 @@ try {
   await page.waitForTimeout(300);
   const prog = await page.textContent('#pipeline-progress');
   prog.includes('8 من 8') ? ok('اكتملت الخطوات: ' + prog) : bad('تقدّم الخطوات', prog);
+
+  console.log('٦-ب) اتفاق النماذج');
+  await page.evaluate(() => {
+    const set = (k, v) => { const t = document.querySelector('#out-' + k); t.value = v; t.dispatchEvent(new Event('input', { bubbles: true })); };
+    set('a1', '- يشكو العملاء من بطء الخدمة وقت الذروة (R002، R008)\n- جودة القهوة نقطة قوة متكررة (R001، R005)\n- متوسط التقييم 4.2 من 5\n- المواقف ضيقة حسب تعليق واحد (R003)');
+    set('a2', '- بطء الخدمة في أوقات الذروة شكوى متكررة (R002، R008)\n- القهوة ممتازة ويثني عليها كثيرون (R001، R005)\n- متوسط التقييم 4.2 من 5\n- الإنترنت ضعيف (R009)');
+    set('a3', '- الخدمة بطيئة وقت الذروة (R008، R002)\n- جودة القهوة ممتازة (R005، R001)\n- متوسط التقييم 4.5 من 5');
+    document.querySelector('#out-a3').dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await page.waitForTimeout(600);
+  (await page.isVisible('#agreement-card')) ? ok('لوحة الاتفاق ظهرت') : bad('لوحة الاتفاق');
+  const ag = await page.textContent('#agreement-box');
+  ag.includes('اتفق الجميع') ? ok('فرز الاتفاق: ' + (ag.match(/التوافق\s*\d+%/) || [''])[0]) : bad('فرز الاتفاق', ag.slice(0,80));
+  ag.includes('انفرد به مصدر واحد') ? ok('يبرز ما انفرد به واحد') : bad('الانفراد');
+  ag.includes('أرقام متعارضة') ? ok('كشف تعارض 4.5 مقابل 4.2') : bad('تعارض الأرقام', ag.slice(0,120));
 
   console.log('٧) التقرير');
   await page.click('#btn-to-report');
@@ -268,6 +305,49 @@ try {
     const t = document.querySelector('#r-md');
     t.value = v; t.dispatchEvent(new Event('input', { bubbles: true })); t.dispatchEvent(new Event('blur', { bubbles: true }));
   }, await page.evaluate(() => window.__fullReport || ''));
+
+  console.log('٧-و) السجل والتجميد');
+  await page.evaluate(() => {
+    const t = document.querySelector('#r-md');
+    t.value = t.value + '\n\n# إضافة تجريبية\nنص أُضيف ثم سيُتراجَع عنه.';
+    t.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await page.waitForTimeout(2400);
+  const hd = await page.textContent('#history-depth');
+  /\d+ تعديل/.test(hd) ? ok('السجل يلتقط التعديل: ' + hd) : bad('التقاط التعديل', hd);
+  const mdBefore = await page.inputValue('#r-md');
+  await page.click('#btn-undo');
+  await page.waitForTimeout(500);
+  const mdAfter = await page.inputValue('#r-md');
+  mdAfter !== mdBefore && !mdAfter.includes('إضافة تجريبية') ? ok('التراجع يعيد النص') : bad('التراجع');
+  await page.click('#btn-redo');
+  await page.waitForTimeout(500);
+  (await page.inputValue('#r-md')).includes('إضافة تجريبية') ? ok('الإعادة تعمل') : bad('الإعادة');
+  await page.click('#btn-undo');
+  await page.waitForTimeout(400);
+
+  page.once('dialog', d => d.accept('سُلِّم واتساب'));
+  await page.click('#btn-freeze');
+  await page.waitForTimeout(900);
+  const snaps = await page.$$eval('#snapshots-box .snap', n => n.length);
+  snaps === 1 ? ok('جُمِّدت نسخة مُسلَّمة') : bad('التجميد', snaps);
+  (await page.textContent('#snapshots-box')).includes('واتساب') ? ok('وسم النسخة محفوظ') : bad('وسم النسخة');
+  // التجميد لا يتأثر بتغيّر القالب لاحقًا
+  const snapHtml = await page.evaluate(async () => {
+    const st = await import('./js/store.js');
+    const all = await st.allSnapshots();
+    return all[0]?.html?.length || 0;
+  });
+  await page.selectOption('#r-template', 'brief');
+  await page.waitForTimeout(600);
+  const snapHtml2 = await page.evaluate(async () => {
+    const st = await import('./js/store.js');
+    const all = await st.allSnapshots();
+    return all[0]?.html?.length || 0;
+  });
+  snapHtml > 0 && snapHtml === snapHtml2 ? ok(`النسخة المجمَّدة لم تتغيّر بتغيّر القالب (${Math.round(snapHtml/1024)} ك.ب)`) : bad('ثبات النسخة', `${snapHtml}/${snapHtml2}`);
+  await page.selectOption('#r-template', 'full');
+  await page.waitForTimeout(400);
 
   console.log('٨) الأرشيف والاستعادة');
   await page.click('[data-go="archive"]');
@@ -517,6 +597,27 @@ try {
   await page.waitForTimeout(800);
   const ibx = await page.textContent('#bench-box');
   ibx.includes('معيار أرشيفك') ? ok('المعيار الداخلي: ' + (ibx.match(/معيار أرشيفك \([^)]+\)/) || [''])[0]) : bad('المعيار الداخلي', ibx.slice(0,100));
+
+  console.log('٨-ح) بذر الدفعة');
+  await page.click('[data-go="new"]');
+  await page.waitForTimeout(400);
+  await page.selectOption('#f-region', 'riyadh');
+  await page.selectOption('#f-city', 'riyadh');
+  await page.selectOption('#f-group', 'food');
+  await page.selectOption('#f-category', 'cafe');
+  await page.click('#btn-bulk');
+  await page.waitForTimeout(300);
+  await page.fill('#bulk-list',
+    'كوفي أول | https://www.google.com/maps/place/a/@24.7,46.6,17z | الملقا\n' +
+    'كوفي ثانٍ | https://www.google.com/maps/place/b/@24.8,46.6,17z | النرجس\n' +
+    'كوفي فاسد | ليس رابطًا | حي');
+  await page.click('#btn-bulk-create');
+  await page.waitForTimeout(1400);
+  const bulkMsg = await page.textContent('#new-msg');
+  bulkMsg.includes('أُنشئ 2') ? ok('أُنشئت الدفعة: ' + bulkMsg.trim().slice(0,45)) : bad('إنشاء الدفعة', bulkMsg.slice(0,90));
+  bulkMsg.includes('كوفي فاسد') ? ok('الرابط الفاسد مرفوض ومُبلَّغ عنه') : bad('رفض الفاسد', bulkMsg.slice(0,120));
+  const qsize = await page.textContent('#queue-bar');
+  /الطابور \d+\/[3-9]/.test(qsize) ? ok('الدفعة دخلت الطابور: ' + qsize.trim().slice(0,22)) : bad('الطابور بعد الدفعة', qsize.slice(0,40));
 
   console.log('٩) الجوال (390px)');
   await page.setViewportSize({ width: 390, height: 844 });

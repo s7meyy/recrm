@@ -30,7 +30,12 @@ import { analyze as analyzeReplies } from './replies.js';
 import { internalBenchmark } from './compare.js';
 import * as models from './models.js';
 import { TOPICS, addKeyword, removeKeyword, customKeywords, resetCustom } from './lexicon.js';
-import { newId, saveJob, getJob, allJobs, deleteJob, buildTree, jobPath } from './store.js';
+import { parsePopularTimes, parseQna, peakInsight, tagLanguages, qnaInsight, contextBlock } from './peak.js';
+import { compare as compareOutputs, mergeHint } from './agreement.js';
+import * as history from './history.js';
+import * as tour from './tour.js';
+import { newId, saveJob, getJob, allJobs, deleteJob, buildTree, jobPath,
+         saveSnapshot, snapshotsOf, getSnapshot, deleteSnapshot } from './store.js';
 
 const $  = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -241,6 +246,71 @@ async function fillBrandList() {
   } catch { /* لا يمنع التشغيل */ }
 }
 
+/** بذر دفعة: قائمة محلات تُنشأ تقاريرها دفعةً وتدخل الطابور بالترتيب. */
+function bindBulk() {
+  $('#btn-bulk').addEventListener('click', () => {
+    const f = $('#bulk-field');
+    f.hidden = !f.hidden;
+    if (!f.hidden) $('#bulk-list').focus();
+  });
+
+  $('#btn-bulk-create').addEventListener('click', async () => {
+    const cityId = $('#f-city').value;
+    const categoryId = $('#f-category').value;
+    if (!cityId || !categoryId) { message('#new-msg', 'err', 'اختر المدينة والتصنيف أولًا — تُطبَّق على الدفعة كلها.'); return; }
+
+    const city = cityById(cityId);
+    const cat = categoryById(categoryId);
+    const region = regionById($('#f-region').value || city?.region);
+    const brand = $('#f-brand').value.trim();
+
+    const lines = $('#bulk-list').value.split('\n').map((l) => l.trim()).filter(Boolean);
+    if (!lines.length) { message('#new-msg', 'err', 'القائمة فارغة.'); return; }
+
+    const created = [];
+    const skipped = [];
+    for (const line of lines) {
+      const [rawName, rawUrl, rawDistrict] = line.split('|').map((x) => (x || '').trim());
+      const name = rawName || '';
+      const url = rawUrl || '';
+      if (!name && !url) continue;
+
+      if (url) {
+        const chk = parseMapsUrl(url);
+        if (!chk.ok) { skipped.push(`${name || url}: ${chk.reason}`); continue; }
+      }
+
+      const j = blankJob();
+      j.mapsUrl = url;
+      j.ctx = {
+        regionId: region?.id || '', regionName: region?.name || '',
+        cityId, cityName: city?.name || '',
+        groupId: cat?.group || '', categoryId, categoryName: cat?.name || '',
+        districtName: rawDistrict || '', brand, branch: '',
+      };
+      j.place.mapsUrl = url;
+      j.place.identity.name = name || parseMapsUrl(url)?.data?.name || '';
+      j.place.identity.category = cat?.name || '';
+      await saveJob(j);
+      queue.add(j.id);
+      created.push(j.place.identity.name || 'بلا اسم');
+    }
+
+    if (!created.length) {
+      message('#new-msg', 'err', 'لم يُنشأ شيء.', skipped);
+      return;
+    }
+    message('#new-msg', skipped.length ? 'warn' : 'ok',
+      `أُنشئ ${created.length} تقريرًا ودخلت الطابور: ${created.join('، ')}`, skipped);
+    $('#bulk-list').value = '';
+    $('#bulk-field').hidden = true;
+    await renderQueue();
+    await fillBrandList();
+    const first = queue.goTo(0);
+    if (first) jumpQueue(first);
+  });
+}
+
 async function onStart() {
   const url = $('#f-url').value.trim();
   const regionId = $('#f-region').value;
@@ -298,6 +368,8 @@ const DATA_FIELDS = {
   '#d-hours':   (p, v) => { p.identity.hours = v.split('\n').map((s) => s.trim()).filter(Boolean); },
   '#d-attrs':   (p, v) => { p.identity.attributes = v.split('\n').map((s) => s.trim()).filter(Boolean); },
   '#d-notes':   (p, v) => { p.notes = v; },
+  '#d-qna':     (p, v) => { p.qna = parseQna(v); p.qnaRaw = v; },
+  '#d-peak':    (p, v) => { p.popularTimes = parsePopularTimes(v); p.peakRaw = v; },
 };
 
 function loadDataView() {
@@ -312,12 +384,15 @@ function loadDataView() {
   $('#d-hours').value = (p.identity.hours || []).join('\n');
   $('#d-attrs').value = (p.identity.attributes || []).join('\n');
   $('#d-notes').value = p.notes || '';
+  $('#d-qna').value = p.qnaRaw || '';
+  $('#d-peak').value = p.peakRaw || '';
   $('#d-reviews').value = job.rawPaste || '';
   renderParseStats();
   renderRecency();
   renderTopics();
   renderEntities();
   renderReplies();
+  renderContext();
   renderAnomaly();
   renderPhotoChips();
 }
@@ -326,6 +401,8 @@ function bindDataView() {
   for (const [sel, setter] of Object.entries(DATA_FIELDS)) {
     $(sel).addEventListener('input', (e) => { setter(job.place, e.target.value); scheduleSave(); });
   }
+  $('#d-qna').addEventListener('blur', renderContext);
+  $('#d-peak').addEventListener('blur', renderContext);
 
   $('#d-reviews').addEventListener('input', (e) => { job.rawPaste = e.target.value; scheduleSave(); });
   $('#d-reviews').addEventListener('paste', () => setTimeout(doParse, 50));
@@ -385,6 +462,7 @@ function doParse() {
   renderTopics();
   renderEntities();
   renderReplies();
+  renderContext();
   renderAnomaly();
   scheduleSave();
 }
@@ -482,6 +560,34 @@ function renderReplies() {
     </div>
     ${a.findings.length ? `<div class="msg ${a.level === 'err' ? 'err' : 'warn'}"><b>تعامل المنشأة مع التعليقات</b><ul>${a.findings.map((f) => `<li>${f}</li>`).join('')}</ul></div>` : '<div class="msg ok"><b>الردود سليمة: نسبة معقولة ومعالجة لا اعتذارًا مجرّدًا.</b></div>'}
     ${a.unanswered.length ? `<p class="fine">شكاوى بلا ردّ: ${a.unanswered.map((i) => `<span class="rid">${i}</span>`).join('، ')}</p>` : ''}`;
+}
+
+/** أوقات الذروة ولغة التعليقات والأسئلة — ثلاثة كانت في العقد بلا استعمال. */
+function renderContext() {
+  const box = $('#context-box');
+  if (!box) return;
+  const parts = [];
+
+  const pk = peakInsight(job.place);
+  if (pk.peaks.length) {
+    parts.push(`<p class="fine">ذروة الازدحام: ${pk.peaks.map((d) => `<b>${d.day}</b> ${d.windows.map((w) => w.label).join('، ')}`).join(' · ')}</p>`);
+    if (pk.suggestion) parts.push(`<div class="msg warn"><b>${pk.suggestion}</b></div>`);
+  }
+
+  const lang = tagLanguages(job.place);
+  if (lang.total) {
+    parts.push(`<p class="fine">لغة التعليقات: عربي ${lang.arabic}% · إنجليزي ${lang.english}%${lang.mixed ? ` · مختلط ${lang.mixed}%` : ''}${
+      lang.note ? ` — <b>${lang.note}</b>` : ''}</p>`);
+  }
+
+  const q = qnaInsight(job.place);
+  if (q.total) {
+    parts.push(`<p class="fine">الأسئلة: ${q.total}، منها ${q.unanswered} بلا جواب.${
+      q.unansweredQuestions.length ? ` مثل: «${q.unansweredQuestions[0]}»` : ''}</p>`);
+    if (q.note) parts.push(`<div class="msg warn"><b>${q.note}</b></div>`);
+  }
+
+  box.innerHTML = parts.join('');
 }
 
 /** كاشف التعليقات المشبوهة — يرفع إشارة ولا يحذف شيئًا من تلقاء نفسه. */
@@ -701,6 +807,7 @@ function renderPipeline() {
   });
 
   updateProgress();
+  renderAgreement();
   renderStepsBar('pipeline');
 }
 
@@ -716,6 +823,52 @@ function models_attach(pick, step) {
       job.models[step.key] = pick.value;
     }
     scheduleSave();
+  });
+}
+
+/** أين اتفقت النماذج وأين انفرد واحد — يُعرض قبل خطوتَي الدمج. */
+function renderAgreement() {
+  const card = $('#agreement-card');
+  const box = $('#agreement-box');
+  if (!card) return;
+
+  // أي مرحلة نحن فيها؟ نعرض مقارنة المخرجات الثلاثة الجاهزة الأحدث.
+  const sets = [
+    { keys: ['a1', 'a2', 'a3'], name: 'تقارير التحليل' },
+    { keys: ['n1', 'n2', 'n3'], name: 'مخرجات التوحيد' },
+  ];
+  const ready = sets.find((g) => g.keys.filter((k) => (job.out[k] || '').trim()).length >= 2);
+  if (!ready) { card.hidden = true; return; }
+
+  const outputs = ready.keys.map((k) => job.out[k] || '');
+  const labels = ready.keys.map((k) => job.models?.[k] || `النموذج ${ready.keys.indexOf(k) + 1}`);
+  const r = compareOutputs(outputs, labels);
+  if (!r.stats.groups) { card.hidden = true; return; }
+
+  card.hidden = false;
+  const group = (g, cls) => `<div class="agree-group ${cls}">
+    <div class="txt">${g.text}</div>
+    <div class="who">${g.sources.join(' · ')}${g.ids.length ? ` — ${g.ids.map((i) => `<span class="rid">${i}</span>`).join('، ')}` : ' — بلا سند'}</div>
+  </div>`;
+
+  box.innerHTML = `
+    <div class="stat-grid">
+      <div class="stat"><b>التوافق</b><span>${r.stats.consensus}%</span><div class="fine">${ready.name}</div></div>
+      <div class="stat up"><b>اتفق الجميع</b><span>${r.stats.agreedAll}</span></div>
+      <div class="stat"><b>اتفق بعضهم</b><span>${r.stats.agreedSome}</span></div>
+      <div class="stat down"><b>انفرد واحد</b><span>${r.stats.unique}</span></div>
+    </div>
+    ${r.numbers.length ? `<div class="msg err"><b>أرقام متعارضة بين النماذج (${r.numbers.length})</b><ul>${
+      r.numbers.slice(0, 5).map((n) => `<li>${n.values.map((v) => `${v.label}: <b>${v.value}</b>`).join(' · ')}</li>`).join('')}</ul>
+      <p class="fine">ارجع إلى «الإحصاءات المحسوبة» — الرقم الصحيح فيها لا عند النماذج.</p></div>` : ''}
+    ${r.all.length ? `<div class="agree-head">اتفق الجميع <span class="badge ok">ثقة عالية</span></div>${r.all.slice(0, 8).map((g) => group(g, 'all')).join('')}` : ''}
+    ${r.some.length ? `<div class="agree-head">اتفق بعضهم <span class="badge mid">راجعها</span></div>${r.some.slice(0, 6).map((g) => group(g, 'some')).join('')}` : ''}
+    ${r.alone.length ? `<div class="agree-head">انفرد به مصدر واحد <span class="badge">يحتاج تحقّقًا</span></div>${r.alone.slice(0, 8).map((g) => group(g, 'alone')).join('')}` : ''}
+    <div class="row"><button type="button" class="btn ghost sm" id="btn-agree-hint">نسخ خلاصة المقارنة للدامج</button></div>`;
+
+  const btn = $('#btn-agree-hint');
+  if (btn) btn.addEventListener('click', async () => {
+    toast(await copy(mergeHint(r)) ? 'نُسخت — ألحقها برسالة الدمج' : 'تعذّر النسخ');
   });
 }
 
@@ -753,6 +906,9 @@ function loadReportView() {
   renderPlan();
   renderReport();
   renderCompleteness();
+  history.reset(job.id, $('#r-md').value);
+  renderHistory();
+  renderSnapshots();
   renderStepsBar('report');
 }
 
@@ -1161,6 +1317,62 @@ function showFontState() {
   }
 }
 
+/** النسخة المُسلَّمة: HTML مجمَّد كما سُلِّم، فلا يتغيّر بتغيّر القاموس أو القالب. */
+async function renderSnapshots() {
+  const box = $('#snapshots-box');
+  if (!box || !job) return;
+  const snaps = await snapshotsOf(job.id);
+  if (!snaps.length) { box.innerHTML = ''; return; }
+
+  box.innerHTML = `<p class="fine">نسخ مُسلَّمة (لا تتغيّر بتغيّر الإعدادات):</p>` +
+    snaps.map((s) => `<div class="snap" data-id="${s.id}">
+      <span class="when">${String(s.at).slice(0, 10)}</span>
+      <span class="meta">${s.template || '—'}${s.note ? ` · ${s.note}` : ''} · ${Math.round((s.html || '').length / 1024)} ك.ب</span>
+      <span class="spacer"></span>
+      <button type="button" class="btn ghost sm" data-act="open">فتح</button>
+      <button type="button" class="btn ghost sm" data-act="dl">تنزيل</button>
+      <button type="button" class="btn danger sm" data-act="del">حذف</button>
+    </div>`).join('');
+
+  box.querySelectorAll('.snap').forEach((row) => {
+    row.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', async () => {
+      const snap = await getSnapshot(row.dataset.id);
+      if (!snap) return;
+      if (b.dataset.act === 'open') {
+        const w = window.open('', '_blank');
+        if (!w) { toast('المتصفح منع النافذة'); return; }
+        w.document.write(snap.html); w.document.close();
+      } else if (b.dataset.act === 'dl') {
+        download(`rabih-delivered-${asciiName(job.place.identity.name)}-${String(snap.at).slice(0, 10)}.html`,
+          snap.html, 'text/html;charset=utf-8');
+      } else {
+        if (!confirm('حذف هذه النسخة المُسلَّمة؟ لا رجعة.')) return;
+        await deleteSnapshot(snap.id);
+        renderSnapshots();
+        toast('حُذفت');
+      }
+    }));
+  });
+}
+
+function bindFreeze() {
+  $('#btn-freeze').addEventListener('click', async () => {
+    if (!$('#r-md').value.trim()) { toast('لا تقرير لتجميده'); return; }
+    const note = prompt('وسمٌ للنسخة (اختياري): لمن سُلِّمت أو بأي وسيلة؟') ?? '';
+    const tpl = TEMPLATES[job.template] || TEMPLATES[DEFAULT_TEMPLATE];
+    await saveSnapshot({
+      jobId: job.id,
+      html: currentHtml(),
+      markdown: reportMarkdown(),
+      template: tpl.name,
+      note: note.trim(),
+      place: job.place.identity.name || '',
+    });
+    await renderSnapshots();
+    toast('جُمِّدت النسخة — لن تتغيّر بعدها');
+  });
+}
+
 function bindOutputView() {
   $('#r-template').addEventListener('change', (e) => {
     job.template = e.target.value;
@@ -1198,6 +1410,29 @@ function bindOutputView() {
 
 /* ───────────────────────── مدقّق الاكتمال ───────────────────────── */
 
+function renderHistory() {
+  const d = history.depth(job.id);
+  const u = $('#btn-undo'), r = $('#btn-redo'), b = $('#history-depth');
+  if (!u) return;
+  u.disabled = !d.past;
+  r.disabled = !d.future;
+  b.textContent = d.past ? `${d.past} تعديلًا محفوظًا` : 'لا تعديلات';
+  b.className = 'badge' + (d.past ? ' mid' : '');
+}
+
+function applyHistoryText(text) {
+  if (text === null) { toast('لا مزيد'); return; }
+  $('#r-md').value = text;
+  job.reportMd = text;
+  scheduleSave();
+  renderReport(); renderCompleteness(); showTemplateNote(); renderHistory();
+}
+
+function bindHistory() {
+  $('#btn-undo').addEventListener('click', () => applyHistoryText(history.undo(job.id)));
+  $('#btn-redo').addEventListener('click', () => applyHistoryText(history.redo(job.id)));
+}
+
 function renderCompleteness() {
   const box = $('#completeness-box');
   if (!box) return;
@@ -1225,7 +1460,14 @@ function renderCompleteness() {
 }
 
 function bindReportView() {
-  $('#r-md').addEventListener('input', (e) => { job.reportMd = e.target.value; scheduleSave(); });
+  let histTimer = null;
+  $('#r-md').addEventListener('input', (e) => {
+    job.reportMd = e.target.value;
+    scheduleSave();
+    // لقطة كل ثانيتين من التوقف، لا عند كل حرف.
+    clearTimeout(histTimer);
+    histTimer = setTimeout(() => { history.push(job.id, e.target.value); renderHistory(); }, 2000);
+  });
   $('#r-md').addEventListener('blur', () => { showTemplateNote(); renderCompleteness(); });
   $('#btn-render').addEventListener('click', () => { renderReport(); toast('حُدّثت المعاينة'); });
 
@@ -1742,11 +1984,14 @@ function bindArchiveView() {
 async function boot() {
   if (!(await gate())) return;
   bindNewView();
+  bindBulk();
   bindDataView();
   bindPipelineView();
   bindReportView();
   bindPlanView();
   bindOutputView();
+  bindHistory();
+  bindFreeze();
   bindCompareView();
   bindGroupView();
   bindArchiveView();
@@ -1797,7 +2042,14 @@ async function boot() {
     navigator.serviceWorker.register('./sw.js').catch(() => { /* لا يمنع التشغيل */ });
   }
 
+  $('#btn-tour').addEventListener('click', () => { tour.reset(); tour.start(show); });
+
   renderQueue();
+
+  // الجولة تُعرَض مرة واحدة لمن لم يرها، ولا تقتحم من عنده عمل قائم.
+  if (!tour.isDone() && !restored) {
+    setTimeout(() => tour.start(show), 700);
+  }
 
   window.addEventListener('beforeunload', (e) => {
     if (!dirty) return;
