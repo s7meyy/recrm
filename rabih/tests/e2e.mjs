@@ -71,6 +71,63 @@ try {
   const nm = await page.inputValue('#d-name');
   nm === 'مقهى الدرب' ? ok('استخراج الاسم من الرابط') : bad('استخراج الاسم', nm);
 
+  console.log('٣-ب) موصّل قوقل Places');
+  // عامل الخدمة يعترض الطلب قبل page.route، فيُرقَّع fetch داخل الصفحة نفسها:
+  // يُختبر مسار الزرّ والدمج والإفصاح كاملًا بلا مفتاح ولا شبكة.
+  await page.evaluate(() => {
+    const body = { place: {
+      schema: 1, source: 'places', placeId: 'ChIJtest', mapsUrl: 'x',
+      identity: { name: 'اسمٌ من قوقل', category: 'cafe', address: 'حي الملقا، الرياض',
+        phone: '0112345678', website: 'https://example.sa', coords: { lat: 24.7, lng: 46.6 },
+        hours: ['الأحد: 7ص – 12م', 'الاثنين: 7ص – 12م'], attributes: ['توصيل', 'جلوس'], priceLevel: '$$' },
+      ratings: { average: 4.2, count: 310, distribution: {} },
+      reviews: [
+        { id: 'R001', author: 'أحمد', rating: 5, date: 'قبل شهر', text: 'اللاتيه ممتاز والخدمة سريعة', ownerReply: '', language: 'ar' },
+        { id: 'R002', author: 'نورة', rating: 2, date: 'قبل أسبوع', text: 'انتظار طويل جدا', ownerReply: '', language: 'ar' },
+      ],
+      photos: [{ url: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', caption: 'صورة 1 من قوقل مابز' }],
+      qna: [], popularTimes: [], notes: '',
+      coverage: { reviewsReturned: 2, reviewsTotal: 310, limitNote: 'حدّ قوقل خمس مراجعات.' },
+    } };
+    window.__realFetch = window.fetch;
+    window.fetch = (input, init) => {
+      const u = typeof input === 'string' ? input : input.url;
+      if (u.includes('/api/places')) {
+        return Promise.resolve(new Response(JSON.stringify(body), {
+          status: 200, headers: { 'content-type': 'application/json' },
+        }));
+      }
+      return window.__realFetch(input, init);
+    };
+  });
+
+  const chipsBefore = await page.$$eval('#photo-chips .chip', n => n.filter(c => !c.textContent.includes('لا صور')).length);
+  await page.click('#btn-places');
+  await page.waitForTimeout(900);
+  const pm = await page.textContent('#places-msg');
+  pm.includes('تمّ الجلب') ? ok('الجلب من قوقل نجح') : bad('الجلب', pm.slice(0, 90));
+  (await page.inputValue('#d-name')) === 'مقهى الدرب' ? ok('لم يُدهَس الاسم القائم') : bad('دهس الاسم', await page.inputValue('#d-name'));
+  pm.includes('أُبقي ما كتبتَه') ? ok('يُعلن ما أبقاه ولم يدهسه') : bad('إعلان الإبقاء', pm.slice(0, 120));
+  (await page.inputValue('#d-address')).includes('الملقا') ? ok('العنوان مُلئ') : bad('العنوان', await page.inputValue('#d-address'));
+  (await page.inputValue('#d-count')) === '310' ? ok('عدد التقييمات مُلئ') : bad('عدد التقييمات', await page.inputValue('#d-count'));
+  (await page.inputValue('#d-hours')).includes('الأحد') ? ok('ساعات العمل مُلئت') : bad('ساعات العمل');
+  pm.includes('2 من أصل 310') ? ok('الإفصاح عن حدّ قوقل صريح') : bad('الإفصاح', pm.slice(0, 140));
+  const chipsAfter = await page.$$eval('#photo-chips .chip', n => n.filter(c => !c.textContent.includes('لا صور')).length);
+  chipsAfter === chipsBefore + 1 ? ok('الصورة أُضيفت') : bad('الصور', `${chipsBefore}→${chipsAfter}`);
+
+  await page.click('#btn-places');
+  await page.waitForTimeout(900);
+  const pm2 = await page.textContent('#places-msg');
+  pm2.includes('مكرر') ? ok('إعادة الجلب لا تكرّر التعليقات') : bad('التكرار', pm2.slice(0, 120));
+  const chipsAfter2 = await page.$$eval('#photo-chips .chip', n => n.filter(c => !c.textContent.includes('لا صور')).length);
+  chipsAfter2 === chipsAfter ? ok('ولا تكرّر الصور') : bad('تكرار الصور', `${chipsAfter}→${chipsAfter2}`);
+
+  // تُزال التعليقات المجلوبة كي يبدأ فحص اللصق من صفحة بيضاء.
+  await page.evaluate(() => { window.fetch = window.__realFetch; });
+  page.once('dialog', d => d.accept());
+  await page.click('#btn-clear-reviews');
+  await page.waitForTimeout(400);
+
   console.log('٤) لصق التعليقات');
   const paste = `5 | أحمد الشمري | قبل شهر
 القهوة ممتازة والباريستا محترف جدًا، والمكان هادئ للعمل.

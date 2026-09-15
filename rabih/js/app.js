@@ -31,6 +31,7 @@ import { internalBenchmark } from './compare.js';
 import * as models from './models.js';
 import { TOPICS, addKeyword, removeKeyword, customKeywords, resetCustom } from './lexicon.js';
 import { parsePopularTimes, parseQna, peakInsight, tagLanguages, qnaInsight, contextBlock } from './peak.js';
+import { fetchPlace, merge as mergePlace } from './places.js';
 import { compare as compareOutputs, mergeHint } from './agreement.js';
 import * as history from './history.js';
 import * as tour from './tour.js';
@@ -417,6 +418,7 @@ function bindDataView() {
     scheduleSave();
   });
 
+  $('#btn-places').addEventListener('click', onFetchPlaces);
   $('#d-photos').addEventListener('change', onPhotos);
   $('#btn-to-pipeline').addEventListener('click', () => {
     const v = validate(job.place);
@@ -425,6 +427,43 @@ function bindDataView() {
     renderPipeline();
     show('pipeline');
   });
+}
+
+/** جلب بطاقة المنشأة من قوقل عبر الدالة الخادمية. */
+async function onFetchPlaces() {
+  const url = (job.mapsUrl || '').trim();
+  if (!url) { message('#places-msg', 'err', 'لا رابط في هذا التقرير.'); return; }
+
+  const btn = $('#btn-places');
+  btn.disabled = true;
+  message('#places-msg', 'warn', 'يُجلب من قوقل…');
+
+  const r = await fetchPlace(url);
+  btn.disabled = false;
+
+  if (!r.ok) {
+    message('#places-msg', 'err', r.error, r.needsKey
+      ? ['أضف GOOGLE_PLACES_KEY في متغيّرات البيئة على Netlify، ثم أعد المحاولة.']
+      : []);
+    return;
+  }
+
+  // صور التقرير في job.photos لا في place.photos، فتُوجَّه إليها صراحةً.
+  const out = mergePlace(job.place, r.place, { photoSink: job.photos });
+  loadDataView();
+  scheduleSave();
+
+  const cov = r.place.coverage || {};
+  const lines = [];
+  if (out.filled.length) lines.push(`مُلئ: ${out.filled.join('، ')}.`);
+  if (out.kept.length) lines.push(`أُبقي ما كتبتَه بيدك ولم يُدهَس: ${out.kept.join('، ')}.`);
+  lines.push(`التعليقات: أُضيف ${out.reviewsAdded}${out.duplicates ? `، وتُرك ${out.duplicates} مكررًا` : ''}.`);
+  if (cov.reviewsTotal) {
+    lines.push(`<b>قوقل أعطى ${cov.reviewsReturned} من أصل ${cov.reviewsTotal} تقييمًا</b> — الباقي يُلصَق يدويًّا. هذا حدُّ واجهتهم لا نقصٌ في الجلب.`);
+  }
+  if (out.photosAdded) lines.push(`الصور: أُضيفت ${out.photosAdded}.`);
+
+  message('#places-msg', 'ok', 'تمّ الجلب من قوقل.', lines);
 }
 
 function doParse() {
