@@ -56,8 +56,66 @@ const POS_WORDS = ['ممتاز','رائع','جميل','افضل','انصح','ي�
 
 const INTENSIFIERS = ['جدا','مره','مرره','واجد','كثير','بشده','للغايه','فوق العاده'];
 
-/** يبني فهرسًا مطبَّعًا مرة واحدة لتسريع المطابقة. */
-const INDEX = TOPICS.map((t) => ({ ...t, normKeys: t.keys.map(normalizeAr).filter(Boolean) }));
+/* ───── مفاتيح يضيفها المستخدم ─────
+   القاموس أوّليّ بطبعه، ولهجات السعودية أوسع من أي قائمة تُكتَب مرة.
+   ما يضيفه المستخدم يُحفَظ في متصفحه ويندمج مع الأصل عند كل مطابقة. */
+
+const CUSTOM_KEY = 'rabih:lexicon';
+
+function readCustom() {
+  try { return JSON.parse(localStorage.getItem(CUSTOM_KEY) || '{}'); }
+  catch { return {}; }
+}
+
+function writeCustom(map) {
+  try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(map)); return true; }
+  catch { return false; }
+}
+
+/** @returns {{ok:boolean, reason?:string}} */
+export function addKeyword(topicId, word) {
+  const clean = normalizeAr(word);
+  if (!clean || clean.length < 2) return { ok: false, reason: 'الكلمة قصيرة جدًّا.' };
+  if (!TOPICS.some((t) => t.id === topicId)) return { ok: false, reason: 'الموضوع غير معروف.' };
+
+  const existing = TOPICS.find((t) => t.normKeysCache?.includes(clean)
+    || t.keys.map(normalizeAr).includes(clean));
+  if (existing) return { ok: false, reason: `الكلمة موجودة أصلًا في «${existing.name}».` };
+
+  const custom = readCustom();
+  const list = custom[topicId] || [];
+  if (list.includes(clean)) return { ok: false, reason: 'أضفتها من قبل.' };
+  custom[topicId] = [...list, clean];
+  if (!writeCustom(custom)) return { ok: false, reason: 'تعذّر الحفظ في المتصفح.' };
+  rebuild();
+  return { ok: true };
+}
+
+export function removeKeyword(topicId, word) {
+  const custom = readCustom();
+  const clean = normalizeAr(word);
+  custom[topicId] = (custom[topicId] || []).filter((w) => w !== clean);
+  writeCustom(custom);
+  rebuild();
+}
+
+export const customKeywords = () => readCustom();
+
+export function resetCustom() {
+  writeCustom({});
+  rebuild();
+}
+
+/** يبني فهرسًا مطبَّعًا لتسريع المطابقة، ويُعاد بناؤه كلما تغيّر قاموس المستخدم. */
+let INDEX = [];
+function rebuild() {
+  const custom = readCustom();
+  INDEX = TOPICS.map((t) => ({
+    ...t,
+    normKeys: [...new Set([...t.keys.map(normalizeAr), ...(custom[t.id] || [])])].filter(Boolean),
+  }));
+}
+rebuild();
 const NEG_N = NEG_WORDS.map(normalizeAr);
 const POS_N = POS_WORDS.map(normalizeAr);
 const INT_N = INTENSIFIERS.map(normalizeAr);

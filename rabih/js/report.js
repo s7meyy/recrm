@@ -6,6 +6,8 @@ import { stats } from './schema.js';
 import { topicStats } from './lexicon.js';
 import { recentVsOlder, monthly, alerts, topicAges } from './recency.js';
 import { themeCss, coverHeader, footerLine, OFFICE_CSS } from './brand.js';
+import { extract as extractEntities } from './entities.js';
+import { analyze as analyzeReplies } from './replies.js';
 
 const esc = (s) => String(s ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -197,6 +199,34 @@ function recencyBlock(place) {
   </section>`;
 }
 
+function entitiesReportBlock(place) {
+  const { people, products } = extractEntities(place);
+  if (!people.length && !products.length) return '';
+  const row = (e) => `<tr><td>${esc(e.name)}</td><td>${e.total}</td><td>${e.pos}</td><td>${e.neg}</td><td>${esc(e.verdict)}</td></tr>`;
+  return `<section class="entities">
+    <h2 class="no-count">الأصناف والأسماء المتكررة</h2>
+    <p class="fine">مستخرجة من نصوص التعليقات مباشرة — تدلّ على ما يُذكر بعينه لا على المحاور العامة.</p>
+    ${products.length ? `<table><thead><tr><th>الصنف أو العبارة</th><th>مرات</th><th>إيجابي</th><th>سلبي</th><th>الاتجاه</th></tr></thead><tbody>${products.map(row).join('')}</tbody></table>` : ''}
+    ${people.length ? `<p class="fine"><b>أشخاص ذُكروا بالاسم:</b> ${people.map((p) => `${esc(p.name)} (${p.total} — ${esc(p.verdict)})`).join(' · ')}</p>` : ''}
+  </section>`;
+}
+
+function repliesReportBlock(place) {
+  const a = analyzeReplies(place);
+  if (!a.total || (!a.replied && !a.negTotal)) return '';
+  return `<section class="replies">
+    <h2 class="no-count">تعامل المنشأة مع التعليقات</h2>
+    <div class="rec-grid">
+      <div class="rec-cell"><b>نسبة الرد</b><span>${a.rate ?? '—'}%</span><small>${a.replied} من ${a.total}</small></div>
+      <div class="rec-cell ${a.negRate !== null && a.negRate < 50 ? 'down' : ''}"><b>الرد على الشكاوى</b><span>${a.negRate ?? '—'}%</span><small>${a.negReplied} من ${a.negTotal}</small></div>
+      <div class="rec-cell"><b>متوسط طول الرد</b><span>${a.avgLength}</span><small>حرفًا</small></div>
+    </div>
+    ${a.replied ? `<p class="fine">${a.quality.withAction} ردًّا يذكر معالجة · ${a.quality.apologyOnly} اعتذار مجرّد · ${a.quality.thanksOnly} شكر فقط.</p>` : ''}
+    ${a.findings.length ? `<div class="alerts"><b>ملاحظات</b><ul>${a.findings.map((f) => `<li>${esc(f)}</li>`).join('')}</ul></div>` : ''}
+    ${a.unanswered.length ? `<p class="fine">شكاوى بلا ردّ: ${a.unanswered.join('، ')}</p>` : ''}
+  </section>`;
+}
+
 function photosBlock(photos = []) {
   const valid = photos.filter((p) => p?.url);
   if (!valid.length) return '';
@@ -279,6 +309,7 @@ code{background:#f3f5f8;padding:0 1mm;border-radius:3px;font-size:10pt}
 .alerts{border-inline-start:3px solid #b5462f;background:#fdf6f4;padding:3mm 5mm;border-radius:0 6px 6px 0;margin:4mm 0}
 .alerts b{color:#b5462f;font-size:10.5pt}
 .alerts ul{margin:2mm 0 0;padding-inline-start:6mm;font-size:10pt}
+.entities,.replies{break-inside:avoid;margin:8mm 0}
 .topics{break-inside:avoid;margin:8mm 0}
 .topics-chart{display:flex;flex-direction:column;gap:2mm;margin:4mm 0}
 .topic-row{display:grid;grid-template-columns:52mm 1fr 10mm;align-items:center;gap:3mm}
@@ -317,7 +348,7 @@ figcaption{font-size:9pt;color:var(--muted);margin-top:1mm;text-align:center}
  * @returns {string} HTML كامل مكتفٍ بذاته
  */
 export function buildReportHtml({ place, ctx = {}, markdown = '', photos = [], show = {}, font = null, identity = null }) {
-  const opt = { toc: true, stars: true, topics: true, photos: true, recency: true, ...show };
+  const opt = { toc: true, stars: true, topics: true, photos: true, recency: true, entities: true, replies: true, ...show };
   const s = stats(place);
   const body = tocFrom(mdToHtml(markdown));
   const date = new Date().toLocaleDateString('ar-SA-u-ca-gregory');
@@ -360,6 +391,8 @@ ${opt.toc ? body.toc : ''}
 ${opt.stars ? starBars(place) : ''}
 ${opt.recency ? recencyBlock(place) : ''}
 ${opt.topics ? topicsBlock(place) : ''}
+${opt.entities ? entitiesReportBlock(place) : ''}
+${opt.replies ? repliesReportBlock(place) : ''}
 ${body.html}
 ${opt.photos ? photosBlock(photos) : ''}
 </main>

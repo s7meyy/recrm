@@ -227,3 +227,13 @@ input[type="color"]{height:42px;padding:3px;cursor:pointer}
 kbd{background:#f3f5f8;border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;
   padding:1px 7px;font-size:12px;font-family:inherit;color:var(--navy)}
 #lock-state .msg,#id-msg .msg{margin-top:0}
+
+/* الكيانات */
+.chip.ent b{color:var(--navy)}
+.chip.ent.pos{border-color:#bfe0cd;background:#f4fbf7}
+.chip.ent.neg{border-color:#eccaca;background:#fdf6f6}
+.chip.lex-cand{cursor:pointer}
+.chip.lex-cand:hover{border-color:var(--gold);background:#fdfaf1}
+select.model-pick{width:auto;min-width:150px;padding:6px 10px;font-size:13px}
+.bench-inner{margin:12px 0}
+#completeness-box{margin:12px 0}

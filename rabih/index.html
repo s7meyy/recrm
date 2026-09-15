@@ -147,6 +147,8 @@
       <div class="stat-grid" id="parse-stats" hidden></div>
       <div id="recency-box"></div>
       <div id="topics-box"></div>
+      <div id="entities-box"></div>
+      <div id="replies-box"></div>
     </div>
 
     <div class="card">
@@ -206,6 +208,7 @@
         <label for="r-md">نص التقرير الموحَّد</label>
         <textarea id="r-md" class="tall"></textarea>
       </div>
+      <div id="completeness-box"></div>
       <div class="grid c2">
         <div class="field">
           <label for="r-template">قالب الإخراج</label>
@@ -372,6 +375,29 @@
         <label class="btn ghost sm" style="margin:0;font-weight:600">استيراد مشفَّر<input id="lk-import" type="file" accept="application/json" hidden></label>
       </div>
       <div id="lock-msg"></div>
+    </div>
+
+    <div class="card">
+      <h2>محرّر القاموس</h2>
+      <p class="hint">القاموس أوّليّ بطبعه، ولهجاتنا أوسع من أي قائمة تُكتَب مرة. أضف إليه ممّا يفوته في تعليقاتك الحقيقية، فيتحسّن كلما استعملته.</p>
+      <div id="lex-uncovered"></div>
+      <div class="grid c3">
+        <div class="field"><label for="lex-word">الكلمة</label><input id="lex-word" placeholder="مثال: ملخبط"></div>
+        <div class="field"><label for="lex-topic">الموضوع</label><select id="lex-topic"></select></div>
+        <div class="field" style="display:flex;align-items:flex-end;gap:8px">
+          <button type="button" class="btn sm" id="btn-lex-add">إضافة</button>
+          <button type="button" class="btn ghost sm" id="btn-lex-reset">تصفير إضافاتي</button>
+        </div>
+      </div>
+      <div id="lex-msg"></div>
+      <div id="lex-custom"></div>
+    </div>
+
+    <div class="card">
+      <h2>أداء النماذج</h2>
+      <p class="hint">درجة مدقّق السند تُحفَظ مع اسم النموذج الذي اخترته في كل خطوة. بعد عشرين تقريرًا تعرف بالبيانات أيّها يستحق الثقة.</p>
+      <div id="models-box"></div>
+      <div class="row"><button type="button" class="btn ghost sm" id="btn-models-clear">تصفير السجل</button></div>
     </div>
 
     <div class="card">

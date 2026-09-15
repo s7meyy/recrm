@@ -24,6 +24,12 @@ import * as identity from './brand.js';
 import * as lock from './lock.js';
 import * as queue from './queue.js';
 import { build as buildMessage, subject as messageSubject, situationLabel } from './messages.js';
+import { audit, fixPrompt } from './completeness.js';
+import { extract as extractEntities } from './entities.js';
+import { analyze as analyzeReplies } from './replies.js';
+import { internalBenchmark } from './compare.js';
+import * as models from './models.js';
+import { TOPICS, addKeyword, removeKeyword, customKeywords, resetCustom } from './lexicon.js';
 import { newId, saveJob, getJob, allJobs, deleteJob, buildTree, jobPath } from './store.js';
 
 const $  = (s, r = document) => r.querySelector(s);
@@ -94,6 +100,7 @@ function blankJob() {
     photos: [],
     plan: [],
     planInReport: false,
+    models: {},
     template: DEFAULT_TEMPLATE,
     font: null,          // { name, dataUrl } خط عربي يرفعه المستخدم
   };
@@ -309,6 +316,8 @@ function loadDataView() {
   renderParseStats();
   renderRecency();
   renderTopics();
+  renderEntities();
+  renderReplies();
   renderAnomaly();
   renderPhotoChips();
 }
@@ -374,6 +383,8 @@ function doParse() {
   renderParseStats();
   renderRecency();
   renderTopics();
+  renderEntities();
+  renderReplies();
   renderAnomaly();
   scheduleSave();
 }
@@ -442,6 +453,37 @@ function renderRecency() {
     ${ages.length ? `<p class="fine">شكاوى نشطة: ${ages.map((t) => `<b>${t.name}</b> (${t.state})`).join(' · ')}</p>` : ''}`;
 }
 
+/** الأصناف والأسماء المتكررة — ما يُذكر بعينه لا المحاور العامة. */
+function renderEntities() {
+  const box = $('#entities-box');
+  if (!box) return;
+  const { people, products } = extractEntities(job.place);
+  if (!people.length && !products.length) { box.innerHTML = ''; return; }
+  const chip = (e) => {
+    const cls = e.verdict === 'سلبي' ? 'neg' : (e.verdict === 'إيجابي' ? 'pos' : '');
+    return `<span class="chip ent ${cls}" title="${e.ids.join('، ')}">${e.name} <b>${e.total}</b></span>`;
+  };
+  box.innerHTML = `
+    ${products.length ? `<p class="fine">أصناف وعبارات متكررة:</p><div class="chips">${products.map(chip).join('')}</div>` : ''}
+    ${people.length ? `<p class="fine">أشخاص ذُكروا بالاسم:</p><div class="chips">${people.map(chip).join('')}</div>` : ''}`;
+}
+
+/** تعامل المنشأة مع التعليقات. */
+function renderReplies() {
+  const box = $('#replies-box');
+  if (!box) return;
+  const a = analyzeReplies(job.place);
+  if (!a.total) { box.innerHTML = ''; return; }
+  box.innerHTML = `
+    <div class="stat-grid">
+      <div class="stat"><b>نسبة الرد</b><span>${a.rate ?? '—'}%</span><div class="fine">${a.replied} من ${a.total}</div></div>
+      <div class="stat ${a.negRate !== null && a.negRate < 50 ? 'down' : ''}"><b>الرد على الشكاوى</b><span>${a.negRate ?? '—'}%</span><div class="fine">${a.negReplied} من ${a.negTotal}</div></div>
+      <div class="stat"><b>طول الرد</b><span>${a.avgLength}</span><div class="fine">حرفًا في المتوسط</div></div>
+    </div>
+    ${a.findings.length ? `<div class="msg ${a.level === 'err' ? 'err' : 'warn'}"><b>تعامل المنشأة مع التعليقات</b><ul>${a.findings.map((f) => `<li>${f}</li>`).join('')}</ul></div>` : '<div class="msg ok"><b>الردود سليمة: نسبة معقولة ومعالجة لا اعتذارًا مجرّدًا.</b></div>'}
+    ${a.unanswered.length ? `<p class="fine">شكاوى بلا ردّ: ${a.unanswered.map((i) => `<span class="rid">${i}</span>`).join('، ')}</p>` : ''}`;
+}
+
 /** كاشف التعليقات المشبوهة — يرفع إشارة ولا يحذف شيئًا من تلقاء نفسه. */
 function renderAnomaly() {
   const box = $('#anomaly-box');
@@ -473,7 +515,7 @@ function renderAnomaly() {
     if (!removed) { toast('لا تعليق يبلغ هذه الدرجة'); return; }
     if (!confirm(`استبعاد ${removed} تعليقًا من التحليل؟ يبقى اللصق الأصلي كما هو.`)) return;
     job.place.reviews = cleaned.reviews;
-    renderParseStats(); renderRecency(); renderTopics(); renderAnomaly();
+    renderParseStats(); renderRecency(); renderTopics(); renderEntities(); renderReplies(); renderAnomaly();
     scheduleSave();
     toast(`استُبعد ${removed} تعليقًا`);
   });
@@ -563,15 +605,26 @@ function renderPipeline() {
     const inner = el('div', 'inner');
 
     const picks = MODEL_PICKS[step.role] || [];
-    const models = el('div', 'models');
-    models.innerHTML = picks.map((m, k) => {
+    const modelChips = el('div', 'models');
+    modelChips.innerHTML = picks.map((m, k) => {
       const free = m.slug.endsWith(':free');
       const label = picks.length > 1 && k === 0 ? 'الأنسب: ' : '';
       return `<span class="model${free ? ' free' : ''}" title="${m.note}">${label}${m.name}${free ? ' · مجاني' : ''}</span>`;
     }).join('');
-    inner.appendChild(models);
+    inner.appendChild(modelChips);
+
+    // أي نموذج شغّلت؟ يُحفَظ مع درجة المدقّق فتُبنى لوحة الأداء.
+    const pick = el('select', 'model-pick');
+    pick.innerHTML = '<option value="">— النموذج المستعمل —</option>' +
+      picks.map((m) => `<option value="${m.name}"${job.models?.[step.key] === m.name ? ' selected' : ''}>${m.name}</option>`).join('') +
+      `<option value="__other"${job.models?.[step.key] && !picks.some((m) => m.name === job.models[step.key]) ? ' selected' : ''}>غير ذلك…</option>`;
+    if (job.models?.[step.key] && !picks.some((m) => m.name === job.models[step.key])) {
+      pick.value = '__other';
+    }
+    models_attach(pick, step);
 
     const row = el('div', 'row');
+    row.appendChild(pick);
     const btnCopy = el('button', 'btn sm', 'نسخ الرسالة');
     const btnShow = el('button', 'btn ghost sm', 'عرض الرسالة');
     const btnDl   = el('button', 'btn ghost sm', 'تنزيلها');
@@ -614,6 +667,14 @@ function renderPipeline() {
       const val = (job.out[step.key] || '').trim();
       if (!val) { check.innerHTML = ''; return; }
       const v = verify(val, job.place);
+      const model = job.models?.[step.key];
+      if (model) {
+        models.record({
+          jobId: job.id, step: step.key, model, role: step.role,
+          score: v.score, level: v.level, coverage: v.coverage,
+          badIds: v.badIds.length, unsupported: v.unsupported.length, numberIssues: v.numberIssues.length,
+        });
+      }
       const bad = v.badIds.length
         ? `<p class="fine err-text">معرّفات لا وجود لها في بياناتك: ${v.badIds.map((i) => `<span class="rid">${i}</span>`).join('، ')} — هذا اختراع صريح، أعد الخطوة بنموذج آخر.</p>` : '';
       const nums = v.numberIssues.length
@@ -641,6 +702,21 @@ function renderPipeline() {
 
   updateProgress();
   renderStepsBar('pipeline');
+}
+
+/** يربط قائمة اختيار النموذج بالحالة، ويسمح باسم يكتبه المستخدم. */
+function models_attach(pick, step) {
+  pick.addEventListener('change', () => {
+    job.models ??= {};
+    if (pick.value === '__other') {
+      const name = prompt('اسم النموذج الذي استعملته:')?.trim();
+      if (!name) { pick.value = job.models[step.key] || ''; return; }
+      job.models[step.key] = name;
+    } else {
+      job.models[step.key] = pick.value;
+    }
+    scheduleSave();
+  });
 }
 
 function updateProgress() {
@@ -676,6 +752,7 @@ function loadReportView() {
   renderShareMessage();
   renderPlan();
   renderReport();
+  renderCompleteness();
   renderStepsBar('report');
 }
 
@@ -915,8 +992,18 @@ function renderBenchmark() {
     <td>${t.name}</td>${t.cells.map((c) => `<td class="${c.isTarget ? 'me' : ''}">${c.total ? `${c.total} <small>(سلبي ${c.neg})</small>` : '—'}</td>`).join('')}
   </tr>`).join('');
 
+  const ib = internalBenchmark(compareJobs, target);
+  const ibHtml = ib && ib.verdicts.length ? `<div class="bench-inner">
+      <h3 class="sub">معيار أرشيفك (${ib.scope} — ${ib.n} منشآت)</h3>
+      <div class="stat-grid">${ib.verdicts.map((v) => `
+        <div class="stat ${v.good ? 'up' : 'down'}"><b>${v.label}</b><span>${v.mine}${v.unit}</span>
+          <div class="fine">المعيار ${v.theirs}${v.unit} · ${v.diff > 0 ? '+' : ''}${v.diff}${v.unit}</div></div>`).join('')}</div>
+      <p class="fine">المعيار مبنيّ على أرشيفك أنت لا على بيانات القطاع، ويتحسّن كلما كبر.</p>
+    </div>` : '';
+
   box.innerHTML = `
     ${b.rank ? `<div class="msg ${b.rank.position === 1 ? 'ok' : 'warn'}"><b>الترتيب ${b.rank.position} من ${b.rank.of} بـ${b.rank.by}.</b></div>` : ''}
+    ${ibHtml}
     <div class="table-wrap"><table class="mini"><thead>${head}</thead><tbody>${rows}</tbody></table></div>
     ${topics ? `<h3 class="sub">المحاور المشتركة</h3><div class="table-wrap"><table class="mini">
       <thead><tr><th>الموضوع</th>${b.rows.map((r) => `<th class="${r.isTarget ? 'me' : ''}">${r.name}</th>`).join('')}</tr></thead>
@@ -1109,9 +1196,37 @@ function bindOutputView() {
   });
 }
 
+/* ───────────────────────── مدقّق الاكتمال ───────────────────────── */
+
+function renderCompleteness() {
+  const box = $('#completeness-box');
+  if (!box) return;
+  const text = $('#r-md').value.trim();
+  if (!text) { box.innerHTML = ''; return; }
+
+  const r = audit(text, job.place);
+  const topics = r.missedTopics.length
+    ? `<p class="fine">مواضيع رصدها القاموس وأهملها التقرير: ${
+        r.missedTopics.map((t) => `<b>${t.name}</b> (${t.total} مرات — ${t.ids.join('، ')})`).join(' · ')}</p>` : '';
+  const alertsList = r.missedAlerts.length
+    ? `<ul class="fine">${r.missedAlerts.map((a) => `<li>إنذار لم يُذكر: ${a}</li>`).join('')}</ul>` : '';
+
+  box.innerHTML = `<div class="msg ${r.level === 'err' ? 'err' : r.level === 'warn' ? 'warn' : 'ok'}">
+      <b>مدقّق الاكتمال: ${r.summary}</b>${topics}${alertsList}
+      ${r.unusedShare >= 60 ? `<p class="fine">${r.unusedShare}% من التعليقات لم يُستشهَد بأيٍّ منها.</p>` : ''}
+    </div>
+    ${r.level !== 'ok' ? '<div class="row"><button type="button" class="btn ghost sm" id="btn-fix-prompt">نسخ رسالة سدّ النقص</button></div>' : ''}`;
+
+  const btn = $('#btn-fix-prompt');
+  if (btn) btn.addEventListener('click', async () => {
+    const text2 = `${fixPrompt(r)}\n\n---\n## تقريرك الحالي\n${$('#r-md').value}`;
+    toast(await copy(text2) ? 'نُسخت — ألصقها في النموذج نفسه ليُكمل تقريره' : 'تعذّر النسخ');
+  });
+}
+
 function bindReportView() {
   $('#r-md').addEventListener('input', (e) => { job.reportMd = e.target.value; scheduleSave(); });
-  $('#r-md').addEventListener('blur', showTemplateNote);
+  $('#r-md').addEventListener('blur', () => { showTemplateNote(); renderCompleteness(); });
   $('#btn-render').addEventListener('click', () => { renderReport(); toast('حُدّثت المعاينة'); });
 
   $('#btn-print').addEventListener('click', () => {
@@ -1375,6 +1490,120 @@ function bindSettings() {
   });
 }
 
+/* ───────────────────────── محرّر القاموس ───────────────────────── */
+
+function renderLexicon() {
+  const sel = $('#lex-topic');
+  if (!sel) return;
+  sel.innerHTML = TOPICS.map((t) => `<option value="${t.id}">${t.name}</option>`).join('');
+
+  // الكلمات المتكررة في التعليقات غير المصنَّفة — مرشّحات للإضافة.
+  const box = $('#lex-uncovered');
+  const miss = job?.place?.reviews?.length ? uncovered(job.place) : [];
+  if (miss.length) {
+    const texts = job.place.reviews.filter((r) => miss.includes(r.id)).map((r) => r.text);
+    const freq = new Map();
+    for (const t of texts) {
+      for (const w of String(t || '').split(/\s+/)) {
+        const clean = w.replace(/[^\p{L}]/gu, '');
+        if (clean.length < 4) continue;
+        freq.set(clean, (freq.get(clean) || 0) + 1);
+      }
+    }
+    const top = [...freq.entries()].sort((a, b) => b[1] - a[1]).slice(0, 14);
+    box.innerHTML = `<div class="msg warn"><b>${miss.length} تعليقًا في تقريرك الحالي لم يصنّفها القاموس</b>
+      ${top.length ? `<p class="fine">كلمات متكررة فيها — اضغط الكلمة لتضعها في الحقل:</p>
+      <div class="chips">${top.map(([w, n]) => `<span class="chip lex-cand" data-w="${w}">${w} <b>${n}</b></span>`).join('')}</div>` : ''}</div>`;
+    box.querySelectorAll('.lex-cand').forEach((c) => c.addEventListener('click', () => {
+      $('#lex-word').value = c.dataset.w;
+      $('#lex-word').focus();
+    }));
+  } else {
+    box.innerHTML = job?.place?.reviews?.length
+      ? '<div class="msg ok"><b>القاموس غطّى كل تعليقات تقريرك الحالي.</b></div>'
+      : '<p class="fine">افتح تقريرًا فيه تعليقات لترى ما فات القاموس منها.</p>';
+  }
+
+  renderCustomKeywords();
+}
+
+function renderCustomKeywords() {
+  const box = $('#lex-custom');
+  const custom = customKeywords();
+  const rows = Object.entries(custom).filter(([, list]) => list?.length);
+  if (!rows.length) { box.innerHTML = '<p class="fine">لم تُضف كلمات بعد.</p>'; return; }
+
+  box.innerHTML = `<p class="fine">إضافاتك:</p>` + rows.map(([id, list]) => {
+    const name = TOPICS.find((t) => t.id === id)?.name || id;
+    return `<div class="fine"><b>${name}:</b> <span class="chips">${
+      list.map((w) => `<span class="chip">${w} <button type="button" class="btn danger sm lex-del" data-t="${id}" data-w="${w}" style="padding:0 6px">×</button></span>`).join('')
+    }</span></div>`;
+  }).join('');
+
+  box.querySelectorAll('.lex-del').forEach((b) => b.addEventListener('click', () => {
+    removeKeyword(b.dataset.t, b.dataset.w);
+    renderLexicon();
+    refreshAnalysis();
+    toast('حُذفت الكلمة');
+  }));
+}
+
+/** يعيد رسم كل ما يعتمد على القاموس بعد تعديله. */
+function refreshAnalysis() {
+  if (!job?.place?.reviews?.length) return;
+  renderRecency(); renderTopics(); renderEntities(); renderReplies();
+  renderCompleteness();
+  renderReport();
+}
+
+function bindLexicon() {
+  $('#btn-lex-add').addEventListener('click', () => {
+    const word = $('#lex-word').value.trim();
+    const topic = $('#lex-topic').value;
+    const r = addKeyword(topic, word);
+    message('#lex-msg', r.ok ? 'ok' : 'err',
+      r.ok ? `أُضيفت «${word}» إلى «${TOPICS.find((t) => t.id === topic)?.name}».` : r.reason);
+    if (r.ok) { $('#lex-word').value = ''; renderLexicon(); refreshAnalysis(); }
+  });
+  $('#lex-word').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#btn-lex-add').click(); });
+
+  $('#btn-lex-reset').addEventListener('click', () => {
+    if (!confirm('حذف كل الكلمات التي أضفتها؟ القاموس الأصلي لا يتأثر.')) return;
+    resetCustom();
+    renderLexicon(); refreshAnalysis();
+    toast('صُفِّرت الإضافات');
+  });
+}
+
+/* ───────────────────────── لوحة أداء النماذج ───────────────────────── */
+
+function renderModels() {
+  const box = $('#models-box');
+  if (!box) return;
+  const rows = models.leaderboard();
+  if (!rows.length) {
+    box.innerHTML = '<div class="empty">لا سجلّ بعد. اختر النموذج المستعمل في كل خطوة من خط التحليل، فتُبنى اللوحة تلقائيًّا.</div>';
+    return;
+  }
+  const total = rows.reduce((a, r) => a + r.runs, 0);
+  box.innerHTML = `
+    <div class="table-wrap"><table class="mini"><thead><tr>
+      <th>النموذج</th><th>تجارب</th><th>مخرجات نظيفة</th><th>درجة السند</th><th>تغطية</th><th>اختراع</th><th>بلا سند</th><th>أرقام</th>
+    </tr></thead><tbody>${
+      rows.map((r, i) => `<tr class="${i === 0 && total >= 6 ? 'me' : ''}">
+        <td>${r.model}</td><td>${r.runs}</td><td>${r.cleanRate}%</td><td>${r.score}%</td>
+        <td>${r.coverage}%</td><td>${r.invented}</td><td>${r.unsupported}</td><td>${r.numbers}</td></tr>`).join('')
+    }</tbody></table></div>
+    <p class="fine">${total < 6 ? 'العيّنة صغيرة بعد؛ لا تحكم على نموذج بتجربتين.' : `مبنيّ على ${total} خطوة مسجّلة.`}</p>`;
+}
+
+function bindModels() {
+  $('#btn-models-clear').addEventListener('click', () => {
+    if (!confirm('حذف سجلّ أداء النماذج كلّه؟')) return;
+    models.clear(); renderModels(); toast('صُفِّر السجل');
+  });
+}
+
 function renderLockState() {
   $('#lock-state').innerHTML = lock.isEnabled()
     ? '<div class="msg ok"><b>القفل مفعَّل</b> — يُطلب عند فتح المنصّة.</div>'
@@ -1523,13 +1752,15 @@ async function boot() {
   bindArchiveView();
   bindSafety();
   bindSettings();
+  bindLexicon();
+  bindModels();
   bindShortcuts();
 
   $$('[data-go]').forEach((b) => b.addEventListener('click', () => {
     const v = b.dataset.go;
     if (v === 'archive') { renderArchive($('#ar-search').value); renderSafety(); }
     if (v === 'compare') renderCompare();
-    if (v === 'settings') { loadIdentity(); renderLockState(); }
+    if (v === 'settings') { loadIdentity(); renderLockState(); renderLexicon(); renderModels(); }
     if (v === 'data' && job) loadDataView();
     show(v);
   }));

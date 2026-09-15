@@ -160,3 +160,70 @@ export function benchmark(target, rivals) {
 
   return { rows, topics, rank };
 }
+
+/**
+ * معيار داخلي من أرشيفك: متوسط المنشآت المشابهة (نفس التصنيف، ثم نفس المدينة).
+ * لا يحتاج بيانات خارجية، ويتحسّن كلما كبر أرشيفك.
+ * @returns {{n, byCategory, byCity, target, verdicts}|null}
+ */
+export function internalBenchmark(jobs, target) {
+  const c = target.ctx || {};
+  const targetKey = key(target);
+
+  // أحدث تقرير لكل منشأة، مع استبعاد المنشأة نفسها.
+  const latest = new Map();
+  for (const j of jobs) {
+    if (key(j) === targetKey) continue;
+    if (!(j.place?.reviews?.length)) continue;
+    const k = key(j);
+    const prev = latest.get(k);
+    if (!prev || String(j.createdAt || '') > String(prev.createdAt || '')) latest.set(k, j);
+  }
+  const pool = [...latest.values()];
+  if (pool.length < 2) return null;   // معيارٌ من منشأة واحدة ليس معيارًا
+
+  const summarize = (list) => {
+    const rows = list.map((j) => {
+      const s = stats(j.place);
+      return {
+        avg: s.googleAverage,
+        neg: s.rated ? (s.negative / s.rated) * 100 : null,
+        reply: s.replyRate,
+      };
+    });
+    const mean = (f) => {
+      const vals = rows.map(f).filter((v) => v !== null && v !== undefined && Number.isFinite(v));
+      return vals.length ? Number((vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2)) : null;
+    };
+    return { n: list.length, avg: mean((r) => r.avg), neg: mean((r) => r.neg), reply: mean((r) => r.reply) };
+  };
+
+  const sameCategory = pool.filter((j) => j.ctx?.categoryId === c.categoryId);
+  const sameCity = pool.filter((j) => j.ctx?.cityId === c.cityId && j.ctx?.categoryId === c.categoryId);
+
+  const ts = stats(target.place);
+  const me = {
+    avg: ts.googleAverage,
+    neg: ts.rated ? Number(((ts.negative / ts.rated) * 100).toFixed(1)) : null,
+    reply: ts.replyRate,
+  };
+
+  const byCategory = sameCategory.length >= 2 ? summarize(sameCategory) : null;
+  const byCity = sameCity.length >= 2 ? summarize(sameCity) : null;
+  const base = byCity || byCategory;
+
+  const verdicts = [];
+  if (base) {
+    const cmp = (label, mine, theirs, goodIsUp, unit = '') => {
+      if (mine === null || theirs === null) return;
+      const d = Number((mine - theirs).toFixed(2));
+      const good = goodIsUp ? d >= 0 : d <= 0;
+      verdicts.push({ label, mine, theirs, diff: d, good, unit });
+    };
+    cmp('متوسط التقييم', me.avg, base.avg, true);
+    cmp('نسبة السلبي', me.neg, base.neg, false, '%');
+    cmp('ردود المالك', me.reply, base.reply, true, '%');
+  }
+
+  return { n: pool.length, byCategory, byCity, target: me, verdicts, scope: byCity ? 'المدينة والتصنيف' : 'التصنيف' };
+}

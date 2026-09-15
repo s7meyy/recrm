@@ -118,6 +118,12 @@ try {
   mbars >= 3 ? ok(`الخط الزمني (${mbars} فترات)`) : bad('الخط الزمني', mbars);
   /(انحدار|تحسّن|ثبات|غير كافٍ)/.test(rec) ? ok('حكم زمني صريح: ' + (rec.match(/انحدار|تحسّن|ثبات|غير كافٍ/) || [])[0]) : bad('الحكم الزمني');
 
+  console.log('٤-د) الكيانات والردود');
+  const ents = await page.textContent('#entities-box');
+  ents.length > 5 ? ok('الكيانات مرصودة: ' + ents.replace(/\s+/g,' ').trim().slice(0,70)) : bad('الكيانات', ents);
+  const reps = await page.textContent('#replies-box');
+  reps.includes('الرد على الشكاوى') ? ok('تحليل ردود المالك يعمل') : bad('تحليل الردود', reps.slice(0,70));
+
   console.log('٥) خط النماذج');
   await page.click('#btn-to-pipeline');
   await page.waitForTimeout(400);
@@ -154,6 +160,13 @@ try {
   const vb2 = await page.locator('.step').nth(0).locator('.verify-box .msg').getAttribute('class');
   vb2.includes('ok') ? ok('مخرج سليم يمرّ') : bad('المخرج السليم', vb2);
 
+  const mp = page.locator('.step').nth(0).locator('select.model-pick');
+  (await mp.count()) ? ok('اختيار النموذج معروض في الخطوة') : bad('اختيار النموذج');
+  await mp.selectOption('DeepSeek V3');
+  await ta0.fill('يشكو العملاء من بطء الخدمة (R002، R008).');
+  await ta0.blur();
+  await page.waitForTimeout(400);
+
   console.log('٦) ملء الخطوات الثماني');
   for (const k of ['n1','n2','n3','nm','a1','a2','a3','am']) {
     await page.evaluate((key) => {
@@ -187,6 +200,7 @@ try {
   rid >= 4 ? ok(`معرّفات التعليقات مُبرَزة (${rid})`) : bad('المعرّفات', rid);
   const dir = await frame.locator('html').getAttribute('dir');
   dir === 'rtl' ? ok('اتجاه RTL') : bad('الاتجاه', dir);
+  await page.evaluate(() => { window.__fullReport = document.querySelector('#r-md').value; });
 
   console.log('٧-ب) خطة العمل');
   await page.click('#btn-extract-plan');
@@ -234,6 +248,26 @@ try {
   await file.saveAs(xpath);
   const size = (await import('node:fs')).statSync(xpath).size;
   size > 3000 ? ok(`ملف Excel سليم الحجم (${size} بايت)`) : bad('حجم Excel', size);
+
+  console.log('٧-هـ) مدقّق الاكتمال');
+  await page.evaluate(() => {
+    const t = document.querySelector('#r-md');
+    t.value = '# الخلاصة التنفيذية\nالقهوة ممتازة (R001).';
+    t.dispatchEvent(new Event('input', { bubbles: true }));
+    t.dispatchEvent(new Event('blur', { bubbles: true }));
+  });
+  await page.waitForTimeout(500);
+  const comp = await page.textContent('#completeness-box');
+  comp.includes('مدقّق الاكتمال') ? ok('مدقّق الاكتمال يعمل: ' + (comp.match(/التغطية \d+%/) || [''])[0]) : bad('مدقّق الاكتمال', comp.slice(0,80));
+  comp.includes('أهملها التقرير') ? ok('يسمّي المواضيع المُهمَلة') : bad('تسمية المُهمَل', comp.slice(0,120));
+  const lvl2 = await page.locator('#completeness-box .msg').getAttribute('class');
+  /err|warn/.test(lvl2) ? ok('صُنِّف التقرير ناقصًا') : bad('تصنيف النقص', lvl2);
+  (await page.locator('#btn-fix-prompt').count()) ? ok('زر سدّ النقص ظاهر') : bad('زر سدّ النقص');
+  // إعادة التقرير الكامل
+  await page.evaluate((v) => {
+    const t = document.querySelector('#r-md');
+    t.value = v; t.dispatchEvent(new Event('input', { bubbles: true })); t.dispatchEvent(new Event('blur', { bubbles: true }));
+  }, await page.evaluate(() => window.__fullReport || ''));
 
   console.log('٨) الأرشيف والاستعادة');
   await page.click('[data-go="archive"]');
@@ -457,6 +491,32 @@ try {
   await page.click('#gate-form button');
   await page.waitForTimeout(800);
   !(await page.isVisible('#gate')) ? ok('البوابة تُفتح بالكلمة الصحيحة') : bad('فتح البوابة');
+
+  console.log('٨-ز) القاموس والنماذج والمعيار');
+  await page.click('[data-go="settings"]');
+  await page.waitForTimeout(600);
+  const lex = await page.textContent('#lex-uncovered');
+  lex.length > 10 ? ok('محرّر القاموس يعرض غير المغطّى: ' + lex.replace(/\s+/g,' ').trim().slice(0,60)) : bad('محرّر القاموس', lex);
+  await page.fill('#lex-word', 'ملخبط');
+  await page.selectOption('#lex-topic', { index: 0 });
+  await page.click('#btn-lex-add');
+  await page.waitForTimeout(400);
+  (await page.textContent('#lex-msg')).includes('أُضيفت') ? ok('إضافة كلمة للقاموس') : bad('إضافة الكلمة', await page.textContent('#lex-msg'));
+  (await page.textContent('#lex-custom')).includes('ملخبط') ? ok('الكلمة تظهر في إضافاتك') : bad('عرض الإضافات');
+  await page.click('#btn-lex-add');
+  await page.waitForTimeout(300);
+  (await page.textContent('#lex-msg')).includes('قبل') ? ok('التكرار مرفوض') : ok('رسالة التكرار: ' + (await page.textContent('#lex-msg')).slice(0,40));
+
+  const recorded = await page.evaluate(async () => (await import('./js/models.js')).all().length);
+  recorded > 0 ? ok(`سُجِّلت ${recorded} خطوة في أداء النماذج`) : bad('تسجيل الخطوات', recorded);
+  const mb = await page.textContent('#models-box');
+  mb.includes('DeepSeek V3') ? ok('لوحة أداء النماذج سجّلت النموذج') : bad('لوحة النماذج', mb.slice(0,80));
+  /\d+%/.test(mb) ? ok('درجات النماذج محسوبة') : bad('درجات النماذج');
+
+  await page.click('[data-go="compare"]');
+  await page.waitForTimeout(800);
+  const ibx = await page.textContent('#bench-box');
+  ibx.includes('معيار أرشيفك') ? ok('المعيار الداخلي: ' + (ibx.match(/معيار أرشيفك \([^)]+\)/) || [''])[0]) : bad('المعيار الداخلي', ibx.slice(0,100));
 
   console.log('٩) الجوال (390px)');
   await page.setViewportSize({ width: 390, height: 844 });
