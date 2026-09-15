@@ -72,6 +72,25 @@ jobs:
         if: steps.guard.outputs.has_token == 'true'
         run: rm -rf rabih/tests rabih/tools rabih/node_modules
 
+      # الأداة تُثبَّت بإصدارٍ مثبَّت لا بـ@latest، ومعها تجاوزٌ لتبعية مكسورة:
+      # @types/node@26.6.0 مُدرَج في سجلّ npm وملفُّه مفقود (404)، فتسقط كل نشرة
+      # تحلّ التبعيات من جديد. التثبيت على 26.5.1 يتخطّى النشرة المكسورة.
+      - name: تثبيت أداة Netlify
+        if: steps.guard.outputs.has_token == 'true'
+        run: |
+          mkdir -p "$RUNNER_TEMP/nl"
+          cat > "$RUNNER_TEMP/nl/package.json" <<'JSON'
+          {
+            "name": "netlify-deploy-runner",
+            "private": true,
+            "dependencies": { "netlify-cli": "27.7.0" },
+            "overrides": { "@types/node": "26.5.1" }
+          }
+          JSON
+          cd "$RUNNER_TEMP/nl"
+          npm install --no-audit --no-fund
+          echo "$RUNNER_TEMP/nl/node_modules/.bin" >> "$GITHUB_PATH"
+
       - name: نشر
         if: steps.guard.outputs.has_token == 'true'
         working-directory: rabih
@@ -80,5 +99,4 @@ jobs:
           NETLIFY_SITE_ID: dc23aef2-a68a-435b-9432-18b2aac80345
           COMMIT_MESSAGE: ${{ github.event.head_commit.message || 'نشر يدوي' }}
         run: |
-          npx -y netlify-cli@latest deploy --prod --no-build \
-            --message "${COMMIT_MESSAGE}"
+          netlify deploy --prod --no-build --message "${COMMIT_MESSAGE}"
