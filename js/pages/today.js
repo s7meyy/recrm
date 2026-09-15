@@ -12,6 +12,7 @@ import { buildOpportunityIndex, topOpportunities } from '../util/opportunity.js'
 import { receivables } from '../util/receivables.js';
 import { awaitingReply } from '../util/lead-score.js';
 import { upcomingShowings, needFeedback } from '../util/showings.js';
+import { expiringAgreements } from '../util/agreements.js';
 import { runPlans } from '../util/plans.js';
 import { el, clear, badge, emptyState, confirmDialog, toast, openModal, labeled, selectEl } from '../util/dom.js';
 import { formatSAR, formatDate, formatDateTime, relativeDays, daysBetween, daysWord } from '../util/format.js';
@@ -118,6 +119,8 @@ async function loadData() {
     reviews: company.reviewUrl ? reviewCandidates(deals) : [],
     reviewUrl: company.reviewUrl || '',
     company,
+    // اتفاقيات توشك أو انتهت (المرحلة ٣١)
+    agreements: expiringAgreements(ctx.properties, { defaultDays: company.agreementDurationDays || 90 }),
     // المعاينات (المرحلة ٢٧): القادمة خلال ٤٨ ساعة، والتي مضت بلا انطباع.
     upcoming: upcomingShowings(showings),
     pendingFeedback: needFeedback(showings),
@@ -445,6 +448,20 @@ function build(container, d) {
               })
               : el('a', { class: 'btn btn-ghost btn-sm', href: `#/invoices/${r.id}`, text: 'فتح' })))),
       { href: '#/invoices', hrefText: 'الفواتير →', tone: d.due.overdueCount ? 'today-warn' : '' }));
+  }
+
+  /* اتفاقيات الوساطة (المرحلة ٣١): عقارٌ انتهت اتفاقيته قد تخسره وأنت لا تدري */
+  if (d.agreements.length) {
+    const expired = d.agreements.filter((x) => x.state === 'expired').length;
+    grid.append(section('اتفاقيات تنتهي', d.agreements.length,
+      el('div', {}, d.agreements.slice(0, 6).map((x) => row(
+        `${typeLabel(d.lists, x.property.type)} — ${[x.property.district, x.property.city].filter(Boolean).join('، ') || 'بلا حي'}`,
+        x.state === 'expired'
+          ? `انتهت منذ ${daysWord(-x.days)} — جدّدها أو اتفق مع المالك`
+          : `تنتهي بعد ${daysWord(x.days)} (${formatDate(x.endsAt)})`,
+        el('a', { class: 'btn btn-ghost btn-sm', href: `#/properties/${x.property.id}`, text: 'افتح العقار' }))),
+      ),
+      { href: '#/properties', hrefText: 'العقارات →', tone: expired ? 'today-warn' : '' }));
   }
 
   /* المعاينات (المرحلة ٢٧): القادمة أولًا — موعدٌ يفوتك أغلى من متابعة تتأخر */

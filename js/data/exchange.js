@@ -342,3 +342,49 @@ export async function runImport(entity, items) {
   }
   return { added, failed };
 }
+
+/* ===== تصدير جهات الاتصال (vCard) — المرحلة ٣١ ===== */
+
+/**
+ * يبني ملف vCard من عملائك ليُستورَد في جهات اتصال جوالك.
+ *
+ * **لماذا؟** الاستيراد موجود منذ المرحلة ١١ والتصدير لم يكن. فحين يتصل بك عميل يظهر رقمٌ
+ * مجهول وأنت تملك اسمه وطلبه. هذا الملف يجعل جوالك يقول لك من المتّصل قبل أن ترفع السماعة.
+ *
+ * **ولا يخرج من الجهاز شيء:** الملف يُبنى في المتصفح ويُحفظ عندك — أنت من يستورده بنفسك.
+ * وما يُكتب فيه: الاسم والجوالان ووسومه ومصدره — **بلا ملاحظاتك الداخلية عنه**، لأن ما
+ * يُكتب في دفتر الهاتف يُقرأ في مواضع لا تتحكّم بها.
+ */
+export function buildVCards(clients = [], { prefix = '' } = {}) {
+  // القواعد: الفاصلة والفاصلة المنقوطة والشرطة المائلة تُهرَّب، والأسطر تُطوى عند ٧٥ بايتًا.
+  const esc = (v) => String(v ?? '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+  const fold = (line) => {
+    const bytes = [...line];
+    if (bytes.length <= 75) return line;
+    const parts = [];
+    for (let i = 0; i < bytes.length; i += 74) parts.push(bytes.slice(i, i + 74).join(''));
+    return parts.join('\r\n ');
+  };
+
+  const cards = clients
+    .filter((c) => c.phone || c.phone2)
+    .map((c) => {
+      const name = String(c.name || '').trim() || c.phone || 'عميل';
+      const display = prefix ? `${prefix}${name}` : name;
+      const tags = [...(c.tags || [])];
+      const lines = [
+        'BEGIN:VCARD',
+        'VERSION:3.0',
+        `FN:${esc(display)}`,
+        `N:${esc(display)};;;;`,
+        c.phone ? `TEL;TYPE=CELL:${esc(c.phone)}` : null,
+        c.phone2 ? `TEL;TYPE=CELL:${esc(c.phone2)}` : null,
+        tags.length ? `CATEGORIES:${tags.map(esc).join(',')}` : null,
+        c.referralSource ? `NOTE:${esc(`المصدر: ${c.referralSource}`)}` : null,
+        'END:VCARD',
+      ].filter(Boolean);
+      return lines.map(fold).join('\r\n');
+    });
+
+  return cards.join('\r\n');
+}

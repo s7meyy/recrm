@@ -12,7 +12,7 @@ import { getLists, typeLabel } from '../data/settings.js';
 import { priceSamples, estimatePrice, purposeKey } from '../util/price-stats.js';
 import { el, clear, labeled, selectEl, badge, emptyState, toast } from '../util/dom.js';
 import { formatSAR, formatArea, formatNumber, formatDate } from '../util/format.js';
-import { monthlyInstallment } from '../util/finance.js';
+import { monthlyInstallment, rentalYield } from '../util/finance.js';
 
 const MIN_SAMPLE = 3;
 
@@ -155,6 +155,7 @@ function draw(ctx) {
       }))));
 
   area.append(installmentPanel(Math.round(result.estimate)));
+  area.append(yieldPanel(Math.round(result.estimate)));
   area.append(comparablesTable(ctx, result.comparables, 'العقارات المقارَنة — من أين جاء الرقم'));
 }
 
@@ -192,6 +193,45 @@ function installmentPanel(defaultPrice) {
       labeled('المدة (سنوات)', yearsInput)),
     out,
     el('p', { class: 'muted small', text: 'حساب استرشادي بمعادلة القسط الثابت — ليس عرض تمويل. لا يشمل الرسوم الإدارية ولا التأمين ولا الدعم السكني، والنِّسب تختلف بين البنوك وبحسب ملف العميل.' }));
+  recalc();
+  return panel;
+}
+
+/**
+ * «وكم يعود عليّ؟» (المرحلة ٣١) — سؤال المستثمر، ولا أداة له كانت.
+ * استرشادي كأخيه: لا تغيّر قيمة، ولا تمويل، ولا ضريبة، ولا فترات شغور غير ما تُدخله.
+ */
+function yieldPanel(defaultPrice) {
+  const priceInput = el('input', { class: 'input', type: 'number', min: '0', step: '1000', value: defaultPrice });
+  const rentInput = el('input', { class: 'input', type: 'number', min: '0', step: '1000', value: Math.round(defaultPrice * 0.06) });
+  const costsInput = el('input', { class: 'input', type: 'number', min: '0', step: '500', value: 0 });
+  const occInput = el('input', { class: 'input', type: 'number', min: '0', max: '100', step: '5', value: 100 });
+  const out = el('div', { class: 'stat-strip', style: { marginTop: '12px' } });
+
+  const recalc = () => {
+    clear(out);
+    const r = rentalYield({
+      price: Number(priceInput.value), annualRent: Number(rentInput.value),
+      annualCosts: Number(costsInput.value), occupancy: Number(occInput.value),
+    });
+    if (!r) { out.append(el('p', { class: 'muted small', text: 'اكتب سعرًا وإيجارًا سنويًا أكبر من صفر.' })); return; }
+    out.append(
+      fact(`${formatNumber(Math.round(r.net * 100) / 100)}٪`, 'العائد بعد المصاريف'),
+      fact(`${formatNumber(Math.round(r.gross * 100) / 100)}٪`, 'العائد الإجمالي'),
+      fact(formatSAR(Math.round(r.monthly)), 'الدخل الشهري الصافي'),
+      fact(r.payback == null ? '—' : `${formatNumber(Math.round(r.payback))} سنة`, 'مدّة الاسترداد'));
+  };
+  for (const input of [priceInput, rentInput, costsInput, occInput]) input.addEventListener('input', recalc);
+
+  const panel = el('div', { class: 'panel', style: { marginTop: '18px' } },
+    el('h2', { class: 'section-title', text: 'وكم يعود عليّ؟' }),
+    el('div', { class: 'form-grid' },
+      labeled('السعر', priceInput),
+      labeled('الإيجار السنوي', rentInput),
+      labeled('المصاريف السنوية', costsInput, { hint: 'صيانة وإدارة ورسوم' }),
+      labeled('نسبة الإشغال (٪)', occInput, { hint: 'مئة = مؤجَّر طول السنة' })),
+    out,
+    el('p', { class: 'muted small', text: 'حساب استرشادي: لا يشمل تغيّر قيمة العقار ولا كلفة التمويل ولا الضريبة، ومدّة الاسترداد بالدخل الحالي وحده. والإيجار المقترح افتراض أوّليّ عدّله بما تعرفه عن الحي.' }));
   recalc();
   return panel;
 }

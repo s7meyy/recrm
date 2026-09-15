@@ -11,7 +11,8 @@ import { getImageUrl } from '../data/images.js';
 import {
   el, clear, labeled, selectEl, badge, openModal, confirmDialog, toast, emptyState, debounce,
 } from '../util/dom.js';
-import { formatDate, formatNumber, toInputDate, fromInputDate } from '../util/format.js';
+import { formatDate, formatNumber, formatSAR, toInputDate, fromInputDate } from '../util/format.js';
+import { vatSummary, invoiceYears, QUARTERS, quarterOf } from '../util/vat-report.js';
 import { receivables } from '../util/receivables.js';
 import { formatPhone } from '../util/phone.js';
 import { matchesQuery } from '../util/arabic.js';
@@ -81,7 +82,8 @@ function buildLayout(ctx) {
       el('h1', {}, 'الفواتير وعروض الأسعار', ctx.nodes.count),
       el('div', { class: 'row' },
         el('button', { type: 'button', class: 'btn btn-primary', text: '+ فاتورة جديدة', onClick: () => openForm(ctx, null, 'invoice') }),
-        el('button', { type: 'button', class: 'btn', text: '+ عرض سعر', onClick: () => openForm(ctx, null, 'quote') }))),
+        el('button', { type: 'button', class: 'btn', text: '+ عرض سعر', onClick: () => openForm(ctx, null, 'quote') }),
+        el('button', { type: 'button', class: 'btn', text: '🧾 ملخّص الضريبة', title: 'ضريبة المخرجات لربع سنة', onClick: () => openVatReport(ctx) }))),
     el('div', { class: 'toolbar' }, search, typeFilter, collectionFilter),
   );
   ctx.nodes.summary = el('div');
@@ -511,4 +513,72 @@ export async function printInvoice(invoice, company, client = null) {
   setTimeout(() => window.print(), 0);
   // شبكة أمان: بعض المتصفحات لا تُطلق afterprint عند الإلغاء.
   setTimeout(cleanup, 60000);
+}
+
+
+/* ===== ملخّص ضريبة القيمة المضافة للربع (المرحلة ٣١) ===== */
+
+/**
+ * يجمع ضريبة المخرجات لربعٍ من فواتيرك.
+ *
+ * **بيانٌ من فواتيرك لا إقرار ضريبي ولا مشورة**، ولا يُرسَل إلى أي جهة — والتصريح مكتوب
+ * في الشاشة وفي الورقة المطبوعة، لا في ملفٍ لا يقرؤه أحد.
+ *
+ * وضريبة **المخرجات وحدها**: مصاريفك ليس فيها حقل ضريبة أصلًا، فادّعاء «صافي ضريبة» كذب.
+ */
+function openVatReport(ctx) {
+  const years = invoiceYears(ctx.invoices);
+  const yearSelect = selectEl({ options: years.map((y) => ({ value: String(y), label: String(y) })), value: String(years[0]) });
+  const quarterSelect = selectEl({
+    options: QUARTERS.map((q) => ({ value: String(q.key), label: q.label })),
+    value: String(quarterOf(new Date())),
+  });
+  const out = el('div');
+
+  const draw = () => {
+    const report = vatSummary(ctx.invoices, { year: Number(yearSelect.value), quarter: Number(quarterSelect.value) });
+    clear(out);
+    if (!report.count) {
+      out.append(el('p', { class: 'muted small', text: 'لا فواتير في هذا الربع.' }));
+      return;
+    }
+    out.append(
+      el('dl', { class: 'kv' },
+        el('dt', { text: 'عدد الفواتير' }), el('dd', { text: formatNumber(report.count) }),
+        el('dt', { text: 'الإجمالي قبل الضريبة' }), el('dd', { text: formatSAR(report.net) }),
+        el('dt', { text: 'ضريبة المخرجات' }), el('dd', {}, badge(formatSAR(report.vat), 'badge-ok')),
+        el('dt', { text: 'الإجمالي بعد الضريبة' }), el('dd', { text: formatSAR(report.gross) })),
+      report.zeroRated
+        ? el('p', { class: 'muted small', text: `${formatNumber(report.zeroRated)} فاتورة بلا ضريبة في هذا الربع — تأكّد أنها مقصودة.` })
+        : null,
+      el('div', { class: 'table-wrap' }, el('table', { class: 'table' },
+        el('thead', {}, el('tr', {}, ['الرقم', 'التاريخ', 'العميل', 'قبل الضريبة', 'الضريبة'].map((t) => el('th', { text: t })))),
+        el('tbody', {}, report.rows.map((r) => el('tr', {},
+          el('td', { class: 'strong', text: r.number || '—' }),
+          el('td', { text: formatDate(r.date) }),
+          el('td', { text: r.clientName || '—' }),
+          el('td', { class: 'num', text: formatSAR(r.net) }),
+          el('td', { class: 'num', text: formatSAR(r.vat) })))))),
+    );
+  };
+  yearSelect.addEventListener('change', draw);
+  quarterSelect.addEventListener('change', draw);
+  draw();
+
+  const modal = openModal({
+    title: 'ملخّص ضريبة القيمة المضافة',
+    size: 'wide',
+    body: el('div', {},
+      el('div', { class: 'notice' },
+        el('strong', { text: 'بيانٌ من فواتيرك، لا إقرار ضريبي. ' }),
+        'يجمع ضريبة المخرجات (ما حصّلتَه على فواتيرك) لربعٍ واحد. ',
+        'ولا يشمل ضريبة المدخلات لأن مصاريفك ليس فيها حقل ضريبة، فلا يُحسب منه صافي الضريبة. ',
+        'وعروض الأسعار غير داخلة — ليست فواتير.'),
+      el('div', { class: 'form-grid' }, labeled('السنة', yearSelect), labeled('الربع', quarterSelect)),
+      out),
+    footer: [
+      el('button', { type: 'button', class: 'btn', text: '🖨️ طباعة', onClick: () => window.print() }),
+      el('button', { type: 'button', class: 'btn btn-ghost', text: 'إغلاق', onClick: () => modal.close() }),
+    ],
+  });
 }

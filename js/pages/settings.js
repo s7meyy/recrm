@@ -17,7 +17,7 @@ import { listBackups, uploadBackup, restoreBackup } from '../data/vault.js';
 import { pushSupported, enablePush, disablePush, currentSubscription, syncReminders } from '../util/push.js';
 import { TEMPLATE_VARS } from '../util/templates.js';
 import {
-  parseVCards, importContacts, buildCsv, CSV_EXPORTS,
+  parseVCards, importContacts, buildVCards, buildCsv, CSV_EXPORTS,
   parseCsv, CSV_IMPORTS, suggestMapping, previewImport, runImport,
 } from '../data/exchange.js';
 import { typeLabel as typeLabelOf, statusLabel as statusLabelOf, getUI, setUI } from '../data/settings.js';
@@ -1237,6 +1237,27 @@ async function exchangeBody(redraw) {
         el('button', { type: 'button', class: 'btn', text: 'اختر ملف vCard…', onClick: () => fileInput.click() }),
         fileInput),
       resultBox),
+    el('div', { class: 'panel-block' },
+      el('h3', { text: 'تصدير جهات الاتصال إلى جوالك' }),
+      el('p', { class: 'muted small', text: 'ملف vCard يضمّ عملاءك بأسمائهم وجوالاتهم، تستورده في جهات اتصال جوالك — فيظهر لك اسم المتّصل بدل رقمٍ مجهول. يُبنى في متصفحك ولا يُرفع إلى أي مكان.' }),
+      el('div', { class: 'row' },
+        el('button', {
+          type: 'button', class: 'btn', text: '⬇️ نزّل ملف vCard',
+          onClick: async (e) => {
+            const btn = e.currentTarget;
+            btn.disabled = true;
+            try {
+              const all = await repo.clients.list();
+              // البادئة تجعل عملاءك مميّزين في دفتر هاتفك عن جهات اتصالك الشخصية.
+              const text = buildVCards(all, { prefix: 'كسّاب — ' });
+              const withPhone = all.filter((c) => c.phone || c.phone2).length;
+              if (!withPhone) { toast('لا عملاء بأرقام لتصديرهم', 'info'); return; }
+              downloadBlob(new Blob([text], { type: 'text/vcard;charset=utf-8' }), 'kassab-contacts.vcf');
+              toast(`صُدّر ${withPhone} جهة اتصال`, 'success');
+            } catch (err) { errToast(err); } finally { btn.disabled = false; }
+          },
+        }),
+        el('span', { class: 'muted small', text: 'لا تُكتب فيه ملاحظاتك الداخلية عن العميل.' }))),
     el('div', { class: 'panel-block' },
       el('h3', { text: 'تصدير إلى إكسل (CSV)' }),
       el('p', { class: 'muted small', text: 'ملف لكل جدول، بترميز يفتحه إكسل بالعربية مباشرة. للنسخ الاحتياطي الكامل استعمل التصدير أعلاه — CSV لا يحفظ الصور ولا يصلح للاستعادة.' }),

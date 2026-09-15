@@ -232,6 +232,9 @@ export const SCHEMAS = {
       area: null, price: null, // أرقام أو null (السعر غير المعروف = null)
       images: [], // معرّفات في مخزن images
       ownerId: null, // عميل من مخزن clients
+      // اتفاقية الوساطة (المرحلة ٣١): متى وُقّعت وكم مدّتها — تُحفظ في العقار لا تُقرأ من
+      // الإعدادات، فتعديل المدّة الافتراضية لا يغيّر اتفاقيةً وُقّعت بمدّةٍ أخرى.
+      agreementSignedAt: null, agreementDays: null,
       notes: '',
       source: 'manual', // ENUMS.propertySources
       status: 'not_contacted', // مفتاح من قائمة الحالات

@@ -11,7 +11,7 @@ import {
   el, clear, labeled, fieldGroup, selectEl, checkbox, badge, openModal, confirmDialog,
   promptDialog, toast, emptyState, debounce,
 } from '../util/dom.js';
-import { formatSAR, formatArea, formatDate, formatNumber, daysWord } from '../util/format.js';
+import { formatSAR, formatArea, formatDate, formatNumber, daysWord, toInputDate, fromInputDate } from '../util/format.js';
 import { matchesQuery } from '../util/arabic.js';
 import { formatPhone } from '../util/phone.js';
 import { parseLocation, isShortMapLink, mapsLink, locationToText } from '../util/location.js';
@@ -705,6 +705,9 @@ async function openForm(ctx, existing) {
     value: draft.ownerId || '', placeholder: 'بلا مالك مربوط',
     onChange: () => { newOwnerBox.hidden = ownerSelect.value !== '__new__'; },
   });
+  // اتفاقية الوساطة (المرحلة ٣١): تاريخ توقيعها ومدّتها — منها يُحسب تنبيه انتهائها.
+  const agreementInput = el('input', { class: 'input', type: 'date', value: draft.agreementSignedAt ? toInputDate(draft.agreementSignedAt) : '' });
+  const agreementDaysInput = el('input', { class: 'input', type: 'number', min: '1', step: '1', value: draft.agreementDays ?? '', placeholder: 'من الإعدادات' });
   const newOwnerName = el('input', { class: 'input', type: 'text', placeholder: 'اسم المالك' });
   const newOwnerPhone = el('input', { class: 'input', type: 'tel', placeholder: 'جوال المالك', dir: 'ltr' });
   const newOwnerBox = el('div', { class: 'inline-box', hidden: true },
@@ -825,6 +828,8 @@ async function openForm(ctx, existing) {
       status: statusSelect.value,
       notes: notesInput.value.trim(),
       typeFields, extra,
+      agreementSignedAt: fromInputDate(agreementInput.value),
+      agreementDays: agreementDaysInput.value === '' ? null : Number(agreementDaysInput.value),
       referralSource: source.input.value, // تاق المصدر — غير `source` أدناه (مسار الإدخال)
       source: draft.source, captureStatus: draft.captureStatus, tourId: draft.tourId,
     };
@@ -914,6 +919,8 @@ async function openForm(ctx, existing) {
       labeled('صاحب العقار', ownerSelect),
       labeled('الحالة', el('div', { class: 'field-row' }, statusSelect, addStatusBtn)),
       labeled('المصدر (وسيط الإحالة)', source.node, { hint: 'اختياري — لا يظهر شيء ما لم يُعبَّأ' }),
+      labeled('توقيع اتفاقية الوساطة', agreementInput, { hint: 'يُنبّهك «يومي» قبل انتهائها — والعقار بلا اتفاقية قد تخسره' }),
+      labeled('مدّة الاتفاقية (يومًا)', agreementDaysInput, { hint: 'اتركه فارغًا لتُستعمل المدّة الافتراضية من الإعدادات' }),
       newOwnerBox),
     typeBox,
     customBox,

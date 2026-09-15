@@ -72,6 +72,8 @@ const PREPARE = {
     ]);
   },
   properties(rec) {
+    rec.agreementSignedAt = rec.agreementSignedAt || null; // اتفاقية الوساطة (المرحلة ٣١)
+    rec.agreementDays = toNumberOrNull(rec.agreementDays);
     rec.city = trim(rec.city);
     rec.district = trim(rec.district);
     rec.type = trim(rec.type);

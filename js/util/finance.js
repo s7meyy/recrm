@@ -38,3 +38,35 @@ export function affordablePrice({ monthlyIncome, ratio = 33, downPayment = 0, an
   const principal = r === 0 ? capacity * months : (capacity * (1 - (1 + r) ** -months)) / r;
   return { capacity, principal, price: principal + Math.max(0, Number(downPayment) || 0) };
 }
+
+/**
+ * عائد الاستثمار العقاري (المرحلة ٣١).
+ *
+ * «استثمار» غرضٌ في النظام منذ البداية، ولم تكن له أداة. والسؤال الذي يسأله المستثمر
+ * ثلاثة أرقام لا أكثر: **كم يعود عليّ سنويًا؟ وبعد المصاريف؟ ومتى أسترد ثمنه؟**
+ *
+ * **استرشادي كأخيه:** لا يحسب تغيّر قيمة العقار، ولا التمويل، ولا الضريبة، ولا فترات
+ * الشغور. وهذه كلها تُقال تحت الحاسبة لا هنا فقط.
+ *
+ * @param {{ price, annualRent, annualCosts?, occupancy? }} input
+ *   `occupancy` نسبة الإشغال المتوقّعة (١٠٠ = مؤجَّر طول السنة).
+ * @returns {{ gross, net, netIncome, payback, monthly } | null}
+ */
+export function rentalYield({ price, annualRent, annualCosts = 0, occupancy = 100 } = {}) {
+  const p = Number(price);
+  const rent = Number(annualRent);
+  const costs = Math.max(0, Number(annualCosts) || 0);
+  const occ = Math.min(100, Math.max(0, Number(occupancy) || 0)) / 100;
+  if (!Number.isFinite(p) || !Number.isFinite(rent) || p <= 0 || rent <= 0) return null;
+
+  const effectiveRent = rent * occ;
+  const netIncome = effectiveRent - costs;
+  return {
+    gross: (effectiveRent / p) * 100, // العائد الإجمالي ٪
+    net: (netIncome / p) * 100, // بعد المصاريف ٪
+    netIncome,
+    monthly: netIncome / 12,
+    // مدّة الاسترداد بالسنوات — بلا دخلٍ موجب لا مدّة، ولا يُكتب رقمٌ لا نهائي.
+    payback: netIncome > 0 ? p / netIncome : null,
+  };
+}
