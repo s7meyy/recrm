@@ -20,7 +20,14 @@ const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH 
 const page = await browser.newPage({ viewport: { width: 1200, height: 900 } });
 await page.exposeFunction('__xss', (where) => xssFired.push(where));
 const errors = [];
-page.on('console', m => { const t = m.text(); if (m.type() === 'error' && !t.includes('favicon')) errors.push(t); });
+// منعُ السكربت في إطار التصميم المعزول نجاحٌ لا خطأ، فيُعَدّ ولا يُحسَب في الأخطاء.
+const sandboxBlocks = [];
+page.on('console', m => {
+  const t = m.text();
+  if (m.type() !== 'error' || t.includes('favicon')) return;
+  if (t.includes('Blocked script execution') && t.includes('srcdoc')) { sandboxBlocks.push(t); return; }
+  errors.push(t);
+});
 page.on('pageerror', e => errors.push('PAGEERROR: ' + e.message));
 
 try {
@@ -436,6 +443,45 @@ try {
   snapHtml > 0 && snapHtml === snapHtml2 ? ok(`النسخة المجمَّدة لم تتغيّر بتغيّر القالب (${Math.round(snapHtml/1024)} ك.ب)`) : bad('ثبات النسخة', `${snapHtml}/${snapHtml2}`);
   await page.selectOption('#r-template', 'full');
   await page.waitForTimeout(400);
+
+  console.log('٧-ز) الإخراج المصمَّم (اختياري)');
+  await page.click('#design-card > summary');
+  await page.waitForTimeout(250);
+  // قراءة الحافظة تتوقّف على إذنٍ لا يُمنَح في الاختبار، فيُقرأ ما يُكتَب فيها باعتراض writeText.
+  await page.evaluate(() => {
+    window.__copied = '';
+    const cb = navigator.clipboard || {};
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { ...cb, writeText: (t) => { window.__copied = t; return Promise.resolve(); } },
+    });
+  });
+  await page.click('#btn-design-prompt');
+  await page.waitForTimeout(400);
+  const dPrompt = await page.evaluate(() => window.__copied || '');
+  (dPrompt.includes('__PHOTO_1__') && dPrompt.includes('مقهى الدرب'))
+    ? ok('رسالة التصميم تُنسخ وفيها مواضع الصور وبيانات الغلاف')
+    : bad('رسالة التصميم', dPrompt.slice(0, 80));
+
+  // شيفرة كما قد يردّ بها نموذج، وفيها حمولة حقن: يجب أن تُعرض ولا تُنفَّذ في أصل الموقع.
+  await page.fill('#d-design', '<!doctype html><html dir="rtl"><body><h1 id="dh">تقرير مصمَّم</h1>'
+    + '<img src="__PHOTO_1__"><img src="__PHOTO_2__">'
+    + '<img src=x onerror="parent.__xss && parent.__xss(\'design\')">'
+    + '<script>try{parent.__xss(\'design-script\')}catch(e){}<\/script></body></html>');
+  await page.waitForTimeout(400);
+  (await page.textContent('#design-state')).includes('ك.ب') ? ok('شارة حجم الشيفرة تتحدّث') : bad('شارة التصميم');
+  await page.click('#btn-design-render');
+  await page.waitForTimeout(700);
+  (await page.isVisible('#design-preview')) ? ok('ظهرت المعاينة') : bad('المعاينة');
+  const dFrame = page.frameLocator('#design-frame');
+  (await dFrame.locator('#dh').textContent()).includes('تقرير مصمَّم') ? ok('الشيفرة تُعرض في الإطار') : bad('عرض الشيفرة');
+  const sandbox = await page.getAttribute('#design-frame', 'sandbox');
+  (sandbox && !sandbox.includes('allow-same-origin')) ? ok('الإطار معزول عن أصل الموقع: ' + sandbox) : bad('عزل الإطار', sandbox);
+  const leftovers = await dFrame.locator('img[src^="__PHOTO_"]').count();
+  leftovers === 0 ? ok('مواضع الصور الفارغة أُزيلت فلا صورة مكسورة') : bad('مواضع الصور', leftovers);
+  sandboxBlocks.length > 0
+    ? ok(`المتصفح منع سكربت النموذج داخل الإطار (${sandboxBlocks.length} مرة)`)
+    : bad('منع السكربت في الإطار', 'لم يُسجَّل منع — راجع سمة sandbox');
 
   console.log('٨) الأرشيف والاستعادة');
   await page.click('[data-go="archive"]');

@@ -19,7 +19,7 @@ import { recentVsOlder, monthly, alerts as recencyAlerts, topicAges } from './re
 import * as safe from './persist.js';
 import { brands, analyze, groupPrompt } from './group.js';
 import { buildGroupReportHtml } from './report.js';
-import { CHARTER } from './prompts.js';
+import { CHARTER, promptDesign } from './prompts.js';
 import * as identity from './brand.js';
 import * as lock from './lock.js';
 import * as queue from './queue.js';
@@ -119,6 +119,7 @@ function blankJob() {
     plan: [],
     planInReport: false,
     models: {},
+    designHtml: '',
     template: DEFAULT_TEMPLATE,
     font: null,          // { name, dataUrl } خط عربي يرفعه المستخدم
   };
@@ -460,8 +461,7 @@ async function onFetchPlaces() {
     return;
   }
 
-  // صور التقرير في job.photos لا في place.photos، فتُوجَّه إليها صراحةً.
-  const out = mergePlace(job.place, r.place, { photoSink: job.photos });
+  const out = mergePlace(job.place, r.place, { photos: r.photos, photoSink: job.photos });
   loadDataView();
   scheduleSave();
 
@@ -958,6 +958,8 @@ function loadReportView() {
   renderReport();
   renderCompleteness();
   renderConfidence();
+  $('#d-design').value = job.designHtml || '';
+  renderDesignState();
   history.reset(job.id, $('#r-md').value);
   renderHistory();
   renderSnapshots();
@@ -1423,6 +1425,71 @@ function bindFreeze() {
     });
     await renderSnapshots();
     toast('جُمِّدت النسخة — لن تتغيّر بعدها');
+  });
+}
+
+/* ───────────────────── الإخراج المصمَّم من نموذج (اختياري) ─────────────────────
+   وُعِد به منذ أول جولة ولم يُوصَل بالواجهة، فبقيت الدالّة معرَّفةً لا يبلغها أحد.
+
+   ويُعرض في إطارٍ معزول (sandbox بلا allow-same-origin): شيفرةٌ يكتبها نموذجٌ
+   ويلصقها المستخدم لا تُشغَّل في أصل الموقع حيث الأرشيف. */
+
+function designHtmlWithPhotos() {
+  let html = $('#d-design').value;
+  const shots = job.photos || [];
+  for (let i = 0; i < 6; i += 1) {
+    const url = shots[i]?.url || '';
+    html = html.replaceAll(`__PHOTO_${i + 1}__`, url);
+  }
+  // ما بقي من المواضع بلا صورة يُفرَّغ، فلا تظهر صورة مكسورة في تقرير يُسلَّم.
+  return html.replace(/<img[^>]*src=["']?__PHOTO_\d+__["']?[^>]*>/g, '');
+}
+
+function renderDesignState() {
+  const badge = $('#design-state');
+  if (!badge) return;
+  const v = ($('#d-design').value || '').trim();
+  const used = (job.photos || []).length;
+  badge.textContent = v ? `${Math.round(v.length / 1024)} ك.ب · ${used} صورة` : 'لا شيء بعد';
+  badge.className = 'badge' + (v ? ' mid' : '');
+}
+
+function bindDesignView() {
+  $('#btn-design-prompt').addEventListener('click', async () => {
+    const text = promptDesign(reportMarkdown(), job.place, job.ctx);
+    toast(await copy(text) ? 'نُسخت رسالة التصميم — ألصقها في النموذج' : 'تعذّر النسخ');
+  });
+
+  $('#d-design').addEventListener('input', (e) => {
+    job.designHtml = e.target.value;
+    scheduleSave();
+    renderDesignState();
+  });
+
+  $('#btn-design-render').addEventListener('click', () => {
+    const html = designHtmlWithPhotos();
+    if (!html.trim()) { toast('ألصق الشيفرة أولًا'); return; }
+    $('#design-preview').hidden = false;
+    $('#design-frame').srcdoc = html;
+    toast('عُرض في إطار معزول');
+  });
+
+  $('#btn-design-print').addEventListener('click', () => {
+    const html = designHtmlWithPhotos();
+    if (!html.trim()) { toast('ألصق الشيفرة أولًا'); return; }
+    $('#design-preview').hidden = false;
+    const frame = $('#design-frame');
+    frame.srcdoc = html;
+    frame.addEventListener('load', () => {
+      try { frame.contentWindow.print(); }
+      catch { toast('تعذّرت الطباعة من الإطار — نزّل الملف واطبعه'); }
+    }, { once: true });
+  });
+
+  $('#btn-design-dl').addEventListener('click', () => {
+    const html = designHtmlWithPhotos();
+    if (!html.trim()) { toast('ألصق الشيفرة أولًا'); return; }
+    download(reportFileName('design.html'), html, 'text/html;charset=utf-8');
   });
 }
 
@@ -2057,6 +2124,7 @@ async function boot() {
   bindReportView();
   bindPlanView();
   bindOutputView();
+  bindDesignView();
   bindHistory();
   bindFreeze();
   bindCompareView();

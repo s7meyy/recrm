@@ -152,7 +152,6 @@ export function toContract(r, { mapsUrl = '', placeId = '' } = {}) {
       distribution: { 5: null, 4: null, 3: null, 2: null, 1: null },
     },
     reviews,
-    photos: [],
     qna: [],
     popularTimes: [],
     notes: '',
@@ -211,15 +210,17 @@ export default async (request) => {
 
   const place = toContract(data.result, { mapsUrl: target, placeId });
 
+  // الصور تُسلَّم منفصلةً عن بطاقة المنشأة: مخزنها في التطبيق هو التقرير لا المنشأة.
+  let photos = [];
   if (wantPhotos && data.result.photos?.length) {
     const refs = data.result.photos.slice(0, MAX_PHOTOS).map((p) => p.photo_reference);
     const shots = await Promise.all(refs.map((ref) => fetchPhoto(ref, key)));
-    place.photos = shots
+    photos = shots
       .map((url2, i) => (url2 ? { url: url2, caption: `صورة ${i + 1} من قوقل مابز` } : null))
       .filter(Boolean);
   }
 
-  return json({ place });
+  return json({ place, photos });
 };
 
 export const config = { path: '/api/places' };

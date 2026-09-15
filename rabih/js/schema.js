@@ -29,7 +29,6 @@ export function emptyPlace() {
       distribution: { 5: null, 4: null, 3: null, 2: null, 1: null },
     },
     reviews: [],          // انظر emptyReview
-    photos: [],           // { url, caption }
     qna: [],              // { question, answer, date }
     popularTimes: [],     // { day, hours: [{hour, level}] }
     notes: '',            // ملاحظات المستخدم اليدوية

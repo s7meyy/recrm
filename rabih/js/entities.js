@@ -2,7 +2,7 @@
 // وصاحب المحل لا ينفعه «الطعم جيد»، بل «اللاتيه ذُكر ٧ مرات إيجابًا، والكيك ٣ سلبًا».
 // كل هذا من تكرار العبارات في النصوص نفسها، بلا نموذج ولا معجم خارجي.
 
-import { normalizeAr, sentimentOf, TOPICS } from './lexicon.js';
+import { normalizeAr, sentimentOf, TOPICS, allKeywords } from './lexicon.js';
 
 // كلمات وظيفية عربية لا تصلح كيانًا بحال.
 const STOP = new Set(`
@@ -21,7 +21,9 @@ const STOP = new Set(`
 `.trim().split(/\s+/));
 
 // كلمات القاموس كلها مستبعدة: هي مواضيع لا كيانات.
-const TOPIC_WORDS = new Set(TOPICS.flatMap((t) => t.keys.map(normalizeAr).flatMap((k) => k.split(' '))));
+// وتُقرأ عند كل استخراج لا عند التحميل، كي تدخل فيها إضافات المستخدم:
+// كلمةٌ يضيفها للقاموس كانت تبقى كيانًا أيضًا، فتُعدّ مرتين بوجهين.
+let TOPIC_WORDS = new Set();
 
 // سوابق أسماء الأشخاص في التعليقات العربية: «الموظف فهد»، «الاستاذ سعد»، «الكابتن».
 // تُقارَن بعد تجريد السوابق، فلا حاجة لأداة التعريف هنا.
@@ -45,6 +47,11 @@ function stripPrefix(token) {
 const tokenize = (text) => normalizeAr(text).split(' ').filter(Boolean).map(stripPrefix);
 
 const usable = (w) => w.length >= 3 && !STOP.has(w) && !TOPIC_WORDS.has(w) && !/^\d+$/.test(w);
+
+/** يُنعش قائمة الاستبعاد من القاموس الحيّ. يُستدعى في مطلع كل استخراج. */
+function refreshTopicWords() {
+  TOPIC_WORDS = allKeywords();
+}
 
 /** يبني عبارات من كلمة وكلمتين، ويستبعد الوظيفي والموضوعي. */
 function phrases(tokens) {
@@ -89,6 +96,7 @@ function cuedProducts(tokens) {
  * @returns {{people:Array, products:Array}}
  */
 export function extract(place, { minCount = 2, limit = 12 } = {}) {
+  refreshTopicWords();
   const reviews = place?.reviews || [];
   const people = new Map();
   const products = new Map();

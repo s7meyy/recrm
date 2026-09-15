@@ -287,8 +287,33 @@
       <div id="plan-box"></div>
     </div>
 
+    <details class="card" id="design-card">
+      <summary style="cursor:pointer;font-weight:700;color:var(--navy);font-size:17px">٩. إخراج مصمَّم من نموذج (اختياري)</summary>
+      <p class="hint">التقرير أعلاه يُبنى برمجيًّا ولا يحتاج نموذجًا. وهذا بابٌ لمن أراد تصميمًا من نموذج: انسخ الرسالة، ألصق ما يردّه، واعرضه أو نزّله.</p>
+      <div class="msg warn">
+        <b>لا يمرّ على المدقّقين.</b>
+        <ul>
+          <li>مخرج النموذج هنا <b>ليس مفحوصًا</b> بمدقّقَي السند والاكتمال — قارنه بالتقرير أعلاه قبل التسليم.</li>
+          <li>يُعرض في إطارٍ معزول لا يصل إلى أرشيفك، ولو حمل شيفرةً لم تعمل.</li>
+        </ul>
+      </div>
+      <div class="row">
+        <button type="button" class="btn sm" id="btn-design-prompt">نسخ رسالة التصميم</button>
+        <button type="button" class="btn ghost sm" id="btn-design-render">عرض</button>
+        <button type="button" class="btn ghost sm" id="btn-design-print">طباعة</button>
+        <button type="button" class="btn ghost sm" id="btn-design-dl">تنزيل HTML</button>
+        <span class="spacer"></span>
+        <span class="badge" id="design-state"></span>
+      </div>
+      <div class="field">
+        <label for="d-design">شيفرة HTML التي ردّ بها النموذج</label>
+        <textarea id="d-design" class="tall" placeholder="ألصق هنا الشيفرة كما هي…"></textarea>
+      </div>
+      <div class="preview" id="design-preview" hidden><iframe id="design-frame" title="معاينة الإخراج المصمَّم" sandbox="allow-modals"></iframe></div>
+    </details>
+
     <div class="card">
-      <h2>٩. الإرسال</h2>
+      <h2>١٠. الإرسال</h2>
       <p class="hint">احفظ الـPDF أولًا ثم أرفقه في القناة التي تختارها؛ النص التمهيدي يُجهَّز لك.</p>
       <div class="grid c2">
         <div class="field"><label for="s-phone">رقم الجوال (واتساب)</label><input id="s-phone" inputmode="tel" placeholder="9665xxxxxxxx"></div>

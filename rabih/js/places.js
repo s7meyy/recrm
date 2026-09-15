@@ -7,7 +7,7 @@ import { assignReviewIds } from './schema.js';
 
 /**
  * يجلب بيانات المنشأة من الدالة الخادمية.
- * @returns {{ok:boolean, place?:object, error?:string, needsKey?:boolean}}
+ * @returns {{ok:boolean, place?:object, photos?:Array, error?:string, needsKey?:boolean}}
  */
 export async function fetchPlace(mapsUrl, { photos = true } = {}) {
   if (!mapsUrl) return { ok: false, error: 'لا رابط.' };
@@ -17,7 +17,7 @@ export async function fetchPlace(mapsUrl, { photos = true } = {}) {
     if (!res.ok) {
       return { ok: false, error: data.error || `تعذّر الجلب (${res.status}).`, needsKey: !!data.needsKey };
     }
-    return { ok: true, place: data.place };
+    return { ok: true, place: data.place, photos: data.photos || [] };
   } catch (e) {
     return { ok: false, error: 'تعذّر الاتصال بالدالة — هل المنصّة تعمل على Netlify؟' };
   }
@@ -30,7 +30,7 @@ const empty = (v) => v === undefined || v === null || (typeof v === 'string' && 
  * يدمج ما جاء من قوقل في المنشأة القائمة.
  * @returns {{filled:string[], kept:string[], reviewsAdded:number, duplicates:number, photosAdded:number}}
  */
-export function merge(place, incoming, { overwrite = false, photoSink = null } = {}) {
+export function merge(place, incoming, { overwrite = false, photos = [], photoSink = null } = {}) {
   const filled = [];
   const kept = [];
 
@@ -72,15 +72,13 @@ export function merge(place, incoming, { overwrite = false, photoSink = null } =
     assignReviewIds(place);
   }
 
-  // الصور تُضاف بلا تكرار.
-  // `photoSink` موجود لأن التطبيق يحفظ صور التقرير في `job.photos` لا في
-  // `place.photos`، والتقرير يقرأ من الأولى. فلولا التصريح بالوجهة لجاءت الصور
-  // من قوقل ولم تظهر في التقرير — وهذا ما وقع فعلًا وأمسكه الاختبار.
-  const target = photoSink || place.photos;
-  const urls = new Set((target || []).map((p) => p.url));
+  // الصور تُضاف بلا تكرار إلى مخزنها الوحيد على التقرير.
   let photosAdded = 0;
-  for (const ph of incoming.photos || []) {
-    if (!urls.has(ph.url)) { target.push(ph); urls.add(ph.url); photosAdded += 1; }
+  if (photoSink) {
+    const urls = new Set(photoSink.map((p) => p.url));
+    for (const ph of [...(photos || []), ...(incoming.photos || [])]) {
+      if (ph?.url && !urls.has(ph.url)) { photoSink.push(ph); urls.add(ph.url); photosAdded += 1; }
+    }
   }
 
   place.placesCoverage = incoming.coverage || null;

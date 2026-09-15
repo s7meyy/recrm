@@ -101,6 +101,21 @@ export function removeKeyword(topicId, word) {
 
 export const customKeywords = () => readCustom();
 
+/**
+ * كل كلمات القاموس الحيّة مفرَّقةً — الأصل وما أضافه المستخدم.
+ *
+ * يحتاجها مستخرج الكيانات ليستبعدها: كلمةٌ صارت موضوعًا لا تُعدّ كيانًا أيضًا.
+ * وكان يبنيها من الأصل الساكن مرة واحدة عند التحميل، فتظهر الكلمة المضافة
+ * موضوعًا وكيانًا في آنٍ واحد.
+ */
+export function allKeywords() {
+  const out = new Set();
+  for (const t of INDEX) {
+    for (const k of t.normKeys) for (const w of k.split(' ')) if (w) out.add(w);
+  }
+  return out;
+}
+
 export function resetCustom() {
   writeCustom({});
   rebuild();
