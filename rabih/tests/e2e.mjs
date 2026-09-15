@@ -101,6 +101,14 @@ try {
   await page.fill('#d-count', '310');
   await page.waitForTimeout(150);
 
+  console.log('٤-ب) القاموس وكاشف المشبوه');
+  const topics = await page.$$eval('#topics-box .topic-row', n => n.map(x => x.textContent.trim()));
+  topics.length >= 4 ? ok(`المواضيع المرصودة (${topics.length}): ` + topics.slice(0,3).map(t=>t.replace(/\s+/g,' ')).join(' | ')) : bad('المواضيع', topics.length);
+  const worst = await page.textContent('#topics-box');
+  worst.includes('أبرز الشكاوى') ? ok('أبرز الشكاوى محسوبة برمجيًا') : bad('أبرز الشكاوى');
+  const anom = await page.textContent('#anomaly-box');
+  anom.trim().length > 5 ? ok('كاشف المشبوه يعمل: ' + anom.trim().slice(0,60)) : bad('كاشف المشبوه', anom);
+
   console.log('٥) خط النماذج');
   await page.click('#btn-to-pipeline');
   await page.waitForTimeout(400);
@@ -119,6 +127,23 @@ try {
   const checks = [['الميثاق', 'قواعد مُلزِمة'], ['الإحصاءات', 'الإحصاءات المحسوبة'], ['المعرّفات', '[R001]'], ['التعليقات', 'الباريستا']];
   for (const [n, needle] of checks) prompt.includes(needle) ? ok(`الرسالة تحوي ${n}`) : bad(`الرسالة تحوي ${n}`);
   prompt.includes('4.2') ? ok('المتوسط في الرسالة') : bad('المتوسط في الرسالة');
+
+  console.log('٥-ب) مدقّق السند');
+  const ta0 = page.locator('#out-n1');
+  await ta0.fill('يشكو العملاء من بطء الخدمة (R002، R008).\nتكرر الثناء على الموقع (R047).\nنقطة ضعف: النظافة سيئة.\nمتوسط التقييم 4.9 من 5.');
+  await ta0.blur();
+  await page.waitForTimeout(300);
+  const vb = await page.locator('.step').nth(0).locator('.verify-box').textContent();
+  vb.includes('R047') ? ok('كشف المعرّف الوهمي R047') : bad('المعرّف الوهمي', vb.slice(0,80));
+  vb.includes('4.9') ? ok('كشف الرقم المخالف 4.9') : bad('الرقم المخالف');
+  vb.includes('بلا سند') ? ok('كشف الحكم بلا سند') : bad('الحكم بلا سند');
+  const lvl = await page.locator('.step').nth(0).locator('.verify-box .msg').getAttribute('class');
+  lvl.includes('err') ? ok('صُنِّف المخرج مُعتلًّا') : bad('تصنيف المخرج', lvl);
+  await ta0.fill('يشكو العملاء من بطء الخدمة (R002، R008).');
+  await ta0.blur();
+  await page.waitForTimeout(300);
+  const vb2 = await page.locator('.step').nth(0).locator('.verify-box .msg').getAttribute('class');
+  vb2.includes('ok') ? ok('مخرج سليم يمرّ') : bad('المخرج السليم', vb2);
 
   console.log('٦) ملء الخطوات الثماني');
   for (const k of ['n1','n2','n3','nm','a1','a2','a3','am']) {
@@ -145,6 +170,8 @@ try {
   toc >= 2 ? ok(`الفهرس (${toc} عناصر)`) : bad('الفهرس', toc);
   const h3 = await frame.locator('.body h3').count();
   h3 >= 1 ? ok('العناوين الفرعية مرقّمة') : bad('العناوين الفرعية', h3);
+  const tp = await frame.locator('.topics .topic-row').count();
+  tp >= 4 ? ok(`قسم المواضيع في التقرير (${tp} موضوعًا)`) : bad('قسم المواضيع', tp);
   const tbl = await frame.locator('table').count();
   tbl >= 1 ? ok('الجدول') : bad('الجدول', tbl);
   const rid = await frame.locator('.rid').count();

@@ -3,6 +3,7 @@
 // وإن أراد المستخدم تصميمًا من نموذج (الخطوة الاختيارية التاسعة) فله ذلك، وهذا هو الأساس المضمون.
 
 import { stats } from './schema.js';
+import { topicStats } from './lexicon.js';
 
 const esc = (s) => String(s ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -128,6 +129,35 @@ function starBars(place) {
   </section>`;
 }
 
+function topicsBlock(place) {
+  const rows = topicStats(place);
+  if (!rows.length) return '';
+  const max = Math.max(...rows.map((r) => r.total), 1);
+
+  const bars = rows.slice(0, 10).map((t) => {
+    const negPct = Math.round((t.neg / max) * 100);
+    const posPct = Math.round((t.pos / max) * 100);
+    const neuPct = Math.round((t.neu / max) * 100);
+    return `<div class="topic-row">
+      <span class="topic-name">${esc(t.name)}</span>
+      <span class="topic-track">
+        <span class="seg pos" style="width:${posPct}%"></span><span class="seg neu" style="width:${neuPct}%"></span><span class="seg neg" style="width:${negPct}%"></span>
+      </span>
+      <span class="topic-count">${t.total}</span>
+    </div>`;
+  }).join('');
+
+  const table = rows.map((t) => `<tr><td>${esc(t.name)}</td><td>${t.total}</td><td>${t.pos}</td><td>${t.neg}</td><td>${esc(t.verdict)}</td></tr>`).join('');
+
+  return `<section class="topics">
+    <h2 class="no-count">المواضيع الواردة في التعليقات</h2>
+    <p class="fine">مُستخرَجة آليًّا من نصوص التعليقات، لا من تقدير نموذج.</p>
+    <div class="legend"><span><i class="sw pos"></i>إيجابي</span><span><i class="sw neu"></i>محايد</span><span><i class="sw neg"></i>سلبي</span></div>
+    <div class="topics-chart">${bars}</div>
+    <table><thead><tr><th>الموضوع</th><th>مرات الورود</th><th>إيجابي</th><th>سلبي</th><th>الاتجاه</th></tr></thead><tbody>${table}</tbody></table>
+  </section>`;
+}
+
 function photosBlock(photos = []) {
   const valid = photos.filter((p) => p?.url);
   if (!valid.length) return '';
@@ -184,6 +214,18 @@ code{background:#f3f5f8;padding:0 1mm;border-radius:3px;font-size:10pt}
 .bar-track{background:#eef1f5;border-radius:3px;height:5mm;overflow:hidden}
 .bar-fill{display:block;height:100%;background:linear-gradient(90deg,var(--navy),#3a6ea5)}
 .bar-value{font-size:10pt;color:var(--muted);text-align:left}
+.topics{break-inside:avoid;margin:8mm 0}
+.topics-chart{display:flex;flex-direction:column;gap:2mm;margin:4mm 0}
+.topic-row{display:grid;grid-template-columns:52mm 1fr 10mm;align-items:center;gap:3mm}
+.topic-name{font-size:10.5pt;color:var(--navy)}
+.topic-track{display:flex;background:#eef1f5;border-radius:3px;height:5mm;overflow:hidden}
+.topic-track .seg{display:block;height:100%}
+.seg.pos{background:#2f7d55}.seg.neu{background:#b9c2ce}.seg.neg{background:#b5462f}
+.topic-count{font-size:10pt;color:var(--muted);text-align:left}
+.legend{display:flex;gap:6mm;font-size:9.5pt;color:var(--muted);margin-top:2mm}
+.legend span{display:flex;align-items:center;gap:1.5mm}
+.legend .sw{width:3mm;height:3mm;border-radius:2px;display:inline-block}
+.sw.pos{background:#2f7d55}.sw.neu{background:#b9c2ce}.sw.neg{background:#b5462f}
 .photos{break-inside:avoid;margin:8mm 0}
 .photo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:3mm}
 .photo-grid img{width:100%;height:38mm;object-fit:cover;border-radius:6px;border:1px solid var(--line)}
@@ -248,6 +290,7 @@ ${cover}
 <main class="body">
 ${body.toc}
 ${starBars(place)}
+${topicsBlock(place)}
 ${body.html}
 ${photosBlock(photos)}
 </main>

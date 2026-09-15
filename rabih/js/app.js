@@ -8,6 +8,9 @@ import { emptyPlace, assignReviewIds, validate, stats } from './schema.js';
 import { parseReviews, parseHeader } from './parse.js';
 import { STEPS, STAGE_NAMES, MODEL_PICKS } from './prompts.js';
 import { buildReportHtml } from './report.js';
+import { topicStats, topComplaints, uncovered } from './lexicon.js';
+import { verify } from './verify.js';
+import { scan, withoutFlagged, FLAGS } from './anomaly.js';
 import { newId, saveJob, getJob, allJobs, deleteJob, buildTree, jobPath } from './store.js';
 
 const $  = (s, r = document) => r.querySelector(s);
@@ -19,6 +22,9 @@ const VIEWS = ['new', 'data', 'pipeline', 'report', 'archive', 'about'];
 
 let job = null;
 let dirty = false;
+// حالة فتح خطوات خط التحليل: تبقى كما تركها المستخدم عبر إعادات الرسم،
+// وإلا انطوت الخطوة تحت يده لحظة انتقاله من مربع الإجابة.
+const stepOpen = new Map();
 
 /* ───────────────────────── أدوات عامة ───────────────────────── */
 
@@ -272,6 +278,8 @@ function loadDataView() {
   $('#d-notes').value = p.notes || '';
   $('#d-reviews').value = job.rawPaste || '';
   renderParseStats();
+  renderTopics();
+  renderAnomaly();
   renderPhotoChips();
 }
 
@@ -334,7 +342,72 @@ function doParse() {
   else message('#parse-msg', 'ok', `استُخرج ${reviews.length} تعليقًا بنجاح.`);
 
   renderParseStats();
+  renderTopics();
+  renderAnomaly();
   scheduleSave();
+}
+
+/** المواضيع المرصودة آليًّا — تريك المشكلة قبل تشغيل أي نموذج. */
+function renderTopics() {
+  const box = $('#topics-box');
+  if (!box) return;
+  const rows = topicStats(job.place);
+  if (!rows.length) { box.innerHTML = ''; return; }
+
+  const max = Math.max(...rows.map((r) => r.total), 1);
+  const bars = rows.map((t) => {
+    const w = (n) => Math.round((n / max) * 100);
+    return `<div class="topic-row">
+      <span class="topic-name" title="${t.ids.join('، ')}">${t.name}</span>
+      <span class="topic-track"><span class="seg pos" style="width:${w(t.pos)}%"></span><span class="seg neu" style="width:${w(t.neu)}%"></span><span class="seg neg" style="width:${w(t.neg)}%"></span></span>
+      <span class="topic-count">${t.total}</span>
+    </div>`;
+  }).join('');
+
+  const miss = uncovered(job.place);
+  const worst = topComplaints(job.place, 3);
+  box.innerHTML = `
+    <div class="legend"><span><i class="sw pos"></i>إيجابي</span><span><i class="sw neu"></i>محايد</span><span><i class="sw neg"></i>سلبي</span></div>
+    <div class="topics-chart">${bars}</div>
+    ${worst.length ? `<p class="fine">أبرز الشكاوى: ${worst.map((t) => `<b>${t.name}</b> (${t.neg})`).join(' · ')}</p>` : ''}
+    ${miss.length ? `<p class="fine">لم يصنّف القاموس ${miss.length} تعليقًا (${miss.join('، ')}) — اقرأها بنفسك، فقد ينقص القاموس لا التعليق.</p>` : ''}`;
+}
+
+/** كاشف التعليقات المشبوهة — يرفع إشارة ولا يحذف شيئًا من تلقاء نفسه. */
+function renderAnomaly() {
+  const box = $('#anomaly-box');
+  if (!box) return;
+  const r = scan(job.place);
+  if (!job.place.reviews.length) { box.innerHTML = ''; return; }
+
+  if (r.level === 'ok') { box.innerHTML = `<div class="msg ok"><b>${r.summary}</b></div>`; return; }
+
+  const rows = r.flagged.slice(0, 12).map((f) => {
+    const rev = job.place.reviews.find((x) => x.id === f.id);
+    const labels = f.flags.map((k) => FLAGS[k].label).join('، ');
+    return `<tr><td><span class="rid">${f.id}</span></td><td>${f.score}</td><td>${labels}</td>
+      <td class="snip">${(rev?.text || '(بلا نص)').slice(0, 70)}</td></tr>`;
+  }).join('');
+
+  box.innerHTML = `
+    <div class="msg ${r.level === 'err' ? 'err' : 'warn'}"><b>${r.summary}</b></div>
+    ${r.clusters.length ? `<p class="fine">نصوص متشابهة: ${r.clusters.map((c) => c.ids.join(' ≈ ')).join(' · ')}</p>` : ''}
+    <div class="table-wrap"><table class="mini"><thead><tr><th>التعليق</th><th>الدرجة</th><th>الإشارات</th><th>مقتطف</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="row"><button type="button" class="btn ghost sm" id="btn-drop-flagged">استبعاد ما درجته ٣ فأعلى</button>
+    <span class="fine">الاستبعاد قرارك أنت؛ لا يُحذف شيء تلقائيًّا.</span></div>`;
+
+  const btn = $('#btn-drop-flagged');
+  if (btn) btn.addEventListener('click', () => {
+    const before = job.place.reviews.length;
+    const cleaned = withoutFlagged(job.place, 3);
+    const removed = before - cleaned.reviews.length;
+    if (!removed) { toast('لا تعليق يبلغ هذه الدرجة'); return; }
+    if (!confirm(`استبعاد ${removed} تعليقًا من التحليل؟ يبقى اللصق الأصلي كما هو.`)) return;
+    job.place.reviews = cleaned.reviews;
+    renderParseStats(); renderTopics(); renderAnomaly();
+    scheduleSave();
+    toast(`استُبعد ${removed} تعليقًا`);
+  });
 }
 
 function renderParseStats() {
@@ -404,13 +477,18 @@ function renderPipeline() {
     const done = !!(job.out[step.key] || '').trim();
 
     const node = el('div', `step${done ? ' done' : ''}`);
-    node.dataset.open = (!done && ready) ? '1' : '0';
+    const defaultOpen = (!done && ready) || (done && !job.out.am);
+    node.dataset.open = stepOpen.has(step.key) ? (stepOpen.get(step.key) ? '1' : '0') : (defaultOpen ? '1' : '0');
 
     const head = el('header');
     head.innerHTML = `<b>${done ? '✓' : i + 1}</b>
       <div><div class="t">${step.title}</div>
       <div class="s">${done ? 'مكتملة — اضغط للتعديل' : (ready ? 'جاهزة' : 'تنتظر إكمال المرحلة السابقة')}</div></div>`;
-    head.addEventListener('click', () => { node.dataset.open = node.dataset.open === '1' ? '0' : '1'; });
+    head.addEventListener('click', () => {
+      const next = node.dataset.open === '1' ? '0' : '1';
+      node.dataset.open = next;
+      stepOpen.set(step.key, next === '1');
+    });
     node.appendChild(head);
 
     const inner = el('div', 'inner');
@@ -461,13 +539,32 @@ function renderPipeline() {
     ta.className = 'tall';
     ta.placeholder = 'ألصق هنا ما ردّ به النموذج…';
     ta.value = job.out[step.key] || '';
+    const check = el('div', 'verify-box');
+
+    const runVerify = () => {
+      const val = (job.out[step.key] || '').trim();
+      if (!val) { check.innerHTML = ''; return; }
+      const v = verify(val, job.place);
+      const bad = v.badIds.length
+        ? `<p class="fine err-text">معرّفات لا وجود لها في بياناتك: ${v.badIds.map((i) => `<span class="rid">${i}</span>`).join('، ')} — هذا اختراع صريح، أعد الخطوة بنموذج آخر.</p>` : '';
+      const nums = v.numberIssues.length
+        ? `<ul class="fine">${v.numberIssues.map((n) => `<li>الرقم <b>${n.value}</b> في «${n.context.slice(0, 60)}» — ${n.why}.</li>`).join('')}</ul>` : '';
+      const uns = v.unsupported.length
+        ? `<details class="fine"><summary>${v.unsupported.length} حكمًا بلا سند</summary><ul>${
+            v.unsupported.slice(0, 8).map((u) => `<li>${u.text.slice(0, 110)}</li>`).join('')}</ul></details>` : '';
+      check.innerHTML = `<div class="msg ${v.level === 'err' ? 'err' : v.level === 'warn' ? 'warn' : 'ok'}">
+        <b>مدقّق السند: ${v.summary}</b>${bad}${nums}${uns}</div>`;
+    };
+
     ta.addEventListener('input', () => {
       job.out[step.key] = ta.value;
       scheduleSave();
       updateProgress();
     });
-    ta.addEventListener('change', () => { renderPipeline(); });
-    inner.append(lbl, ta);
+    ta.addEventListener('change', () => { runVerify(); renderPipeline(); });
+    ta.addEventListener('blur', runVerify);
+    inner.append(lbl, ta, check);
+    runVerify();
 
     node.appendChild(inner);
     host.appendChild(node);
@@ -631,6 +728,7 @@ function jobRow(j) {
   const open = el('button', 'btn ghost sm', 'فتح');
   open.addEventListener('click', async () => {
     job = await getJob(j.id);
+    stepOpen.clear();
     loadDataView();
     renderPipeline();
     loadReportView();

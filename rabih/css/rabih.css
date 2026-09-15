@@ -144,3 +144,33 @@ details.help ol{padding-inline-start:20px;font-size:13.5px;color:#3a4350}
   margin:0 auto;width:max-content;max-width:90%;background:var(--navy);color:#fff;
   padding:10px 20px;border-radius:99px;font-size:14px;box-shadow:var(--shadow);z-index:60}
 .toast[hidden]{display:none!important}
+
+/* المواضيع المرصودة */
+.topics-chart{display:flex;flex-direction:column;gap:5px;margin:12px 0}
+.topic-row{display:grid;grid-template-columns:minmax(90px,150px) 1fr 34px;align-items:center;gap:8px}
+.topic-name{font-size:13px;color:var(--navy);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.topic-track{display:flex;background:#eef1f5;border-radius:4px;height:14px;overflow:hidden}
+.topic-track .seg{display:block;height:100%}
+.seg.pos{background:#2f7d55}.seg.neu{background:#b9c2ce}.seg.neg{background:#b5462f}
+.topic-count{font-size:12px;color:var(--muted);text-align:left}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--muted);flex-wrap:wrap}
+.legend span{display:flex;align-items:center;gap:4px}
+.legend .sw{width:10px;height:10px;border-radius:3px;display:inline-block}
+.sw.pos{background:#2f7d55}.sw.neu{background:#b9c2ce}.sw.neg{background:#b5462f}
+.fine{font-size:12.5px;color:var(--muted);margin:6px 0}
+.err-text{color:var(--err)}
+.rid{color:var(--gold);font-weight:700;font-size:12.5px}
+
+/* جداول مصغّرة داخل البطاقات */
+.table-wrap{overflow-x:auto;margin:10px 0}
+table.mini{width:100%;border-collapse:collapse;font-size:12.5px;min-width:420px}
+table.mini th,table.mini td{border:1px solid var(--line);padding:5px 8px;text-align:right}
+table.mini th{background:#f3f5f8;color:var(--navy);font-weight:600;white-space:nowrap}
+table.mini td.snip{color:var(--muted)}
+
+/* مدقّق السند */
+.verify-box{margin-top:10px}
+.verify-box .msg{margin:0}
+.verify-box details{margin-top:6px}
+.verify-box summary{cursor:pointer}
+.verify-box ul{margin:6px 0 0;padding-inline-start:18px}

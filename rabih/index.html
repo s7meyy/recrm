@@ -127,10 +127,17 @@
       </div>
       <div id="parse-msg"></div>
       <div class="stat-grid" id="parse-stats" hidden></div>
+      <div id="topics-box"></div>
     </div>
 
     <div class="card">
-      <h2>٤. صور المنشأة (اختياري)</h2>
+      <h2>٤. فحص سلامة العيّنة</h2>
+      <p class="hint">إشارات على تعليقات قد تكون مفتعلة أو ناقصة. لا يُحذف شيء تلقائيًّا — القرار قرارك.</p>
+      <div id="anomaly-box"></div>
+    </div>
+
+    <div class="card">
+      <h2>٥. صور المنشأة (اختياري)</h2>
       <p class="hint">تُضمَّن داخل ملف التقرير نفسه فيبقى يعمل بلا إنترنت. الأفضل ٣ إلى ٦ صور.</p>
       <div class="field">
         <input id="d-photos" type="file" accept="image/*" multiple>
@@ -149,7 +156,7 @@
     <div class="steps" id="steps-bar-3"></div>
 
     <div class="card">
-      <h2>٥. خط التحليل — ثماني خطوات</h2>
+      <h2>٦. خط التحليل — ثماني خطوات</h2>
       <p class="hint" id="pipeline-hint">
         في كل خطوة: انسخ الرسالة، افتح النموذج المقترح، ألصقها، ثم أعد إجابته إلى المربع. تُحفظ كل خطوة تلقائيًا فيمكنك التوقف والعودة.
       </p>
@@ -174,7 +181,7 @@
     <div class="steps" id="steps-bar-4"></div>
 
     <div class="card">
-      <h2>٦. التقرير النهائي</h2>
+      <h2>٧. التقرير النهائي</h2>
       <p class="hint">التقرير يُبنى من مخرج الخطوة الثامنة. يمكنك تحريره قبل الإخراج.</p>
       <div class="field">
         <label for="r-md">نص التقرير الموحَّد</label>
@@ -189,7 +196,7 @@
     </div>
 
     <div class="card">
-      <h2>٧. الإرسال</h2>
+      <h2>٨. الإرسال</h2>
       <p class="hint">احفظ الـPDF أولًا ثم أرفقه في القناة التي تختارها؛ النص التمهيدي يُجهَّز لك.</p>
       <div class="grid c2">
         <div class="field"><label for="s-phone">رقم الجوال (واتساب)</label><input id="s-phone" inputmode="tel" placeholder="9665xxxxxxxx"></div>
