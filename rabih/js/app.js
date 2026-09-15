@@ -17,6 +17,9 @@ import { TEMPLATES, DEFAULT_TEMPLATE, applyTemplate, droppedSections } from './t
 import { buildXlsx, jobSheets, archiveSheet } from './export.js';
 import { recentVsOlder, monthly, alerts as recencyAlerts, topicAges } from './recency.js';
 import * as safe from './persist.js';
+import { brands, analyze, groupPrompt } from './group.js';
+import { buildGroupReportHtml } from './report.js';
+import { CHARTER } from './prompts.js';
 import { newId, saveJob, getJob, allJobs, deleteJob, buildTree, jobPath } from './store.js';
 
 const $  = (s, r = document) => r.querySelector(s);
@@ -79,7 +82,7 @@ async function copy(text) {
 function blankJob() {
   return {
     id: newId(),
-    ctx: { regionId: '', regionName: '', cityId: '', cityName: '', groupId: '', categoryId: '', categoryName: '', districtName: '' },
+    ctx: { regionId: '', regionName: '', cityId: '', cityName: '', groupId: '', categoryId: '', categoryName: '', districtName: '', brand: '', branch: '' },
     mapsUrl: '',
     place: emptyPlace(),
     out: {},
@@ -213,8 +216,18 @@ function bindNewView() {
     else { toast('الحي موجود أصلًا أو الاسم فارغ'); }
   });
 
+  fillBrandList();
   $('#btn-start').addEventListener('click', onStart);
   $('#f-url').addEventListener('keydown', (e) => { if (e.key === 'Enter') onStart(); });
+}
+
+/** يقترح العلامات المسجَّلة سابقًا كي تتّحد التسمية فتُجمَع الفروع. */
+async function fillBrandList() {
+  try {
+    const jobs = await allJobs();
+    const names = [...new Set(jobs.map((j) => (j.ctx?.brand || '').trim()).filter(Boolean))];
+    $('#brand-list').innerHTML = names.map((n) => `<option value="${n}"></option>`).join('');
+  } catch { /* لا يمنع التشغيل */ }
 }
 
 async function onStart() {
@@ -246,6 +259,8 @@ async function onStart() {
     cityId, cityName: city?.name || '',
     groupId: cat?.group || '', categoryId, categoryName: cat?.name || '',
     districtName,
+    brand: $('#f-brand').value.trim(),
+    branch: $('#f-branch').value.trim(),
   };
   job.place.mapsUrl = url;
   job.place.placeId = parsed.data?.placeId || '';
@@ -811,6 +826,7 @@ async function renderCompare() {
     ? compareJobs.map((j) => `<option value="${j.id}">${j.place?.identity?.name || 'بلا اسم'} — ${j.ctx?.cityName || ''} ${j.ctx?.districtName || ''}</option>`).join('')
     : '<option value="">— الأرشيف فارغ —</option>';
   renderBenchmark();
+  renderGroups();
 }
 
 function fillTimelineSelects() {
@@ -891,6 +907,117 @@ function renderBenchmark() {
     ${topics ? `<h3 class="sub">المحاور المشتركة</h3><div class="table-wrap"><table class="mini">
       <thead><tr><th>الموضوع</th>${b.rows.map((r) => `<th class="${r.isTarget ? 'me' : ''}">${r.name}</th>`).join('')}</tr></thead>
       <tbody>${topics}</tbody></table></div>` : '<p class="fine">لا محاور مشتركة بعدُ بين هذه المنشآت.</p>'}`;
+}
+
+/* ───────────────────────── تقرير المجموعة ───────────────────────── */
+
+let groupList = [];
+let groupAnalysis = null;
+
+function renderGroups() {
+  groupList = brands(compareJobs);
+  const sel = $('#grp-brand');
+  sel.innerHTML = groupList.length
+    ? groupList.map((b) => `<option value="${b.name}">${b.name} (${b.jobs.length} فروع)</option>`).join('')
+    : '<option value="">— لا علامة لها فرعان فأكثر —</option>';
+  renderGroup();
+}
+
+function renderGroup() {
+  const box = $('#group-box');
+  const brand = groupList.find((b) => b.name === $('#grp-brand').value);
+  const actions = $('#group-actions');
+  const answer = $('#group-answer-field');
+
+  if (!brand) {
+    groupAnalysis = null;
+    actions.hidden = true; answer.hidden = true;
+    box.innerHTML = '<div class="empty">اكتب اسم العلامة نفسه في حقل «العلامة / المالك» عند إنشاء تقرير كل فرع، فتُجمَع هنا.</div>';
+    return;
+  }
+
+  const a = analyze(brand.jobs);
+  groupAnalysis = { brand: brand.name, analysis: a };
+  actions.hidden = false; answer.hidden = false;
+  $('#grp-answer').value = readGroupAnswer(brand.name);
+
+  const rank = (a.ranking.length ? a.ranking : a.branches.map((b, i) => ({ ...b, rank: i + 1 })));
+  const rows = rank.map((b) => {
+    const tone = b.trend === 'انحدار' ? 'down' : (b.trend === 'تحسّن' ? 'up' : '');
+    return `<tr><td>${b.rank}</td><td>${b.label}</td><td>${b.district}</td>
+      <td>${b.googleAverage ?? '—'}</td><td>${b.googleCount ?? '—'}</td>
+      <td>${b.negativeShare ?? '—'}%</td><td>${b.replyRate ?? '—'}%</td>
+      <td class="${tone}">${b.trend}</td></tr>`;
+  }).join('');
+
+  const shared = a.shared.map((t) =>
+    `<li><b>${t.name}</b> — ${t.branches.length} فروع: ${t.branches.map((x) => `${x.label} (${x.neg})`).join('، ')}</li>`).join('');
+  const uniq = a.unique.map((t) =>
+    `<li><b>${t.name}</b> — ${t.branches[0].label} وحده (${t.branches[0].neg})</li>`).join('');
+
+  box.innerHTML = `
+    <div class="stat-grid">
+      <div class="stat"><b>الفروع</b><span>${a.totals.branches}</span></div>
+      <div class="stat"><b>المتوسط الموزون</b><span>${a.totals.weightedAverage ?? '—'}</span></div>
+      <div class="stat"><b>إجمالي التقييمات</b><span>${a.totals.googleCount || '—'}</span></div>
+      <div class="stat"><b>الفجوة</b><span>${a.gap ? a.gap.diff : '—'}</span></div>
+    </div>
+    ${a.gap ? `<p class="fine">الأقوى <b>${a.gap.best.label}</b> (${a.gap.best.googleAverage}) والأضعف <b>${a.gap.worst.label}</b> (${a.gap.worst.googleAverage}).</p>` : ''}
+    ${a.totals.declining.length ? `<div class="msg warn"><b>فروع في انحدار حديث: ${a.totals.declining.join('، ')}</b></div>` : ''}
+    <div class="table-wrap"><table class="mini"><thead><tr>
+      <th>#</th><th>الفرع</th><th>الحي</th><th>متوسط قوقل</th><th>التقييمات</th><th>السلبي</th><th>ردود</th><th>الاتجاه</th>
+    </tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="changes">
+      ${shared ? `<div class="chg bad"><b>شكاوى مشتركة — مشكلة نظام</b><ul>${shared}</ul></div>` : ''}
+      ${uniq ? `<div class="chg"><b>شكاوى منفردة — مشكلة فرع</b><ul>${uniq}</ul></div>` : ''}
+    </div>`;
+}
+
+const groupAnswerKey = (brand) => `rabih:group-answer:${brand}`;
+const readGroupAnswer = (brand) => { try { return localStorage.getItem(groupAnswerKey(brand)) || ''; } catch { return ''; } };
+
+function bindGroupView() {
+  $('#grp-brand').addEventListener('change', renderGroup);
+
+  $('#grp-answer').addEventListener('input', (e) => {
+    if (!groupAnalysis) return;
+    try { localStorage.setItem(groupAnswerKey(groupAnalysis.brand), e.target.value); } catch { /* تجاهل */ }
+  });
+
+  $('#btn-group-prompt').addEventListener('click', async () => {
+    if (!groupAnalysis) return;
+    const brand = groupList.find((b) => b.name === groupAnalysis.brand);
+    const text = groupPrompt(brand.name, brand.jobs, CHARTER);
+    toast(await copy(text) ? 'نُسخت رسالة المجموعة — ألصقها في النموذج' : 'تعذّر النسخ');
+  });
+
+  $('#btn-group-xlsx').addEventListener('click', () => {
+    if (!groupAnalysis) return;
+    const a = groupAnalysis.analysis;
+    const rank = a.ranking.length ? a.ranking : a.branches;
+    const rows = [['#', 'الفرع', 'المدينة', 'الحي', 'متوسط قوقل', 'التقييمات', 'العيّنة', 'السلبي %', 'ردود %', 'الاتجاه']];
+    rank.forEach((b, i) => rows.push([b.rank ?? i + 1, b.label, b.city, b.district, b.googleAverage ?? '', b.googleCount ?? '', b.total, b.negativeShare ?? '', b.replyRate ?? '', b.trend]));
+
+    const sh = [['الموضوع', 'عدد الفروع', 'إجمالي الشكاوى', 'التفصيل']];
+    a.shared.forEach((t) => sh.push([t.name, t.branches.length, t.totalNeg, t.branches.map((x) => `${x.label}: ${x.neg}`).join('، ')]));
+    a.unique.forEach((t) => sh.push([t.name, 1, t.totalNeg, `${t.branches[0].label}: ${t.branches[0].neg} (منفردة)`]));
+
+    download(`rabih-group-${asciiName(groupAnalysis.brand)}-${new Date().toISOString().slice(0, 10)}.xlsx`,
+      buildXlsx([{ name: 'الفروع', rows }, { name: 'الشكاوى', rows: sh }]));
+  });
+
+  $('#btn-group-print').addEventListener('click', () => {
+    if (!groupAnalysis) return;
+    const html = buildGroupReportHtml({
+      brand: groupAnalysis.brand,
+      analysis: groupAnalysis.analysis,
+      markdown: $('#grp-answer').value,
+    });
+    const w = window.open('', '_blank');
+    if (!w) { toast('المتصفح منع النافذة — اسمح بالنوافذ المنبثقة'); return; }
+    w.document.write(html); w.document.close();
+    w.addEventListener('load', () => setTimeout(() => w.print(), 400));
+  });
 }
 
 function bindCompareView() {
@@ -1173,6 +1300,7 @@ async function boot() {
   bindPlanView();
   bindOutputView();
   bindCompareView();
+  bindGroupView();
   bindArchiveView();
   bindSafety();
 
@@ -1200,6 +1328,8 @@ async function boot() {
     $('#f-region').value = job.ctx.regionId || '';
     $('#f-group').value = job.ctx.groupId || '';
     $('#f-url').value = job.mapsUrl || '';
+    $('#f-brand').value = job.ctx.brand || '';
+    $('#f-branch').value = job.ctx.branch || '';
     loadDataView();
     renderPipeline();
     loadReportView();

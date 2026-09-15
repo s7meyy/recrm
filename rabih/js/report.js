@@ -365,3 +365,63 @@ ${footer}
 </body>
 </html>`;
 }
+
+/** تقرير المجموعة — نفس هوية التقرير الفردي، بجداول الفروع بدل بطاقة منشأة. */
+export function buildGroupReportHtml({ brand, analysis, markdown = '', font = null }) {
+  const a = analysis;
+  const date = new Date().toLocaleDateString('ar-SA-u-ca-gregory');
+  const body = tocFrom(mdToHtml(markdown));
+
+  const rows = a.ranking.length ? a.ranking : a.branches.map((b, i) => ({ ...b, rank: i + 1 }));
+  const table = `<table><thead><tr>
+      <th>#</th><th>الفرع</th><th>الحي</th><th>متوسط قوقل</th><th>التقييمات</th><th>السلبي %</th><th>ردود %</th><th>الاتجاه</th>
+    </tr></thead><tbody>${
+      rows.map((b) => `<tr><td>${b.rank}</td><td>${esc(b.label)}</td><td>${esc(b.district)}</td>
+        <td>${b.googleAverage ?? '—'}</td><td>${b.googleCount ?? '—'}</td>
+        <td>${b.negativeShare ?? '—'}</td><td>${b.replyRate ?? '—'}</td><td>${esc(b.trend)}</td></tr>`).join('')
+    }</tbody></table>`;
+
+  const list = (title, items, cls) => items.length
+    ? `<section class="${cls}"><h2 class="no-count">${title}</h2><ul>${items.join('')}</ul></section>` : '';
+
+  const shared = list('شكاوى مشتركة — مسؤولية الإدارة المركزية',
+    a.shared.map((t) => `<li><b>${esc(t.name)}</b> — في ${t.branches.length} فروع: ${
+      t.branches.map((x) => `${esc(x.label)} (${x.neg})`).join('، ')}</li>`), 'group-shared');
+
+  const unique = list('شكاوى منفردة — مسؤولية إدارة الفرع',
+    a.unique.map((t) => `<li><b>${esc(t.name)}</b> — ${esc(t.branches[0].label)} وحده: ${t.branches[0].neg} مرات</li>`), 'group-unique');
+
+  return `<!doctype html>
+<html dir="rtl" lang="ar">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>تقرير مجموعة ${esc(brand)} — رابح</title>
+<style>${fontFace(font)}${CSS}
+.group-shared ul,.group-unique ul{font-size:11pt}
+.group-shared{border-inline-start:3px solid #b5462f;padding-inline-start:5mm}
+.group-unique{border-inline-start:3px solid #b98b2a;padding-inline-start:5mm}
+</style></head>
+<body><div class="page">
+<header class="cover">
+  <div class="brand">رابــح</div>
+  <h1>تقرير مجموعة<br>${esc(brand)}</h1>
+  <p class="sub">قراءة موحّدة لفروع المجموعة من تقييمات العملاء في خرائط قوقل</p>
+  <div class="cover-grid">
+    <div><b>عدد الفروع</b><span>${a.totals.branches}</span></div>
+    <div><b>المتوسط الموزون</b><span>${a.totals.weightedAverage ?? '—'} من 5</span></div>
+    <div><b>إجمالي التقييمات</b><span>${a.totals.googleCount || '—'}</span></div>
+    <div><b>التعليقات المُحلَّلة</b><span>${a.totals.reviews}</span></div>
+    <div><b>الفجوة بين الفروع</b><span>${a.gap ? a.gap.diff : '—'}</span></div>
+    <div><b>تاريخ التقرير</b><span>${esc(date)}</span></div>
+  </div>
+</header>
+<main class="body">
+${body.toc}
+<section><h2 class="no-count">ترتيب الفروع</h2>${table}</section>
+${shared}
+${unique}
+${body.html}
+</main>
+<footer class="foot"><span>${esc(brand)} — تقرير مجموعة من رابح</span><span>${esc(date)}</span></footer>
+</div></body></html>`;
+}

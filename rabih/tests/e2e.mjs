@@ -51,6 +51,8 @@ try {
   await page.fill('#f-url', 'https://www.google.com/maps/place/%D9%85%D9%82%D9%87%D9%89+%D8%A7%D9%84%D8%AF%D8%B1%D8%A8/@24.7136,46.6753,17z');
   await page.selectOption('#f-category', 'cafe');
   await page.selectOption('#f-district', 'الملقا');
+  await page.fill('#f-brand', 'مقهى الدرب');
+  await page.fill('#f-branch', 'فرع الملقا');
   await page.waitForTimeout(600);
   await page.click('#btn-start');
   await page.waitForTimeout(500);
@@ -275,10 +277,11 @@ try {
 
   console.log('٨-ج) المقارنة بمعطيات حقيقية');
   // استيراد تقرير أقدم للمنشأة نفسها + منافس، عبر مسار الاستيراد الحقيقي في الأرشيف.
-  const mkJob = (id, name, url, when, reviews, plan) => ({
+  const mkJob = (id, name, url, when, reviews, plan, opts = {}) => ({
     id, mapsUrl: url, createdAt: when, updatedAt: when,
     ctx: { regionId:'riyadh', regionName:'منطقة الرياض', cityId:'riyadh', cityName:'الرياض',
-           groupId:'food', categoryId:'cafe', categoryName:'مقهى / كوفي', districtName:'الملقا' },
+           groupId:'food', categoryId:'cafe', categoryName:'مقهى / كوفي', districtName: opts.district || 'الملقا',
+           brand: opts.brand || '', branch: opts.branch || '' },
     place: { schema:1, source:'manual', mapsUrl:url, identity:{ name, category:'مقهى', hours:[], attributes:[] },
              ratings:{ average: reviews.avg, count: reviews.count, distribution:{} },
              reviews: reviews.list.map((r,i)=>({ id:'R'+String(i+1).padStart(3,'0'), ...r })),
@@ -291,6 +294,18 @@ try {
       { rating:2, text:'زحمة ولا يوجد تنظيم' }, { rating:5, text:'القهوة لذيذة' }, { rating:4, text:'المكان نظيف' } ] },
     [{ id:'T01', text:'إضافة باريستا ثانٍ', ids:['R001'], metric:'', status:'done', due:'', note:'' },
      { id:'T02', text:'تنظيم الدخول', ids:['R003'], metric:'', status:'open', due:'', note:'' }]);
+  const branch2 = mkJob('Jb2', 'مقهى الدرب - النرجس', 'https://www.google.com/maps/place/narjis/@24.8,46.6,17z', '2026-09-08T00:00:00.000Z',
+    { avg: 3.6, count: 150, list: [
+      { rating:1, text:'الانتظار طويل جدا والخدمة بطيئة', date:'قبل شهر' },
+      { rating:2, text:'المكان وسخ والحمامات قذرة', date:'قبل أسبوعين' },
+      { rating:2, text:'الموظفين قليل ادبهم والخدمة بطيئة', date:'قبل أسبوع' } ] },
+    null, { brand:'مقهى الدرب', branch:'فرع النرجس', district:'النرجس' });
+  const branch3 = mkJob('Jb3', 'مقهى الدرب - قرطبة', 'https://www.google.com/maps/place/qurtuba/@24.8,46.7,17z', '2026-09-09T00:00:00.000Z',
+    { avg: 4.4, count: 220, list: [
+      { rating:2, text:'الخدمة بطيئة والانتظار طويل', date:'قبل شهر' },
+      { rating:5, text:'ممتاز ونظيف والقهوة رائعة', date:'قبل شهر' },
+      { rating:4, text:'جيد جدا', date:'قبل شهرين' } ] },
+    null, { brand:'مقهى الدرب', branch:'فرع قرطبة', district:'قرطبة' });
   const rival = mkJob('Jrival', 'كوفي المنافس', 'https://www.google.com/maps/place/rival/@24.7,46.6,17z', '2026-09-10T00:00:00.000Z',
     { avg: 4.7, count: 900, list: [
       { rating:5, text:'الخدمة سريعة جدا والقهوة ممتازة' }, { rating:5, text:'المكان نظيف والموظفين محترمين' },
@@ -299,7 +314,7 @@ try {
   await page.click('[data-go="archive"]');
   await page.waitForTimeout(300);
   await page.setInputFiles('#ar-import', { name:'seed.json', mimeType:'application/json',
-    buffer: Buffer.from(JSON.stringify([older, rival]), 'utf8') });
+    buffer: Buffer.from(JSON.stringify([older, rival, branch2, branch3]), 'utf8') });
   await page.waitForTimeout(700);
   const tree2 = await page.textContent('#archive-tree');
   tree2.includes('كوفي المنافس') ? ok('استيراد الأرشيف يعمل') : bad('استيراد الأرشيف');
@@ -338,6 +353,22 @@ try {
     return res.ok ? (await res.json()).short_name : null;
   });
   mani === 'رابح' ? ok('بيان التطبيق يُقرأ') : bad('بيان التطبيق', mani);
+
+  console.log('٨-هـ) تقرير المجموعة');
+  const gopts = await page.$$eval('#grp-brand option', o => o.map(x => x.textContent));
+  gopts.some(o => o.includes('مقهى الدرب') && o.includes('3')) ? ok('العلامة جُمعت: ' + gopts[0]) : bad('جمع العلامة', gopts.join('|'));
+  const gbox = await page.textContent('#group-box');
+  gbox.includes('مشكلة نظام') ? ok('فُرزت الشكاوى المشتركة عن المنفردة') : bad('فرز الشكاوى', gbox.slice(0,120));
+  const grows = await page.$$eval('#group-box tbody tr', n => n.map(r => r.cells[1].textContent));
+  grows.length === 3 ? ok('ترتيب الفروع: ' + grows.join(' ← ')) : bad('ترتيب الفروع', grows.join('|'));
+  grows[grows.length-1].includes('النرجس') ? ok('الفرع الأضعف في الذيل') : bad('الأضعف', grows.join('|'));
+  const wavg = await page.textContent('#group-box .stat-grid');
+  /4\.\d/.test(wavg) ? ok('المتوسط الموزون محسوب') : bad('المتوسط الموزون', wavg.slice(0,60));
+  const gx = page.waitForEvent('download', { timeout: 8000 });
+  await page.click('#btn-group-xlsx');
+  const gfile = await gx;
+  gfile.suggestedFilename().startsWith('rabih-group') ? ok('Excel المجموعة: ' + gfile.suggestedFilename()) : bad('Excel المجموعة', gfile.suggestedFilename());
+  await gfile.saveAs('/tmp/rabih-group.xlsx');
 
   console.log('٩) الجوال (390px)');
   await page.setViewportSize({ width: 390, height: 844 });

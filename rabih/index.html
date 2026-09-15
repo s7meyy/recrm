@@ -62,6 +62,18 @@
         </div>
       </div>
 
+      <div class="grid c2">
+        <div class="field">
+          <label for="f-brand">العلامة / المالك (اختياري)</label>
+          <input id="f-brand" list="brand-list" placeholder="مثال: مقهى الدرب — لجمع الفروع في تقرير مجموعة">
+          <datalist id="brand-list"></datalist>
+        </div>
+        <div class="field">
+          <label for="f-branch">اسم الفرع (اختياري)</label>
+          <input id="f-branch" placeholder="مثال: فرع الملقا">
+        </div>
+      </div>
+
       <div class="field">
         <label for="f-district">الحي</label>
         <div class="row">
@@ -256,6 +268,25 @@
         <div class="field"><label for="cmp-to">التقرير الأحدث</label><select id="cmp-to"></select></div>
       </div>
       <div id="timeline-box"></div>
+    </div>
+
+    <div class="card">
+      <h2>تقرير المجموعة</h2>
+      <p class="hint">فروع مالك واحد تحت علامة واحدة. يجيب عن: أي فرع الأضعف؟ وأي شكوى مشتركة بين الفروع (مشكلة نظام)؟ وأيّها انفردت بفرع (مشكلة إدارته)؟</p>
+      <div class="field">
+        <label for="grp-brand">العلامة</label>
+        <select id="grp-brand"></select>
+      </div>
+      <div id="group-box"></div>
+      <div class="row" id="group-actions" hidden>
+        <button type="button" class="btn sm" id="btn-group-prompt">نسخ رسالة النموذج</button>
+        <button type="button" class="btn ghost sm" id="btn-group-xlsx">تنزيل Excel</button>
+        <button type="button" class="btn ghost sm" id="btn-group-print">طباعة التقرير</button>
+      </div>
+      <div class="field" id="group-answer-field" hidden>
+        <label for="grp-answer">إجابة النموذج (تظهر في التقرير المطبوع)</label>
+        <textarea id="grp-answer" placeholder="ألصق هنا تقرير المجموعة الذي كتبه النموذج…"></textarea>
+      </div>
     </div>
 
     <div class="card">
