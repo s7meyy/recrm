@@ -4,7 +4,7 @@
 // المتصفح. تُكتب في Netlify فتبقى خارج قاعدة بياناتك ونسخك الاحتياطية وشاشتك.
 
 import { el, clear, badge, emptyState, toast } from '../util/dom.js';
-import { loadIntegrations, runIntegration, explain } from '../data/integrations.js';
+import { loadIntegrations, runIntegration, explain, INTEGRATION_GUIDE } from '../data/integrations.js';
 import { resetPublicApi } from '../util/public-api.js';
 
 export async function render(container) {
@@ -21,7 +21,22 @@ export async function render(container) {
 
   const rows = await loadIntegrations();
   if (!rows.length) {
-    container.append(emptyState('تعذّرت قراءة حالة التكاملات — تحتاج جلسة مالك على الموقع المنشور.'));
+    // **الصفحةُ لا تفرغ** (المرحلة ٤٢): كانت تقول «تعذّرت القراءة» وتسكت، فلا تعرف ما في
+    // النظام أصلًا. والدليلُ محليٌّ لا يحتاج خادمًا — فتُعرض الأسماء وما ينقص كلَّ واحدٍ
+    // منها، ويبقى ما لا يُعرف بلا خادمٍ **هو الحالة وحدها**، ويُقال ذلك صراحةً.
+    const guides = Object.entries(INTEGRATION_GUIDE);
+    container.append(
+      el('div', { class: 'notice' },
+        el('strong', { text: 'لم تُقرأ الحالة. ' }),
+        'قراءةُ الحالة تحتاج جلسة مالك على الموقع المنشور — اضغط «تحديث الحالة» بعد الدخول. ',
+        'وهذه التكاملات التي يعرفها النظام، وما يحتاجه كلٌّ منها:'),
+      el('div', { class: 'today-grid' }, guides.map(([key, g]) => el('section', { class: 'panel today-panel' },
+        el('div', { class: 'today-head' },
+          el('h2', {}, g.label || key, badge('الحالة غير معروفة', 'badge-outline'))),
+        g.what ? el('p', { text: g.what }) : null,
+        (g.envs || []).length
+          ? el('p', { class: 'field-hint' }, 'يحتاج: ', el('span', { class: 'ltr', text: (g.envs || []).join(' · ') }))
+          : el('p', { class: 'field-hint ok', text: 'لا يحتاج مفتاحًا.' })))));
     return;
   }
 
@@ -38,7 +53,7 @@ function card(row, container) {
   const g = row.guide || {};
   const body = el('div');
 
-  body.append(g.what ? el('p', { text: g.what }) : null);
+  if (g.what) body.append(el('p', { text: g.what }));
   if (g.reality) {
     body.append(el('details', { class: 'playbook-box' },
       el('summary', { text: 'ما يجب أن تعرفه قبل أن تعتمد عليه' }),

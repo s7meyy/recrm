@@ -12,7 +12,7 @@ import {
 } from '../util/dom.js';
 import { micButton } from '../util/voice.js';
 import { syncReminders } from '../util/push.js';
-import { formatDateTime, formatDate, formatNumber, toInputDateTime, fromInputDateTime } from '../util/format.js';
+import { formatDateTime, formatDate, formatNumber, countWord, toInputDateTime, fromInputDateTime } from '../util/format.js';
 import { clientName } from './requests.js';
 import { proposeTasks } from '../util/task-intake.js';
 import { allChip, debounce } from '../util/dom.js';
@@ -224,7 +224,9 @@ function buildLayout(ctx) {
   const doneTotal = ctx.tasks.filter((t) => t.done).length;
   ctx.container.append(
     el('div', { class: 'page-head' },
-      el('h1', {}, 'المهام ', el('span', { class: 'count', text: `(${ctx.tasks.length - doneTotal} متبقية، ${doneTotal} منجزة)` })),
+      // `countWord` لا الرقمُ عاريًا: «0 متبقية» و«3 مهمة» ليستا عربيّة، والعددُ في العربية
+      // يُغيّر المعدود — وهذا ما يقرؤه المستخدم في كل زيارة.
+      el('h1', {}, 'المهام ', el('span', { class: 'count', text: `(${countWord(ctx.tasks.length - doneTotal, ['مهمة واحدة متبقية', 'مهمّتان متبقيتان', 'مهامّ متبقية', 'مهمّة متبقية'])} · ${countWord(doneTotal, ['مهمة منجزة', 'مهمّتان منجزتان', 'مهامّ منجزة', 'مهمّة منجزة'])})` })),
       el('div', { class: 'head-actions' }, viewToggle(ctx),
         el('button', {
           type: 'button', class: 'btn', text: '+ قائمة جديدة',
@@ -236,11 +238,15 @@ function buildLayout(ctx) {
           },
         }))));
 
+  // الصندوق **قبل** حارس «لا قوائم بعد»: كان بعده، فالمستخدم الجديد — وهو أحوجُ الناس
+  // إلى إضافةٍ دفعةً — لا يراه أصلًا، ويُطلب منه أن ينشئ قائمةً بيده أوّلًا. وصار الصندوق
+  // يقترح أسماءَ القوائم من موضوعات أسطرك، ويُنشئها مع المهامّ عند الاعتماد.
+  ctx.container.append(bulkAddBox(ctx));
+
   if (!ctx.taskLists.length) {
-    ctx.container.append(emptyState('لا قوائم بعد. أنشئ أول قائمة («قيد التنفيذ» مثلًا) من الزر أعلاه.'));
+    ctx.container.append(emptyState('لا قوائم بعد. أضِف مهامك في الصندوق أعلاه فتُقترح لها قوائم، أو أنشئ قائمةً من الزرّ.'));
     return;
   }
-  ctx.container.append(bulkAddBox(ctx));
 
   if (ctx.view === 'table') {
     ctx.container.append(tableView(ctx));
@@ -382,13 +388,9 @@ function bulkAddBox(ctx) {
   const drawPreview = () => {
     clear(preview);
     if (!rows.length) return;
-    if (!ctx.taskLists.length) {
-      preview.append(el('p', { class: 'field-hint', text: 'أنشئ قائمةً واحدة أولًا، ثم أعد المحاولة.' }));
-      return;
-    }
 
     preview.append(el('div', { class: 'notice' },
-      el('strong', { text: `اقتراحٌ لـ${formatNumber(rows.length)} مهمة — ` }),
+      el('strong', { text: `اقتراحٌ لـ${countWord(rows.length, ['مهمة واحدة', 'مهمّتين', 'مهامّ', 'مهمّة'])} — ` }),
       'راجعه وعدّل ما شئت، ثم اعتمده. ولا يُحفظ شيءٌ قبل ذلك.'));
 
     const body = el('tbody');
@@ -396,11 +398,18 @@ function bulkAddBox(ctx) {
       const titleInput = el('input', { class: 'input', type: 'text', value: r.title });
       titleInput.addEventListener('input', () => { rows[i].title = titleInput.value; });
 
-      const listSelect = selectEl({
-        options: ctx.taskLists.map((l) => ({ value: l.id, label: l.title })),
-        value: r.listId || ctx.taskLists[0].id,
-        onChange: (e) => { rows[i].listId = e.target.value; rows[i].why = 'اخترتَها بنفسك'; drawWhy(i); },
-      });
+      const listCell = ctx.taskLists.length
+        ? selectEl({
+          options: ctx.taskLists.map((l) => ({ value: l.id, label: l.title })),
+          value: r.listId || ctx.taskLists[0].id,
+          onChange: (e) => { rows[i].listId = e.target.value; rows[i].why = 'اخترتَها بنفسك'; drawWhy(i); },
+        })
+        // بلا قوائمَ بعد: الاسمُ يُقترح ويُحرَّر، والقوائمُ تُنشأ عند الاعتماد لا قبله.
+        : (() => {
+          const input = el('input', { class: 'input', type: 'text', value: r.newListTitle || 'قيد التنفيذ', 'aria-label': 'اسم القائمة التي ستُنشأ' });
+          input.addEventListener('input', () => { rows[i].newListTitle = input.value; });
+          return input;
+        })();
       const prioritySelect = selectEl({
         options: ENUMS.taskPriorities.map((p) => ({ value: p.key, label: p.label })),
         value: r.priority,
@@ -423,7 +432,7 @@ function bulkAddBox(ctx) {
 
       body.append(el('tr', {},
         el('td', {}, titleInput),
-        el('td', {}, listSelect),
+        el('td', {}, listCell),
         el('td', {}, prioritySelect),
         el('td', {}, dueInput),
         whyCell,
@@ -443,8 +452,23 @@ function bulkAddBox(ctx) {
         type: 'button', class: 'btn btn-primary',
         text: `اعتمد وأضِف ${formatNumber(rows.length)}`,
         onClick: async () => {
-          const chosen = rows.filter((r) => r.title.trim() && r.listId);
+          const chosen = rows.filter((r) => r.title.trim() && (r.listId || String(r.newListTitle || '').trim()));
           if (!chosen.length) { toast('لا سطر صالحًا للإضافة', 'error'); return; }
+
+          // القوائمُ المقترَحة تُنشأ الآن — عند الاعتماد لا قبله — وباسمٍ واحدٍ لكل عنوان،
+          // فسطران موضوعُهما «اتصالات» لا يصنعان قائمتين.
+          const made = new Map(ctx.taskLists.map((l) => [l.title.trim(), l.id]));
+          for (const r of chosen) {
+            if (r.listId) continue;
+            const title = String(r.newListTitle || 'قيد التنفيذ').trim();
+            if (!made.has(title)) {
+              // eslint-disable-next-line no-await-in-loop
+              const created = await repo.taskLists.create({ title, order: made.size });
+              made.set(title, created.id);
+            }
+            r.listId = made.get(title);
+          }
+
           for (const r of chosen) {
             const maxOrder = ctx.tasks.filter((t) => t.listId === r.listId).reduce((m, t) => Math.max(m, t.order ?? 0), -1);
             // eslint-disable-next-line no-await-in-loop
@@ -455,7 +479,7 @@ function bulkAddBox(ctx) {
           }
           area.value = '';
           rows = [];
-          toast(`أُضيفت ${formatNumber(chosen.length)} مهمة`, 'success');
+          toast(`أُضيفت ${countWord(chosen.length, ['مهمة واحدة', 'مهمّتان', 'مهامّ', 'مهمّة'])}`, 'success');
           await refresh(ctx);
         },
       }),

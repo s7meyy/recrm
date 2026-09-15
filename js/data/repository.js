@@ -166,6 +166,14 @@ const PREPARE = {
     rec.city = trim(rec.city);
     rec.districts = uniq(rec.districts);
     rec.budgetMax = toNumberOrNull(rec.budgetMax);
+    rec.budgetMin = toNumberOrNull(rec.budgetMin);
+    rec.rooms = toNumberOrNull(rec.rooms);
+    rec.baths = toNumberOrNull(rec.baths);
+    rec.rentCycle = trim(rec.rentCycle);
+    // حدٌّ أدنى فوق الأعلى قلبٌ لا نيّة — يُبدَّلان بدل أن يُرفض الطلب أو يُصمَت عنه.
+    if (rec.budgetMin != null && rec.budgetMax != null && rec.budgetMin > rec.budgetMax) {
+      const lo = rec.budgetMax; rec.budgetMax = rec.budgetMin; rec.budgetMin = lo;
+    }
     rec.area = toNumberOrNull(rec.area);
     rec.priceFlexibility = toNumberOrNull(rec.priceFlexibility);
     rec.priceFlexAmount = toNumberOrNull(rec.priceFlexAmount);
@@ -454,7 +462,7 @@ const CASCADE = {
 const TRACKED = {
   properties: ['price', 'status', 'captureStatus', 'area', 'ownerName', 'agreementSignedAt'],
   clients: ['stage', 'phone', 'phone2', 'doNotContact', 'referralSource'],
-  requests: ['status', 'budgetMax', 'area', 'closeReason'],
+  requests: ['status', 'budgetMax', 'budgetMin', 'area', 'rooms', 'closeReason'],
   deals: ['finalPrice', 'commission', 'partnerName', 'partnerShare', 'commissionPaidAt'],
   invoices: ['type', 'number', 'status'],
 };

@@ -47,7 +47,7 @@ export async function seedExists() {
 
 export async function insertSeed() {
   if (await seedExists()) throw new Error('البيانات التجريبية موجودة بالفعل');
-  const ids = { clients: [], properties: [], images: [], tours: [], requests: [], matches: [], externalListings: [], deals: [] };
+  const ids = { clients: [], properties: [], images: [], tours: [], requests: [], matches: [], externalListings: [], deals: [], taskLists: [], tasks: [] };
 
   const c = {};
   c.mohammed = await repo.clients.create({
@@ -339,19 +339,48 @@ export async function insertSeed() {
   });
   ids.deals.push(deal.id);
 
+  /* مهامّ وقوائمُها (المرحلة ٤٢): كانت البذرة تملأ العملاء والعقارات وتترك «المهامّ»
+     و«التقويم» فارغَين تمامًا — وهما من أقوى صفحات النظام. فمن جرّبه رآهما صفحتين بيضاوين
+     وظنّهما غير مبنيَّتين. والمواعيدُ نسبيّةٌ من اليوم لا ثابتة، فلا تولد متأخّرةً أبدًا. */
+  const day = (n, h = 9) => { const d = new Date(); d.setDate(d.getDate() + n); d.setHours(h, 0, 0, 0); return d.toISOString(); };
+  const seedLists = [
+    ['اتصالات', [
+      ['اتصل على محمد العتيبي — رأيه في عرض الملقا', day(0, 17), 'urgent'],
+      ['رُدّ على استفسار ريم الحربي', day(1, 11), 'high'],
+    ]],
+    ['معاينات', [
+      ['معاينة فلة الملقا مع نورة القحطاني', day(2, 18), 'high'],
+      ['جولة تصوير لعقارات النرجس', day(5, 16), 'normal'],
+    ]],
+    ['عقود وتراخيص', [
+      ['جدّد ترخيص إعلان فلة حطين', day(6), 'urgent'],
+      ['وقّع اتفاقية وساطة مع بندر السبيعي', day(9), 'normal'],
+    ]],
+    ['مالية', [['حصّل عمولة صفقة أغسطس', day(3), 'high']]],
+  ];
+  for (const [title, rows] of seedLists) {
+    const list = await repo.taskLists.create({ title, order: ids.taskLists.length });
+    ids.taskLists.push(list.id);
+    for (const [taskTitle, dueAt, priority] of rows) {
+      const task = await repo.tasks.create({ listId: list.id, title: taskTitle, dueAt, priority, order: ids.tasks.length });
+      ids.tasks.push(task.id);
+    }
+  }
+
   await setSeedInfo({ ids, insertedAt: new Date().toISOString() });
   return ids;
 }
 
 export async function clearSeed() {
   const info = await getSeedInfo();
-  const empty = { clients: 0, properties: 0, images: 0, tours: 0, requests: 0, matches: 0, externalListings: 0, deals: 0, keptClients: 0, keptProperties: 0 };
+  const empty = { clients: 0, properties: 0, images: 0, tours: 0, requests: 0, matches: 0, externalListings: 0, deals: 0, tasks: 0, taskLists: 0, keptClients: 0, keptProperties: 0 };
   if (!info || !info.ids) return empty;
   const ids = { ...empty, ...info.ids };
   const removed = { ...empty };
 
   // الترتيب يراعي قواعد الحذف: الصفقات والمطابقات قبل العقارات والطلبات، والطلبات قبل العملاء.
-  for (const store of ['deals', 'matches', 'requests', 'externalListings', 'tours']) {
+  // المهامّ قبل قوائمها، كبقيّة الترتيب أدناه.
+  for (const store of ['tasks', 'taskLists', 'deals', 'matches', 'requests', 'externalListings', 'tours']) {
     for (const id of ids[store] || []) {
       if (await repo[store].get(id)) { await repo[store].remove(id); removed[store]++; }
     }

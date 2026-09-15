@@ -18,7 +18,7 @@ import { runPlans } from '../util/plans.js';
 import {
   el, clear, labeled, selectEl, checkbox, badge, openModal, toast, emptyState, allChip,
 } from '../util/dom.js';
-import { formatSAR, formatArea, formatNumber, toInputDate, fromInputDate, toInputDateTime, fromInputDateTime } from '../util/format.js';
+import { formatSAR, formatArea, formatNumber, countWord, toInputDate, fromInputDate, toInputDateTime, fromInputDateTime } from '../util/format.js';
 import { formatPhone } from '../util/phone.js';
 import { capped } from '../util/render-cap.js';
 
@@ -203,9 +203,15 @@ function requestSummary(ctx, request) {
     labelFor(ENUMS.purposes, request.purpose),
     request.city,
     places.length ? places.join('، ') : 'أي حي',
-    request.budgetMax == null ? 'بلا سقف ميزانية' : `حتى ${formatSAR(request.budgetMax)} (مرونة ${formatSAR(Math.round(flex.value))})`,
+    request.budgetMax == null
+      ? 'بلا سقف ميزانية'
+      : `${request.budgetMin != null ? `من ${formatSAR(request.budgetMin)} ` : ''}حتى ${formatSAR(request.budgetMax)}`
+        + `${request.rentCycle ? ` ${labelFor(ENUMS.rentCycles, request.rentCycle)}` : ''}`
+        + ` (مرونة ${formatSAR(Math.round(flex.value))})`,
     request.area == null ? 'بلا مساحة محددة' : `${formatArea(request.area)} أو أكثر`,
-  ];
+    request.rooms == null ? null : `${countWord(request.rooms, ['غرفة واحدة', 'غرفتان', 'غرف', 'غرفة'])} فأكثر`,
+    request.baths == null ? null : countWord(request.baths, ['دورة مياه', 'دورتا مياه', 'دورات مياه', 'دورة مياه']),
+  ].filter(Boolean);
   return el('p', { class: 'panel-desc', text: bits.join(' · ') });
 }
 

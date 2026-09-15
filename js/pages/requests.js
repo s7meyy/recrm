@@ -50,6 +50,13 @@ export async function render(container) {
     else toast('الطلب غير موجود، أو حُذف', 'error');
     return;
   }
+  // قادمٌ من زرّ «لصق رسالة عميل» في صفحة **العملاء** (المرحلة ٤٢): يُفتح اللصق نفسه لا
+  // نسخةٌ ثانية منه، والعلامةُ تُمحى من العنوان فلا تُفتح النافذة في كل زيارةٍ بعدها.
+  if (/[?&]paste=1/.test(location.hash || '')) {
+    history.replaceState(null, '', '#/requests');
+    openPasteForm(ctx);
+    return;
+  }
   // مسودّة قادمة من «البحث السريع» في صفحة المطابقات (المرحلة ٢٠): تُستهلك مرة ثم تُمحى،
   // فلا تُفتح الاستمارة من تلقاء نفسها في كل زيارة لاحقة للصفحة.
   if (/[?&]new=quick/.test(location.hash || '')) {
@@ -240,6 +247,10 @@ async function openPasteForm(ctx) {
     class: 'input', rows: 6,
     placeholder: 'الصق رسالة العميل هنا…\nمثال: السلام عليكم، أبغى فلة للبيع بالياسمين أو النرجس، ميزانيتي ٢ مليون ومساحة ٤٠٠ متر تقريبًا',
   });
+  // **تُقرأ فور اللصق.** كان اللصقُ لا يُظهر شيئًا حتى تضغط «اقرأ الحقول» — خطوةٌ بين
+  // المستخدم وما جاء يفعله، وقد يظنّ أنّ شيئًا لم يحدث. والزرّ باقٍ لمن عدّل النصّ بيده.
+  textarea.addEventListener('paste', () => setTimeout(() => readIt(), 0));
+  textarea.addEventListener('input', debounce(() => { if (textarea.value.trim()) readIt(); }, 400));
   const resultBox = el('div', { class: 'parse-result' });
   let parsed = null;
 
@@ -308,8 +319,16 @@ async function openPasteForm(ctx) {
           type: fields.type || '',
           purpose: fields.purpose || 'sale',
           budgetMax: fields.budgetMax ?? null,
+          budgetMin: fields.budgetMin ?? null,
+          rooms: fields.rooms ?? null,
+          baths: fields.baths ?? null,
+          rentCycle: fields.rentCycle ?? '',
           area: fields.area ?? null,
           status: 'active',
+          // **نصُّ الرسالة يبقى على الطلب** (المرحلة ٤٢): كان يُحفظ على العميل وحده، فالطلبُ
+          // يفقد سياقه — وما لم يجد المحلّلُ له حقلًا («صالة واسعة»، «قريب من مسجد») يضيع
+          // معه. ومَن له عند العميل ثلاثةُ طلبات لا يعرف أيُّ رسالةٍ أنشأت أيَّها.
+          notes: textarea.value.trim().slice(0, 1000),
         });
         modal.close();
         toast(isNew ? 'أُنشئ العميل وطلبه' : 'العميل مسجَّل — أُضيف له الطلب', 'success');
@@ -373,6 +392,10 @@ async function openForm(ctx, existing, prefill = null) {
     if (prefill.city) draft.city = prefill.city;
     if (prefill.districts?.length) draft.districts = [...prefill.districts];
     if (prefill.budgetMax != null) draft.budgetMax = prefill.budgetMax;
+    if (prefill.budgetMin != null) draft.budgetMin = prefill.budgetMin;
+    if (prefill.rooms != null) draft.rooms = prefill.rooms;
+    if (prefill.baths != null) draft.baths = prefill.baths;
+    if (prefill.rentCycle) draft.rentCycle = prefill.rentCycle;
     if (prefill.area != null) draft.area = prefill.area;
     if (prefill.phone) {
       const known = [...ctx.clientsById.values()].find((c) => c.phone === prefill.phone || c.phone2 === prefill.phone);
@@ -438,6 +461,13 @@ async function openForm(ctx, existing, prefill = null) {
   });
   syncCloseReason(); // الحالة الابتدائية: الحقل مخفيّ ما لم يكن الطلب منتهيًا أصلًا
   const budgetInput = el('input', { class: 'input', type: 'number', min: '0', step: '1000', value: draft.budgetMax ?? '', onInput: () => updateHints() });
+  const budgetMinInput = el('input', { class: 'input', type: 'number', min: '0', step: '1000', value: draft.budgetMin ?? '' });
+  const roomsInput = el('input', { class: 'input', type: 'number', min: '0', step: '1', value: draft.rooms ?? '' });
+  const bathsInput = el('input', { class: 'input', type: 'number', min: '0', step: '1', value: draft.baths ?? '' });
+  const rentCycleSelect = selectEl({
+    options: ENUMS.rentCycles.map((c) => ({ value: c.key, label: c.label })),
+    value: draft.rentCycle || '', placeholder: 'غير مذكورة',
+  });
   const areaInput = el('input', { class: 'input', type: 'number', min: '0', step: '10', value: draft.area ?? '', onInput: () => updateHints() });
   const notesInput = el('textarea', { class: 'input', rows: 3, value: draft.notes || '' });
   const source = sourceField(draft.referralSource, ctx.lists.sources);
@@ -553,7 +583,9 @@ async function openForm(ctx, existing, prefill = null) {
       clientId: clientSelect.value || null,
       type: typeSelect.value, purpose: purposeSelect.value, city: citySelect.value,
       districts: [...selectedDistricts], districtZones: [...selectedZones],
-      budgetMax: num(budgetInput), area: num(areaInput), notes: notesInput.value, status: statusSelect.value,
+      budgetMax: num(budgetInput), budgetMin: num(budgetMinInput), area: num(areaInput),
+      rooms: num(roomsInput), baths: num(bathsInput), rentCycle: rentCycleSelect.value || '',
+      notes: notesInput.value, status: statusSelect.value,
       // السبب لا يُحفظ إلا مع حالة «موقوف»: طلبٌ أُعيد تنشيطه، أو تمّت صفقته، لا سببَ لموته.
       closeReason: DEAD.includes(statusSelect.value) ? (closeReasonSelect.value || null) : null,
       priceFlexibility: num(priceFlexPercent), priceFlexAmount: num(priceFlexAmount),
@@ -616,7 +648,11 @@ async function openForm(ctx, existing, prefill = null) {
         labeled('الغرض', purposeSelect, { required: true, hint: 'فاصل قاطع: الطلب لغرض واحد' }),
         labeled('المدينة', citySelect, { required: true, hint: 'فاصل قاطع' }),
         labeled('سقف الميزانية (ريال)', budgetInput),
+        labeled('أدنى الميزانية (ريال)', budgetMinInput, { hint: 'اختياري — ما دونه يُعرض عليك موسومًا «أقلّ من أرضيّتك»، ولا يُحجب' }),
+        labeled('دورة الإيجار', rentCycleSelect, { hint: 'سنويّ أم شهريّ — والفرق اثنا عشر ضعفًا، فلا يُخمَّن' }),
         labeled('المساحة المطلوبة (م²)', areaInput, { hint: 'تُعدّ حدًّا أدنى: الأكبر لا يُخصم منه' }),
+        labeled('أقلّ عدد غرف', roomsInput, { hint: 'معيارٌ مرجّح لا قاطع: الأقلُّ يهبط في الترتيب ولا يختفي، وعرضٌ بلا عددٍ مسجَّل يُوسَم' }),
+        labeled('دورات المياه', bathsInput, { hint: 'يُحفظ ويُعرض — ولا يدخل الترجيح بعد' }),
         fieldGroup('نطاقات الأحياء', zonesBox, { full: true }),
         fieldGroup('أحياء مفردة', el('div', {}, el('div', { class: 'field-row' }, districtInput, districtList,
           el('button', { type: 'button', class: 'btn btn-sm', text: 'إضافة', onClick: () => addDistrictValue(districtInput.value) })), districtsBox), { full: true }),

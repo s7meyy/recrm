@@ -121,18 +121,24 @@ function summaryPanel(ctx) {
   return el('section', { class: 'panel' },
     el('h2', { text: 'ما يستحقّ انتباهك' }),
     el('div', { class: 'stat-strip' },
-      stat(s.advertisable, 'يصلح للإعلان الآن', s.total ? `من ${formatNumber(s.total)}` : ''),
-      stat(s.noContract, 'بلا عقد وساطة', 'والإعلان يلزمه عقد'),
-      stat(s.contractExpired + s.contractExpiring, 'عقودٌ انتهت أو توشك', `${formatNumber(s.contractExpired)} انتهت`),
-      stat(s.noLicense, 'بلا ترخيص إعلان', 'الإعلان بلا ترخيص مخالفة'),
-      stat(s.licenseExpired + s.licenseExpiring, 'تراخيصُ انتهت أو توشك', `${formatNumber(s.licenseExpired)} انتهت`)),
+      stat(s.advertisable, 'يصلح للإعلان الآن', s.total ? `من ${formatNumber(s.total)}` : '', 'ok'),
+      stat(s.noContract, 'بلا عقد وساطة', 'والإعلان يلزمه عقد', 'warn'),
+      stat(s.contractExpired + s.contractExpiring, 'عقودٌ انتهت أو توشك', `${formatNumber(s.contractExpired)} انتهت`, s.contractExpired ? 'danger' : 'warn'),
+      stat(s.noLicense, 'بلا ترخيص إعلان', 'الإعلان بلا ترخيص مخالفة', 'danger'),
+      stat(s.licenseExpired + s.licenseExpiring, 'تراخيصُ انتهت أو توشك', `${formatNumber(s.licenseExpired)} انتهت`, s.licenseExpired ? 'danger' : 'warn')),
     s.settled
       ? el('p', { class: 'muted small', text: `و${countWord(s.settled, ['عقارٌ واحد', 'عقاران', 'عقارات', 'عقارًا'])} أُنجزت صفقته — خارج العدّ، فعقدٌ على مبيعٍ لا معنى لتجديده.` })
       : null);
 }
 
-function stat(value, label, hint = '') {
-  return el('div', { class: 'stat-chip' },
+/**
+ * **اللونُ يقول ما يقوله الرقم.** كانت الخمسةُ كلُّها بأخضر النظام الواحد: «١٣ بلا عقد
+ * وساطة» بلون «٠ تراخيص انتهت» — فاللونُ يطمئن والرقمُ ينذر. والصفرُ يبقى محايدًا مهما
+ * كان نوعُه: لا خطرَ في «لا شيء».
+ */
+function stat(value, label, hint = '', tone = '') {
+  const cls = value > 0 && tone ? ` stat-${tone}` : '';
+  return el('div', { class: `stat-chip${cls}` },
     el('div', { class: 'stat-num', text: formatNumber(value) }),
     el('div', { class: 'stat-label', text: label }),
     hint ? el('div', { class: 'muted small', text: hint }) : null);

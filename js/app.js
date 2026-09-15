@@ -10,7 +10,7 @@ import { startFollowUpAlerts } from './util/follow-up-alerts.js';
 import { initGlobalSearch } from './util/global-search.js';
 import { applySidebarOrder } from './util/sidebar.js';
 import { applyTheme } from './util/theme.js';
-import { setHijriMode } from './util/format.js';
+import { setHijriMode, formatNumber, formatDate } from './util/format.js';
 import { initVoiceBar } from './util/voice-bar.js';
 import { startAutoLock } from './util/auto-lock.js';
 import { initClientMode, applyClientMode, clientModeOn } from './util/client-mode.js';
@@ -162,6 +162,8 @@ async function navigate() {
   try {
     await route.render(page);
     markTableHeaders(page);
+    foldFilters(page);
+    echoDates(page);
   } catch (err) {
     if (token !== renderToken) return;
     console.error(err);
@@ -169,6 +171,67 @@ async function navigate() {
     page.append(el('div', { class: 'error-box' },
       el('strong', { text: 'تعذر عرض الصفحة' }),
       el('div', { text: err.message || String(err) })));
+  }
+}
+
+/* ===== صدى التاريخ: ما اخترتَه مكتوبًا بالعربية ===== */
+
+/**
+ * حقلُ `input[type=date]` يرسمه المتصفّح بلغته هو لا بلغة الصفحة، فيظهر `mm/dd/yyyy`
+ * في واجهةٍ عربيّةٍ كلِّها — ولا يملك الموقع تبديلَ ذلك. واستبدالُ المنتقي الأصليّ بآخرَ
+ * مكتوبٍ بأيدينا يخسر لوحةَ التاريخ في الجوّال، وهي أنفعُ ما فيه.
+ *
+ * فبدل المنع: **صدًى تحت الحقل** يكتب ما اخترتَه بالعربية وبالتقويمين. فمن رأى
+ * `09/15/2026` وشكَّ أيُّهما الشهر، قرأ تحته «١٥ سبتمبر ٢٠٢٦ · ٤ ربيع الآخر ١٤٤٨ هـ».
+ */
+function echoDates(page) {
+  for (const input of page.querySelectorAll('input[type="date"]')) {
+    if (input.dataset.echo) continue;
+    input.dataset.echo = '1';
+    input.lang = 'ar-SA'; // يُحترم في بعض المتصفّحات، ولا يضرّ حيث لا يُحترم
+    const out = el('div', { class: 'muted small date-echo' });
+    const draw = () => { out.textContent = input.value ? formatDate(input.value) : ''; };
+    draw();
+    input.addEventListener('change', draw);
+    input.addEventListener('input', draw);
+    input.after(out);
+  }
+}
+
+/* ===== الفلاتر على الجوّال: تُطوى خلف زرّ ===== */
+
+/**
+ * على شاشة الجوّال كانت صفحة العقارات تعرض **ستّ مجموعات فلاتر** قبل أوّل عقار: قِيس
+ * فوجد أوّل بطاقةٍ عند ١٠٩١ بكسل وارتفاع الشاشة ٨٤٤ — أي شاشةٌ وثلث تمريرًا قبل أن ترى
+ * بيانًا واحدًا، في أكثر صفحةٍ تُفتح.
+ *
+ * فتُطوى الفلاتر خلف زرٍّ، **ويُكتب على الزرّ عدد الفلاتر الفعّالة** — فلا يختفي شيءٌ
+ * صامتًا: من طوى الفلاتر وهو مصفٍّ يرى «الفلاتر (٢)» فيعلم لماذا القائمة قصيرة.
+ *
+ * والحاويةُ نفسها تبقى (الصفحات تُفرّغ أبناءها لا تستبدلها)، فالطيّ يصمد بعد كل تصفية.
+ */
+function foldFilters(page) {
+  if (!isNarrow()) return;
+  for (const box of page.querySelectorAll('.filters')) {
+    if (box.previousElementSibling?.classList.contains('filters-toggle')) continue;
+    box.classList.add('filters-foldable');
+    const btn = el('button', {
+      type: 'button', class: 'btn btn-sm filters-toggle',
+      'aria-expanded': 'false', 'aria-controls': box.id || '',
+      onClick: () => {
+        const open = box.classList.toggle('filters-open');
+        btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        label();
+      },
+    });
+    const label = () => {
+      const active = box.querySelectorAll('.chip.active:not(.chip-all)').length;
+      const open = box.classList.contains('filters-open');
+      btn.textContent = `${open ? '▲' : '▼'} الفلاتر${active ? ` (${formatNumber(active)})` : ''}`;
+    };
+    label();
+    box.addEventListener('click', () => setTimeout(label, 0)); // التصفية تعيد رسم الرقائق
+    box.before(btn);
   }
 }
 

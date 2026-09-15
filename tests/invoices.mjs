@@ -117,7 +117,9 @@ const backup = await page.evaluate(async () => {
   const parsed = JSON.parse(await blob.text());
   return Object.fromEntries(Object.entries(parsed.db).map(([k,v]) => [k, v.length]));
 });
-ok('التصدير يشمل taskLists/notes (كانت تسقط قبل الإصلاح)', backup.taskLists === 1 && backup.notes === 1, JSON.stringify(backup));
+// **احتواءٌ لا عدٌّ بعينه**: البذرة التجريبية صارت تُنشئ قوائمَ مهامّ (المرحلة ٤٢)، فالعدد
+// الدقيق يتبع البذرة لا التصدير. والمقصودُ هنا أنّ المخزنين لا يسقطان — وهو ما يُقاس.
+ok('التصدير يشمل taskLists/notes (كانت تسقط قبل الإصلاح)', backup.taskLists >= 1 && backup.notes >= 1, JSON.stringify(backup));
 ok('التصدير يشمل invoices الجديدة', backup.invoices === 2, JSON.stringify({invoices: backup.invoices}));
 
 console.log('\nERRORS:', errors.length ? JSON.stringify(errors.slice(0,4)) : 'none');

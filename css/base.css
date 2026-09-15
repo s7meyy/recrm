@@ -154,7 +154,11 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .sidebar-icon { font-size: var(--dhad-font-size-700); flex-shrink: 0; width: 22px; text-align: center; }
 .sidebar-label { display: none; font-size: var(--fs-sm); }
 .sidebar-scrim { display: none; }
-.sidebar-open-btn { display: none; cursor: pointer; }
+/* `display: none !important`: `.icon-btn` في components.css يُحمَّل بعد هذا الملف
+   وبأولويّةٍ مساوية (صنفٌ واحد)، فكان `display: inline-flex` يغلب فيظهر زرّ الدرج
+   على الحاسب إلى جانب زرّ الطيّ — زرّان متجاوران يفعلان الشيء نفسه.
+   والوسيط التحتُ (`@media`) يعيده صراحةً بـ`!important` كذلك. */
+.sidebar-open-btn { display: none !important; cursor: pointer; }
 
 .app-main {
   margin-inline-start: 60px; min-height: 100vh;
@@ -187,7 +191,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
     z-index: var(--dhad-z-scrim); cursor: pointer;
   }
   .app-main, .sidebar-toggle-checkbox:checked ~ .app-main { margin-inline-start: 0; }
-  .sidebar-open-btn { display: inline-flex; align-items: center; justify-content: center; }
+  .sidebar-open-btn { display: inline-flex !important; align-items: center; justify-content: center; }
 }
 
 /* ===== الصفحة ===== */

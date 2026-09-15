@@ -140,9 +140,17 @@ const TYPE_WORDS = [
   ['قطعه ارض', 'land'], ['قطعة', 'land'], ['ارض', 'land'], ['اراضي', 'land'],
   ['شقه', 'apartment'], ['استوديو', 'apartment'], ['ستوديو', 'apartment'],
   ['دور علوي', 'floor'], ['دور ارضي', 'floor'], ['دور كامل', 'floor'], ['دور', 'floor'],
+  // صارت أنواعًا مدمجة في المرحلة ٤٢، فتُقرأ الآن بدل أن تُذكر ولا يُعرف نوعُها.
+  ['عماره', 'building'], ['عمارتين', 'building'], ['برج', 'building'],
+  ['محل', 'shop'], ['محلات', 'shop'], ['معرض', 'shop'],
+  ['مكتب', 'office'], ['مكاتب', 'office'],
+  ['مستودع', 'warehouse'], ['مستودعات', 'warehouse'],
+  ['استراحه', 'rest_house'], ['شاليه', 'rest_house'],
+  ['مزرعه', 'farm'], ['مزارع', 'farm'],
 ];
 
-const UNKNOWN_TYPE_WORDS = ['عماره', 'برج', 'محل', 'معرض', 'مستودع', 'مكتب', 'استراحه', 'مزرعه', 'شاليه', 'مخطط'];
+/** ما يُذكر ولا نوعَ له عندنا — يُقال «ذُكر … ولا نوع يوافقه» ولا يُخمَّن. */
+const UNKNOWN_TYPE_WORDS = ['مخطط', 'حوش', 'بلوك'];
 
 const PURPOSE_WORDS = [
   [/للبيع|للبيــع|بيع |مطلوب البيع|للتنازل/, 'sale'],
@@ -406,7 +414,59 @@ export function parseRequestText(text, { districts = [], types = [], cities = []
     }
   }
   if (budget == null && base.fields.price != null) budget = base.fields.price;
+
+  /* أرضيّةُ الميزانية: «من ٤٥ إلى ٦٠ ألف» — كان يُحفظ سقفُها وحده، والأرضيّةُ تمنع أن
+     يُعرض عليه ما هو دون سوقه. والوحدةُ («ألف»/«مليون») تلحق الرقمَ الثاني غالبًا وتعمّ
+     الأوّل: «من ٤٥ إلى ٦٠ ألف» أي ٤٥٬٠٠٠ لا ٤٥. */
+  // **الفاصلُ يُكتب بصيغته بعد التطبيع.** `prep` يردّ «ى» إلى «ي»، فـ«الى» تصير «الي»
+  // و«حتى» تصير «حتي» — ونمطٌ يبحث عن «الى» لا يجدها أبدًا وإن كانت في الرسالة.
+  const rangeRe = rx(String.raw`(?:من|بين)\s*(NUM)\s*(مليون|ملايين|الف|الاف)?\s*(?:ال[يى]|حت[يى]|لغايه|-|–|و)\s*(NUM)\s*(مليون|ملايين|الف|الاف)?`);
+  const rm = rangeRe.exec(body);
+  let budgetMin = null;
+  if (rm) {
+    const unit = rm[2] || rm[4] || null; // وحدةُ الطرف الثاني تعمّ الأوّل إن أُهمل
+    const lo = toNumber(rm[1]);
+    const hi = toNumber(rm[3]);
+    const loV = lo != null ? (unit ? scaled(lo, unit, null) : lo) : null;
+    const hiV = hi != null ? (rm[4] || unit ? scaled(hi, rm[4] || unit, null) : hi) : null;
+    if (loV != null && hiV != null && loV < hiV && loV >= 1000) {
+      budgetMin = Math.round(loV);
+      budget = Math.round(hiV);
+    }
+  }
+  /* طرفٌ أعلى منطوقٌ بلا رقم: «من ٨٠٠ ألف **حتى مليون ونص**». وبلا هذا كان السقف يُقرأ
+     ٨٠٠ ألف — أي أرضيّتَه — فتُقصى كلُّ عروضه بين ٨٠٠ ألفٍ ومليونٍ ونصف. */
+  if (budgetMin == null) {
+    const lead = rx(String.raw`(?:من|بين)\s*(NUM)\s*(مليون|ملايين|الف|الاف)?\s*(?:ال[يى]|حت[يى]|لغايه)\s*(.{0,30})`).exec(body);
+    if (lead) {
+      const lo = toNumber(lead[1]);
+      const loV = lo != null ? (lead[2] ? scaled(lo, lead[2], null) : lo) : null;
+      const hiV = wordAmount(` ${lead[3]}`);
+      if (loV != null && hiV != null && loV < hiV && loV >= 1000) { budgetMin = Math.round(loV); budget = Math.round(hiV); }
+    }
+  }
+
   if (budget != null) add('budgetMax', 'سقف الميزانية', budget, `${budget.toLocaleString('en-US')} ريال`);
+  if (budgetMin != null) add('budgetMin', 'أدنى الميزانية', budgetMin, `${budgetMin.toLocaleString('en-US')} ريال`);
+
+  /* دورةُ الإيجار: «٦٠ ألف سنوي» غيرُ «٦٠ ألف شهري» — والفرق اثنا عشر ضعفًا، فيُقرأ ولا
+     يُخمَّن. وإن لم تُذكر بقي الحقل فارغًا ولم يُفترض شيء. */
+  if (fields.purpose === 'rent') {
+    if (/\b(?:سنوي|سنويا|بالسنه|في السنه|سنه|شامل السنه)\b/.test(body) || /سنوي/.test(body)) add('rentCycle', 'دورة الإيجار', 'yearly', 'سنويّ');
+    else if (/شهري|بالشهر|في الشهر|كل شهر/.test(body)) add('rentCycle', 'دورة الإيجار', 'monthly', 'شهريّ');
+  }
+
+  /* الغرف ودورات المياه — أوّلُ ما يسأل عنه المستأجر، وكان يُقرأ ثم يضيع لعدم وجود حقل. */
+  const roomsRe = rx(String.raw`(NUM)\s*(?:غرف|غرفه|غرفتين|غرفتان)|(?:غرف|غرفه)\s*(?:نوم)?\s*(NUM)`);
+  const roomsM = roomsRe.exec(body);
+  const roomsDual = /غرفتين|غرفتان/.test(body) ? 2 : null;
+  const rooms = roomsM ? toNumber(roomsM[1] ?? roomsM[2]) : roomsDual;
+  if (rooms != null && rooms >= 1 && rooms <= 30) add('rooms', 'عدد الغرف', rooms, String(rooms));
+
+  const bathsDual = /دورتين|حمامين|دورتي مياه/.test(body) ? 2 : null;
+  const bathsM = rx(String.raw`(NUM)\s*(?:دورات مياه|دوره مياه|دورات|حمامات|حمام)`).exec(body);
+  const baths = bathsM ? toNumber(bathsM[1]) : bathsDual;
+  if (baths != null && baths >= 1 && baths <= 20) add('baths', 'دورات المياه', baths, String(baths));
 
   if (base.fields.area != null) add('area', 'المساحة المطلوبة', base.fields.area, `${base.fields.area.toLocaleString('en-US')} م²`);
 

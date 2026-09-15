@@ -84,6 +84,12 @@ function buildLayout(ctx) {
         onInput: debounce((e) => { ctx.query = e.target.value; renderFilters(ctx); renderList(ctx); }, 150),
       }),
       ctx.nodes.dupBtn = el('button', { type: 'button', class: 'btn', hidden: true, onClick: () => openDuplicates(ctx) }),
+      // «لصق رسالة عميل» كان في «الطلبات» وحدها — ومن يريد التقاط **عميل** يفتح «العملاء»
+      // فلا يجده. والزرّ هنا يقود إلى اللصق نفسه لا إلى نسخةٍ ثانية منه.
+      el('a', {
+        class: 'btn', href: '#/requests?paste=1', text: '📋 لصق رسالة عميل',
+        title: 'اقرأ عميلًا وطلبَه من رسالة واتساب',
+      }),
       el('button', { type: 'button', class: 'btn btn-primary', text: '+ إضافة عميل', onClick: () => openForm(ctx, null) }))));
   drawDupButton(ctx);
   ctx.nodes.filters = el('div', { class: 'filters' });

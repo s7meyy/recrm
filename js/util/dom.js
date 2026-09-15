@@ -99,13 +99,15 @@ export function openModal({ title, body, footer = null, size = null, onClose = n
   }
 
   const bodyEl = el('div', { class: 'modal-body' }, body);
-  box.append(
+  // `appendChildren` لا `box.append`: الأصليّة تحوّل `null` إلى **نصّ** «null» فيُطبع في
+  // الشاشة. ونافذةٌ بلا تذييل (البحث، مشاركة العقار، عملاء مكرّرون) كانت تعرضه فعلًا.
+  appendChildren(box, [
     el('div', { class: 'modal-head' },
       el('h2', { class: 'modal-title', text: title }),
       el('button', { class: 'icon-btn', type: 'button', 'aria-label': 'إغلاق', text: '✕', onClick: close })),
     bodyEl,
     footer ? el('div', { class: 'modal-foot' }, footer) : null,
-  );
+  ]);
   overlay.append(box);
   overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(); });
   document.addEventListener('keydown', onKey);

@@ -167,6 +167,9 @@ input[type="tel"].input, input[type="email"].input, input[type="url"].input {
   display: flex; align-items: center; justify-content: center; overflow: hidden;
 }
 .card-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* بطاقةٌ بلا صورة لا تستحقّ ما تستحقّه ذاتُ الصورة: كان الغلافُ الفارغ ١٩٠ بكسلًا من
+   رماديٍّ لا خبرَ فيه، فبمئات العقارات يصير التمريرُ كلُّه في الفراغ. */
+.card-img:has(.card-noimg) { aspect-ratio: 16 / 5; }
 .card-noimg { font-size: 28px; font-weight: 800; color: var(--line-strong); }
 .card-imgcount {
   position: absolute; bottom: 6px; inset-inline-start: 6px; background: rgba(26,31,28,0.72);
@@ -185,6 +188,10 @@ input[type="tel"].input, input[type="email"].input, input[type="url"].input {
 /* ===== الجدول ===== */
 .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
 .table { width: 100%; border-collapse: collapse; min-width: 900px; }
+/* قائمةٌ منسدلة داخل خليّة لا تُقَصّ: «لم يعد متاحًا» كانت تظهر «لم يعد م…» في جدول
+   العروض الخارجية، فلا يُقرأ ما اخترتَ. والخليّةُ تتّسع لأطول خيارٍ فيها. */
+.table td select { min-width: max-content; width: 100%; }
+.table td:has(select) { white-space: nowrap; }
 .table th, .table td { padding: var(--dhad-space-3); text-align: start; border-bottom: 1px solid var(--line); vertical-align: middle; line-height: var(--dhad-line-body); }
 .table th {
   font-size: var(--fs-sm); color: var(--muted); font-weight: 600; background: var(--surface-2);
@@ -338,6 +345,17 @@ input[type="tel"].input, input[type="email"].input, input[type="url"].input {
   .filter-row { flex-direction: column; gap: 4px; }
   .grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
   .card-price { font-size: var(--fs-lg); }
+
+  /* أهدافُ اللمس ٤٤ بكسلًا: الرقائق كانت ٣٤، وهي أكثرُ ما يُنقر في صفحة العقارات. */
+  .chip { min-height: 44px; padding-inline: var(--dhad-space-4); }
+  .table select, .table .input { min-height: 44px; }
+
+  /* الفلاتر مطويّةٌ حتى تُطلب — والبياناتُ أوّلًا (انظر `foldFilters` في app.js). */
+  .filters-toggle { width: 100%; margin-bottom: 8px; }
+  .filters-foldable { margin-bottom: 8px; }
+  .filters-foldable:not(.filters-open) { display: none; }
+
+  /* الغلافُ الفارغ كان ١٩٠ بكسلًا من رماديٍّ لا خبرَ فيه — يُقصَر فيَقرُب الخبر. */
 }
 
 /* ===== العروض الخارجية (المرحلة ٤) ===== */
@@ -363,6 +381,12 @@ input[type="tel"].input, input[type="email"].input, input[type="url"].input {
 }
 .stat-chip.solo { flex: none; width: 100%; text-align: start; display: flex; align-items: center; gap: 12px; justify-content: flex-start; }
 .stat-num { font-size: 26px; font-weight: 800; color: var(--accent-text); font-variant-numeric: tabular-nums; }
+/* نغمةُ الرقم بمعناه لا بلون النظام (المرحلة ٤٢) — ومعها حدٌّ جانبيّ لمن لا يميّز اللون. */
+.stat-chip.stat-warn { border-inline-start: 3px solid var(--warn); }
+.stat-chip.stat-danger { border-inline-start: 3px solid var(--danger); }
+.stat-chip.stat-ok .stat-num { color: var(--accent-text); }
+.stat-chip.stat-warn .stat-num { color: var(--warn); }
+.stat-chip.stat-danger .stat-num { color: var(--danger); }
 .stat-label { color: var(--muted); font-size: var(--fs-sm); margin-top: 2px; }
 
 /* `min(300px, 100%)` وعنصرٌ يقبل الانكماش (`min-width: 0`): بغيرهما يفرض أعرضُ محتوًى داخل
@@ -447,7 +471,10 @@ input[type="tel"].input, input[type="email"].input, input[type="url"].input {
 }
 .task-board-single .task-list-col { flex: 1 1 auto; width: 100%; }
 .task-list-head { display: flex; align-items: center; gap: 8px; }
-.task-list-title { background: none; border: 0; font-weight: 700; cursor: pointer; padding: 2px 4px; text-align: start; flex: 1; }
+/* ٤٤ بكسلًا لمسًا: عنوانُ القائمة يُعيد تسميتها وعنوانُ المهمّة يفتح تعديلها — فكلاهما
+   هدفٌ يُنقر لا نصًّا يُقرأ. وكانا ٣٠ و٢٦، وقد كشفهما الفحصُ حين صارت البذرة تُنشئ مهامّ
+   فوُجد ما يُقاس (المرحلة ٤٢). */
+.task-list-title { background: none; border: 0; font-weight: 700; cursor: pointer; padding: var(--dhad-space-2) 4px; min-height: 44px; text-align: start; flex: 1; }
 .task-list-title:hover { text-decoration: underline; color: var(--accent-text); }
 .task-list-body { display: flex; flex-direction: column; gap: 8px; min-height: 20px; }
 .task-card {
@@ -460,7 +487,7 @@ input[type="tel"].input, input[type="email"].input, input[type="url"].input {
 .task-card-top { display: flex; align-items: flex-start; gap: 8px; }
 .task-title-btn {
   background: none; border: 0; text-align: start; font-weight: 600; color: var(--text);
-  cursor: pointer; padding: 0; flex: 1; white-space: normal;
+  cursor: pointer; padding: var(--dhad-space-2) 0; min-height: 44px; flex: 1; white-space: normal;
 }
 .task-card.task-done .task-title-btn { text-decoration: line-through; color: var(--muted); }
 .task-card-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 6px; }

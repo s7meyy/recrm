@@ -366,6 +366,7 @@ async function matchingBody(redraw) {
   const wDistrict = numInput(m.weights.district);
   const wPrice = numInput(m.weights.price);
   const wArea = numInput(m.weights.area);
+  const wRooms = numInput(m.weights.rooms);
   const pPercent = numInput(m.price.percent);
   const pSale = numInput(m.price.minSale, { step: '10000' });
   const pRent = numInput(m.price.minRent, { step: '1000' });
@@ -381,7 +382,7 @@ async function matchingBody(redraw) {
       el('h3', { text: 'أوزان المعايير المرجّحة' }),
       el('p', { class: 'muted small', text: 'النسبة تُحسب على المعايير المعروفة فقط؛ وأي قيمة غير معروفة (سعر أو مساحة أو حي) تُرفع من الحساب وتُوسَم.' }),
       el('div', { class: 'form-grid' },
-        labeled('الحي', wDistrict), labeled('السعر', wPrice), labeled('المساحة', wArea))),
+        labeled('الحي', wDistrict), labeled('السعر', wPrice), labeled('المساحة', wArea), labeled('عدد الغرف', wRooms))),
     el('div', { class: 'panel-block' },
       el('h3', { text: 'مرونة السعر' }),
       el('p', { class: 'muted small', text: 'المرونة = النسبة من سقف الميزانية، وإن قلّت عن الحدّ الأدنى بحسب الغرض رُفعت إليه. وكل طلب يقبل نسبة أو مبلغًا خاصًّا يتجاوز هذا.' }),
@@ -410,6 +411,7 @@ async function matchingBody(redraw) {
                 district: num(wDistrict, DEFAULT_MATCHING.weights.district),
                 price: num(wPrice, DEFAULT_MATCHING.weights.price),
                 area: num(wArea, DEFAULT_MATCHING.weights.area),
+                rooms: num(wRooms, DEFAULT_MATCHING.weights.rooms),
               },
               price: {
                 percent: num(pPercent, DEFAULT_MATCHING.price.percent),
@@ -936,7 +938,7 @@ async function companyBody(redraw) {
       if (url) logoBox.append(el('img', { class: 'company-logo-preview', src: url, alt: 'شعار' }));
     } catch (_) { /* شعار مفقود */ }
   }
-  logoBox.append(
+  appendChildren(logoBox, [
     el('button', { type: 'button', class: 'btn', text: company.logoImageId ? 'استبدال الشعار…' : 'رفع شعار…', onClick: () => fileInput.click() }),
     company.logoImageId ? el('button', {
       type: 'button', class: 'btn btn-ghost', text: 'حذف الشعار',
@@ -948,7 +950,8 @@ async function companyBody(redraw) {
         } catch (err) { errToast(err); }
       },
     }) : null,
-    fileInput);
+    fileInput,
+  ]);
 
   return el('div', {},
     el('div', { class: 'panel-block' },

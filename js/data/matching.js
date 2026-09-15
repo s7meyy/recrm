@@ -220,6 +220,32 @@ export function scoreListing(request, listing, { settings, districts = [], kind 
     }
   }
 
+  /* الغرف (المرحلة ٤٢) — معيارٌ **مرجّحٌ لا قاطع**.
+     كان يُقرأ من رسالة العميل ثم يضيع لعدم وجود حقلٍ يحمله. وجُعل مرجّحًا لا قاطعًا عمدًا:
+     عرضٌ لم يُسجَّل عدد غرفه ليس عرضًا بغرفةٍ واحدة، وقطعُه لأجل حقلٍ ناقصٍ عندك يُخفي
+     عنك ما يناسب عميلك. فالناقصُ يُوسَم، والأقلُّ يهبط في الترتيب ولا يختفي. */
+  if (request.rooms != null && w.rooms > 0) {
+    const raw = listing.typeFields?.rooms;
+    const asNum = Number(raw);
+    const has = raw == null || raw === '' || !Number.isFinite(asNum) ? null : asNum;
+    if (has == null) {
+      parts.push({ key: 'rooms', label: 'الغرف', weight: w.rooms, state: 'unknown', ratio: null, detail: 'عدد الغرف غير مسجَّل' });
+      tags.push('عدد الغرف غير مسجَّل');
+    } else {
+      const short = request.rooms - has;
+      const ratio = short <= 0 ? 1 : short === 1 ? 0.5 : 0;
+      const detail = short <= 0 ? `${has} غرفة — يكفي المطلوب` : `${has} غرفة، والمطلوب ${request.rooms}`;
+      parts.push({ key: 'rooms', label: 'الغرف', weight: w.rooms, state: 'known', ratio, detail });
+      if (short >= 2) tags.push('غرفُه أقلّ ممّا طُلب بكثير');
+    }
+  }
+
+  /* أرضيّةُ الميزانية — **وسمٌ لا حسم**: الأرخصُ ليس عيبًا في نفسه، لكنّ من قال «من ٤٥»
+     غالبًا يعني أنّ ما دونها ليس من سوقه. فيُقال له ولا يُحجب عنه. */
+  if (request.budgetMin != null && listing.price != null && listing.price < request.budgetMin) {
+    tags.push(`أقلّ من أرضيّتك (${Math.round(request.budgetMin).toLocaleString('en-US')} ريال)`);
+  }
+
   const known = parts.filter((p) => p.state === 'known');
   const total = known.reduce((s, p) => s + p.weight, 0);
   const score = total > 0

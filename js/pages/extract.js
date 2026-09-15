@@ -18,7 +18,8 @@
 // عليه. **ولا يُنشأ شيءٌ حتى تعتمد**: التفريغ مسوّدةٌ تُراجَع، لا سجلٌّ يُكتب.
 
 import { repo } from '../data/repository.js';
-import { getLists } from '../data/settings.js';
+import { labelFor, ENUMS } from '../data/schema.js';
+import { getLists, typeLabel } from '../data/settings.js';
 import { el, clear, badge, toast, emptyState, confirmDialog, allChip } from '../util/dom.js';
 import { formatDateTime, formatNumber } from '../util/format.js';
 import { formatBytes } from '../data/images.js';
@@ -333,13 +334,14 @@ function card(ctx, rec) {
     }
     for (const [k, v] of entries) {
       const label = LABELS[k] || k;
+      const shown = displayValue(k, v, ctx.lists);
       fieldsBox.append(el('button', {
         type: 'button', class: 'chip chip-copy', title: `انسخ ${label}`,
         onClick: async () => {
-          try { await navigator.clipboard.writeText(String(v)); toast(`نُسخ ${label}`, 'success'); }
-          catch { toast(String(v), 'info', 6000); }
+          try { await navigator.clipboard.writeText(shown); toast(`نُسخ ${label}`, 'success'); }
+          catch { toast(shown, 'info', 6000); }
         },
-      }, `${label}: `, el('span', { class: 'ltr', text: String(v) })));
+      }, `${label}: `, el('span', { class: 'ltr', text: shown })));
     }
     for (const b of (fields?.bounds || [])) {
       fieldsBox.append(badge(`${b.label}: ${b.value}`, 'badge-outline'));
@@ -379,6 +381,19 @@ function card(ctx, rec) {
       el('p', { class: 'muted small', text: 'اضغط أيَّ حقلٍ لنسخه. وما لم يُقرأ لا يظهر — ولا يُخمَّن.' }),
       fieldsBox),
     actionsBlock(ctx, rec, textarea, refresh));
+}
+
+/**
+ * ما يُعرض للمستخدم من قيمة الحقل — لا مفتاحُها الخام.
+ * كان النوع يُعرض «land» و«apartment» في الشاشة: مفتاحُ مخزنٍ لا مسمّى عقار.
+ */
+function displayValue(key, value, lists) {
+  if (value == null || value === '') return '';
+  if (key === 'type') return typeLabel(lists, value) || String(value);
+  if (key === 'purpose') return labelFor(ENUMS.purposes, value) || String(value);
+  if (key === 'area') return `${formatNumber(value)} م²`;
+  if (key === 'budgetMax') return `${formatNumber(value)} ريال`;
+  return String(value);
 }
 
 const LABELS = {
@@ -486,7 +501,7 @@ function actionsBlock(ctx, rec, textarea, refresh) {
       const who = f.ownerName ? ` — ${f.ownerName}` : '';
       const lines = Object.entries(f)
         .filter(([k, v]) => k !== 'bounds' && v != null && typeof v !== 'object')
-        .map(([k, v]) => `${LABELS[k] || k}: ${v}`);
+        .map(([k, v]) => `${LABELS[k] || k}: ${displayValue(k, v, ctx.lists)}`);
       const created = await repo.tasks.create({
         listId: list.id,
         title: `أنشئ عقد وساطة${who}`,

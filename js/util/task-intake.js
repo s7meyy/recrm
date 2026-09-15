@@ -55,9 +55,27 @@ function atHour(d, hour = 9, minute = 0) {
 }
 
 /**
+ * **ترتيبُ بدائل صيغة الوقت مقصود: الأطولُ أوّلًا.** جافاسكربت تختار **أوّل** بديلٍ يطابق
+ * لا أطولَه، فـ`(ص|م|مساء)` تأكل «م» من «مساء» وتترك «ساء» في عنوان المهمّة:
+ * «معاينة النرجس الساعة ٦ مساء» كانت تُحفظ «معاينة النرجس ساء». وكذلك «صباحًا» → «باحًا».
+ */
+const T = '[\\u064B-\\u0652]?'; // حركةٌ اختيارية (تنوينٌ أو سكون) في النصّ الخام
+const MER_RAW = `(?:صباح${T}ا${T}|مساء${T}|ظهر${T}ا${T}|عصر${T}ا${T}|ليل${T}ا${T}|ص|م)`;
+const MER_N = '(?:صباحا|مساء|ظهرا|عصرا|ليلا|ص|م)'; // بعد التطبيع: لا تشكيل ولا همزة منفصلة
+
+/** وحدات المدّة، ومنها المثنّى — و«يومين» عدَدُه في اسمه فلا يحتاج رقمًا. */
+const SPANS = [
+  ['يومين', 2], ['ايام', 1], ['يوم', 1],
+  ['اسبوعين', 14], ['اسابيع', 7], ['اسبوع', 7],
+  ['شهرين', 60], ['شهور', 30], ['اشهر', 30], ['شهر', 30],
+];
+const SPAN_WORDS = SPANS.map(([w]) => w).join('|');
+const SPAN_LEAD = '(?:بعد|خلال|في\\s+غضون|خلال\\s+)'; // «بعد ١٠ أيام» · «خلال أسبوع» · «بعد شهر»
+
+/**
  * يقرأ موعدًا من نصٍّ حرّ: «اليوم»، «بكرة»، «بعد بكرة»، «الأحد»، «بعد ٣ أيام»،
- * «الساعة ٤»، «٥م». ويعيد { dueAt, rest } — و`rest` السطرُ بلا كلمات الموعد، فلا يبقى
- * عنوانُ المهمة «اتصل على سعد بكرة الساعة ٤».
+ * «خلال أسبوع»، «بعد شهر»، «الساعة ٤»، «٥م». ويعيد { dueAt, rest } — و`rest` السطرُ بلا
+ * كلمات الموعد، فلا يبقى عنوانُ المهمة «اتصل على سعد بكرة الساعة ٤».
  */
 export function readDue(line, now = Date.now()) {
   let rest = String(line ?? '');
@@ -69,12 +87,13 @@ export function readDue(line, now = Date.now()) {
   else if (/بعد\s+(بكره|بكرة|غد)/.test(n)) { day = new Date(base.getTime() + 2 * DAY); rest = stripPattern(rest, /بعد\s+(بكرة|بكره|غدٍ|غد)/); }
   else if (word('(بكره|غدا|غد)').test(n)) { day = new Date(base.getTime() + DAY); rest = stripPattern(rest, /(بكرة|بكره|غدًا|غدا|غد)/); }
   else {
-    const after = /بعد\s+(\d+)\s*(يوم|ايام|اسبوع|اسابيع)/.exec(n); // `n` مطبَّعٌ فأرقامُه لاتينية
+    // «بعد ٣ أيام» · «خلال أسبوع» (بلا رقمٍ = واحد) · «بعد شهرين» (العددُ في الاسم)
+    const after = new RegExp(`${SPAN_LEAD}\\s*(\\d+)?\\s*(${SPAN_WORDS})`).exec(n); // `n` مطبَّعٌ فأرقامُه لاتينية
     if (after) {
-      const count = Number(after[1]);
-      const mult = after[2].startsWith('اسبوع') || after[2].startsWith('اسابيع') ? 7 : 1;
-      day = new Date(base.getTime() + count * mult * DAY);
-      rest = stripPattern(rest, new RegExp(`بعد\\s+${D}+\\s*\\S+`));
+      const days = SPANS.find(([w]) => w === after[2])[1];
+      const count = after[1] ? Number(after[1]) : 1;
+      day = new Date(base.getTime() + count * days * DAY);
+      rest = stripPattern(rest, new RegExp(`(?:بعد|خلال|في\\s+غضون)\\s*${D}*\\s*(?:${SPAN_WORDS})`));
     } else {
       for (const [dayName, idx] of WEEKDAYS) {
         if (!word(dayName).test(n)) continue;
@@ -89,17 +108,22 @@ export function readDue(line, now = Date.now()) {
 
   let hour = 9;
   let minute = 0;
-  const timeM = /(?:الساعه|الساعة)?\s*(\d{1,2})(?::(\d{2}))?\s*(ص|صباحا|م|مساء|مساءً)?/.exec(norm(rest));
-  const explicitTime = (word('(ص|م|مساء|صباحا)').test(norm(rest)) || /الساعه|الساعة/.test(norm(rest))) && timeM;
+  const restN = norm(rest);
+  const timeM = new RegExp(`(?:الساعه|الساعة)?\\s*(\\d{1,2})(?::(\\d{2}))?\\s*(${MER_N})?`).exec(restN);
+  // الصيغة الملتصقة «٥م» لا حدَّ قبل ميمها، فلا يجدها `word()` — وهي أشيع اختصار.
+  const hasMer = word(MER_N).test(restN) || new RegExp(`\\d\\s*${MER_N}(?:$|[\\s،؛.,:!؟-])`).test(restN);
+  const explicitTime = (hasMer || /الساعه|الساعة/.test(restN)) && timeM;
   if (explicitTime) {
     let h = Number(timeM[1]);
-    const pm = /م|مساء/.test(timeM[3] || '');
+    const mer = timeM[3] || '';
+    const pm = /^(?:مساء|ظهرا|عصرا|ليلا|م)$/.test(mer);
+    const am = /^(?:صباحا|ص)$/.test(mer);
     if (pm && h < 12) h += 12;
-    if (!pm && /ص|صباحا/.test(timeM[3] || '') && h === 12) h = 0;
+    if (am && h === 12) h = 0;
     // رقمٌ بلا «ص/م» بين ١ و٧ يُفهم مساءً: لا أحد يواعد الرابعة فجرًا.
-    if (!timeM[3] && h >= 1 && h <= 7) h += 12;
+    if (!mer && h >= 1 && h <= 7) h += 12;
     if (h >= 0 && h <= 23) { hour = h; minute = Number(timeM[2] || 0) || 0; }
-    rest = stripPattern(rest, new RegExp(`(الساعة|الساعه)?\\s*${D}{1,2}(:${D}{2})?\\s*(ص|صباحًا|صباحا|م|مساءً|مساء)?`));
+    rest = stripPattern(rest, new RegExp(`(الساعة|الساعه)?\\s*${D}{1,2}(:${D}{2})?\\s*${MER_RAW}?`));
     if (!day) day = new Date(base); // وقتٌ بلا يوم = اليوم
   }
 
@@ -141,8 +165,24 @@ export function readPriority(line) {
  * @returns {{ listId, why }} `why` سببُ الاختيار بالعربية — يُعرض للمستخدم ليراجعه،
  *          فتوزيعٌ لا يُعرف سببُه لا يُراجَع وإنما يُقبل على عماه.
  */
+/** موضوعُ السطر من الموضوعات المدمجة — يُستعمل حين لا قوائمَ بعدُ فتُقترح بأسمائها. */
+export function topicOf(text) {
+  const n = norm(text);
+  return TOPICS.find((topic) => topic.words.some((w) => n.includes(norm(w)))) || null;
+}
+
+/**
+ * يختار قائمةَ السطر. **وإن لم تكن عندك قوائمُ بعد** لم يعد يستسلم: يقترح **اسمًا لقائمةٍ
+ * تُنشأ** من موضوع السطر — فالمستخدمُ الجديد كان يُمنع من الميزة كلّها حتى ينشئ قائمةً
+ * بيده، ويُطلب منه ذلك في نصٍّ لا يراه أحد.
+ */
 export function pickList(text, lists = []) {
-  if (!lists.length) return { listId: null, why: '' };
+  if (!lists.length) {
+    const topic = topicOf(text);
+    return topic
+      ? { listId: null, newListTitle: topic.label, why: `موضوعه ${topic.label} — وستُنشأ قائمةٌ باسمه` }
+      : { listId: null, newListTitle: 'قيد التنفيذ', why: 'لم يُعرف موضوعه — وستُنشأ «قيد التنفيذ»' };
+  }
   const n = norm(text);
 
   // ١) اسمُ قائمةٍ كاملًا في السطر — أصدقُ دليل، والأطولُ أولى عند التزاحم
@@ -189,10 +229,10 @@ export function proposeTasks(text, lists = [], { now = Date.now() } = {}) {
     // سطرٌ مكرَّر في اللصقة نفسها لا يصير مهمّتين
     if (!key || seen.has(key)) continue;
     seen.add(key);
-    const { listId, why } = pickList(line, lists);
+    const { listId, why, newListTitle = null } = pickList(line, lists);
     // `source` السطرُ كما قُرئ (بلا شُرَط القوائم وأرقامها، فهي ليست من كلامك) — يُعرض
     // بجانب الاقتراح لترى **ممّا** قُرئ الموعدُ والأولوية، فتصحّح ما أُسيء فهمه.
-    out.push({ title, listId, why, priority: pr.priority, dueAt: due.dueAt, source: line });
+    out.push({ title, listId, newListTitle, why, priority: pr.priority, dueAt: due.dueAt, source: line });
   }
   return out;
 }

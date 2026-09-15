@@ -324,7 +324,7 @@ export async function setSeedInfo(info) {
  * price.min* بحسب غرض الطلب: البيع والاستثمار بحدٍّ أدنى للمرونة يقاس بمئات الألوف، والإيجار بعشرات الآلاف.
  */
 export const DEFAULT_MATCHING = {
-  weights: { district: 40, price: 35, area: 25 },
+  weights: { district: 40, price: 35, area: 25, rooms: 20 },
   price: { percent: 12, minSale: 100000, minRent: 10000, minInvestment: 100000 },
   area: { percent: 15, minSqm: 50 },
   minScore: 50, // القيمة الابتدائية لشريط "أظهر ما نسبته ≥" في صفحة المطابقات
@@ -342,6 +342,7 @@ export async function getMatchingSettings() {
       district: numOr(stored.weights?.district, d.weights.district),
       price: numOr(stored.weights?.price, d.weights.price),
       area: numOr(stored.weights?.area, d.weights.area),
+      rooms: numOr(stored.weights?.rooms, d.weights.rooms),
     },
     price: {
       percent: numOr(stored.price?.percent, d.price.percent),

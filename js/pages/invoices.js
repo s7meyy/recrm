@@ -9,7 +9,7 @@ import { qrSvg } from '../util/qr.js';
 import { getCompany, suggestInvoiceNumber, consumeInvoiceNumber } from '../data/settings.js';
 import { getImageUrl } from '../data/images.js';
 import {
-  el, clear, labeled, selectEl, badge, openModal, confirmDialog, toast, emptyState, debounce,
+  el, clear, labeled, selectEl, badge, openModal, confirmDialog, toast, emptyState, debounce, appendChildren,
 } from '../util/dom.js';
 import { formatDate, formatNumber, formatSAR, toInputDate, fromInputDate } from '../util/format.js';
 import { vatSummary, invoiceYears, QUARTERS, quarterOf } from '../util/vat-report.js';
@@ -80,7 +80,7 @@ function buildLayout(ctx) {
   });
   ctx.container.append(
     el('div', { class: 'page-head' },
-      el('h1', {}, 'الفواتير وعروض الأسعار', ctx.nodes.count),
+      el('h1', {}, 'الفواتير وعروض الأسعار ', ctx.nodes.count), // الفراغ مقصود: بقيّة الصفحات «العقارات (15)» وهذه كانت «الأسعار(0)»
       el('div', { class: 'row' },
         el('button', { type: 'button', class: 'btn btn-primary', text: '+ فاتورة جديدة', onClick: () => openForm(ctx, null, 'invoice') }),
         el('button', { type: 'button', class: 'btn', text: '+ عرض سعر', onClick: () => openForm(ctx, null, 'quote') }),
@@ -635,7 +635,7 @@ function openVatReport(ctx) {
       out.append(el('p', { class: 'muted small', text: 'لا فواتير في هذا الربع.' }));
       return;
     }
-    out.append(
+    appendChildren(out, [
       el('dl', { class: 'kv' },
         el('dt', { text: 'عدد الفواتير' }), el('dd', { text: formatNumber(report.count) }),
         el('dt', { text: 'الإجمالي قبل الضريبة' }), el('dd', { text: formatSAR(report.net) }),
@@ -652,7 +652,7 @@ function openVatReport(ctx) {
           el('td', { text: r.clientName || '—' }),
           el('td', { class: 'num', text: formatSAR(r.net) }),
           el('td', { class: 'num', text: formatSAR(r.vat) })))))),
-    );
+    ]);
   };
   yearSelect.addEventListener('change', draw);
   quarterSelect.addEventListener('change', draw);

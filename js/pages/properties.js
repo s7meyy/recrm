@@ -686,6 +686,9 @@ async function openOfferPasteForm(ctx) {
     class: 'input', rows: 6,
     placeholder: 'الصق رسالة المالك هنا…\nمثال: السلام عليكم، انا سعد التميمي، عندي فلة في النرجس للبيع، المساحة ٤٥٠ متر والسعر مليونين ونص، جوالي ٠٥٥١٢٣٤٥٦٧',
   });
+  // تُقرأ فور اللصق (المرحلة ٤٢) — كما في «لصق رسالة عميل»، والزرّ باقٍ لمن عدّل بيده.
+  textarea.addEventListener('paste', () => setTimeout(() => readIt(), 0));
+  textarea.addEventListener('input', debounce(() => { if (textarea.value.trim()) readIt(); }, 400));
   const resultBox = el('div', { class: 'parse-result' });
   let parsed = null;
 
@@ -875,7 +878,7 @@ async function openForm(ctx, existing, prefill = {}) {
     const text = locationInput.value.trim();
     clear(locationHint);
     locationHint.className = 'field-hint';
-    if (!text) { locationHint.textContent = 'اختياري — الخريطة تأتي في مرحلة لاحقة'; return; }
+    if (!text) { locationHint.textContent = 'اختياري — وبالإحداثيات يظهر العقار في «خريطة العقارات»'; return; }
     const loc = parseLocation(text);
     if (loc) {
       locationHint.classList.add('ok');

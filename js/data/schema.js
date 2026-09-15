@@ -128,6 +128,11 @@ export const ENUMS = {
   ],
   // أولوية المهمة (المرحلة ٤٠): عمودٌ يُرتَّب به ويُفرز، كما في كل أدوات إدارة المهام.
   // وأربعُ درجاتٍ لا أكثر: خمسٌ فأكثر لا يفرّق بينها أحدٌ في الاستعمال اليومي.
+  // دورةُ الإيجار في الطلب (المرحلة ٤٢): «٦٠ ألف» سنويًّا غيرُها شهريًّا.
+  rentCycles: [
+    { key: 'yearly', label: 'سنويّ' },
+    { key: 'monthly', label: 'شهريّ' },
+  ],
   taskPriorities: [
     { key: 'urgent', label: 'عاجل', rank: 0, cls: 'badge-danger' },
     { key: 'high', label: 'مرتفعة', rank: 1, cls: 'badge-warn' },
@@ -190,6 +195,15 @@ export const BUILTIN_PROPERTY_TYPES = [
   { key: 'villa', label: 'فلة', group: 'built', builtin: true },
   { key: 'floor', label: 'دور', group: 'built', builtin: true },
   { key: 'apartment', label: 'شقة', group: 'built', builtin: true },
+  // **الأربعةُ الأُوَل لا تكفي وسيطًا في الرياض** (المرحلة ٤٢): العمائرُ والمحالُّ والمكاتبُ
+  // تمرّ عليه كلَّ أسبوع، وكان يضيفها بيده في كل جهاز. وإضافتُها مفاتيحُ جديدةٌ على قائمةٍ
+  // مدمجة — لا ترحيل، وسجلُّك القديم لا يمسّه شيء.
+  { key: 'building', label: 'عمارة', group: 'built', builtin: true },
+  { key: 'shop', label: 'محل', group: 'built', builtin: true },
+  { key: 'office', label: 'مكتب', group: 'built', builtin: true },
+  { key: 'warehouse', label: 'مستودع', group: 'built', builtin: true },
+  { key: 'rest_house', label: 'استراحة', group: 'built', builtin: true },
+  { key: 'farm', label: 'مزرعة', group: 'land', builtin: true },
 ];
 
 /** حالات العقار المدمجة؛ يضيف المستخدم غيرها من الإعدادات. */
@@ -214,6 +228,7 @@ export const TYPE_FIELD_GROUPS = {
   ],
   built: [
     { key: 'rooms', label: 'عدد الغرف', input: 'number' },
+    { key: 'baths', label: 'دورات المياه', input: 'number' },
     { key: 'floor', label: 'الدور', input: 'text' },
     { key: 'floorsCount', label: 'عدد الأدوار / الشقق', input: 'number' },
     { key: 'buildingAge', label: 'عمر البناء (سنة)', input: 'number' },
@@ -320,6 +335,14 @@ export const SCHEMAS = {
     defaults: () => ({
       clientId: null, type: '', purpose: '', city: 'الرياض',
       districts: [], budgetMax: null, area: null, notes: '',
+      // **ما كان يُقرأ ولا يُخزَّن.** «٣ غرف ودورتين، من ٤٥ إلى ٦٠ ألف سنوي» كان المحلّل
+      // يقرؤه ثم لا يجد له حقلًا، فيضيع — ولا يدخل المطابقة. وهي أوّل ما يسأل عنه المستأجر.
+      rooms: null, // أقلّ عددٍ يقبله — لا عددٌ مطابقٌ بالضبط
+      baths: null,
+      budgetMin: null, // أرضيّةُ الميزانية: من دونها لا يُعرض عليه ما هو أدنى من سوقه
+      // دورةُ الإيجار: «٦٠ ألف» سنويًّا غيرُها شهريًّا، والفرق اثنا عشر ضعفًا. و`''` تعني
+      // غيرَ مذكورة، فتُقرأ بالدورة الافتراضية للسوق (سنويّة) ويُقال ذلك ولا يُخمَّن صامتًا.
+      rentCycle: '', // ENUMS.rentCycles
       status: 'active', // ENUMS.requestStatuses
       priceFlexibility: null, // نسبة مئوية تتجاوز الإعداد العام، أو null
       priceFlexAmount: null, // مبلغ بالريال يتجاوز النسبة والحدّ الأدنى معًا (المرحلة ٣)

@@ -33,8 +33,13 @@ ok('والمدينة كذلك', r.fields.city === 'الرياض', JSON.stringify
 console.log('\n--- ٤١. الحدود الأربعة ---');
 ok('الجهات الأربع تُقرأ', (r.fields.bounds || []).length === 4, JSON.stringify((r.fields.bounds || []).map((b) => b.side)));
 ok('وكلٌّ بنصّه لا مختلطًا بما بعده',
-  r.fields.bounds[0].value.includes('شارع عرض 15') && !r.fields.bounds[0].value.includes('الجنوب'),
+  r.fields.bounds[0].value.includes('شارع عرض ١٥') && !r.fields.bounds[0].value.includes('الجنوب'),
   r.fields.bounds[0].value);
+// المرحلة ٤٢: الحدّ يُخزَّن **كما كُتب في الصكّ** لا مطبَّعًا. كان يُحفظ «قطعه رقم 117»
+// بأرقامٍ لاتينيّةٍ وتاءٍ مربوطةٍ محذوفة، ثم يُنسخ إلى عقدٍ بخطأٍ ليس في الصكّ.
+ok('والحدُّ بحروف الصكّ وأرقامه لا بالمطبَّعة',
+  r.fields.bounds[1].value.includes('قطعة') && r.fields.bounds[1].value.includes('١١٧'),
+  r.fields.bounds[1].value);
 
 console.log('\n--- ٤١. الشاهد على القراءة ---');
 ok('كلُّ حقلٍ يحمل السطر الذي قُرئ منه', r.found.filter((f) => f.snippet).length >= 6,

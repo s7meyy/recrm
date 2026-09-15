@@ -32,7 +32,12 @@ await page.evaluate(() => { location.hash = '#/publish'; });
 await page.waitForTimeout(1200);
 await page.locator('button:has-text("نشر الآن")').click();
 await page.waitForTimeout(3500);
-const shareCell = await page.locator('.table tbody tr').first().innerText();
+// **جدولُ العروض بعينه لا «أوّل جدول»**: صفحة النشر فيها جدولان — «طلبات وصلت من الصفحة
+// العامة» ثم العروض. وكان الفحصُ يأخذ أوّلَهما فيصيب العروضَ ما دام جدولُ الطلبات فارغًا،
+// ويخطئ متى وصل طلبٌ واحد (وخزنُ الطلبات على الخادم يبقى بين الحزم). فيُطلب بعمودِه.
+const listingsTable = page.locator('.table:has(th:text("الرابط"))');
+ok('جدول العروض موجودٌ في صفحة النشر', await listingsTable.count() === 1, String(await listingsTable.count()));
+const shareCell = await listingsTable.locator('tbody tr').first().innerText();
 ok('زر مشاركة رابط العرض يظهر بعد النشر', shareCell.includes('↗') || shareCell.includes('📋'), shareCell.replace(/\n/g,' | ').slice(0,90));
 
 const pub = await (await b.newContext({ locale: 'ar-SA' })).newPage();
