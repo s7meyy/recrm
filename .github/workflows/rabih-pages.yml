@@ -1,0 +1,73 @@
+# نشر «رابح» على GitHub Pages.
+#
+# لا يمسّ كسّاب: الموقع المنشور هو مجلد `rabih/` وحده، ويُقرأ من فرع التطوير
+# لا من `main` — فـ`main` يحمل كسّاب، ومجلد رابح ليس عليه أصلًا.
+#
+# `enablement: true` في configure-pages يفعّل Pages تلقائيًّا أول مرة، فلا يلزم
+# تبديل شيء في الإعدادات يدويًّا.
+#
+# الرابط بعد أول نشرة ناجحة: https://s7meyy.github.io/recrm/
+
+name: نشر رابح على Pages
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: الفرع الذي يُقرأ منه مجلد rabih
+        required: false
+        default: claude/sleepy-tesla-ikhvof
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/rabih-pages.yml'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# نشرةٌ واحدة في وقت واحد، ولا تُلغى الجارية: قطعُ نشرةٍ في منتصفها قد يترك الموقع ناقصًا.
+concurrency:
+  group: rabih-pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: جلب فرع رابح
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || 'claude/sleepy-tesla-ikhvof' }}
+
+      # فحصٌ صريح خيرٌ من نشرةٍ فارغة: لو غاب المجلد أو تغيّر اسم الفرع نعرف السبب هنا.
+      - name: تحقّق من وجود المجلد
+        run: |
+          if [ ! -f rabih/index.html ]; then
+            echo "::error::لا يوجد rabih/index.html في هذا الفرع — راجع مُدخَل ref."
+            exit 1
+          fi
+          echo "الملفات: $(find rabih -type f | wc -l)"
+
+      # الاختبارات ليست جزءًا من الموقع المنشور.
+      - name: تجهيز الموقع
+        run: |
+          rm -rf rabih/tests rabih/node_modules
+          touch rabih/.nojekyll
+
+      - name: تهيئة Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: rabih
+
+      - name: نشر
+        id: deployment
+        uses: actions/deploy-pages@v4
