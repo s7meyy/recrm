@@ -1,0 +1,61 @@
+# نشر تلقائي إلى Netlify عند كل دفع إلى main (المرحلة ٣٣).
+#
+# **لماذا هذا الملف أصلًا؟** ربط Netlify بالمستودع توقّف عن إطلاق البناء منذ ١٤ سبتمبر:
+# آخر نشرة مصدرها `api` لا `git`، أي أن لا خطّاف (webhook) يُطلق بناءً عند الدفع. وهذا
+# المسار لا يعتمد على ذلك الربط إطلاقًا — GitHub هو من ينشر، بمفتاحٍ تملكه أنت.
+#
+# **يحتاج سرَّين في المستودع** (Settings ← Secrets and variables ← Actions ← New secret):
+#   NETLIFY_AUTH_TOKEN  من Netlify: User settings ← Applications ← Personal access tokens
+#   NETLIFY_SITE_ID     8fab1119-ac3c-4473-8fea-ea61abab8ab6
+#
+# وما لم يُضبطا **لا يفشل الدفع بصمت**: الخطوة تتوقف برسالة تقول أيّهما ناقص.
+
+name: نشر إلى Netlify
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # زرّ يدوي في تبويب Actions لإعادة النشر بلا دفع جديد
+
+concurrency:
+  group: netlify-deploy
+  cancel-in-progress: true # نشرتان متلاحقتان: الأحدث تكفي
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: تحقّق من المفاتيح
+        env:
+          TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          SITE: ${{ secrets.NETLIFY_SITE_ID }}
+        run: |
+          missing=""
+          [ -z "$TOKEN" ] && missing="$missing NETLIFY_AUTH_TOKEN"
+          [ -z "$SITE" ] && missing="$missing NETLIFY_SITE_ID"
+          if [ -n "$missing" ]; then
+            echo "::error::ينقص سرّ المستودع:$missing — أضفه في Settings ← Secrets and variables ← Actions"
+            exit 1
+          fi
+
+      # لا ملف قفل في المستودع (التطبيق بلا أداة بناء، والتبعيتان للدوال وحدها)،
+      # فـ`npm install` هو الصحيح هنا لا `npm ci`.
+      - name: تثبيت تبعيات الدوال
+        run: npm install --omit=dev
+
+      # رسالة النشرة تُمرَّر **متغيّرَ بيئة لا استبدالًا نصّيًا**: نصّ الالتزام يكتبه بشر،
+      # وحقنه في سطر الصدفة مباشرةً بابٌ لتنفيذ ما ليس منه.
+      - name: نشر
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          npx -y netlify-cli@latest deploy --prod --no-build \
+            --message "${COMMIT_MESSAGE:-نشر يدوي}"
