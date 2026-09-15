@@ -215,6 +215,17 @@ export async function deleteImages(ids = []) {
   for (const id of ids) await removeImage(id);
 }
 
+/**
+ * هل يستحقّ هذا السجلّ أن يُنسخ احتياطيًّا؟ (المرحلة ٣٨)
+ *
+ * **لا**، إن كان صورةً مختومةً مؤقّتة: المستخدم قال بنفسه إنّها تُحذف بعد أيّام. ونسخُها
+ * — إلى ملفٍّ يحفظه أو إلى الخزنة السحابية — يضخّم النسخة بما هو ذاهبٌ إلى الحذف، ثم
+ * يعيدها الاسترجاعُ حيّةً بعد أن ماتت. والدائمُ منها يُنسخ كغيره: اختارَ بقاءه.
+ */
+export function worthBackingUp(rec) {
+  return !(rec?.entity === 'stamped' && rec?.expiresAt);
+}
+
 /** عدد الصور ومجموع حجمها (الأصل المضغوط + المصغّرة). */
 export async function imagesSummary() {
   const all = await repo.images.list();

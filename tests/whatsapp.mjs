@@ -81,11 +81,9 @@ await page.evaluate(() => { location.hash = '#/whatsapp'; });
 await page.waitForTimeout(1600);
 ok('قائمة الجمهور فيها فلتر «الكل»', await page.locator('#page .chip-all').count() === 1);
 ok('وتقول كم ستصل الرسالة', (await page.locator('#page').innerText()).includes('كل من له جوال'), '');
-const before = await page.locator('#page').innerText();
 await page.locator('#page button:has-text("أرسل الحملة")').click();
 await page.waitForTimeout(500);
 ok('الإرسال بلا اسم قالب يُرفض برسالة واضحة', (await page.locator('.toast').innerText()).includes('القالب'), await page.locator('.toast').innerText());
-void before;
 
 /* الصفحة للمالك وحده */
 ok('«واتساب» في قائمة صفحات المالك وحده', await page.evaluate(() => !!document.querySelector('a[data-route="whatsapp"][data-owner-only]')));

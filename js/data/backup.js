@@ -4,6 +4,7 @@
 
 import { repo } from './repository.js';
 import { STORES } from './schema.js';
+import { worthBackingUp } from './images.js';
 import { getBackupInfo, setLastExport } from './settings.js';
 
 export const BACKUP_APP = 'kassab';
@@ -74,7 +75,9 @@ export async function exportBackup({ includeImages = true } = {}) {
   // فحذفُه من النسخة يعني أن استيرادها لا يمسح صورك — وهو الصواب هنا بالضبط.
   const stores = includeImages ? STORE_ORDER : STORE_ORDER.filter((x) => x !== 'images');
   for (const store of stores) {
-    const records = await repo.raw.getAll(store);
+    let records = await repo.raw.getAll(store);
+    // المختوم المؤقّت لا يُنسخ (المرحلة ٣٨): هو ذاهبٌ إلى الحذف بأمر صاحبه.
+    if (store === 'images') records = records.filter(worthBackingUp);
     counts[store] = records.length;
     parts.push(`${firstStore ? '' : ','}"${store}":[`);
     firstStore = false;

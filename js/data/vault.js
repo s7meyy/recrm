@@ -115,7 +115,10 @@ export async function uploadImages(passphrase, { onProgress = null } = {}) {
   if (!passphrase) throw new Error('حدد العبارة السرّية أولًا');
   const { repo } = await import('./repository.js');
   const { serializeImage } = await import('./backup.js');
-  const records = await repo.raw.getAll('images');
+  const { worthBackingUp } = await import('./images.js');
+  // المختوم المؤقّت لا يُرفع (المرحلة ٣٨): رفعُ ما يُحذف بعد ثلاثة أيام يملأ الخزنة
+  // ويستهلك حصّتك، ثم يعيده الاسترجاعُ حيًّا بعد أن مات.
+  const records = (await repo.raw.getAll('images')).filter(worthBackingUp);
   const batch = new Date().toISOString();
   if (!records.length) return { batch, parts: 0, bytes: 0, images: 0 };
 

@@ -174,5 +174,43 @@ ok('حذف الشعار لا يحذف صورةً واحدة مختومة به', 
   `${afterLogoDelete.before} → ${afterLogoDelete.after}`);
 ok('والشعار نفسه حُذف', afterLogoDelete.logosLeft === 1, String(afterLogoDelete.logosLeft));
 
+
+/* ===== المؤقّت لا يُنسخ احتياطيًّا ===== */
+console.log('\n--- ٣٨. النسخ الاحتياطي ---');
+const backup = await page.evaluate(async () => {
+  const { repo } = await import('/js/data/repository.js');
+  // الفحص السابق كنس المؤقّت كلّه، فنصنع واحدًا جديدًا — وإلّا قاس هذا الفحصُ فراغًا
+  // وسمّاه نجاحًا.
+  const { stampImage } = await import('/js/util/watermark.js');
+  const { saveStamped } = await import('/js/data/stamp.js');
+  const logoFile = await window.__makeFile('شعار.png', 200, 80, '#000000');
+  const base = await window.__makeFile('مؤقّتة.jpg', 500, 400, '#ffffff', 'image/jpeg');
+  const out = await stampImage(base, [{ logoId: 'L', position: 'center', sizePct: 20, opacity: 1, marginPct: 3 }], new Map([['L', logoFile]]));
+  await saveStamped(out.blob, { width: out.width, height: out.height, retention: '3', originalName: 'مؤقّتة.jpg' });
+  const { exportBackup } = await import('/js/data/backup.js');
+  const { worthBackingUp } = await import('/js/data/images.js');
+  const all = await repo.images.list();
+  const stamped = all.filter((r) => r.entity === 'stamped');
+  const temp = stamped.filter((r) => r.expiresAt);
+  const perm = stamped.filter((r) => !r.expiresAt);
+  const others = all.filter((r) => r.entity !== 'stamped');
+  const res = await exportBackup({ includeImages: true });
+  return {
+    temp: temp.length,
+    perm: perm.length,
+    others: others.length,
+    inBackup: res.counts.images,
+    tempJudged: temp.every((r) => worthBackingUp(r) === false),
+    permJudged: perm.every((r) => worthBackingUp(r) === true),
+    othersJudged: others.every((r) => worthBackingUp(r) === true),
+  };
+});
+ok('المختوم المؤقّت لا يستحقّ النسخ (هو ذاهبٌ إلى الحذف بأمر صاحبه)', backup.tempJudged);
+ok('والدائم يستحقّه — اختار صاحبه بقاءه', backup.permJudged);
+ok('وصور العقارات تُنسخ كما كانت (لا يُمسّ ما لا شأن له بالختم)', backup.othersJudged);
+ok('فالنسخة تحمل الدائم وغير المختوم دون المؤقّت',
+  backup.inBackup === backup.perm + backup.others,
+  `${backup.inBackup} = ${backup.perm} دائمة + ${backup.others} أخرى (والمؤقّت ${backup.temp} خارجها)`);
+ok('والمؤقّت موجودٌ فعلًا في الجهاز — فالفحص يقيس استثناءً لا فراغًا', backup.temp > 0, String(backup.temp));
 console.log('\n' + (errors.length ? 'FAIL — أخطاء وحدة التحكّم :: ' + errors.join(' | ') : 'PASS — لا أخطاء في وحدة التحكّم'));
 await b.close();

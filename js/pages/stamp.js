@@ -12,7 +12,7 @@
 //     الحقيقي — وهذا مكتوبٌ في الصفحة نفسها قبل الضغط لا بعده.
 
 import { repo } from '../data/repository.js';
-import { el, clear, labeled, selectEl, badge, toast, confirmDialog, emptyState, openModal } from '../util/dom.js';
+import { el, clear, labeled, selectEl, badge, toast, confirmDialog } from '../util/dom.js';
 import { getImageUrl, removeImage, formatBytes, isVideoFile } from '../data/images.js';
 import { typeLabel, getLists } from '../data/settings.js';
 import { formatDate, formatNumber, countWord, relativeDays } from '../util/format.js';
@@ -406,13 +406,11 @@ function renderQueue(ctx) {
 
   if (videos.length) {
     // القول قبل الفعل: المقطع ليس كالصورة، والوقت يُحسب بزمنه.
-    const seconds = videos.length;
     ctx.nodes.queueHead.append(el('p', { class: 'notice notice-warn', style: { flexBasis: '100%' } },
       el('strong', { text: `في الطابور ${countWord(videos.length, ['مقطع واحد', 'مقطعان', 'مقاطع', 'مقطعًا'])}. ` }),
       'ختم المقطع إعادةُ ترميزٍ كاملة تجري بزمنه الحقيقي: مقطع دقيقتين يأخذ دقيقتين، ',
       'والناتج WebM بجودةٍ أقلّ من الأصل. ',
       VIDEO_STAMP.supported() ? 'ابقَ في الصفحة حتى ينتهي.' : 'ومتصفّحك لا يدعم هذا أصلًا — ستُتخطّى المقاطع.'));
-    void seconds;
   }
 
   for (const item of ctx.items) {
@@ -579,6 +577,3 @@ async function refreshPreview(ctx) {
     box.append(el('p', { class: 'field-hint', text: `تعذّرت المعاينة: ${err.message}` }));
   }
 }
-
-void openModal;
-void emptyState;
