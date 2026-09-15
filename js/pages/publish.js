@@ -12,7 +12,7 @@ import { repo } from '../data/repository.js';
 import { ENUMS, labelFor } from '../data/schema.js';
 import { getLists, typeLabel, getCompany, getPublishSettings, setPublishSettings } from '../data/settings.js';
 import { el, clear, labeled, selectEl, checkbox, badge, toast, emptyState, confirmDialog, debounce, openModal } from '../util/dom.js';
-import { formatSAR, formatArea, formatDateTime } from '../util/format.js';
+import { formatSAR, formatArea, formatDateTime, formatNumber } from '../util/format.js';
 import { mapsLink } from '../util/location.js';
 import { matchesQuery } from '../util/arabic.js';
 import { qrBlock } from '../util/qr.js';
@@ -41,6 +41,17 @@ async function loadData(ctx) {
   ctx.clients = clients; // لازم لاختيار عميل القائمة المخصّصة (المرحلة ١١)
   ctx.selected = new Set(publish.listingIds);
   ctx.publishedRefs = new Map(publish.publishedRefs || []);
+
+  // عدّاد المشاهدات (المرحلة ٢٥): فشله لا يُعطّل الصفحة — تظهر «؟» مكان الرقم.
+  ctx.views = {};
+  ctx.viewsError = false;
+  try {
+    const res = await fetch('/api/view', { headers: { accept: 'application/json' } });
+    if (!res.ok) throw new Error(String(res.status));
+    ({ counts: ctx.views = {} } = await res.json());
+  } catch (_) {
+    ctx.viewsError = true;
+  }
 }
 
 function build(ctx) {
@@ -61,12 +72,14 @@ function build(ctx) {
   ctx.nodes.statusPanel = panelBody(grid, 'الحالة', 'آخر نشر وما هو ظاهر للعملاء الآن.');
   ctx.nodes.listsPanel = panelBody(grid, 'قوائم مخصّصة لعملاء', 'اختر عروضًا لعميل بعينه فيصله رابط خاص يعرض قائمته وحده — ويخبرك العدّاد هل فتحه.');
   ctx.nodes.leadsPanel = panelBody(grid, 'طلبات من الصفحة العامة', 'زوّار تركوا أرقامهم في نموذج «اطلب معاينة». تحويل الطلب ينشئ عميلًا في قاعدتك ثم يُزيله من هنا.');
+  ctx.nodes.intakePanel = panelBody(grid, 'استمارة العملاء بـQR', 'رمز يمسحه العميل فيكتب طلبه بنفسه — بمدنك وأحيائك وأنواعك، لا نصًّا حرًّا.');
   ctx.container.append(grid);
 
   drawSettings(ctx);
   drawStatus(ctx);
   drawClientLists(ctx);
   drawLeads(ctx);
+  drawIntake(ctx);
 
   /* اختيار العقارات */
   ctx.nodes.count = el('span', { class: 'count' });
@@ -173,11 +186,30 @@ function drawList(ctx) {
       el('td', { class: 'num', text: formatArea(p.area) }),
       el('td', { class: 'num', text: formatSAR(p.price) }),
       el('td', { text: `${(p.images || []).length}` }),
+      el('td', {}, viewCell(ctx, p)),
       el('td', {}, shareButton(ctx, p)));
   });
   area.append(el('div', { class: 'table-wrap' }, el('table', { class: 'table' },
-    el('thead', {}, el('tr', {}, ['نشر', 'النوع', 'الموقع', 'الغرض', 'المساحة', 'السعر', 'الصور', 'الرابط'].map((t) => el('th', { text: t })))),
+    el('thead', {}, el('tr', {}, ['نشر', 'النوع', 'الموقع', 'الغرض', 'المساحة', 'السعر', 'الصور', 'مشاهدات', 'الرابط'].map((t) => el('th', { text: t })))),
     el('tbody', {}, rows))));
+}
+
+/**
+ * مشاهدات العرض (المرحلة ٢٥): كم مرة فُتحت صفحته، وكم منها في آخر أسبوع.
+ *
+ * **مؤشر اهتمام لا محاسبة إعلانية:** العدّ مرة واحدة لكل جلسة متصفح، بلا معرّف زائر،
+ * ومشاهدتان في اللحظة نفسها قد تُحسبان واحدة (لا قفل في التخزين). ويقال هذا في التلميح.
+ */
+function viewCell(ctx, property) {
+  const index = ctx.publishedRefs.get(property.id);
+  if (!index) return el('span', { class: 'muted small', text: '—' });
+  const row = ctx.views?.[String(index)];
+  if (!row) return el('span', { class: 'muted small', text: ctx.viewsError ? '؟' : '٠' });
+  return el('span', {
+    class: 'num strong',
+    title: `${formatNumber(row.week)} في آخر سبعة أيام · آخر مشاهدة ${row.lastAt || '—'} · العدّ تقريبي: مرة لكل جلسة متصفح`,
+    text: formatNumber(row.total),
+  });
 }
 
 /**
@@ -340,6 +372,15 @@ async function doPublish(ctx, btn) {
         name: ctx.company.name || '', phone: ctx.publish.contactPhone || ctx.company.phone || '',
         address: ctx.company.address || '', logo: ctx.company.logoImageId || null,
       },
+      // قوائمك (المرحلة ٢٥): تحتاجها استمارة الطلب العامة لتُرسل **مفاتيحك أنت** لا نصًّا حرًّا،
+      // فيصير الطلب الوارد جاهزًا للمحرك بلا ترجمة. وهي قوائم عامة أصلًا (أنواع وأحياء ومدن)
+      // لا بيانات عميل ولا عقار.
+      forms: {
+        purposes: ENUMS.purposes.map((x) => ({ key: x.key, label: x.label })),
+        types: (ctx.lists.propertyTypes || []).map((x) => ({ key: x.key, label: x.label })),
+        cities: ctx.lists.cities || [],
+        districtsByCity: ctx.lists.districtsByCity || {},
+      },
       listings,
     });
 
@@ -398,7 +439,9 @@ async function drawLeads(ctx) {
     el('tbody', {}, leads.map((lead) => el('tr', {},
       el('td', { class: 'strong', text: lead.name || 'بلا اسم' }),
       el('td', {}, el('a', { class: 'tel', href: `tel:${lead.phone}`, text: lead.phone, dir: 'ltr' })),
-      el('td', { text: [lead.note, lead.ref ? `عن العرض ${lead.ref}` : ''].filter(Boolean).join(' · ') || '—' }),
+      el('td', {},
+        el('div', { text: [lead.note, lead.ref ? `عن العرض ${lead.ref}` : ''].filter(Boolean).join(' · ') || '—' }),
+        lead.want ? el('div', { class: 'muted small', text: wantSummary(ctx, lead.want) }) : null),
       el('td', { class: 'small muted', text: formatDateTime(lead.createdAt) }),
       el('td', {}, el('div', { class: 'row' },
         el('button', {
@@ -421,8 +464,51 @@ async function drawLeads(ctx) {
 }
 
 /**
+ * لوحة استمارة العملاء (المرحلة ٢٥): الرابط ورمزه.
+ *
+ * القوائم داخل الاستمارة تأتي من **آخر لقطة نشرتها**، فاستمارة قبل أول نشرة تعمل
+ * بالاسم والجوال والنص وحدها — وهذا يُقال هنا صراحةً لا يُكتشف عند أول عميل.
+ */
+function drawIntake(ctx) {
+  const body = ctx.nodes.intakePanel;
+  clear(body);
+  const base = (ctx.publish.publicUrl || `${location.origin}/offers/`).replace(/\/?$/, '/');
+  const url = `${base}intake.html`;
+  body.append(
+    el('p', { class: 'small', style: { wordBreak: 'break-all' }, text: url }),
+    el('div', { class: 'row' },
+      el('a', { class: 'btn btn-sm', href: url, target: '_blank', rel: 'noopener', text: 'افتحها ↗' }),
+      el('button', {
+        type: 'button', class: 'btn btn-ghost btn-sm', text: '📋', title: 'نسخ الرابط',
+        onClick: async () => {
+          try { await navigator.clipboard.writeText(url); toast('نُسخ رابط الاستمارة', 'success'); }
+          catch (_) { toast(url, 'info', 8000); }
+        },
+      }),
+      qrButton(url, 'استمارة العملاء')),
+    el('p', { class: 'field-hint', text: ctx.publish.lastPublishAt
+      ? 'الطلب الوارد منها يُنشئ العميل وطلبه معًا، وينقلك إلى مطابقاته.'
+      : 'لم تنشر بعد: الاستمارة تعمل الآن بالاسم والجوال والنص فقط — قوائمها تصل مع أول نشرة.' }),
+  );
+}
+
+/** سطر يلخّص ما كتبه العميل في استمارة الـQR — بمسمّياتك أنت لا بمفاتيحها. */
+function wantSummary(ctx, want) {
+  return [
+    want.purpose ? labelFor(ENUMS.purposes, want.purpose) : '',
+    want.type ? typeLabel(ctx.lists, want.type) : '',
+    [want.district, want.city].filter(Boolean).join('، '),
+    want.budgetMax ? `حتى ${formatSAR(want.budgetMax)}` : '',
+    want.area ? formatArea(want.area) : '',
+  ].filter(Boolean).join(' · ');
+}
+
+/**
  * تحويل الطلب إلى عميل: **لا يُنشأ عميل مكرّر** — إن كان الجوال مسجَّلًا عندك يُضاف نصّ
  * الطلب إلى سجل تواصله بدل إنشاء سجل ثانٍ يشتّت تاريخه.
+ *
+ * وإن جاء من استمارة الـQR بحقول طلبٍ مكتوبة (المرحلة ٢٥) يُنشأ **الطلب أيضًا** —
+ * وهذا هو الفرق: لم يعد الوارد رقمًا تعيد أنت كتابته، بل طلبًا يدخل المحرك فورًا.
  */
 async function convertLead(ctx, lead) {
   try {
@@ -442,10 +528,27 @@ async function convertLead(ctx, lead) {
       await runPlans('new_client', { title: client.name || client.phone, linkType: 'client', linkId: client.id });
       toast('أُنشئ العميل', 'success');
     }
+    let request = null;
+    if (lead.want && client) {
+      // المدينة المطلوبة قد لا تكون في قوائمك بعد؛ والطلب بلا مدينة لا يعمل عليه المحرك،
+      // فتُستعمل أول مدنك بديلًا ويُذكر المكتوب في ملاحظات الطلب.
+      const city = (ctx.lists.cities || []).includes(lead.want.city) ? lead.want.city : (ctx.lists.cities || [])[0] || '';
+      const district = (ctx.lists.districtsByCity?.[city] || []).includes(lead.want.district) ? lead.want.district : '';
+      request = await repo.requests.create({
+        clientId: client.id, status: 'active',
+        purpose: lead.want.purpose || 'sale',
+        type: lead.want.type || (ctx.lists.propertyTypes || [])[0]?.key || '',
+        city, districts: district ? [district] : [],
+        budgetMax: lead.want.budgetMax ?? null, area: lead.want.area ?? null,
+        notes: `من استمارة العملاء: ${wantSummary(ctx, lead.want)}${lead.note ? ` · ${lead.note}` : ''}`,
+      });
+      toast(existing ? 'أُضيف الطلب إلى العميل المسجَّل' : 'أُنشئ العميل وطلبه', 'success');
+    }
     await leadCall({ method: 'DELETE', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: lead.id }) });
     window.dispatchEvent(new CustomEvent('kassab:data-changed'));
     await drawLeads(ctx);
-    if (client) location.hash = `#/client/${client.id}`;
+    if (request) location.hash = `#/matches/${request.id}`;
+    else if (client) location.hash = `#/client/${client.id}`;
   } catch (err) {
     toast(err.message || 'تعذّر التحويل', 'error');
   }

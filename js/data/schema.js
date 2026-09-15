@@ -294,7 +294,9 @@ export const SCHEMAS = {
       // إعداداتك عند الإنشاء وتبقى محفوظة في الصفقة، فلا يغيّر تعديلُ القالب صفقةً ماضية.
       checklist: [],
       // العمولة المشتركة (المرحلة ٢٤): وسيط شريك له نصيب من عمولتك.
-      partnerName: '', partnerShare: null, partnerPaidAt: null
+      partnerName: '', partnerShare: null, partnerPaidAt: null,
+      // طلب التقييم بعد الصفقة (المرحلة ٢٥): متى طلبتَه — null = لم يُطلب بعد.
+      reviewRequestedAt: null,
     }),
   },
   images: {
@@ -422,6 +424,21 @@ export function duePayments(deal, until = Date.now()) {
   return (deal?.payments || [])
     .filter((p) => !p.paidAt && p.dueAt && new Date(p.dueAt).getTime() <= until)
     .sort((a, b) => a.dueAt.localeCompare(b.dueAt));
+}
+
+/**
+ * صفقات تستحق طلب تقييم (المرحلة ٢٥).
+ *
+ * التوقيت هو كل شيء: **بعد يومين** من الصفقة لا لحظتها (طلبٌ في اللحظة يبدو انتزاعًا)،
+ * وقبل ثلاثين يومًا (بعدها بردت الحماسة وصار الطلب ثقيلًا). ومرة واحدة لكل صفقة.
+ */
+export function reviewCandidates(deals = [], { now = Date.now(), minDays = 2, maxDays = 30 } = {}) {
+  const DAY = 86400000;
+  return deals
+    .filter((d) => !d.reviewRequestedAt && d.clientId && d.date)
+    .map((d) => ({ deal: d, since: Math.floor((now - new Date(d.date).getTime()) / DAY) }))
+    .filter((x) => Number.isFinite(x.since) && x.since >= minDays && x.since <= maxDays)
+    .sort((a, b) => b.since - a.since);
 }
 
 /** تقدّم مسار الصفقة: منجَز من إجمالي، أو null إن لم يكن لها مسار. */

@@ -45,6 +45,7 @@ const SUITES = [
   ['offer-pwa-push.mjs', LOCKED],
   ['client-links.mjs', LOCKED],
   ['leads.mjs', LOCKED],
+  ['intake-and-views.mjs', LOCKED],
 ];
 
 function startServer(port, open) {

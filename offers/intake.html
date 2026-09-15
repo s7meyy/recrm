@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>سجّل طلبك</title>
+  <meta name="description" content="اكتب ما تبحث عنه ونتواصل معك بما يناسبه.">
+  <meta name="robots" content="noindex">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <header class="hero">
+    <div class="wrap">
+      <div class="office">
+        <img id="logo" class="logo" alt="" hidden>
+        <div>
+          <h1 id="office-name">سجّل طلبك</h1>
+          <p id="office-contact" class="office-contact"></p>
+        </div>
+      </div>
+      <p class="intro">اكتب ما تبحث عنه في دقيقة، ونتواصل معك بما يناسبه من العروض.</p>
+    </div>
+  </header>
+
+  <main class="wrap lead-box">
+    <form id="intake-form" novalidate>
+      <div class="lead-grid">
+        <label>الاسم<input type="text" name="name" autocomplete="name" maxlength="60"></label>
+        <label>الجوال <span aria-hidden="true">*</span><input type="tel" name="phone" inputmode="tel" dir="ltr" autocomplete="tel" required maxlength="20"></label>
+        <label>الغرض<select name="purpose" id="purpose"></select></label>
+        <label>نوع العقار<select name="type" id="type"></select></label>
+        <label>المدينة<select name="city" id="city"></select></label>
+        <label>الحي<select name="district" id="district"></select></label>
+        <label>أعلى ميزانية (ريال)<input type="number" name="budgetMax" inputmode="numeric" min="0" step="10000"></label>
+        <label>المساحة المطلوبة (م²)<input type="number" name="area" inputmode="numeric" min="0" step="10"></label>
+      </div>
+      <label class="lead-full">تفاصيل أخرى<textarea name="note" rows="3" maxlength="400" placeholder="عدد الغرف، الدور، قرب مدرسة…"></textarea></label>
+      <label class="lead-trap" aria-hidden="true" tabindex="-1">لا تملأ هذا الحقل<input type="text" name="website" tabindex="-1" autocomplete="off"></label>
+      <button type="submit" class="btn btn-primary" id="intake-send">أرسل طلبي</button>
+      <p id="intake-status" class="muted small" role="status"></p>
+      <p class="muted small">بياناتك تصل إلى المكتب وحده ولا تُنشر ولا تظهر لأحد غيره.</p>
+    </form>
+  </main>
+
+  <footer class="wrap footer">
+    <p class="muted small"><a href="./">تصفّح العروض المتاحة</a></p>
+  </footer>
+
+  <noscript><p class="wrap">هذه الصفحة تحتاج تفعيل JavaScript.</p></noscript>
+  <script type="module" src="./intake.js"></script>
+</body>
+</html>

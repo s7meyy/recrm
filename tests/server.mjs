@@ -25,6 +25,7 @@ const pushFn = (await import(`${ROOT}/netlify/functions/push.js`)).default;
 const pushTickFn = (await import(`${ROOT}/netlify/functions/push-tick.js`)).default;
 const clientListFn = (await import(`${ROOT}/netlify/functions/client-list.js`)).default;
 const leadFn = (await import(`${ROOT}/netlify/functions/lead.js`)).default;
+const viewFn = (await import(`${ROOT}/netlify/functions/view.js`)).default;
 const gateFn = (await import(`${ROOT}/netlify/edge-functions/gate.js`)).default;
 const { config: gateConfig } = await import(`${ROOT}/netlify/edge-functions/gate.js`);
 
@@ -64,6 +65,7 @@ const server = http.createServer(async (req, res) => {
     else if (url.pathname === '/api/push-tick') response = await pushTickFn(request);
     else if (url.pathname === '/api/client-list') response = await clientListFn(request);
     else if (url.pathname === '/api/lead') response = await leadFn(request);
+    else if (url.pathname === '/api/view') response = await viewFn(request);
     else if (excluded(url.pathname)) response = await staticResponse(url.pathname);
     else response = await gateFn(request, { next: () => staticResponse(url.pathname === '/' ? '/index.html' : url.pathname) });
   } catch (err) {

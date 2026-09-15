@@ -80,6 +80,18 @@ ${image ? `<meta property="og:image" content="${esc(image)}">` : ''}
 </main>
 <footer class="wrap footer"><p class="muted small">${esc(office.name || '')}${office.phone ? ` · ${esc(office.phone)}` : ''}</p>
 <p class="muted small">الأسعار والتفاصيل قابلة للتغيير — للتأكد تواصل معنا مباشرة.</p></footer>
+<script>
+/* عدّاد المشاهدات (المرحلة ٢٥): مرة واحدة لكل جلسة متصفح، بلا كوكي ولا معرّف زائر.
+   وفشله لا يُظهر للزائر شيئًا — العدّاد ليس جزءًا من الصفحة التي جاء لأجلها. */
+try {
+  var k = 'kassab-view-${esc(listing.ref)}';
+  if (!sessionStorage.getItem(k)) {
+    sessionStorage.setItem(k, '1');
+    fetch('/api/view', { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ref: '${esc(listing.ref)}' }), keepalive: true }).catch(function () {});
+  }
+} catch (e) {}
+</script>
 </body></html>`, {
     headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'public, max-age=0, must-revalidate' },
   });

@@ -5,8 +5,8 @@
 // فلا مصدر حقيقة ثانيًا يمكن أن يتناقض معها.
 
 import { repo } from '../data/repository.js';
-import { ENUMS, labelFor, clientPriority, clientTagClass } from '../data/schema.js';
-import { getLists, getCompleteness, getFollowUpSettings, typeLabel, getUI, setUI, getGoals } from '../data/settings.js';
+import { ENUMS, labelFor, clientPriority, clientTagClass, reviewCandidates } from '../data/schema.js';
+import { getLists, getCompleteness, getFollowUpSettings, typeLabel, getUI, setUI, getGoals, getCompany } from '../data/settings.js';
 import { loadMatchingContext, candidatesFor, matchReadiness } from '../data/matching.js';
 import { buildOpportunityIndex, topOpportunities } from '../util/opportunity.js';
 import { receivables } from '../util/receivables.js';
@@ -24,10 +24,10 @@ export async function render(container) {
 }
 
 async function loadData() {
-  const [ui, lists, completeness, followUp, ctx, tasks, externals, invoices, goals, deals, expenses] = await Promise.all([
+  const [ui, lists, completeness, followUp, ctx, tasks, externals, invoices, goals, deals, expenses, company] = await Promise.all([
     getUI(), getLists(), getCompleteness(), getFollowUpSettings(),
     loadMatchingContext({ withMatches: true }), repo.tasks.list(), repo.externalListings.list(), repo.invoices.list(),
-    getGoals(), repo.deals.list(), repo.expenses.list(),
+    getGoals(), repo.deals.list(), repo.expenses.list(), getCompany(),
   ]);
   const since = ui.lastVisitAt || null;
   const due = receivables({ invoices, deals }); // المستحقات (المرحلة ١٧)
@@ -110,6 +110,10 @@ async function loadData() {
     clientsById, waiting, tasksPending: tasks.filter((t) => !t.done).length,
     quotesOpen: invoices.filter((i) => i.type === 'quote').length,
     due,
+    // طلب التقييم (المرحلة ٢٥): لا لوحة بلا رابط تقييم — زرٌّ يرسل عميلك إلى لا شيء أسوأ من غيابه.
+    reviews: company.reviewUrl ? reviewCandidates(deals) : [],
+    reviewUrl: company.reviewUrl || '',
+    company,
   };
 }
 
@@ -120,6 +124,37 @@ function dueWhen(r) {
   if (r.days > 0) return `تأخّر ${daysWord(r.days)}${r.dated ? '' : ' عن تاريخه'}`;
   if (r.days === 0) return 'يستحق اليوم';
   return `يستحق بعد ${daysWord(-r.days)}`;
+}
+
+/**
+ * طلب التقييم بعد الصفقة (المرحلة ٢٥).
+ *
+ * **الرسالة تُعرض قبل الإرسال ولا تُرسل نيابةً عنك:** واتساب يفتح بالنص مكتوبًا وأنت تضغط
+ * إرسال — فلا يخرج من اسمك كلامٌ لم تقرأه. والصفقة تُوسم «طُلب» بعد فتح المحادثة، فلا
+ * يعود العميل نفسه في اللوحة غدًا.
+ */
+async function requestReview(event, deal, client, reviewUrl, company) {
+  event.preventDefault();
+  const name = client?.name ? ` ${client.name}` : '';
+  const office = company?.name ? ` من ${company.name}` : '';
+  const text = `السلام عليكم${name}، أسعدنا إتمام صفقتك${office}.\n`
+    + `إن كانت خدمتنا نالت رضاك فتقييمك يعيننا كثيرًا — ولن يأخذ منك دقيقة:\n${reviewUrl}\n`
+    + 'وإن كان لديك ملاحظة نتحسّن بها فاكتبها لي مباشرة، فهي أنفع لنا من التقييم.';
+  const ok = await confirmDialog({
+    title: 'طلب تقييم',
+    message: `ستُفتح محادثة ${clientName(client)} بهذه الرسالة:\n\n${text}`,
+    confirmText: 'افتح واتساب',
+  });
+  if (!ok) return;
+  const phone = toInternational(client?.phone || '');
+  if (phone) window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, '_blank', 'noopener');
+  else toast('العميل بلا جوال — نُسخ النص لترسله بنفسك', 'info', 6000);
+  await repo.deals.update(deal.id, { reviewRequestedAt: new Date().toISOString() });
+  if (client?.id) {
+    await repo.clients.addContact(client.id, { type: 'whatsapp', date: new Date().toISOString(), note: 'طلب تقييم بعد الصفقة' }).catch(() => {});
+  }
+  window.dispatchEvent(new CustomEvent('kassab:data-changed'));
+  build(document.getElementById('page'), await loadData());
 }
 
 /** قبض دفعة إيجار من «يومي» (المرحلة ٢٤) — بنفس منطق قبض العمولة. */
@@ -288,6 +323,32 @@ function build(container, d) {
               })
               : el('a', { class: 'btn btn-ghost btn-sm', href: `#/invoices/${r.id}`, text: 'فتح' })))),
       { href: '#/invoices', hrefText: 'الفواتير →', tone: d.due.overdueCount ? 'today-warn' : '' }));
+  }
+
+  /* طلب التقييم بعد الصفقة (المرحلة ٢٥) */
+  if (d.reviews.length) {
+    grid.append(section('اطلب تقييمًا', d.reviews.length,
+      el('div', {},
+        el('p', { class: 'muted small', text: 'صفقات مضى عليها يومان فأكثر ولم تطلب تقييمها بعد. الرسالة جاهزة — راجعها قبل الإرسال.' }),
+        ...d.reviews.slice(0, 6).map(({ deal, since }) => {
+          const client = d.clientsById.get(deal.clientId);
+          return row(
+            clientName(client),
+            `صفقة ${formatDate(deal.date)} · ${formatSAR(deal.finalPrice)} · مضى ${daysWord(since)}`,
+            el('div', { class: 'row' },
+              el('button', {
+                type: 'button', class: 'btn btn-sm', text: 'اطلب التقييم',
+                onClick: (e) => requestReview(e, deal, client, d.reviewUrl, d.company),
+              }),
+              el('button', {
+                type: 'button', class: 'btn btn-ghost btn-sm', text: 'تخطَّ', title: 'وسمها مطلوبة بلا إرسال',
+                onClick: async () => {
+                  await repo.deals.update(deal.id, { reviewRequestedAt: new Date().toISOString() });
+                  build(document.getElementById('page'), await loadData());
+                },
+              })));
+        })),
+      { href: '#/settings', hrefText: 'رابط التقييم →' }));
   }
 
   /* متابعات اليوم */

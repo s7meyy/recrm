@@ -825,6 +825,9 @@ async function companyBody(redraw) {
   const durationInput = el('input', { class: 'input', type: 'number', min: '1', step: '1', value: company.agreementDurationDays ?? 90 });
   const termsInput = el('textarea', { class: 'input', rows: 4, value: company.agreementTerms || '', placeholder: 'بنود اتفاقية الوساطة كما تريد طباعتها (تُطبع كما هي — ليست مشورة قانونية)' });
   const footerInput = el('textarea', { class: 'input', rows: 2, value: company.footerNote || '', placeholder: 'سطر يُطبع أسفل كل مستند (شروط، شكر، حساب بنكي…)' });
+  // مسار الصفقة (المرحلة ٢٤) وطلب التقييم (المرحلة ٢٥)
+  const checklistInput = el('textarea', { class: 'input', rows: 5, value: company.dealChecklist || '', placeholder: 'بند في كل سطر' });
+  const reviewUrlInput = el('input', { class: 'input', type: 'url', dir: 'ltr', value: company.reviewUrl || '', placeholder: 'https://g.page/r/…' });
   const invPrefix = text(company.invoicePrefix);
   const quotePrefix = text(company.quotePrefix);
   const invNext = el('input', { class: 'input', type: 'number', min: '1', step: '1', value: company.nextInvoiceNo });
@@ -888,6 +891,12 @@ async function companyBody(redraw) {
         labeled('مدة الاتفاقية (يومًا)', durationInput),
         labeled('بنود الاتفاقية', termsInput, { full: true }))),
     el('div', { class: 'panel-block' },
+      el('h3', { text: 'الصفقة بعد إبرامها' }),
+      el('p', { class: 'muted small', text: 'المسار يُنسخ إلى كل صفقة جديدة ويبقى محفوظًا فيها، فتعديلك هنا لا يغيّر صفقة ماضية. ورابط التقييم إن تركته فارغًا لا تظهر لوحة طلب التقييم أصلًا.' }),
+      el('div', { class: 'form-grid' },
+        labeled('مسار الصفقة ومستنداتها', checklistInput, { full: true, hint: 'بند في كل سطر — ما لا تريد تتبّعه احذف سطره' }),
+        labeled('رابط التقييم', reviewUrlInput, { full: true, hint: 'صفحتك في خرائط قوقل مثلًا — يُرسل للعميل بعد صفقته' }))),
+    el('div', { class: 'panel-block' },
       el('h3', { text: 'الترقيم التلقائي' }),
       el('p', { class: 'muted small', text: 'لكل نوع سلسلة مستقلة. الرقم يُقترح عند الإنشاء ويبقى قابلًا للكتابة فوقه، والعدّاد لا يتقدم إلا إذا حُفظ الرقم المقترح كما هو.' }),
       el('div', { class: 'form-grid' },
@@ -909,6 +918,8 @@ async function companyBody(redraw) {
               commissionPercent: Number(commissionInput.value) || 0,
               agreementDurationDays: Number(durationInput.value) || 90,
               agreementTerms: termsInput.value,
+              dealChecklist: checklistInput.value,
+              reviewUrl: reviewUrlInput.value.trim(),
             });
             toast('حُفظت بيانات الشركة', 'success');
             await redraw();

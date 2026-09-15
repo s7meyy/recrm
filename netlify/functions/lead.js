@@ -28,6 +28,33 @@ const clean = (value, max) => String(value ?? '').replace(CONTROL_CHARS, ' ').tr
 
 const ARABIC_DIGITS = '٠١٢٣٤٥٦٧٨٩';
 
+/** مفتاح من قوائم التطبيق: حروف وأرقام وشرطات فقط، فلا يدخل نصّ حرّ في حقلٍ يُتوقع مفتاحًا. */
+const key = (value) => String(value ?? '').trim().replace(/[^\w-]/g, '').slice(0, 40);
+const positive = (value) => {
+  // لا تُنزع الإشارة قبل القراءة: نزعها كان يحوّل «‎-5» إلى ٥، فيدخل رقمٌ لم يكتبه أحد.
+  const text = String(value ?? '').replace(/[٠-٩]/g, (d) => String(ARABIC_DIGITS.indexOf(d))).replace(/[\s,،]/g, '');
+  if (!text) return null;
+  const n = Number(text);
+  return Number.isFinite(n) && n > 0 && n < 1e12 ? n : null;
+};
+
+/**
+ * الطلب المكتوب في استمارة الـQR (المرحلة ٢٥).
+ * يُخزَّن **فقط إن حمل شيئًا**: كائن فارغ في السجل يوهم بطلبٍ لم يُكتب.
+ */
+function cleanWant(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const want = {
+    purpose: key(raw.purpose),
+    type: key(raw.type),
+    city: clean(raw.city, 40),
+    district: clean(raw.district, 40),
+    budgetMax: positive(raw.budgetMax),
+    area: positive(raw.area),
+  };
+  return Object.values(want).some((v) => v !== '' && v != null) ? want : null;
+}
+
 /** جوال سعودي بصيغة محلية — نفس قاعدة التطبيق، مكرّرة هنا لأن الدالة لا تستورد كوده. */
 function normalizePhone(raw) {
   const digits = String(raw ?? '')
@@ -74,12 +101,13 @@ export default async (request) => {
       phone,
       note: clean(body.note, 400),
       ref: clean(body.ref, 12), // رقم العرض الذي يسأل عنه، إن جاء من صفحة عرض
+      want: cleanWant(body.want), // حقول الطلب من استمارة الـQR (المرحلة ٢٥)
       createdAt: new Date().toISOString(),
     };
     await store.setJSON(PREFIX + lead.id, lead);
     // تنبيه فوري بلا تفاصيل: «طلب جديد» ثم تفتح التطبيق فترى الاسم والرقم.
     await notifyAll({
-      title: 'طلب جديد من صفحة العروض',
+      title: lead.want ? 'طلب مكتوب من استمارة العملاء' : 'طلب جديد من صفحة العروض',
       body: 'زائر ترك رقمه — افتح «الصفحة العامة للعروض».',
       url: '/#/publish',
       tag: 'kassab-lead',

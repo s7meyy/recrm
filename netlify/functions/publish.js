@@ -53,6 +53,7 @@ export default async (request) => {
       publishedAt: new Date().toISOString(),
       office: payload.office || {},
       intro: payload.intro || '',
+      forms: payload.forms || {}, // قوائم الاستمارة العامة (المرحلة ٢٥)
       listings,
     };
     await store.setJSON(SNAPSHOT_KEY, snapshot);
