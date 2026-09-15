@@ -1,6 +1,8 @@
 // صفحة العروض العامة (المرحلة ٩): تقرأ اللقطة المنشورة من /api/listings وتعرضها.
 // لا تصل إلى IndexedDB ولا إلى أي ملف من النظام الداخلي — صفحة مستقلة بالكامل.
 
+import { STRINGS, currentLang, rememberLang, typeName, purposeNames, listingTitle } from './i18n.js';
+
 const grid = document.getElementById('grid');
 const statusEl = document.getElementById('status');
 const filtersBox = document.getElementById('filters');
@@ -25,20 +27,41 @@ const el = (tag, attrs = null, ...children) => {
 // نفس تقويم التطبيق وأرقامه: ميلادي بأرقام إنجليزية (ar-SA وحده يعطي هجريًا).
 const nf = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
 const df = new Intl.DateTimeFormat('ar-SA-u-ca-gregory-nu-latn', { year: 'numeric', month: 'long', day: 'numeric' });
-const money = (n) => (n == null ? 'السعر عند الطلب' : `${nf.format(n)} ريال`);
-const area = (n) => (n == null ? null : `${nf.format(n)} م²`);
+const money = (n) => (n == null ? t.priceOnRequest : `${nf.format(n)} ${lang === 'en' ? 'SAR' : 'ريال'}`);
+const area = (n) => (n == null ? null : `${nf.format(n)} ${lang === 'en' ? 'm²' : 'م²'}`);
 
 let all = [];
 const filters = { type: '', purpose: '', district: '' };
+
+// اللغة تُختار مرّة وتُحفظ؛ والبيانات لا تُترجَم — الواجهة وحدها (انظر i18n.js).
+let lang = currentLang();
+let t = STRINGS[lang];
+
+function applyLang() {
+  t = STRINGS[lang];
+  document.documentElement.lang = t.lang;
+  document.documentElement.dir = t.dir;
+  const toggle = document.getElementById('lang-toggle');
+  if (toggle) toggle.textContent = t.other;
+}
+
+function switchLang() {
+  lang = lang === 'ar' ? 'en' : 'ar';
+  rememberLang(lang);
+  applyLang();
+  if (all.length) { buildFilters(); draw(); }
+  const footer = document.getElementById('disclaimer');
+  if (footer) footer.textContent = t.disclaimer;
+}
 
 function card(listing) {
   const images = listing.images || [];
   const media = el('div', { class: 'card-media' });
   if (images.length) {
     media.append(el('img', { src: `/api/media?id=${encodeURIComponent(images[0])}`, alt: listing.title || '', loading: 'lazy' }));
-    if (images.length > 1) media.append(el('span', { class: 'count', text: `${nf.format(images.length)} صور` }));
+    if (images.length > 1) media.append(el('span', { class: 'count', text: `${nf.format(images.length)} ${t.photos}` }));
   } else {
-    media.append(el('div', { class: 'noimg', text: listing.typeLabel || 'عقار' }));
+    media.append(el('div', { class: 'noimg', text: typeName(listing, lang) }));
   }
 
   const waText = encodeURIComponent(`السلام عليكم، مهتم بالعرض: ${listing.title || ''}${listing.ref ? ` (رقم ${listing.ref})` : ''}`);
@@ -49,37 +72,45 @@ function card(listing) {
   return el('article', { class: 'card' },
     el('a', { href: single, 'aria-label': listing.title || 'عرض' }, media),
     el('div', { class: 'card-body' },
-      el('h2', { class: 'card-title' }, el('a', { class: 'card-link', href: single, text: listing.title || listing.typeLabel || 'عقار' })),
-      el('div', { class: 'card-place', text: [listing.district, listing.city].filter(Boolean).join('، ') }),
+      el('h2', { class: 'card-title' }, el('a', { class: 'card-link', href: single, text: listingTitle(listing, lang) })),
+      el('div', { class: 'card-place', text: [listing.district, listing.city].filter(Boolean).join(lang === 'en' ? ', ' : '، ') }),
       el('div', { class: 'card-price', text: money(listing.price) }),
       el('div', { class: 'card-meta' },
-        (listing.purposeLabels || []).map((p) => el('span', { class: 'tag', text: p })),
+        purposeNames(listing, lang).map((p) => el('span', { class: 'tag', text: p })),
         area(listing.area) ? el('span', { class: 'tag', text: area(listing.area) }) : null,
-        listing.ref ? el('span', { class: 'tag', text: `رقم ${listing.ref}` }) : null),
+        listing.ref ? el('span', { class: 'tag', text: `${t.ref} ${listing.ref}` }) : null),
       listing.notes ? el('p', { class: 'card-notes', text: listing.notes }) : null,
       el('div', { class: 'card-actions' },
-        waLink ? el('a', { class: 'btn btn-primary', href: waLink, target: '_blank', rel: 'noopener', text: 'واتساب' }) : null,
-        listing.contactPhone ? el('a', { class: 'btn', href: `tel:${listing.contactPhone}`, text: 'اتصال' }) : null,
-        listing.mapUrl ? el('a', { class: 'btn', href: listing.mapUrl, target: '_blank', rel: 'noopener', text: 'الموقع' }) : null,
-        el('a', { class: 'btn', href: single, text: 'تفاصيل' }))));
+        waLink ? el('a', { class: 'btn btn-primary', href: waLink, target: '_blank', rel: 'noopener', text: t.whatsapp }) : null,
+        listing.contactPhone ? el('a', { class: 'btn', href: `tel:${listing.contactPhone}`, text: t.call }) : null,
+        listing.mapUrl ? el('a', { class: 'btn', href: listing.mapUrl, target: '_blank', rel: 'noopener', text: t.location }) : null,
+        el('a', { class: 'btn', href: `${single}?lang=${lang}`, text: t.allOffers === 'All listings' ? 'Details' : 'تفاصيل' }))));
 }
 
 function draw() {
-  const items = all.filter((l) => (!filters.type || l.typeLabel === filters.type)
-    && (!filters.purpose || (l.purposeLabels || []).includes(filters.purpose))
+  // الفرز على **المفاتيح والقيم المخزَّنة** لا على النصّ المعروض: تبديل اللغة لا يُفرغ الفرز.
+  const items = all.filter((l) => (!filters.type || (l.type || l.typeLabel) === filters.type)
+    && (!filters.purpose || (l.purposes || l.purposeLabels || []).includes(filters.purpose))
     && (!filters.district || l.district === filters.district));
   grid.replaceChildren(...items.map(card));
   statusEl.textContent = items.length
-    ? `${nf.format(items.length)} عرض${items.length === all.length ? '' : ` من ${nf.format(all.length)}`}`
-    : 'لا عروض تطابق الفرز.';
+    ? `${nf.format(items.length)} ${t.listing}${items.length === all.length ? '' : ` ${t.ofCount} ${nf.format(all.length)}`}`
+    : (lang === 'en' ? 'No listings match the filter.' : 'لا عروض تطابق الفرز.');
 }
 
 function buildFilters() {
-  const uniq = (values) => [...new Set(values.filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ar'));
+  const uniqBy = (pairs) => {
+    const map = new Map();
+    for (const [value, label] of pairs) if (value && !map.has(value)) map.set(value, label);
+    return [...map.entries()].sort((a, b) => String(a[1]).localeCompare(String(b[1]), lang === 'en' ? 'en' : 'ar'));
+  };
   const groups = [
-    ['type', 'كل الأنواع', uniq(all.map((l) => l.typeLabel))],
-    ['purpose', 'كل الأغراض', uniq(all.flatMap((l) => l.purposeLabels || []))],
-    ['district', 'كل الأحياء', uniq(all.map((l) => l.district))],
+    ['type', lang === 'en' ? 'All types' : 'كل الأنواع',
+      uniqBy(all.map((l) => [l.type || l.typeLabel, typeName(l, lang)]))],
+    ['purpose', lang === 'en' ? 'All purposes' : 'كل الأغراض',
+      uniqBy(all.flatMap((l) => (l.purposes || l.purposeLabels || []).map((k, i) => [k, purposeNames(l, lang)[i] || k])))],
+    ['district', lang === 'en' ? 'All districts' : 'كل الأحياء',
+      uniqBy(all.map((l) => [l.district, l.district]))],
   ];
   filtersBox.replaceChildren();
   let any = false;
@@ -87,7 +118,7 @@ function buildFilters() {
     if (values.length < 2) continue;
     any = true;
     const select = el('select', { 'aria-label': allLabel }, el('option', { value: '', text: allLabel }),
-      values.map((v) => el('option', { value: v, text: v })));
+      values.map(([value, label]) => el('option', { value, text: label, selected: filters[key] === value ? true : null })));
     select.addEventListener('change', () => { filters[key] = select.value; draw(); });
     filtersBox.append(select);
   }
@@ -104,7 +135,7 @@ async function load() {
 
     const office = snapshot.office || {};
     if (office.name) document.getElementById('office-name').textContent = office.name;
-    document.title = office.name ? `العروض المتاحة — ${office.name}` : 'العروض المتاحة';
+    document.title = office.name ? `${t.title} — ${office.name}` : t.title;
     const contact = document.getElementById('office-contact');
     if (office.phone) {
       contact.append(el('a', { href: `tel:${office.phone}`, text: office.phone, dir: 'ltr' }));
@@ -120,18 +151,21 @@ async function load() {
     if (snapshot.intro) document.getElementById('intro').textContent = snapshot.intro;
     if (snapshot.publishedAt) {
       document.getElementById('published-at').textContent =
-        `آخر تحديث للعروض: ${df.format(new Date(snapshot.publishedAt))}`;
+        `${t.updated}: ${df.format(new Date(snapshot.publishedAt))}`;
     }
 
-    if (!all.length) { statusEl.textContent = 'لا توجد عروض منشورة حاليًا.'; return; }
+    if (!all.length) { statusEl.textContent = t.empty; return; }
     buildFilters();
     draw();
   } catch (err) {
-    statusEl.textContent = 'تعذر تحميل العروض حاليًا. حدّث الصفحة بعد قليل.';
+    statusEl.textContent = t.error;
     console.error(err);
   }
 }
 
+applyLang();
+statusEl.textContent = t.loading;
+document.getElementById('lang-toggle')?.addEventListener('click', switchLang);
 load();
 
 /* ===== «اطلب معاينة» (المرحلة ٢٢) ===== */

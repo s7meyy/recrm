@@ -327,6 +327,10 @@ function toPublicListing(ctx, property, index) {
     title: `${typeLabel(ctx.lists, property.type)} — ${property.district || property.city || ''}`.trim(),
     typeLabel: typeLabel(ctx.lists, property.type),
     purposeLabels: (property.purposes || []).map((k) => labelFor(ENUMS.purposes, k)),
+    // المفاتيح (المرحلة ٣٠): تحتاجها النسخة الإنجليزية لتترجم المدمج منها، وما لم تعرفه
+    // (نوعٌ أضفتَه أنت) يبقى بمسمّاه العربي — أصدق من ترجمةٍ تُخترع.
+    type: property.type || '',
+    purposes: [...(property.purposes || [])],
     city: property.city || '',
     district: property.district || '',
     area: property.area ?? null,

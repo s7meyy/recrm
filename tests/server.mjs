@@ -10,6 +10,9 @@ const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '');
 // بلا APP_PASSWORD تمرّ البوابة (سلوك gate.js نفسه) — يُستعمل لتشغيل نسخة مفتوحة
 // تختبر التطبيق وحده، بينما النسخة المقفلة تختبر البوابة.
 process.env.PUBLISH_TOKEN = 'test-publish-token';
+// طرف Meta (المرحلة ٣٠): قيم اختبار حتى تعمل المصافحة والتوقيع بمنطقهما الحقيقي.
+process.env.META_VERIFY_TOKEN = 'test-verify-token';
+process.env.META_APP_SECRET = 'test-app-secret';
 process.env.APP_PASSWORD = process.env.TEST_OPEN ? '' : 'secret-pass';
 process.env.APP_SECRET = 'topsecret';
 process.env.VAPID_PUBLIC = 'BAS0l8XI1NXI4hkFooiusZNcycHEynQFewSBXSMWVPKWwoN_QzrKBJmrjMU8WEielVM9bVn7rjhXZ6lI8c5gZvY';
@@ -27,6 +30,7 @@ const clientListFn = (await import(`${ROOT}/netlify/functions/client-list.js`)).
 const leadFn = (await import(`${ROOT}/netlify/functions/lead.js`)).default;
 const viewFn = (await import(`${ROOT}/netlify/functions/view.js`)).default;
 const bookFn = (await import(`${ROOT}/netlify/functions/book.js`)).default;
+const metaFn = (await import(`${ROOT}/netlify/functions/meta-lead.js`)).default;
 const gateFn = (await import(`${ROOT}/netlify/edge-functions/gate.js`)).default;
 const { config: gateConfig } = await import(`${ROOT}/netlify/edge-functions/gate.js`);
 
@@ -68,6 +72,7 @@ const server = http.createServer(async (req, res) => {
     else if (url.pathname === '/api/lead') response = await leadFn(request);
     else if (url.pathname === '/api/view') response = await viewFn(request);
     else if (url.pathname === '/api/book') response = await bookFn(request);
+    else if (url.pathname === '/api/meta-lead') response = await metaFn(request);
     else if (excluded(url.pathname)) response = await staticResponse(url.pathname);
     else response = await gateFn(request, { next: () => staticResponse(url.pathname === '/' ? '/index.html' : url.pathname) });
   } catch (err) {

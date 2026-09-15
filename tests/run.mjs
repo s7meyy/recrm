@@ -28,6 +28,7 @@ const SUITES = [
   ['showings-unit.mjs', null],
   ['forecast-adcopy-unit.mjs', null],
   ['slots-unit.mjs', null],
+  ['meta-unit.mjs', null],
   ['app-pages.mjs', OPEN],
   ['sidebar-order.mjs', OPEN],
   ['source-and-priority.mjs', OPEN],
@@ -54,6 +55,7 @@ const SUITES = [
   ['leads.mjs', LOCKED],
   ['intake-and-views.mjs', LOCKED],
   ['booking.mjs', LOCKED],
+  ['english-meta.mjs', LOCKED],
 ];
 
 function startServer(port, open) {

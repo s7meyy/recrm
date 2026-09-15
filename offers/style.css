@@ -69,3 +69,8 @@ h1 { margin: 0; font-size: clamp(22px, 4vw, 30px); }
 .lead-box button { margin-top: 12px; }
 /* الفخّ: بعيد عن العين وعن قارئ الشاشة، ولا يعبّئه إلا آلة. */
 .lead-trap { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+
+/* ===== المرحلة ٣٠ — مبدّل اللغة ===== */
+.lang-toggle { margin-top: 10px; }
+[dir="ltr"] .card, [dir="ltr"] .hero, [dir="ltr"] .wrap { text-align: left; }
