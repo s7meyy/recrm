@@ -17,6 +17,12 @@ export const TEMPLATES = {
     sections: [/خلاص|تنفيذي/, /توصي|خطة/],
     show: { toc: false, stars: true, topics: false, photos: false, recency: true, quotes: false },
   },
+  teaser: {
+    id: 'teaser', name: 'عيّنة مجانية', note: 'صفحة واحدة تُرسَل لعميل محتمل: الأرقام وأبرز الشكاوى فقط، بلا توصيات — أداة بيع لا أداة تحليل.',
+    sections: [/خلاص|تنفيذي/, /ضعف|شكاو/],
+    show: { toc: false, stars: true, topics: true, photos: false, recency: true, quotes: false },
+    teaser: true,
+  },
 };
 
 export const DEFAULT_TEMPLATE = 'full';

@@ -20,6 +20,10 @@ import * as safe from './persist.js';
 import { brands, analyze, groupPrompt } from './group.js';
 import { buildGroupReportHtml } from './report.js';
 import { CHARTER } from './prompts.js';
+import * as identity from './brand.js';
+import * as lock from './lock.js';
+import * as queue from './queue.js';
+import { build as buildMessage, subject as messageSubject, situationLabel } from './messages.js';
 import { newId, saveJob, getJob, allJobs, deleteJob, buildTree, jobPath } from './store.js';
 
 const $  = (s, r = document) => r.querySelector(s);
@@ -27,7 +31,7 @@ const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const el = (tag, cls, html) => { const n = document.createElement(tag); if (cls) n.className = cls; if (html !== undefined) n.innerHTML = html; return n; };
 
 const LAST_JOB = 'rabih:last-job';
-const VIEWS = ['new', 'data', 'pipeline', 'report', 'compare', 'archive', 'about'];
+const VIEWS = ['new', 'data', 'pipeline', 'report', 'compare', 'archive', 'settings', 'about'];
 
 let job = null;
 let dirty = false;
@@ -669,6 +673,7 @@ function loadReportView() {
   $('#plan-in-report').checked = !!job.planInReport;
   fillTemplates();
   showFontState();
+  renderShareMessage();
   renderPlan();
   renderReport();
   renderStepsBar('report');
@@ -683,6 +688,7 @@ function currentHtml() {
     photos: job.photos,
     show: tpl.show,
     font: job.font,
+    identity: identity.load(),
   });
 }
 
@@ -696,18 +702,26 @@ function reportFileName(ext) {
   return `rabih-${asciiName(job.place.identity.name)}-${asciiName(c.cityName, 'ksa')}-${new Date().toISOString().slice(0, 10)}.${ext}`;
 }
 
-function shareText() {
-  const s = stats(job.place);
-  const n = job.place.identity.name || 'المنشأة';
-  return [
-    `تقرير تحليلي عن: ${n}`,
-    `${job.ctx.cityName || ''}${job.ctx.districtName ? ' — ' + job.ctx.districtName : ''} · ${job.ctx.categoryName || ''}`,
-    `التقييم: ${s.googleAverage ?? s.sampleAverage ?? '—'} من 5${s.googleCount ? ` (${s.googleCount} تقييمًا)` : ''}`,
-    `التعليقات المُحلَّلة: ${s.total}`,
-    '',
-    'التقرير الكامل مرفق بصيغة PDF.',
-    '— أُعدّ عبر منصة رابح',
-  ].join('\n');
+/** نص الإرسال: ما حرّره المستخدم، وإلا القالب المناسب لحال التقرير. */
+function shareText(channel = 'whatsapp') {
+  const typed = $('#s-msg')?.value?.trim();
+  if (typed) return typed;
+  const id = identity.load();
+  const sign = id.office ? `\n— ${id.office}${id.phone ? ` · ${id.phone}` : ''}` : '';
+  return buildMessage(job, channel) + sign;
+}
+
+function renderShareMessage() {
+  const box = $('#s-msg');
+  if (!box || !job.place.reviews.length) return;
+  const badge = $('#s-situation');
+  if (badge) badge.textContent = situationLabel(job);
+  if (!box.value.trim() || box.dataset.auto === '1') {
+    const id = identity.load();
+    const sign = id.office ? `\n— ${id.office}${id.phone ? ` · ${id.phone}` : ''}` : '';
+    box.value = buildMessage(job, 'whatsapp') + sign;
+    box.dataset.auto = '1';
+  }
 }
 
 /* ───────────────────────── خطة العمل ───────────────────────── */
@@ -1012,6 +1026,7 @@ function bindGroupView() {
       brand: groupAnalysis.brand,
       analysis: groupAnalysis.analysis,
       markdown: $('#grp-answer').value,
+      identity: identity.load(),
     });
     const w = window.open('', '_blank');
     if (!w) { toast('المتصفح منع النافذة — اسمح بالنوافذ المنبثقة'); return; }
@@ -1122,9 +1137,9 @@ function bindReportView() {
   });
   $('#btn-mail').addEventListener('click', () => {
     const to = $('#s-email').value.trim();
-    const subject = `تقرير تحليلي — ${job.place.identity.name || 'منشأة'}`;
-    location.href = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(shareText())}`;
+    location.href = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(messageSubject(job))}&body=${encodeURIComponent(shareText('email'))}`;
   });
+  $('#s-msg').addEventListener('input', (e) => { e.target.dataset.auto = '0'; });
   $('#btn-copy-summary').addEventListener('click', async () => {
     toast(await copy(shareText()) ? 'نُسخ نص الإرسال' : 'تعذّر النسخ');
   });
@@ -1193,6 +1208,9 @@ function jobRow(j) {
     try { localStorage.setItem(LAST_JOB, job.id); } catch { /* تجاهل */ }
   });
 
+  const q = el('button', 'btn ghost sm', '+ للطابور');
+  q.addEventListener('click', () => { queue.add(j.id); renderQueue(); toast('أُضيف إلى الطابور'); });
+
   const del = el('button', 'btn danger sm', 'حذف');
   del.addEventListener('click', async () => {
     if (!confirm(`حذف تقرير «${j.place?.identity?.name || 'بلا اسم'}» نهائيًّا؟`)) return;
@@ -1203,7 +1221,7 @@ function jobRow(j) {
   });
 
   const sp = el('span', 'spacer');
-  row.append(sp, open, del);
+  row.append(sp, q, open, del);
   return row;
 }
 
@@ -1261,6 +1279,206 @@ function bindSafety() {
   });
 }
 
+/* ───────────────────────── الإعدادات: الهوية والقفل ───────────────────────── */
+
+const ID_FIELDS = { office: '#id-office', tagline: '#id-tagline', phone: '#id-phone', email: '#id-email', website: '#id-website' };
+
+function loadIdentity() {
+  const id = identity.load();
+  for (const [k, sel] of Object.entries(ID_FIELDS)) $(sel).value = id[k] || '';
+  $('#id-primary').value = id.primary || identity.EMPTY.primary;
+  $('#id-accent').value = id.accent || identity.EMPTY.accent;
+  $('#id-showrabih').checked = id.showRabih !== false;
+  $('#logo-note').innerHTML = id.logo ? 'شعار محفوظ — <a href="#" id="logo-clear">إزالته</a>' : 'PNG أو SVG، أقل من ميغابايت.';
+  const clr = $('#logo-clear');
+  if (clr) clr.addEventListener('click', (e) => { e.preventDefault(); saveIdentity({ logo: '' }); loadIdentity(); toast('أُزيل الشعار'); });
+  checkContrast(id);
+}
+
+function checkContrast(id) {
+  const box = $('#id-msg');
+  if (!identity.isDark(id.primary)) {
+    box.innerHTML = '<div class="msg warn"><b>اللون الأساسي فاتح</b> — الغلاف يكتب عليه بالأبيض فقد لا يُقرأ. اختر لونًا أقتم.</div>';
+  } else box.innerHTML = '';
+}
+
+function saveIdentity(patch) {
+  const id = { ...identity.load(), ...patch };
+  identity.save(id);
+  checkContrast(id);
+  if (job) renderReport();
+  return id;
+}
+
+function bindSettings() {
+  for (const [k, sel] of Object.entries(ID_FIELDS)) {
+    $(sel).addEventListener('input', (e) => saveIdentity({ [k]: e.target.value }));
+  }
+  $('#id-primary').addEventListener('input', (e) => saveIdentity({ primary: e.target.value }));
+  $('#id-accent').addEventListener('input', (e) => saveIdentity({ accent: e.target.value }));
+  $('#id-showrabih').addEventListener('change', (e) => saveIdentity({ showRabih: e.target.checked }));
+
+  $('#id-logo').addEventListener('change', (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (f.size > 1024 * 1024) { toast('الشعار أكبر من ميغابايت'); e.target.value = ''; return; }
+    const fr = new FileReader();
+    fr.onload = () => { saveIdentity({ logo: fr.result }); loadIdentity(); toast('حُفظ الشعار'); };
+    fr.readAsDataURL(f);
+    e.target.value = '';
+  });
+
+  $('#btn-lock-on').addEventListener('click', async () => {
+    const p = $('#lk-pass').value;
+    const r = await lock.enable(p);
+    message('#lock-msg', r.ok ? 'ok' : 'err', r.ok ? 'فُعِّل القفل. احفظ كلمة السر — لا سبيل لاستعادتها.' : r.reason);
+    $('#lk-pass').value = '';
+    renderLockState();
+  });
+
+  $('#btn-lock-off').addEventListener('click', async () => {
+    const r = await lock.disable($('#lk-pass').value);
+    message('#lock-msg', r.ok ? 'ok' : 'err', r.ok ? 'أُلغي القفل.' : r.reason);
+    $('#lk-pass').value = '';
+    renderLockState();
+  });
+
+  $('#btn-export-enc').addEventListener('click', async () => {
+    const p = $('#lk-pass').value;
+    if (!p) { message('#lock-msg', 'err', 'اكتب كلمة السر التي سيُشفَّر بها الملف.'); return; }
+    const jobs = await allJobs();
+    if (!jobs.length) { toast('الأرشيف فارغ'); return; }
+    const enc = await lock.encryptText(JSON.stringify(jobs), p);
+    download(`rabih-archive-encrypted-${new Date().toISOString().slice(0, 10)}.json`, enc, 'application/json');
+    safe.markBackup();
+    message('#lock-msg', 'ok', 'صُدِّر الأرشيف مشفَّرًا. بلا كلمة السر لا يُفتح.');
+  });
+
+  $('#lk-import').addEventListener('change', async (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    const raw = await f.text();
+    e.target.value = '';
+    let text = raw;
+    if (lock.isEncrypted(raw)) {
+      const p = $('#lk-pass').value || prompt('كلمة سر الملف:') || '';
+      const r = await lock.decryptText(raw, p);
+      if (!r.ok) { message('#lock-msg', 'err', r.reason); return; }
+      text = r.text;
+    }
+    try {
+      const arr = JSON.parse(text);
+      let n = 0;
+      for (const j of (Array.isArray(arr) ? arr : [arr])) { if (j?.id && j?.ctx) { await saveJob(j); n += 1; } }
+      message('#lock-msg', 'ok', `استُورد ${n} تقريرًا.`);
+    } catch { message('#lock-msg', 'err', 'الملف غير صالح.'); }
+  });
+}
+
+function renderLockState() {
+  $('#lock-state').innerHTML = lock.isEnabled()
+    ? '<div class="msg ok"><b>القفل مفعَّل</b> — يُطلب عند فتح المنصّة.</div>'
+    : '<div class="msg warn"><b>القفل غير مفعَّل</b> — من يفتح متصفحك يرى تقارير عملائك.</div>';
+}
+
+/** بوابة الدخول: تُعرَض قبل أي شيء إن كان القفل مفعَّلًا. */
+async function gate() {
+  if (!lock.isEnabled()) return true;
+  document.body.insertAdjacentHTML('afterbegin', `
+    <div id="gate" style="position:fixed;inset:0;background:var(--navy);z-index:99;display:grid;place-items:center;padding:20px">
+      <form id="gate-form" style="background:#fff;border-radius:14px;padding:26px;max-width:340px;width:100%;text-align:center">
+        <div style="font-size:26px;font-weight:800;letter-spacing:.16em;color:var(--gold)">رابــح</div>
+        <p style="color:var(--muted);font-size:13.5px">الأرشيف مقفل. اكتب كلمة السر.</p>
+        <input id="gate-pass" type="password" autocomplete="current-password" placeholder="كلمة السر" style="text-align:center">
+        <div id="gate-msg" style="color:var(--err);font-size:13px;min-height:20px"></div>
+        <button class="btn" type="submit" style="width:100%">دخول</button>
+      </form>
+    </div>`);
+  const input = $('#gate-pass');
+  input.focus();
+  return new Promise((resolve) => {
+    $('#gate-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (await lock.verifyPassword(input.value)) { $('#gate').remove(); resolve(true); }
+      else { $('#gate-msg').textContent = 'كلمة السر غير صحيحة.'; input.value = ''; input.focus(); }
+    });
+  });
+}
+
+/* ───────────────────────── طابور الدفعات ───────────────────────── */
+
+async function renderQueue() {
+  const bar = $('#queue-bar');
+  if (!bar) return;
+  const jobs = await allJobs();
+  const ids = queue.prune(jobs.map((j) => j.id));
+  if (ids.length < 2) { bar.hidden = true; return; }
+
+  const byId = new Map(jobs.map((j) => [j.id, j]));
+  const at = queue.position();
+  const cur = byId.get(ids[at]);
+
+  bar.hidden = false;
+  bar.innerHTML = `
+    <span class="qpos">الطابور ${at + 1}/${ids.length}</span>
+    <span class="qname">${cur?.place?.identity?.name || 'بلا اسم'}</span>
+    <span class="qdots">${ids.map((id, i) =>
+      `<span class="qdot ${i === at ? 'on' : (byId.get(id)?.reportMd ? 'done' : '')}" data-i="${i}" title="${byId.get(id)?.place?.identity?.name || ''}"></span>`).join('')}</span>
+    <span class="spacer"></span>
+    <button type="button" class="btn ghost sm" id="q-prev">السابق</button>
+    <button type="button" class="btn ghost sm" id="q-next">التالي</button>
+    <button type="button" class="btn ghost sm" id="q-clear">إنهاء الطابور</button>`;
+
+  $('#q-prev').addEventListener('click', () => jumpQueue(queue.prev()));
+  $('#q-next').addEventListener('click', () => jumpQueue(queue.next()));
+  $('#q-clear').addEventListener('click', () => { queue.clear(); renderQueue(); toast('أُنهي الطابور'); });
+  bar.querySelectorAll('.qdot').forEach((d) => d.addEventListener('click', () => jumpQueue(queue.goTo(Number(d.dataset.i)))));
+}
+
+async function jumpQueue(id) {
+  if (!id) return;
+  const j = await getJob(id);
+  if (!j) return;
+  job = j;
+  stepOpen.clear();
+  loadDataView(); renderPipeline(); loadReportView();
+  try { localStorage.setItem(LAST_JOB, job.id); } catch { /* تجاهل */ }
+  renderQueue();
+  show(job.reportMd ? 'report' : (job.place.reviews.length ? 'pipeline' : 'data'));
+  toast(job.place.identity.name || 'تقرير');
+}
+
+/* ───────────────────────── اختصارات لوحة المفاتيح ───────────────────────── */
+
+function bindShortcuts() {
+  document.addEventListener('keydown', async (e) => {
+    const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable;
+
+    if (e.ctrlKey && e.key === 'Enter') {
+      const openStep = $('.step[data-open="1"] .btn');
+      if (openStep) { e.preventDefault(); openStep.click(); }
+      return;
+    }
+    if (e.altKey && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
+      if (queue.size() < 2) return;
+      e.preventDefault();
+      jumpQueue(e.key === 'ArrowLeft' ? queue.next() : queue.prev());
+      return;
+    }
+    if (e.ctrlKey && (e.key === 's' || e.key === 'S')) {
+      e.preventDefault(); await persist(); toast('حُفِظ');
+      return;
+    }
+    if (e.ctrlKey && (e.key === 'p' || e.key === 'P') && !$('#view-report').hidden) {
+      e.preventDefault(); $('#btn-print').click();
+      return;
+    }
+    if (e.key === 'Escape' && !typing) {
+      $$('.step[data-open="1"]').forEach((n) => { n.dataset.open = '0'; });
+    }
+  });
+}
+
 function bindArchiveView() {
   let t = null;
   $('#ar-search').addEventListener('input', (e) => {
@@ -1293,6 +1511,7 @@ function bindArchiveView() {
 /* ───────────────────────── الإقلاع ───────────────────────── */
 
 async function boot() {
+  if (!(await gate())) return;
   bindNewView();
   bindDataView();
   bindPipelineView();
@@ -1303,11 +1522,14 @@ async function boot() {
   bindGroupView();
   bindArchiveView();
   bindSafety();
+  bindSettings();
+  bindShortcuts();
 
   $$('[data-go]').forEach((b) => b.addEventListener('click', () => {
     const v = b.dataset.go;
     if (v === 'archive') { renderArchive($('#ar-search').value); renderSafety(); }
     if (v === 'compare') renderCompare();
+    if (v === 'settings') { loadIdentity(); renderLockState(); }
     if (v === 'data' && job) loadDataView();
     show(v);
   }));
@@ -1343,6 +1565,8 @@ async function boot() {
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
     navigator.serviceWorker.register('./sw.js').catch(() => { /* لا يمنع التشغيل */ });
   }
+
+  renderQueue();
 
   window.addEventListener('beforeunload', (e) => {
     if (!dirty) return;

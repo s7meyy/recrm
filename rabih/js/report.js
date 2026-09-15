@@ -5,6 +5,7 @@
 import { stats } from './schema.js';
 import { topicStats } from './lexicon.js';
 import { recentVsOlder, monthly, alerts, topicAges } from './recency.js';
+import { themeCss, coverHeader, footerLine, OFFICE_CSS } from './brand.js';
 
 const esc = (s) => String(s ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -315,7 +316,7 @@ figcaption{font-size:9pt;color:var(--muted);margin-top:1mm;text-align:center}
  * @param {Array}  o.photos  [{url, caption}]
  * @returns {string} HTML كامل مكتفٍ بذاته
  */
-export function buildReportHtml({ place, ctx = {}, markdown = '', photos = [], show = {}, font = null }) {
+export function buildReportHtml({ place, ctx = {}, markdown = '', photos = [], show = {}, font = null, identity = null }) {
   const opt = { toc: true, stars: true, topics: true, photos: true, recency: true, ...show };
   const s = stats(place);
   const body = tocFrom(mdToHtml(markdown));
@@ -323,7 +324,8 @@ export function buildReportHtml({ place, ctx = {}, markdown = '', photos = [], s
   const name = esc(place.identity?.name || 'منشأة غير مسمّاة');
 
   const cover = `<header class="cover">
-    <div class="brand">رابــح</div>
+    ${coverHeader(identity)}
+    ${identity?.showRabih === false ? '' : '<div class="brand">رابــح</div>'}
     <h1>تقرير تحليلي عن<br>${name}</h1>
     <p class="sub">مبنيّ على تقييمات وتعليقات العملاء المنشورة في خرائط قوقل</p>
     <div class="cover-grid">
@@ -337,9 +339,10 @@ export function buildReportHtml({ place, ctx = {}, markdown = '', photos = [], s
   </header>`;
 
   const footer = `<footer class="foot">
-    <span>${name} — تقرير رابح</span>
+    <span>${name}${identity?.office ? ` — ${esc(identity.office)}` : (identity?.showRabih === false ? '' : ' — تقرير رابح')}</span>
     <span>${esc(date)}</span>
-  </footer>`;
+  </footer>
+  ${footerLine(identity)}`;
 
   return `<!doctype html>
 <html dir="rtl" lang="ar">
@@ -347,7 +350,7 @@ export function buildReportHtml({ place, ctx = {}, markdown = '', photos = [], s
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>تقرير ${name} — رابح</title>
-<style>${fontFace(font)}${CSS}</style>
+<style>${fontFace(font)}${CSS}${OFFICE_CSS}${themeCss(identity)}</style>
 </head>
 <body>
 <div class="page">
@@ -367,7 +370,7 @@ ${footer}
 }
 
 /** تقرير المجموعة — نفس هوية التقرير الفردي، بجداول الفروع بدل بطاقة منشأة. */
-export function buildGroupReportHtml({ brand, analysis, markdown = '', font = null }) {
+export function buildGroupReportHtml({ brand, analysis, markdown = '', font = null, identity = null }) {
   const a = analysis;
   const date = new Date().toLocaleDateString('ar-SA-u-ca-gregory');
   const body = tocFrom(mdToHtml(markdown));
@@ -396,14 +399,15 @@ export function buildGroupReportHtml({ brand, analysis, markdown = '', font = nu
 <head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>تقرير مجموعة ${esc(brand)} — رابح</title>
-<style>${fontFace(font)}${CSS}
+<style>${fontFace(font)}${CSS}${OFFICE_CSS}${themeCss(identity)}
 .group-shared ul,.group-unique ul{font-size:11pt}
 .group-shared{border-inline-start:3px solid #b5462f;padding-inline-start:5mm}
 .group-unique{border-inline-start:3px solid #b98b2a;padding-inline-start:5mm}
 </style></head>
 <body><div class="page">
 <header class="cover">
-  <div class="brand">رابــح</div>
+  ${coverHeader(identity)}
+  ${identity?.showRabih === false ? '' : '<div class="brand">رابــح</div>'}
   <h1>تقرير مجموعة<br>${esc(brand)}</h1>
   <p class="sub">قراءة موحّدة لفروع المجموعة من تقييمات العملاء في خرائط قوقل</p>
   <div class="cover-grid">

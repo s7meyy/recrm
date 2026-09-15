@@ -18,6 +18,7 @@
     <nav>
       <button type="button" data-go="new">تقرير جديد</button>
       <button type="button" data-go="compare">المقارنة</button>
+      <button type="button" data-go="settings">الإعدادات</button>
       <button type="button" data-go="archive">الأرشيف</button>
       <button type="button" data-go="about">كيف يعمل</button>
     </nav>
@@ -25,6 +26,8 @@
 </header>
 
 <div class="wrap">
+
+  <div id="queue-bar" hidden></div>
 
   <!-- ١) الإدخال -->
   <section class="view" id="view-new">
@@ -246,6 +249,11 @@
         <div class="field"><label for="s-phone">رقم الجوال (واتساب)</label><input id="s-phone" inputmode="tel" placeholder="9665xxxxxxxx"></div>
         <div class="field"><label for="s-email">البريد الإلكتروني</label><input id="s-email" type="email" placeholder="owner@example.com"></div>
       </div>
+      <div class="field">
+        <label for="s-msg">نص الإرسال <span class="badge" id="s-situation"></span></label>
+        <textarea id="s-msg"></textarea>
+        <div class="note">يتغيّر تلقائيًّا بحسب حال التقرير — ويمكنك تحريره.</div>
+      </div>
       <div class="row">
         <button type="button" class="btn ghost" id="btn-wa">واتساب</button>
         <button type="button" class="btn ghost" id="btn-tg">تليقرام</button>
@@ -321,6 +329,63 @@
       </div>
     </div>
     <div class="card"><div class="tree" id="archive-tree"></div></div>
+  </section>
+
+  <!-- الإعدادات -->
+  <section class="view" id="view-settings" hidden>
+    <div class="card">
+      <h2>هوية المكتب</h2>
+      <p class="hint">التقارير تُباع باسمك، فتحمل هويتك لا هوية الأداة. كل شيء محفوظ في متصفحك.</p>
+      <div class="grid c2">
+        <div class="field"><label for="id-office">اسم المكتب أو المُعِدّ</label><input id="id-office" placeholder="مثال: مكتب بصيرة للاستشارات"></div>
+        <div class="field"><label for="id-tagline">سطر تعريفي</label><input id="id-tagline" placeholder="تحليل تجربة العملاء"></div>
+      </div>
+      <div class="grid c3">
+        <div class="field"><label for="id-phone">الهاتف</label><input id="id-phone" inputmode="tel" placeholder="05xxxxxxxx"></div>
+        <div class="field"><label for="id-email">البريد</label><input id="id-email" type="email" placeholder="you@example.com"></div>
+        <div class="field"><label for="id-website">الموقع</label><input id="id-website" placeholder="example.com"></div>
+      </div>
+      <div class="grid c3">
+        <div class="field"><label for="id-logo">الشعار</label><input id="id-logo" type="file" accept="image/*"><div class="note" id="logo-note"></div></div>
+        <div class="field"><label for="id-primary">اللون الأساسي</label><input id="id-primary" type="color" value="#16324f"></div>
+        <div class="field"><label for="id-accent">لون التمييز</label><input id="id-accent" type="color" value="#9a7b26"></div>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;font-weight:500">
+        <input type="checkbox" id="id-showrabih" checked style="width:auto"> إظهار «رابح» على الغلاف
+      </label>
+      <div id="id-msg"></div>
+    </div>
+
+    <div class="card">
+      <h2>القفل والتشفير</h2>
+      <p class="hint">كلمة السر لا تُحفَظ — يُحفَظ منها مُتحقِّق مشتقّ. ونسيانها يعني ضياع أي ملف صدّرته مشفَّرًا.</p>
+      <div id="lock-state"></div>
+      <div class="grid c2">
+        <div class="field"><label for="lk-pass">كلمة السر</label><input id="lk-pass" type="password" autocomplete="new-password" placeholder="أربعة أحرف فأكثر"></div>
+        <div class="field" style="display:flex;align-items:flex-end;gap:8px">
+          <button type="button" class="btn sm" id="btn-lock-on">تفعيل القفل</button>
+          <button type="button" class="btn ghost sm" id="btn-lock-off">إلغاؤه</button>
+        </div>
+      </div>
+      <div class="row">
+        <button type="button" class="btn ghost sm" id="btn-export-enc">تصدير الأرشيف مشفَّرًا</button>
+        <label class="btn ghost sm" style="margin:0;font-weight:600">استيراد مشفَّر<input id="lk-import" type="file" accept="application/json" hidden></label>
+      </div>
+      <div id="lock-msg"></div>
+    </div>
+
+    <div class="card">
+      <h2>اختصارات لوحة المفاتيح</h2>
+      <div class="table-wrap"><table class="mini">
+        <tbody>
+          <tr><td><kbd>Ctrl</kbd>+<kbd>Enter</kbd></td><td>نسخ رسالة الخطوة الحالية في خط التحليل</td></tr>
+          <tr><td><kbd>Alt</kbd>+<kbd>←</kbd> / <kbd>→</kbd></td><td>التالي / السابق في طابور الدفعات</td></tr>
+          <tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>حفظ فوري</td></tr>
+          <tr><td><kbd>Ctrl</kbd>+<kbd>P</kbd></td><td>طباعة التقرير</td></tr>
+          <tr><td><kbd>Esc</kbd></td><td>إغلاق ما هو مفتوح</td></tr>
+        </tbody>
+      </table></div>
+    </div>
   </section>
 
   <!-- كيف يعمل -->

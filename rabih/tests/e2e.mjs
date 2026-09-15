@@ -208,7 +208,7 @@ try {
 
   console.log('٧-ج) القوالب والتصدير');
   const tplOpts = await page.$$eval('#r-template option', o => o.map(x => x.textContent));
-  tplOpts.length === 3 ? ok('ثلاثة قوالب: ' + tplOpts.join('، ')) : bad('القوالب', tplOpts.join('|'));
+  tplOpts.length === 4 ? ok('أربعة قوالب: ' + tplOpts.join('، ')) : bad('القوالب', tplOpts.join('|'));
   const fullHeads = await page.frameLocator('#r-frame').locator('.body h2').count();
   await page.selectOption('#r-template', 'brief');
   await page.waitForTimeout(600);
@@ -369,6 +369,94 @@ try {
   const gfile = await gx;
   gfile.suggestedFilename().startsWith('rabih-group') ? ok('Excel المجموعة: ' + gfile.suggestedFilename()) : bad('Excel المجموعة', gfile.suggestedFilename());
   await gfile.saveAs('/tmp/rabih-group.xlsx');
+
+  console.log('٨-و) الهوية والرسائل والطابور والقفل');
+  await page.click('[data-go="settings"]');
+  await page.waitForTimeout(400);
+  await page.fill('#id-office', 'مكتب بصيرة للاستشارات');
+  await page.fill('#id-phone', '0501234567');
+  await page.fill('#id-primary', '#1f3d2e');
+  await page.waitForTimeout(400);
+  await page.click('[data-go="new"]');
+  await page.waitForTimeout(200);
+  await page.click('[data-go="settings"]');
+  await page.waitForTimeout(300);
+  (await page.inputValue('#id-office')) === 'مكتب بصيرة للاستشارات' ? ok('هوية المكتب تُحفَظ') : bad('حفظ الهوية');
+
+  await page.evaluate(() => { document.querySelector('[data-go="archive"]').click(); });
+  await page.waitForTimeout(400);
+  // فتح آخر تقرير ثم فحص الغلاف
+  await page.evaluate(() => {
+    // الصف الذي له تقرير جاهز، لا أحد الفروع المستوردة بلا تقرير.
+    const row = [...document.querySelectorAll('#archive-tree .job')].find(r => r.textContent.includes('تقرير جاهز'));
+    [...(row?.querySelectorAll('button') || [])].find(b => b.textContent.trim() === 'فتح')?.click();
+  });
+  await page.waitForTimeout(900);
+  if (await page.isVisible('#view-report')) {
+    const cover = await page.frameLocator('#r-frame').locator('.office-name').textContent().catch(() => '');
+    cover.includes('بصيرة') ? ok('اسم المكتب على غلاف التقرير') : bad('الهوية في التقرير', cover);
+    const msg = await page.inputValue('#s-msg');
+    msg.length > 40 && msg.includes('مقهى الدرب') ? ok('رسالة التسليم مبنية تلقائيًا') : bad('رسالة التسليم', msg.slice(0,60));
+    const sit = await page.textContent('#s-situation');
+    /وضع|انحدار/.test(sit) ? ok('حال التقرير مُصنَّف: ' + sit) : bad('تصنيف الحال', sit);
+    const tplOpts2 = await page.$$eval('#r-template option', o => o.map(x => x.textContent));
+    tplOpts2.includes('عيّنة مجانية') ? ok('قالب العيّنة المجانية موجود') : bad('قالب العيّنة', tplOpts2.join('|'));
+  } else { bad('فتح تقرير من الأرشيف'); }
+
+  // الطابور
+  await page.click('[data-go="archive"]');
+  await page.waitForTimeout(400);
+  await page.evaluate(() => {
+    [...document.querySelectorAll('#archive-tree .job')].slice(0, 3).forEach(r => {
+      [...r.querySelectorAll('button')].find(b => b.textContent.includes('للطابور'))?.click();
+    });
+  });
+  await page.waitForTimeout(500);
+  (await page.isVisible('#queue-bar')) ? ok('شريط الطابور ظهر') : bad('شريط الطابور');
+  const qtext = await page.textContent('#queue-bar');
+  /الطابور 1\/[23]/.test(qtext) ? ok('الطابور: ' + qtext.trim().slice(0,28)) : bad('عدّاد الطابور', qtext.slice(0,40));
+  await page.click('#q-next');
+  await page.waitForTimeout(700);
+  const qtext2 = await page.textContent('#queue-bar');
+  /الطابور 2\//.test(qtext2) ? ok('التنقّل في الطابور يعمل') : bad('التنقّل', qtext2.slice(0,40));
+
+  // القفل والتشفير
+  await page.click('[data-go="settings"]');
+  await page.waitForTimeout(400);
+  await page.fill('#lk-pass', 'kalimat-sirr');
+  const encDl = page.waitForEvent('download', { timeout: 10000 });
+  await page.click('#btn-export-enc');
+  const encFile = await encDl;
+  await encFile.saveAs('/tmp/rabih-enc.json');
+  const encRaw = (await import('node:fs')).readFileSync('/tmp/rabih-enc.json', 'utf8');
+  const encObj = JSON.parse(encRaw);
+  encObj.format === 'rabih-encrypted' && !encRaw.includes('مقهى الدرب')
+    ? ok('التصدير مشفَّر فعلًا (لا يظهر اسم المنشأة في الملف)') : bad('التشفير', encRaw.slice(0,80));
+
+  const roundtrip = await page.evaluate(async ([payload]) => {
+    const lk = await import('./js/lock.js');
+    const bad1 = await lk.decryptText(payload, 'كلمة-خاطئة');
+    const good = await lk.decryptText(payload, 'kalimat-sirr');
+    return { rejected: !bad1.ok, accepted: good.ok, hasName: good.ok && good.text.includes('مقهى الدرب') };
+  }, [encRaw]);
+  roundtrip.rejected ? ok('كلمة السر الخاطئة تُرفض') : bad('رفض الخاطئة');
+  roundtrip.accepted && roundtrip.hasName ? ok('كلمة السر الصحيحة تفكّ الملف') : bad('فكّ التشفير', JSON.stringify(roundtrip));
+
+  await page.fill('#lk-pass', 'kalimat-sirr');
+  await page.click('#btn-lock-on');
+  await page.waitForTimeout(600);
+  (await page.textContent('#lock-state')).includes('مفعَّل') ? ok('القفل يُفعَّل') : bad('تفعيل القفل');
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForTimeout(800);
+  (await page.isVisible('#gate')) ? ok('بوابة الدخول تظهر بعد إعادة التحميل') : bad('بوابة الدخول');
+  await page.fill('#gate-pass', 'خطأ');
+  await page.click('#gate-form button');
+  await page.waitForTimeout(500);
+  (await page.textContent('#gate-msg')).includes('غير صحيحة') ? ok('البوابة ترفض الخطأ') : bad('رفض البوابة');
+  await page.fill('#gate-pass', 'kalimat-sirr');
+  await page.click('#gate-form button');
+  await page.waitForTimeout(800);
+  !(await page.isVisible('#gate')) ? ok('البوابة تُفتح بالكلمة الصحيحة') : bad('فتح البوابة');
 
   console.log('٩) الجوال (390px)');
   await page.setViewportSize({ width: 390, height: 844 });

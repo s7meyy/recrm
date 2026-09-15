@@ -211,3 +211,19 @@ h3.sub{font-size:14px;color:var(--navy);margin:16px 0 6px}
 #safety-box li{margin-bottom:3px}
 .ok-line{color:var(--ok)}
 .warn-line{color:var(--warn);font-weight:600}
+
+/* شريط الطابور */
+#queue-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#fff;border:1px solid var(--line);
+  border-radius:var(--r);padding:8px 14px;margin-bottom:14px;box-shadow:var(--shadow);font-size:13.5px}
+#queue-bar .qname{font-weight:700;color:var(--navy)}
+#queue-bar .qpos{color:var(--muted);font-size:12.5px}
+#queue-bar .qdots{display:flex;gap:4px}
+#queue-bar .qdot{width:9px;height:9px;border-radius:50%;background:var(--line);cursor:pointer}
+#queue-bar .qdot.on{background:var(--gold)}
+#queue-bar .qdot.done{background:var(--ok)}
+
+/* الإعدادات */
+input[type="color"]{height:42px;padding:3px;cursor:pointer}
+kbd{background:#f3f5f8;border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;
+  padding:1px 7px;font-size:12px;font-family:inherit;color:var(--navy)}
+#lock-state .msg,#id-msg .msg{margin-top:0}
