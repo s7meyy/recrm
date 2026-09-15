@@ -251,6 +251,36 @@ for (const [name, width, height] of [['آيباد عموديًا', 768, 1024], [
   await c2.close();
 }
 
+/* ===== ٦ب. التقويم: الأسبوع كامل على الآيباد =====
+ * سبعة أعمدة معلومة العدد، فلا عذر في أن يقع الجمعة والسبت خلف تمريرٍ لا يظهر منه شيء.
+ * ونقيس **ما يُرى** لا ما هو موجود: عرض الجدول مقابل عرض حاويته. */
+console.log('\n--- ٦ب. التقويم على الآيباد ---');
+for (const [name, width] of [['عموديًّا', 768], ['أفقيًّا', 1024]]) {
+  const c3 = await b.newContext({ locale: 'ar-SA', viewport: { width, height: 1024 } });
+  const p3 = await c3.newPage();
+  watch(p3);
+  await p3.goto(BASE + '/');
+  await p3.waitForTimeout(2200);
+  await p3.evaluate(() => { location.hash = '#/calendar'; });
+  await p3.waitForTimeout(2200);
+  const cal = await p3.evaluate(() => {
+    const t = document.querySelector('.calendar-table');
+    const wrap = t?.closest('.table-wrap');
+    if (!t || !wrap) return null;
+    return {
+      table: Math.round(t.getBoundingClientRect().width),
+      wrap: Math.round(wrap.clientWidth),
+      days: [...t.querySelectorAll('thead th')].map((h) => h.textContent.trim()),
+    };
+  });
+  ok(`الأسبوع كامل على الآيباد ${name}`, !!cal && cal.table <= cal.wrap + 1,
+    cal ? `الجدول ${cal.table} داخل ${cal.wrap}` : 'لا جدول');
+  ok(`والجمعة والسبت داخل الشاشة (${name})`,
+    !!cal && cal.days.includes('الجمعة') && cal.days.includes('السبت') && cal.table <= cal.wrap + 1,
+    cal ? cal.days.join(' · ') : '');
+  await c3.close();
+}
+
 /* ===== ٧. الوضع الليلي: لا لونَ فاتحٍ ثابتٍ يتسرّب ===== */
 console.log('\n--- ٧. الوضع الليلي ---');
 const darkCtx = await b.newContext({ locale: 'ar-SA', colorScheme: 'dark', viewport: { width: 1280, height: 900 } });

@@ -717,9 +717,19 @@ body.client-mode #client-mode-btn { background: var(--accent); color: #fff; }
 
 
 /* ===== المرحلة ٣٢ — التقويم والقفل ===== */
-.calendar-table { table-layout: fixed; }
+/* عرضٌ أدنى خاصٌّ بالتقويم لا ٩٠٠ التي يرثها عن `.table` (المرحلة ٣٤).
+ *
+ * الجدول العريض يُمرَّر أفقيًّا داخل `.table-wrap` وهذا مقبولٌ في جدول بيانات: أعمدتُه
+ * كثيرة ولا يُعرف عددها. أما التقويم فسبعة أعمدة معلومة، وبـ٩٠٠ بكسل كان **الجمعة
+ * والسبت** يقعان خارج الشاشة على الآيباد — عطلة الأسبوع كلها مخفيّة خلف تمريرٍ لا يظهر
+ * منه شيء.
+ *
+ * و`min(620px, 100%)` تعني: لا يتجاوز الجدولُ حاويتَه أبدًا مهما ضاقت. فالأسبوع كامل
+ * في كل مقاس، ويقصر نصُّ الموعد بدل أن يغيب يومان. ولا يضيع بالقِصَر شيء: لكل موعدٍ
+ * `title` فيه تاريخه وعنوانه كاملًا، ونقرةٌ تفتح سجلّه. */
+.calendar-table { table-layout: fixed; min-width: min(620px, 100%); }
 .calendar-table th { text-align: center; font-size: 12px; }
-.cal-cell { vertical-align: top; height: 92px; padding: 4px; }
+.cal-cell { vertical-align: top; height: 92px; padding: var(--dhad-space-1); }
 .cal-empty { background: var(--surface-2); }
 .cal-today { outline: 2px solid var(--accent); outline-offset: -2px; }
 .cal-num { font-weight: 700; font-size: 12px; margin-bottom: 2px; }
@@ -749,4 +759,13 @@ body.client-mode #client-mode-btn { background: var(--accent); color: #fff; }
   .panel a:not(.btn):not(.health-item):not(.match-alert-row) {
     display: inline-flex; align-items: center; min-block-size: var(--dhad-size-touch);
   }
+}
+
+/* على الجوّال تضيق الأعمدة السبعة، فيُخفَّف حشو الخلية كي يبقى رقم اليوم ونصُّ الموعد
+   في مكانهما. والشهر كاملًا أمام العين أنفع من شريطٍ يُسحب فيه خمسة أيام. */
+@media (max-width: 640px) {
+  .cal-cell { height: 76px; padding: 2px; }
+  .cal-event { font-size: var(--dhad-font-size-100); padding: 1px 2px; }
+  .calendar-table th { font-size: var(--dhad-font-size-100); }
+  .calendar-table th, .calendar-table td { padding-inline: 2px; }
 }
