@@ -73,6 +73,8 @@ function build(ctx) {
   ctx.nodes.listsPanel = panelBody(grid, 'قوائم مخصّصة لعملاء', 'اختر عروضًا لعميل بعينه فيصله رابط خاص يعرض قائمته وحده — ويخبرك العدّاد هل فتحه.');
   ctx.nodes.leadsPanel = panelBody(grid, 'طلبات من الصفحة العامة', 'زوّار تركوا أرقامهم في نموذج «اطلب معاينة». تحويل الطلب ينشئ عميلًا في قاعدتك ثم يُزيله من هنا.');
   ctx.nodes.intakePanel = panelBody(grid, 'استمارة العملاء بـQR', 'رمز يمسحه العميل فيكتب طلبه بنفسه — بمدنك وأحيائك وأنواعك، لا نصًّا حرًّا.');
+  ctx.nodes.bookingPanel = panelBody(grid, 'حجز المواعيد', 'يختار العميل وقتًا من أوقاتك بدل تبادل «متى يناسبك؟». مغلق حتى تفتحه، والأوقات لا تُنشر إلا بنشرة جديدة.');
+  ctx.nodes.bookedPanel = panelBody(grid, 'مواعيد محجوزة', 'ما حجزه العملاء من صفحتك. التحويل ينشئ مهمة بموعدها ويُزيله من هنا.');
   ctx.container.append(grid);
 
   drawSettings(ctx);
@@ -80,6 +82,8 @@ function build(ctx) {
   drawClientLists(ctx);
   drawLeads(ctx);
   drawIntake(ctx);
+  drawBookingSettings(ctx);
+  drawBookings(ctx);
 
   /* اختيار العقارات */
   ctx.nodes.count = el('span', { class: 'count' });
@@ -375,6 +379,8 @@ async function doPublish(ctx, btn) {
       // قوائمك (المرحلة ٢٥): تحتاجها استمارة الطلب العامة لتُرسل **مفاتيحك أنت** لا نصًّا حرًّا،
       // فيصير الطلب الوارد جاهزًا للمحرك بلا ترجمة. وهي قوائم عامة أصلًا (أنواع وأحياء ومدن)
       // لا بيانات عميل ولا عقار.
+      // إعدادات الحجز (المرحلة ٢٩): الخادم يولّد الأوقات منها، فلا مصدر ثانٍ يخالفها.
+      booking: ctx.publish.booking || { enabled: false },
       forms: {
         purposes: ENUMS.purposes.map((x) => ({ key: x.key, label: x.label })),
         types: (ctx.lists.propertyTypes || []).map((x) => ({ key: x.key, label: x.label })),
@@ -689,4 +695,151 @@ function openClientListForm(ctx, onSaved) {
       saveBtn,
     ],
   });
+}
+
+/* ===== حجز المواعيد (المرحلة ٢٩) ===== */
+
+const BOOK_API = '/api/book';
+const DAY_NAMES = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+
+async function bookCall(options = {}, query = '') {
+  const res = await fetch(BOOK_API + query, { credentials: 'same-origin', ...options });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `تعذر الاتصال (${res.status})`);
+  return data;
+}
+
+/**
+ * إعدادات أوقاتك ورابط الصفحة.
+ *
+ * **لا تصل الأوقات إلى العميل إلا بنشرة جديدة** — لأنها تُقرأ من اللقطة لا من جهازك،
+ * وهذا يُقال هنا صراحةً لا يُكتشف حين يحجز أحدهم في وقتٍ عدّلته ولم تنشره.
+ */
+function drawBookingSettings(ctx) {
+  const body = ctx.nodes.bookingPanel;
+  clear(body);
+  const b = { ...(ctx.publish.booking || {}) };
+  const enabledBox = checkbox('افتح الحجز للعملاء', { checked: !!b.enabled });
+  const fromInput = el('input', { class: 'input', type: 'time', value: b.from || '16:00' });
+  const toInput = el('input', { class: 'input', type: 'time', value: b.to || '21:00' });
+  const stepInput = el('input', { class: 'input', type: 'number', min: '10', max: '240', step: '5', value: b.slotMinutes ?? 30 });
+  const leadInput = el('input', { class: 'input', type: 'number', min: '0', max: '72', step: '1', value: b.leadHours ?? 4 });
+  const horizonInput = el('input', { class: 'input', type: 'number', min: '1', max: '60', step: '1', value: b.horizonDays ?? 14 });
+  const placeInput = el('input', { class: 'input', type: 'text', value: b.place || '', placeholder: 'مكتب المكتب، أو «نتفق عليه»' });
+  const dayBoxes = DAY_NAMES.map((name, i) => checkbox(name, { checked: (b.days || []).includes(i) }));
+
+  const base = (ctx.publish.publicUrl || `${location.origin}/offers/`).replace(/\/?$/, '/');
+  const url = `${base}book.html`;
+
+  body.append(
+    el('div', { class: 'field field-full' }, enabledBox),
+    el('div', { class: 'form-grid' },
+      labeled('من', fromInput),
+      labeled('إلى', toInput),
+      labeled('مدّة الموعد (دقيقة)', stepInput),
+      labeled('أقرب موعد (ساعات)', leadInput, { hint: 'لا يُحجز عليك موعد قبل هذه المهلة' }),
+      labeled('أبعد يوم (أيام)', horizonInput),
+      labeled('مكان اللقاء', placeInput, { full: true })),
+    el('div', { class: 'field field-full' },
+      el('span', { class: 'field-label', text: 'أيام العمل' }),
+      el('div', { class: 'row', style: { flexWrap: 'wrap' } }, dayBoxes)),
+    el('div', { class: 'row' },
+      el('button', {
+        type: 'button', class: 'btn btn-primary btn-sm', text: 'احفظ أوقاتي',
+        onClick: async () => {
+          const days = dayBoxes.map((box, i) => (box.querySelector('input').checked ? i : null)).filter((x) => x != null);
+          ctx.publish = await setPublishSettings({
+            booking: {
+              enabled: enabledBox.querySelector('input').checked,
+              days,
+              from: fromInput.value || '16:00',
+              to: toInput.value || '21:00',
+              slotMinutes: Number(stepInput.value) || 30,
+              leadHours: Number(leadInput.value) || 0,
+              horizonDays: Number(horizonInput.value) || 14,
+              place: placeInput.value.trim(),
+            },
+          });
+          toast('حُفظت أوقاتك — انشر لتصل إلى الصفحة العامة', 'success', 5000);
+          drawBookingSettings(ctx);
+        },
+      }),
+      el('a', { class: 'btn btn-ghost btn-sm', href: url, target: '_blank', rel: 'noopener', text: 'افتح صفحة الحجز ↗' }),
+      qrButton(url, 'حجز موعد')),
+    el('p', { class: 'field-hint', text: 'الأوقات تُقرأ من آخر لقطة نشرتها لا من جهازك — فبعد تعديلها اضغط «نشر» وإلا بقي العميل يرى القديم.' }),
+  );
+}
+
+/** ما حجزه العملاء: تحويله ينشئ العميل (إن كان جديدًا) ومهمة بموعده. */
+async function drawBookings(ctx) {
+  const body = ctx.nodes.bookedPanel;
+  clear(body);
+  body.append(el('p', { class: 'muted small', text: 'جارٍ التحميل…' }));
+  let bookings = [];
+  try {
+    // `admin=1` هو ما يفرّق قراءة المالك (المحجوز) عن قراءة الزائر (المتاح) — والدالة تشترط جلسة له.
+    ({ bookings = [] } = await bookCall({ method: 'GET', headers: { accept: 'application/json' } }, '?admin=1'));
+  } catch (err) {
+    clear(body);
+    body.append(el('p', { class: 'muted small', text: `تعذّر جلب المواعيد: ${err.message}` }));
+    return;
+  }
+  clear(body);
+  if (!bookings.length) {
+    body.append(el('p', { class: 'muted small', text: 'لا مواعيد محجوزة بعد.' }));
+    return;
+  }
+  body.append(el('div', { class: 'table-wrap' }, el('table', { class: 'table' },
+    el('thead', {}, el('tr', {}, ['الموعد', 'الاسم', 'الجوال', 'الموضوع', ''].map((t) => el('th', { text: t })))),
+    el('tbody', {}, bookings.map((bk) => el('tr', {},
+      el('td', { class: 'strong', text: formatDateTime(bk.at) }),
+      el('td', { text: bk.name || 'بلا اسم' }),
+      el('td', {}, el('a', { class: 'tel', href: `tel:${bk.phone}`, text: bk.phone, dir: 'ltr' })),
+      el('td', { text: bk.note || '—' }),
+      el('td', {}, el('div', { class: 'row' },
+        el('button', { type: 'button', class: 'btn btn-sm', text: 'حوّله', onClick: () => convertBooking(ctx, bk) }),
+        el('button', {
+          type: 'button', class: 'icon-btn', text: '✕', title: 'حذف الموعد',
+          onClick: async () => {
+            const ok = await confirmDialog({ title: 'حذف الموعد', message: `حذف موعد ${bk.name || bk.phone}؟`, confirmText: 'حذف', danger: true });
+            if (!ok) return;
+            await bookCall({ method: 'DELETE', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: bk.id }) });
+            await drawBookings(ctx);
+          },
+        })))))))));
+}
+
+/**
+ * تحويل الموعد: عميل (إن كان جديدًا) + **مهمة بموعده** — لا معاينة، لأن الموعد بلا عقار
+ * والمعاينة لا تقوم بلا عقار (قاعدة المرحلة ٢٧).
+ */
+async function convertBooking(ctx, bk) {
+  try {
+    const clients = await repo.clients.list();
+    let client = clients.find((c) => c.phone === bk.phone);
+    if (!client) {
+      client = await repo.clients.create({
+        name: bk.name || '', phone: bk.phone, roles: ['seeker'], stage: 'new',
+        referralSource: 'حجز موعد', notes: bk.note || '',
+      });
+      await runPlans('new_client', { title: client.name || client.phone, linkType: 'client', linkId: client.id });
+    }
+    await repo.clients.addContact(client.id, { type: 'whatsapp', date: bk.createdAt, note: `حجز موعدًا: ${bk.note || 'بلا موضوع'}` });
+    const lists = (await repo.taskLists.list()).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    const list = lists[0] || await repo.taskLists.create({ title: 'متابعات', order: 0 });
+    await repo.tasks.create({
+      listId: list.id,
+      title: `موعد مع ${client.name || bk.phone}`,
+      notes: bk.note || '',
+      dueAt: bk.at,
+      linkType: 'client', linkId: client.id,
+    });
+    await bookCall({ method: 'DELETE', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: bk.id }) });
+    toast('أُنشئت المهمة بموعدها', 'success');
+    window.dispatchEvent(new CustomEvent('kassab:data-changed'));
+    await drawBookings(ctx);
+    location.hash = `#/client/${client.id}`;
+  } catch (err) {
+    toast(err.message || 'تعذّر التحويل', 'error');
+  }
 }

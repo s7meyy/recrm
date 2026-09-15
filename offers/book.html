@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>احجز موعدًا</title>
+  <meta name="description" content="اختر وقتًا يناسبك من الأوقات المتاحة.">
+  <meta name="robots" content="noindex">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <header class="hero">
+    <div class="wrap">
+      <div class="office">
+        <img id="logo" class="logo" alt="" hidden>
+        <div>
+          <h1 id="office-name">احجز موعدًا</h1>
+          <p id="office-contact" class="office-contact"></p>
+        </div>
+      </div>
+      <p id="intro" class="intro">اختر وقتًا يناسبك من الأوقات المتاحة، ونؤكّده لك.</p>
+    </div>
+  </header>
+
+  <main class="wrap lead-box">
+    <p id="status" class="status">جارٍ تحميل الأوقات…</p>
+    <div id="slots" class="booking-days"></div>
+
+    <form id="book-form" novalidate hidden>
+      <p class="strong" id="chosen"></p>
+      <div class="lead-grid">
+        <label>الاسم<input type="text" name="name" autocomplete="name" maxlength="60"></label>
+        <label>الجوال <span aria-hidden="true">*</span><input type="tel" name="phone" inputmode="tel" dir="ltr" autocomplete="tel" required maxlength="20"></label>
+      </div>
+      <label class="lead-full">ما موضوع الموعد؟<textarea name="note" rows="2" maxlength="300"></textarea></label>
+      <label class="lead-trap" aria-hidden="true" tabindex="-1">لا تملأ هذا الحقل<input type="text" name="website" tabindex="-1" autocomplete="off"></label>
+      <button type="submit" class="btn btn-primary" id="book-send">أكّد الموعد</button>
+      <p id="book-status" class="muted small" role="status"></p>
+      <p class="muted small">بياناتك تصل إلى المكتب وحده ولا تُنشر.</p>
+    </form>
+  </main>
+
+  <footer class="wrap footer">
+    <p class="muted small"><a href="./">تصفّح العروض المتاحة</a></p>
+  </footer>
+
+  <noscript><p class="wrap">هذه الصفحة تحتاج تفعيل JavaScript.</p></noscript>
+  <script type="module" src="./book.js"></script>
+</body>
+</html>

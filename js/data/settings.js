@@ -538,6 +538,17 @@ export const DEFAULT_PUBLISH = {
   lastPublishAt: null,
   lastPublishCount: 0,
   publishedRefs: [], // [[propertyId, ref]] من آخر نشرة — لبناء روابط العروض المفردة (المرحلة ١٠)
+  // حجز المواعيد (المرحلة ٢٩): أوقاتك المتاحة كما تُنشر للعميل ليختار منها بنفسه.
+  // معطَّل افتراضيًا — لا يُفتح تقويمك للناس إلا بقرارك.
+  booking: {
+    enabled: false,
+    days: [0, 1, 2, 3, 4], // الأحد ٠ … السبت ٦ (نفس ترقيم JS)
+    from: '16:00', to: '21:00',
+    slotMinutes: 30,
+    leadHours: 4, // أقرب موعد يقبله النظام: لا يُحجز عليك بعد ساعة وأنت في الطريق
+    horizonDays: 14, // أبعد يوم معروض
+    place: '', // نقطة اللقاء كما تُعرض للعميل
+  },
 };
 
 export async function getPublishSettings() {

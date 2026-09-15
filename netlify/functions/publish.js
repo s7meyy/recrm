@@ -54,6 +54,7 @@ export default async (request) => {
       office: payload.office || {},
       intro: payload.intro || '',
       forms: payload.forms || {}, // قوائم الاستمارة العامة (المرحلة ٢٥)
+      booking: payload.booking || { enabled: false }, // أوقات الحجز (المرحلة ٢٩)
       listings,
     };
     await store.setJSON(SNAPSHOT_KEY, snapshot);

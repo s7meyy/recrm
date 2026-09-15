@@ -516,6 +516,13 @@ input[type="date"].input, input[type="datetime-local"].input { direction: ltr; t
 .playbook-box .simple-list li { display: block; padding: 4px 0; }
 .playbook-box select { margin: 8px 0; }
 
+/* ===== المرحلة ٢٩ — صفحة حجز الموعد (عامة) ===== */
+.booking-days { display: flex; flex-direction: column; gap: 14px; margin: 12px 0; }
+.booking-day h3 { margin: 0 0 6px; font-size: 15px; }
+.slot-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.slot-btn { min-width: 76px; }
+.slot-btn.chosen { background: var(--accent); color: #fff; border-color: var(--accent); }
+
 /* ===== المرحلة ١٢ — صفحة الفرص ===== */
 .section-title { font-size: var(--fs-lg); margin: 6px 0 10px; }
 .match-alert-row .match-alert-name { flex: 1; }
