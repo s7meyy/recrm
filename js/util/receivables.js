@@ -90,9 +90,39 @@ export function commissionReceivables(deals = [], now = new Date()) {
     .sort((a, b) => b.days - a.days);
 }
 
+/**
+ * دفعات الإيجار المستحقّة ولم تُقبض (المرحلة ٢٤).
+ * الدفعة المستقبلية ليست مستحقًا متأخرًا، فتدخل بعمرٍ سالب كما تدخل الفاتورة المؤجَّلة.
+ */
+export function paymentReceivables(deals = [], now = new Date()) {
+  const rows = [];
+  for (const deal of deals) {
+    for (const payment of deal.payments || []) {
+      if (payment.paidAt || !payment.dueAt) continue;
+      const days = ageDays(payment.dueAt, now);
+      rows.push({
+        kind: 'payment',
+        id: payment.id,
+        dealId: deal.id,
+        deal,
+        payment,
+        clientId: deal.clientId || null,
+        remaining: Number(payment.amount) || 0,
+        total: Number(payment.amount) || 0,
+        state: 'unpaid',
+        basis: payment.dueAt,
+        dated: true,
+        days,
+        bucket: bucketFor(days),
+      });
+    }
+  }
+  return rows.sort((a, b) => b.days - a.days);
+}
+
 /** كل المستحقات مجموعةً، مع إجمالٍ لكل شريحة عمر. */
 export function receivables({ invoices = [], deals = [] } = {}, now = new Date()) {
-  const rows = [...invoiceReceivables(invoices, now), ...commissionReceivables(deals, now)]
+  const rows = [...invoiceReceivables(invoices, now), ...commissionReceivables(deals, now), ...paymentReceivables(deals, now)]
     .sort((a, b) => b.days - a.days);
   const buckets = AGE_BUCKETS.map((b) => ({
     ...b,

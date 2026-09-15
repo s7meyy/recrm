@@ -287,6 +287,14 @@ export const SCHEMAS = {
       date: '', finalPrice: null, commission: null, propertyId: null, clientId: null, notes: '',
       leaseEndAt: null, // نهاية عقد الإيجار (المرحلة ١٣) — يُذكَّر بالتجديد قبل شهر
       commissionPaidAt: null, // متى قُبضت العمولة (المرحلة ١٧) — null = لم تُقبض بعد
+      // جدول دفعات الإيجار (المرحلة ٢٤): [{ id, dueAt, amount, paidAt, note }]
+      // العقد الإيجاري دفعات بمواعيد لا مبلغًا واحدًا، وتذكير انتهاء العقد وحده لا يكفي.
+      payments: [],
+      // مسار الصفقة (المرحلة ٢٤): [{ key, label, done, doneAt }] — قائمة تحقّق تُبنى من
+      // إعداداتك عند الإنشاء وتبقى محفوظة في الصفقة، فلا يغيّر تعديلُ القالب صفقةً ماضية.
+      checklist: [],
+      // العمولة المشتركة (المرحلة ٢٤): وسيط شريك له نصيب من عمولتك.
+      partnerName: '', partnerShare: null, partnerPaidAt: null
     }),
   },
   images: {
@@ -398,6 +406,30 @@ export function invoiceCollection(invoice) {
   const paid = invoicePaid(invoice);
   if (paid <= 0) return 'unpaid';
   return paid + 0.5 >= total ? 'paid' : 'partial'; // نصف ريال تسامحٌ في التقريب لا فرق حقيقي
+}
+
+/* ===== الصفقة: الدفعات والمسار والعمولة المشتركة (المرحلة ٢٤) ===== */
+
+/** صافي عمولتك بعد نصيب الشريك — هو ما يدخل جيبك فعلًا. */
+export function netCommission(deal) {
+  const total = Number(deal?.commission) || 0;
+  const partner = Number(deal?.partnerShare) || 0;
+  return Math.max(0, total - partner);
+}
+
+/** الدفعات المستحقّة ولم تُقبض حتى تاريخ معيّن. */
+export function duePayments(deal, until = Date.now()) {
+  return (deal?.payments || [])
+    .filter((p) => !p.paidAt && p.dueAt && new Date(p.dueAt).getTime() <= until)
+    .sort((a, b) => a.dueAt.localeCompare(b.dueAt));
+}
+
+/** تقدّم مسار الصفقة: منجَز من إجمالي، أو null إن لم يكن لها مسار. */
+export function checklistProgress(deal) {
+  const items = deal?.checklist || [];
+  if (!items.length) return null;
+  const done = items.filter((i) => i.done).length;
+  return { done, total: items.length, complete: done === items.length };
 }
 
 export const COLLECTION_LABELS = {

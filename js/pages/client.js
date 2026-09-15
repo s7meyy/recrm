@@ -7,12 +7,12 @@
 // فلا مصدر حقيقة ثانيًا يمكن أن يتناقض معها.
 
 import { repo } from '../data/repository.js';
-import { ENUMS, labelFor, clientTagClass, invoiceGrandTotal, COLLECTION_LABELS, invoiceCollection } from '../data/schema.js';
+import { ENUMS, labelFor, clientTagClass, invoiceGrandTotal, COLLECTION_LABELS, invoiceCollection, checklistProgress, duePayments } from '../data/schema.js';
 import { getLists, typeLabel } from '../data/settings.js';
 import { loadMatchingContext, candidatesFor } from '../data/matching.js';
 import { receivables } from '../util/receivables.js';
-import { el, clear, badge, emptyState } from '../util/dom.js';
-import { formatSAR, formatArea, formatDate, formatDateTime, formatNumber, daysWord } from '../util/format.js';
+import { el, clear, badge, emptyState, openModal, labeled, checkbox, promptDialog, toast } from '../util/dom.js';
+import { formatSAR, formatArea, formatDate, formatDateTime, formatNumber, daysWord, toInputDate, fromInputDate } from '../util/format.js';
 import { formatPhone, toInternational } from '../util/phone.js';
 
 function routeClientId() {
@@ -115,11 +115,21 @@ export async function render(container) {
 
   /* ===== صفقاته وفواتيره ===== */
   grid.append(panel('صفقاته', myDeals.length, myDeals.length
-    ? el('div', {}, myDeals.map((d) => row(
-      formatDate(d.date),
-      `${formatSAR(d.finalPrice)}${d.commission ? ` · عمولة ${formatSAR(d.commission)}` : ''}`
-        + (d.commission && !d.commissionPaidAt ? ' — لم تُقبض' : ''),
-      null)))
+    ? el('div', {}, myDeals.map((d) => {
+      const progress = checklistProgress(d);
+      const due = duePayments(d);
+      return row(
+        formatDate(d.date),
+        [
+          formatSAR(d.finalPrice),
+          d.commission ? `عمولة ${formatSAR(d.commission)}` : null,
+          d.partnerName ? `شريك ${d.partnerName} (${formatSAR(d.partnerShare || 0)})` : null,
+          d.commission && !d.commissionPaidAt ? 'لم تُقبض' : null,
+          progress ? `المسار ${progress.done}/${progress.total}` : null,
+          due.length ? `${formatNumber(due.length)} دفعة مستحقّة` : null,
+        ].filter(Boolean).join(' · '),
+        el('button', { type: 'button', class: 'btn btn-ghost btn-sm', text: 'إدارة', onClick: () => openDeal(d, lists) }));
+    }))
     : el('p', { class: 'muted small', text: 'لا صفقات معه بعد.' })));
 
   grid.append(panel('فواتيره', myInvoices.length, myInvoices.length
@@ -142,6 +152,144 @@ export async function render(container) {
   if (client.notes) {
     grid.append(panel('ملاحظاتك', null, el('p', { 'data-sensitive': true, text: client.notes })));
   }
+}
+
+/**
+ * إدارة الصفقة (المرحلة ٢٤): مسارها ومستنداتها · دفعات الإيجار · العمولة المشتركة.
+ *
+ * هنا **وحده** لأن الصفقة لا صفحة لها: تُنشأ من المطابقات ولا تُعدَّل بعدها في أي مكان.
+ * وهذه أقرب شاشة إليها منطقيًا — ملف صاحبها.
+ */
+function openDeal(deal, lists) {
+  const draft = JSON.parse(JSON.stringify(deal));
+  draft.payments = draft.payments || [];
+  draft.checklist = draft.checklist || [];
+  const errorsBox = el('div', { class: 'form-errors', hidden: true });
+
+  /* المسار */
+  const checklistWrap = el('div', {});
+  const drawChecklist = () => {
+    clear(checklistWrap);
+    if (!draft.checklist.length) {
+      checklistWrap.append(el('p', { class: 'muted small', text: 'لا مسار لهذه الصفقة. اكتب بنوده في الإعدادات ← بيانات الشركة، أو أضف بندًا هنا.' }));
+    }
+    draft.checklist.forEach((item, i) => {
+      const box = checkbox(item.label, {
+        checked: item.done,
+        onChange: (e) => { item.done = e.target.checked; item.doneAt = e.target.checked ? new Date().toISOString() : null; },
+      });
+      checklistWrap.append(el('div', { class: 'trash-row' }, box,
+        el('button', { type: 'button', class: 'icon-btn', text: '✕', title: 'حذف البند', onClick: () => { draft.checklist.splice(i, 1); drawChecklist(); } })));
+    });
+    checklistWrap.append(el('button', {
+      type: 'button', class: 'btn btn-ghost btn-sm', text: '+ بند',
+      onClick: async () => {
+        const label = await promptDialog({ title: 'بند جديد', label: 'اسم البند', confirmText: 'إضافة' });
+        if (!label) return;
+        draft.checklist.push({ label, done: false });
+        drawChecklist();
+      },
+    }));
+  };
+  drawChecklist();
+
+  /* الدفعات */
+  const paymentsWrap = el('div', {});
+  const drawPayments = () => {
+    clear(paymentsWrap);
+    if (!draft.payments.length) {
+      paymentsWrap.append(el('p', { class: 'muted small', text: 'لا دفعات. أضف جدول دفعات الإيجار لتظهر مستحقّاتها في «يومي».' }));
+    }
+    draft.payments.forEach((p, i) => {
+      const dateInput = el('input', { class: 'input', type: 'date', value: p.dueAt ? toInputDate(p.dueAt) : '', onInput: (e) => { p.dueAt = e.target.value ? fromInputDate(e.target.value) : null; } });
+      const amountInput = el('input', { class: 'input', type: 'number', min: '0', step: '100', value: p.amount ?? '', onInput: (e) => { p.amount = e.target.value === '' ? null : Number(e.target.value); } });
+      const noteInput = el('input', { class: 'input', type: 'text', value: p.note || '', placeholder: 'وصف (الدفعة الأولى…)', onInput: (e) => { p.note = e.target.value; } });
+      const paidBox = checkbox('قُبضت', { checked: !!p.paidAt, onChange: (e) => { p.paidAt = e.target.checked ? new Date().toISOString() : null; } });
+      paymentsWrap.append(el('div', { class: 'plan-step' }, dateInput, amountInput, noteInput, paidBox,
+        el('button', { type: 'button', class: 'icon-btn', text: '✕', title: 'حذف الدفعة', onClick: () => { draft.payments.splice(i, 1); drawPayments(); } })));
+    });
+    paymentsWrap.append(el('div', { class: 'row' },
+      el('button', { type: 'button', class: 'btn btn-ghost btn-sm', text: '+ دفعة', onClick: () => { draft.payments.push({ dueAt: null, amount: null, note: '' }); drawPayments(); } }),
+      el('button', {
+        type: 'button', class: 'btn btn-ghost btn-sm', text: '+ جدول ١٢ شهرًا',
+        title: 'يوزّع مبلغًا شهريًا ابتداءً من الشهر القادم',
+        onClick: async () => {
+          const value = await promptDialog({ title: 'جدول شهري', label: 'قيمة الدفعة الشهرية', confirmText: 'أنشئ' });
+          const amount = Number(value);
+          if (!Number.isFinite(amount) || amount <= 0) return;
+          const start = new Date();
+          for (let m = 1; m <= 12; m++) {
+            const at = new Date(start.getFullYear(), start.getMonth() + m, start.getDate());
+            draft.payments.push({ dueAt: at.toISOString(), amount, note: `الشهر ${m}` });
+          }
+          drawPayments();
+        },
+      })));
+  };
+  drawPayments();
+
+  /* العمولة والشريك */
+  const commissionInput = el('input', { class: 'input', type: 'number', min: '0', step: '100', value: draft.commission ?? '' });
+  const partnerInput = el('input', { class: 'input', type: 'text', value: draft.partnerName || '', placeholder: 'اسم الوسيط الشريك' });
+  const shareInput = el('input', { class: 'input', type: 'number', min: '0', step: '100', value: draft.partnerShare ?? '' });
+  const partnerPaidBox = checkbox('سلّمتُه نصيبه', { checked: !!draft.partnerPaidAt });
+  const commissionPaidBox = checkbox('قُبضت العمولة', { checked: !!draft.commissionPaidAt });
+  const netNode = el('p', { class: 'muted small' });
+  const recalcNet = () => {
+    const total = Number(commissionInput.value) || 0;
+    const share = Number(shareInput.value) || 0;
+    netNode.textContent = share > 0
+      ? `صافيك بعد نصيب الشريك: ${formatSAR(Math.max(0, total - share))}`
+      : `صافيك: ${formatSAR(total)}`;
+  };
+  commissionInput.addEventListener('input', recalcNet);
+  shareInput.addEventListener('input', recalcNet);
+  recalcNet();
+
+  const save = async () => {
+    errorsBox.hidden = true;
+    try {
+      await repo.deals.update(deal.id, {
+        commission: commissionInput.value === '' ? null : Number(commissionInput.value),
+        commissionPaidAt: commissionPaidBox.querySelector('input').checked ? (deal.commissionPaidAt || new Date().toISOString()) : null,
+        partnerName: partnerInput.value,
+        partnerShare: shareInput.value === '' ? null : Number(shareInput.value),
+        partnerPaidAt: partnerPaidBox.querySelector('input').checked ? (deal.partnerPaidAt || new Date().toISOString()) : null,
+        payments: draft.payments,
+        checklist: draft.checklist,
+      });
+      modal.close();
+      toast('حُفظت الصفقة', 'success');
+      window.dispatchEvent(new CustomEvent('kassab:data-changed'));
+      render(document.getElementById('page'));
+    } catch (err) {
+      clear(errorsBox);
+      errorsBox.append(el('ul', {}, (err.errors || [err.message]).map((m) => el('li', { text: m }))));
+      errorsBox.hidden = false;
+    }
+  };
+
+  const modal = openModal({
+    title: `صفقة ${formatDate(deal.date)} — ${formatSAR(deal.finalPrice)}`,
+    size: 'wide',
+    body: el('div', {}, errorsBox,
+      el('h3', { class: 'section-title', text: 'العمولة' }),
+      el('div', { class: 'form-grid' },
+        labeled('العمولة', commissionInput),
+        el('div', { class: 'field' }, el('span', { class: 'field-label', text: 'التحصيل' }), commissionPaidBox),
+        labeled('وسيط شريك', partnerInput, { hint: 'اتركه فارغًا إن كانت العمولة كلها لك' }),
+        labeled('نصيبه', shareInput)),
+      el('div', { class: 'field' }, partnerPaidBox),
+      netNode,
+      el('h3', { class: 'section-title', style: { marginTop: '14px' }, text: 'مسار الصفقة ومستنداتها' }),
+      checklistWrap,
+      el('h3', { class: 'section-title', style: { marginTop: '14px' }, text: 'جدول الدفعات' }),
+      paymentsWrap),
+    footer: [
+      el('button', { type: 'button', class: 'btn btn-primary', text: 'حفظ', onClick: save }),
+      el('button', { type: 'button', class: 'btn btn-ghost', text: 'إغلاق', onClick: () => modal.close() }),
+    ],
+  });
 }
 
 function stat(value, label) {

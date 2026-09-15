@@ -122,6 +122,22 @@ function dueWhen(r) {
   return `يستحق بعد ${daysWord(-r.days)}`;
 }
 
+/** قبض دفعة إيجار من «يومي» (المرحلة ٢٤) — بنفس منطق قبض العمولة. */
+async function markPaymentPaid(event, r) {
+  event.preventDefault();
+  const ok = await confirmDialog({
+    title: 'قبض الدفعة',
+    message: `تأكيد قبض ${formatSAR(r.remaining)} المستحقة في ${formatDate(r.basis)}؟`,
+    confirmText: 'قُبضت',
+  });
+  if (!ok) return;
+  const payments = (r.deal.payments || []).map((p) => (p.id === r.id ? { ...p, paidAt: new Date().toISOString() } : p));
+  await repo.deals.update(r.dealId, { payments });
+  toast('سُجّل قبض الدفعة', 'success');
+  window.dispatchEvent(new CustomEvent('kassab:data-changed'));
+  build(document.getElementById('page'), await loadData());
+}
+
 /** قبض العمولة من «يومي» مباشرة: لا صفحة للصفقات، وفتح المطابقات لأجل هذا تكلّف خطوات. */
 async function markCommissionPaid(event, r) {
   event.preventDefault();
@@ -255,7 +271,9 @@ function build(container, d) {
         el('p', { class: 'strong', text: `${formatSAR(d.due.total)} لك عند الناس`
           + (d.due.overdueCount ? ` — منها ${formatSAR(d.due.overdueTotal)} تجاوزت استحقاقها` : '') }),
         ...d.due.rows.slice(0, 8).map((r) => row(
-          r.kind === 'commission' ? `عمولة صفقة ${formatDate(r.basis)}` : `فاتورة ${r.number || 'بلا رقم'}`,
+          r.kind === 'commission' ? `عمولة صفقة ${formatDate(r.basis)}`
+            : r.kind === 'payment' ? `دفعة إيجار${r.payment.note ? ` — ${r.payment.note}` : ''}`
+              : `فاتورة ${r.number || 'بلا رقم'}`,
           `${formatSAR(r.remaining)} · ${dueWhen(r)}${r.state === 'partial' ? ' · مقبوضة جزئيًا' : ''}`
             + (r.clientId && d.clientsById.get(r.clientId) ? ` · ${clientName(d.clientsById.get(r.clientId))}` : ''),
           r.kind === 'commission'
@@ -263,7 +281,12 @@ function build(container, d) {
               type: 'button', class: 'btn btn-ghost btn-sm', text: 'قُبضت',
               onClick: (e) => markCommissionPaid(e, r),
             })
-            : el('a', { class: 'btn btn-ghost btn-sm', href: `#/invoices/${r.id}`, text: 'فتح' })))),
+            : r.kind === 'payment'
+              ? el('button', {
+                type: 'button', class: 'btn btn-ghost btn-sm', text: 'قُبضت',
+                onClick: (e) => markPaymentPaid(e, r),
+              })
+              : el('a', { class: 'btn btn-ghost btn-sm', href: `#/invoices/${r.id}`, text: 'فتح' })))),
       { href: '#/invoices', hrefText: 'الفواتير →', tone: d.due.overdueCount ? 'today-warn' : '' }));
   }
 

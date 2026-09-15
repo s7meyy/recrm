@@ -155,7 +155,31 @@ const PREPARE = {
     rec.finalPrice = toNumberOrNull(rec.finalPrice);
     rec.commission = toNumberOrNull(rec.commission);
     rec.notes = trim(rec.notes);
-    rec.searchKey = buildSearchKey([rec.notes]);
+    // الدفعات والمسار والشريك (المرحلة ٢٤)
+    rec.payments = (Array.isArray(rec.payments) ? rec.payments : [])
+      .map((p) => ({
+        id: p.id || newId(),
+        dueAt: p.dueAt || null,
+        amount: toNumberOrNull(p.amount),
+        paidAt: p.paidAt || null,
+        note: trim(p.note),
+      }))
+      .filter((p) => p.dueAt && p.amount != null && p.amount > 0)
+      .sort((a, b) => a.dueAt.localeCompare(b.dueAt));
+    rec.checklist = (Array.isArray(rec.checklist) ? rec.checklist : [])
+      .map((i) => ({
+        key: i.key || newId(),
+        label: trim(i.label),
+        done: !!i.done,
+        doneAt: i.done ? (i.doneAt || nowISO()) : null,
+      }))
+      .filter((i) => i.label);
+    rec.partnerName = trim(rec.partnerName);
+    rec.partnerShare = toNumberOrNull(rec.partnerShare);
+    // نصيبٌ بلا اسم **لا يُمحى صامتًا** — يُردّ بخطأ في VALIDATE، لأن محو رقمٍ كتبه المستخدم
+    // أسوأ من رفضه. وما لا نصيب فيه لا تسليم له.
+    rec.partnerPaidAt = (rec.partnerShare == null ? null : rec.partnerPaidAt) || null;
+    rec.searchKey = buildSearchKey([rec.notes, rec.partnerName]);
   },
   images(rec) {
     rec.size = toNumberOrNull(rec.size) ?? 0;
@@ -242,6 +266,13 @@ const VALIDATE = {
   },
   externalListings(rec, errors) {
     if (!inEnum(ENUMS.externalStatuses, rec.status)) errors.push('حالة العرض الخارجي غير معروفة');
+  },
+  deals(rec, errors) {
+    // نصيب الشريك أكبر من العمولة يجعل صافيك سالبًا — خطأ إدخال غالبًا (المرحلة ٢٤).
+    if (rec.partnerShare != null && rec.commission != null && rec.partnerShare > rec.commission) {
+      errors.push('نصيب الشريك أكبر من العمولة');
+    }
+    if (rec.partnerShare != null && !rec.partnerName) errors.push('اكتب اسم الشريك أو امسح نصيبه');
   },
   tasks(rec, errors) {
     if (!inEnum(ENUMS.taskRepeats, rec.repeat)) errors.push('نوع التكرار غير معروف');

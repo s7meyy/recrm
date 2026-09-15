@@ -10,6 +10,7 @@ import { getLists, getCompleteness, getFollowUpSettings, typeLabel, statusLabel 
 import { tourStats } from './tours.js';
 import { buildPriceIndex } from '../util/price-stats.js';
 import { conversionFunnel } from '../util/funnel.js';
+import { sourceReport, propertyProfit } from '../util/sources.js';
 import { el, clear, badge } from '../util/dom.js';
 import { formatNumber, formatSAR, daysBetween, relativeDays, countWord } from '../util/format.js';
 import { formatPhone, toInternational } from '../util/phone.js';
@@ -224,6 +225,10 @@ function buildLayout(container, data) {
   grid.append(panel('أين تضيع: قمع التحويل', null, ...funnelSection({ requests, matches })));
   grid.append(panel('لماذا تضيع الصفقات', null, ...rejectSection(matches)));
 
+  /* من أين يأتي المال، وأي عقار يستحق جهدك (المرحلة ٢٤) */
+  grid.append(panel('مصادر العملاء', 'أي مصدرٍ أعطاك صفقات لا مجرد أسماء.', ...sourceSection({ clients, requests, deals })));
+  grid.append(panel('ربحية العقارات', 'العمولة الصافية ناقص ما صُرف على العقار.', ...propertySection({ properties, deals, expenses, lists })));
+
   /* مؤشر السوق من بياناتك (المرحلة ١١) */
   grid.append(panel('مؤشر سعر المتر', null, ...priceSection({ properties, externals, deals, lists })));
 
@@ -241,6 +246,53 @@ function buildLayout(container, data) {
  * مؤشرات المستندات المالية: الفواتير وعروض الأسعار منفصلان (عرض السعر ليس إيرادًا).
  * الإجمالي يُحسب من البنود لحظة العرض بـinvoiceTotal — لا مجموع مخزَّن (القسم ١٦).
  */
+/**
+ * أداء مصادر العملاء (المرحلة ٢٤): تاق «المصدر» يُكتب منذ المرحلة ٨ ولم يكن يُقرأ.
+ * العمود الحاسم هو **العمولة**، لأن مصدرًا يعطيك خمسين اسمًا بلا صفقة تكلفةٌ لا مورد.
+ */
+function sourceSection({ clients, requests, deals }) {
+  const { rows, totals } = sourceReport({ clients, requests, deals });
+  if (!rows.length) return [el('div', { class: 'muted small', text: 'لا عملاء بعد.' })];
+  const pct = (v) => (v == null ? '—' : `${formatNumber(Math.round(v * 100))}٪`);
+  return [
+    el('div', { class: 'table-wrap' }, el('table', { class: 'table' },
+      el('thead', {}, el('tr', {}, ['المصدر', 'عملاء', 'طلبات نشطة', 'صفقات', 'تحويل', 'عمولة صافية'].map((t) => el('th', { text: t })))),
+      el('tbody', {}, rows.slice(0, 10).map((r) => el('tr', {},
+        el('td', { class: 'strong', text: r.source }),
+        el('td', { class: 'num', text: formatNumber(r.clients) }),
+        el('td', { class: 'num', text: formatNumber(r.active) }),
+        el('td', { class: 'num', text: formatNumber(r.deals) }),
+        el('td', { class: 'num', text: pct(r.conversion) }),
+        el('td', { class: 'num strong', text: formatSAR(r.commission) }))))))
+    ,
+    rows.length > 10 ? el('div', { class: 'muted small', text: `+ ${formatNumber(rows.length - 10)} مصدرًا آخر` }) : null,
+    el('div', { class: 'muted small', text: `${formatNumber(totals.sources)} مصدرًا مسمّى · العمولة صافية بعد نصيب الشريك.` }),
+    totals.deals < 5
+      ? el('div', { class: 'muted small', text: 'العيّنة صغيرة: لا تُلغِ مصدرًا قبل أن تتجاوز صفقاتك خمسًا.' })
+      : null,
+  ].filter(Boolean);
+}
+
+/** ربحية العقار: عمولاته ناقص مصاريفه. عقارٌ صُرف عليه ولم يُبَع يظهر بصافٍ سالب — وهذا مقصود. */
+function propertySection({ properties, deals, expenses, lists }) {
+  const rows = propertyProfit({ properties, deals, expenses });
+  if (!rows.length) return [el('div', { class: 'muted small', text: 'لا صفقة ولا مصروف مربوط بعقار بعد.' })];
+  const name = (r) => (r.property
+    ? `${typeLabel(lists, r.property.type)} — ${[r.property.district, r.property.city].filter(Boolean).join('، ')}`
+    : 'عقار محذوف');
+  return [
+    el('div', { class: 'table-wrap' }, el('table', { class: 'table' },
+      el('thead', {}, el('tr', {}, ['العقار', 'عمولة', 'مصاريف', 'الصافي'].map((t) => el('th', { text: t })))),
+      el('tbody', {}, rows.slice(0, 10).map((r) => el('tr', {},
+        el('td', { class: 'strong', text: name(r) }),
+        el('td', { class: 'num', text: formatSAR(r.commission) }),
+        el('td', { class: 'num', text: formatSAR(r.spent) }),
+        el('td', { class: 'num' }, badge(formatSAR(r.net), r.net < 0 ? 'badge-danger' : 'badge-ok')))))))
+    ,
+    rows.length > 10 ? el('div', { class: 'muted small', text: `+ ${formatNumber(rows.length - 10)} عقارًا آخر` }) : null,
+  ].filter(Boolean);
+}
+
 /**
  * وسيط سعر المتر لكل (حي × نوع) من مخزونك وعروضك وصفقاتك — لا مصدر خارجي.
  * يُذكر حجم العيّنة دائمًا: رقمٌ من عيّنتين ليس كرقمٍ من عشرين، والقرار قرارك.

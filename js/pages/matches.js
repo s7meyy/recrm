@@ -528,11 +528,18 @@ function openDealForm(ctx, request, row) {
       }
       saveBtn.disabled = true;
       try {
+        const company = await getCompany();
+        // مسار الصفقة (المرحلة ٢٤): يُنسخ من قالب الإعدادات لحظة الإنشاء لا يُقرأ منه لاحقًا،
+        // كي لا يتغيّر مسار صفقةٍ قديمة حين تعدّل القالب.
+        const checklist = String(company.dealChecklist || '')
+          .split('\n').map((line) => line.trim()).filter(Boolean)
+          .map((label, i) => ({ key: `s${i + 1}`, label, done: false, doneAt: null }));
         await repo.deals.create({
           date, finalPrice,
           commission: commissionInput.value === '' ? null : Number(commissionInput.value),
           propertyId: isExternal ? null : p.id, clientId: request.clientId, notes: notesInput.value,
           leaseEndAt: fromInputDate(leaseEndInput.value),
+          checklist,
         });
         if (syncBox.querySelector('input').checked) {
           if (isExternal) await repo.externalListings.update(p.id, { status: 'unavailable' });
@@ -545,7 +552,6 @@ function openDealForm(ctx, request, row) {
             toast('سُجّلت الصفقة — ولم تُنشأ فاتورة لأن العمولة فارغة', 'info', 5000);
           } else {
             const client = ctx.clientsById.get(request.clientId);
-            const company = await getCompany();
             const number = suggestInvoiceNumber(company, 'invoice');
             await repo.invoices.create({
               type: 'invoice', number, date,
