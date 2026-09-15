@@ -30,6 +30,8 @@ import { adCopy, adGaps } from '../util/ad-copy.js';
 import { propertyEvidence, priceDrops, MIN_SAMPLE } from '../util/property-evidence.js';
 import { historyBox } from '../util/history-view.js';
 import { capped, PAGE_SIZE } from '../util/render-cap.js';
+import { parseOfferText } from '../data/listing-parse.js';
+import { runPlans } from '../util/plans.js';
 
 // "الحالة" فرز خاص بالعقارات (بلا معنى للعروض الخارجية) فيبقى معرَّفًا هنا؛ بقية المجموعات
 // مشتركة مع خريطة العقارات عبر util/property-filters.js فلا تنحرف الصفحتان عن بعضهما.
@@ -130,6 +132,11 @@ function buildLayout(ctx) {
       el('h1', {}, 'العقارات ', ctx.nodes.count),
       el('div', { class: 'head-actions' },
         search, seg,
+        el('button', {
+          type: 'button', class: 'btn', text: '📋 لصق عرض عميل',
+          title: 'اقرأ عقارًا من رسالة مالكٍ يعرضه عليك',
+          onClick: () => openOfferPasteForm(ctx),
+        }),
         el('button', { type: 'button', class: 'btn btn-primary', text: '+ إضافة عقار', onClick: () => openForm(ctx, null) }))),
   );
   ctx.nodes.search = search;
@@ -661,9 +668,144 @@ async function openShareMenu(ctx, p) {
   modalRef = openModal({ title: 'مشاركة العقار', body });
 }
 
-async function openForm(ctx, existing) {
+/* ===== قراءة عرض مالك من رسالة واتساب (المرحلة ٣٩) ===== */
+
+/**
+ * مقابلُ «لصق رسالة عميل» في صفحة الطلبات — وبالمنطق نفسه بالضبط:
+ * ذاك يقرأ من **يطلب** فيُنشئ باحثًا وطلبَه، وهذا يقرأ من **يعرض** فيُنشئ مالكًا وعقارَه.
+ *
+ * والمالك يرسل عرضه في واتساب نصًّا حرًّا، فيُعاد كتابتُه في الاستمارة حقلًا حقلًا — وربّما
+ * لم يُكتب أصلًا فيضيع العرض. وهذه تقرؤه **في متصفّحك** (بلا شبكة ولا مفتاح) وتفتح
+ * الاستمارة معبّأة.
+ *
+ * والقراءة **اقتراحٌ لا حكم**: كل حقل يبقى قابلًا للتعديل، ولا يُحفظ شيء إلا بضغطك.
+ */
+async function openOfferPasteForm(ctx) {
+  const textarea = el('textarea', {
+    class: 'input', rows: 6,
+    placeholder: 'الصق رسالة المالك هنا…\nمثال: السلام عليكم، انا سعد التميمي، عندي فلة في النرجس للبيع، المساحة ٤٥٠ متر والسعر مليونين ونص، جوالي ٠٥٥١٢٣٤٥٦٧',
+  });
+  const resultBox = el('div', { class: 'parse-result' });
+  let parsed = null;
+
+  const readIt = () => {
+    parsed = parseOfferText(textarea.value, {
+      districts: ctx.lists.districtsByCity?.[ctx.lists.cities[0]] || ctx.lists.districts?.[ctx.lists.cities[0]] || [],
+      types: ctx.lists.propertyTypes,
+      cities: ctx.lists.cities,
+    });
+    clear(resultBox);
+    if (!parsed.found.length && !parsed.warnings.length) {
+      resultBox.append(el('p', { class: 'muted small', text: 'لم يُقرأ شيء من النص — أكمل الاستمارة يدويًا.' }));
+    } else {
+      if (parsed.found.length) {
+        resultBox.append(el('div', { class: 'chips' },
+          parsed.found.map((f) => el('span', { class: 'chip chip-static' }, `${f.label}: ${f.text}`))));
+      }
+      for (const w of parsed.warnings) resultBox.append(el('p', { class: 'muted small', text: `⚠︎ ${w}` }));
+    }
+    openBtn.disabled = false;
+    // بلا جوالٍ لا إنشاء مباشر: مالكٌ لا تستطيع الاتصال به سجلٌّ ناقص لا فائدة فيه —
+    // وهو نفس شرط «أنشئ العميل والطلب» في الطلبات، لا استثناء هنا.
+    quickBtn.disabled = !parsed?.fields?.phone;
+    quickBtn.title = parsed?.fields?.phone ? '' : 'لم يُقرأ جوال من الرسالة — أكمل الاستمارة يدويًا';
+  };
+
+  /** حقولُ العقار من المقروء — والموقع يُقرأ من رابط الخرائط إن كان كاملًا. */
+  const propertyFields = (fields) => ({
+    city: fields.city || ctx.lists.cities[0] || 'الرياض',
+    district: fields.district || '',
+    type: fields.type || '',
+    purposes: fields.purposes || [],
+    area: fields.area ?? null,
+    price: fields.price ?? null,
+    deedNumber: fields.deedNumber || '',
+    location: fields.mapsText ? parseLocation(fields.mapsText) : null,
+    notes: textarea.value.trim().slice(0, 500),
+    source: 'manual',
+  });
+
+  const openBtn = el('button', {
+    type: 'button', class: 'btn', text: 'افتح الاستمارة معبّأة', disabled: true,
+    onClick: async () => {
+      modal.close();
+      await openForm(ctx, null, propertyFields(parsed?.fields || {}));
+    },
+  });
+
+  /**
+   * إنشاء المالك وعقاره بضغطة.
+   * **ولا يُنشأ عميل مكرّر**: الجوال المسجَّل يُستعمل سجلّه ويُضاف إليه دورُ «مالك عرض»
+   * إن لم يكن له — فمن كان باحثًا عندك ثم عرض عقاره يصير الاثنين، لا سجلَّين متنافسين.
+   */
+  const quickBtn = el('button', {
+    type: 'button', class: 'btn btn-primary', text: 'أنشئ المالك والعقار', disabled: true,
+    onClick: async () => {
+      const fields = parsed?.fields || {};
+      quickBtn.disabled = true;
+      try {
+        const clients = await repo.clients.list();
+        const phone = fields.phone || '';
+        let client = phone ? clients.find((c) => c.phone === phone) : null;
+        const isNew = !client;
+        if (!client) {
+          client = await repo.clients.create({
+            name: fields.name || '', phone, roles: ['owner'], stage: 'new',
+            notes: textarea.value.trim().slice(0, 500),
+          });
+        } else if (!(client.roles || []).includes('owner')) {
+          await repo.clients.update(client.id, { roles: [...(client.roles || []), 'owner'] });
+        }
+        await repo.clients.addContact(client.id, {
+          type: 'whatsapp', date: new Date().toISOString(), note: 'عرض ملصوق',
+        });
+        if (isNew) await runPlans('new_client', { title: fields.name || phone, linkType: 'client', linkId: client.id });
+
+        const property = await repo.properties.create({
+          ...propertyFields(fields),
+          ownerId: client.id,
+          status: 'agreed', // عرضه علينا بنفسه — فهو موافقٌ للتعاون، لا «لم يتم التواصل»
+          captureStatus: 'approved',
+        });
+        modal.close();
+        toast(isNew ? 'أُنشئ المالك وعقاره' : 'المالك مسجَّل — أُضيف له العقار', 'success');
+        window.dispatchEvent(new CustomEvent('kassab:data-changed'));
+        // ومَن يطابقه من طلباتك يُعلَن فورًا: العرض الجديد قد يكون جواب طلبٍ ينتظر.
+        announceMatches(property).catch(() => {});
+        location.hash = `#/properties/${property.id}`;
+      } catch (err) {
+        toast((err.errors || [err.message]).join('، '), 'error');
+        quickBtn.disabled = false;
+      }
+    },
+  });
+
+  const modal = openModal({
+    title: 'عقار من رسالة مالك',
+    size: 'wide',
+    body: el('div', {},
+      el('p', { class: 'muted small', text: 'تُقرأ الرسالة في متصفحك فقط — لا تخرج البيانات من جهازك ولا تحتاج اتصالًا.' }),
+      textarea,
+      el('div', { class: 'row', style: { marginTop: '8px' } },
+        el('button', { type: 'button', class: 'btn', text: 'اقرأ الحقول من النص', onClick: readIt })),
+      resultBox),
+    footer: [
+      el('button', { type: 'button', class: 'btn btn-ghost', text: 'إلغاء', onClick: () => modal.close() }),
+      openBtn,
+      quickBtn,
+    ],
+  });
+  setTimeout(() => textarea.focus(), 0);
+}
+
+/**
+ * @param {object|null} existing سجلٌّ للتعديل، أو null لعقار جديد
+ * @param {object} prefill حقولٌ مقروءةٌ من رسالة مالك (المرحلة ٣٩) — تُعبّئ الاستمارة
+ *        **ولا تُحفظ وحدها**: لا شيء يُكتب إلا بضغطك «حفظ».
+ */
+async function openForm(ctx, existing, prefill = {}) {
   const isEdit = !!existing;
-  const draft = existing ? JSON.parse(JSON.stringify(existing)) : repo.properties.defaults();
+  const draft = existing ? JSON.parse(JSON.stringify(existing)) : { ...repo.properties.defaults(), ...prefill };
   draft.typeFields = draft.typeFields || {};
   draft.extra = draft.extra || {};
   draft.images = draft.images || [];

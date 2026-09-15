@@ -36,7 +36,10 @@ const loose = (s) => prep(s).replace(/ا/g, '').replace(/\s+/g, '');
 
 /* ===== الأرقام ===== */
 
-const NUM = String.raw`\d{1,3}(?:[.,\u060C\u066B\u066C ]\d{3})+|\d+(?:[.,]\d+)?`;
+// الفاصلة العشرية العربية `٫` (U+066B) **ليست** فاصل آلاف — فاصلُ الآلاف `٬` (U+066C).
+// وكانت مُدرَجةً في فواصل الآلاف، فيفشل النمط الأول على «١٫٥ مليون» ثم يلتقط الثاني
+// «5» وحدها فتصير خمسة ملايين بدل مليونٍ ونصف. خطأٌ بثلاثة ملايين ونصف، صامت.
+const NUM = String.raw`\d{1,3}(?:[.,\u060C\u066C ]\d{3})+|\d+(?:[.,\u066B]\d+)?`;
 
 function toNumber(text) {
   let s = String(text ?? '').replace(/[\s\u060C\u066C,]/g, '');
@@ -47,6 +50,56 @@ function toNumber(text) {
 }
 
 const rx = (body, flags = '') => new RegExp(body.replace(/NUM/g, NUM), flags);
+
+/**
+ * الكسر المنطوق بعد المضاعِف: «مليون **ونصف**» و«ثلاثة ملايين **وربع**» (المرحلة ٣٩).
+ *
+ * كان يُهمَل، فتُقرأ «٢ مليون ونصف» مليونين — نصفُ مليونٍ يسقط صامتًا في سجلّ عقار.
+ * والخطأ الصامت في السعر أسوأ من حقلٍ فارغ: الفارغُ يُسأل عنه، والخطأُ يُبنى عليه.
+ */
+const FRACTION_WORDS = String.raw`النصف|نصف|النص|نص|الربع|ربع|الثلثين|ثلثين|الثلث|ثلث|ثلاثه ارباع`;
+
+function fractionValue(word) {
+  const w = prep(word || '').replace(/^ال/, '');
+  if (w === 'نصف' || w === 'نص') return 0.5;
+  if (w === 'ربع') return 0.25;
+  if (w === 'ثلث') return 1 / 3;
+  if (w === 'ثلثين') return 2 / 3;
+  if (w === 'ثلاثه ارباع') return 0.75;
+  return 0;
+}
+
+/** المضاعِف المنطوق: مليون أو ألف. يعيد ١ لما ليس مضاعِفًا. */
+function unitScale(word) {
+  const u = prep(word || '');
+  if (u.startsWith('مليون') || u.startsWith('ملايين')) return 1e6;
+  if (u.startsWith('الف') || u.startsWith('الاف')) return 1000;
+  return 1;
+}
+
+/** «٢ مليون ونصف» = (٢ + ٠٫٥) × مليون. والكسر من المضاعِف لا من العدد. */
+function scaled(count, unitWord, fractionWord) {
+  return (Number(count) + (fractionWord ? fractionValue(fractionWord) : 0)) * unitScale(unitWord);
+}
+
+/**
+ * مبلغٌ منطوقٌ بلا رقم: «مليون» و«مليونين ونص» و«نص مليون».
+ * لا يُقال «٢ مليون» دائمًا — يُقال «مليونين»، والرقم لا يظهر في النص أصلًا.
+ */
+const WORD_AMOUNT_RE = new RegExp(
+  String.raw`(?:^|[\s،:؛(])(?:(نصف|نص)\s+)?(مليونين|مليون|الفين|الف)(?:\s*و\s*(${FRACTION_WORDS}))?`,
+);
+
+function wordAmount(body) {
+  const m = WORD_AMOUNT_RE.exec(body);
+  if (!m) return null;
+  const [, lead, unit, frac] = m;
+  const u = prep(unit);
+  const base = (u === 'مليونين' || u === 'الفين') ? 2 : 1;
+  const scale = u.startsWith('مليون') ? 1e6 : 1000;
+  const count = lead ? 0.5 : base; // «نص مليون» — الكسر قبل المضاعِف لا بعده
+  return (count + (frac ? fractionValue(frac) : 0)) * scale;
+}
 
 /* ===== المنصات ===== */
 
@@ -158,25 +211,33 @@ export function parseListingText(text, { districts = [], types = [], cities = []
   const phoneDigits = fields.advertiserPhone || '';
 
   /* السعر: المضاعفات (مليون/ألف) أولًا، ثم ما بعد كلمة سعر، ثم ما قبل "ريال" */
+  // كل نمطٍ يحمل مضاعِفَه وكسرَه معًا: «٢ مليون ونصف» تُقرأ ٢٫٥ مليون لا مليونين.
+  const UNIT = String.raw`(مليون|ملايين|الف|الاف)`;
+  const FRAC = String.raw`(?:\s*و\s*(FRACTIONS))?`.replace('FRACTIONS', FRACTION_WORDS);
   const pricePatterns = [
-    [rx(String.raw`(?:السعر|المطلوب|بسعر|السوم|سعر|قيمه|مطلوب)\D{0,14}(NUM)\s*(مليون|ملايين|الف|الاف)`), 'keyword+unit'],
-    [rx(String.raw`(NUM)\s*(مليون|ملايين|الف|الاف)`), 'unit'],
+    [rx(String.raw`(?:السعر|المطلوب|بسعر|السوم|سعر|قيمه|مطلوب)\D{0,14}(NUM)\s*${UNIT}${FRAC}`), 'keyword+unit'],
+    [rx(String.raw`(NUM)\s*${UNIT}${FRAC}`), 'unit'],
     [rx(String.raw`(?:السعر|المطلوب|بسعر|السوم|سعر|قيمه|مطلوب)\D{0,14}(NUM)`), 'keyword'],
     [rx(String.raw`(NUM)\s*(?:ريال|ر\.?س|sar)`, 'i'), 'currency'],
   ];
   for (const [re, kind] of pricePatterns) {
     const m = re.exec(body);
     if (!m) continue;
-    let value = toNumber(m[1]);
-    if (value == null) continue;
-    const unit = m[2] ? prep(m[2]) : '';
-    if (unit.startsWith('مليون') || unit.startsWith('ملايين')) value *= 1e6;
-    else if (unit.startsWith('الف') || unit.startsWith('الاف')) value *= 1000;
+    const count = toNumber(m[1]);
+    if (count == null) continue;
+    let value = m[2] ? scaled(count, m[2], m[3]) : count;
     if (value < 1000 || value > 2e9) continue;
     if (phoneDigits && String(Math.round(value)) === phoneDigits.replace(/^0/, '')) continue;
     if (/سعر المتر|سعر متر/.test(body) && kind !== 'unit') warnings.push('يبدو أن النص يذكر سعر المتر — تأكّد أن السعر المقروء هو سعر العقار كاملًا');
     add('price', 'السعر', Math.round(value), `${Math.round(value).toLocaleString('en-US')} ريال`);
     break;
+  }
+  // «مليونين ونص» بلا رقمٍ في النص — يُجرَّب بعد الأنماط الرقمية فلا يزاحم رقمًا صريحًا.
+  if (fields.price == null) {
+    const spoken = wordAmount(body);
+    if (spoken != null && spoken >= 1000 && spoken <= 2e9) {
+      add('price', 'السعر', Math.round(spoken), `${Math.round(spoken).toLocaleString('en-US')} ريال`);
+    }
   }
 
   /* المساحة */
@@ -248,6 +309,34 @@ export function parseListingText(text, { districts = [], types = [], cities = []
   return { fields, found, warnings };
 }
 
+/* ===== اسم المرسِل: مشتركٌ بين الطلب والعرض (المرحلة ٣٩) ===== */
+
+/**
+ * أفعالٌ يتوقّف الاسم عندها. من يكتب «انا سعد ابغى فلة» اسمُه سعد لا «سعد ابغى فلة».
+ * وفيها أفعال الطلب وأفعال العرض معًا: المرسِل قد يكون باحثًا وقد يكون مالكًا، والجملة
+ * تُقرأ بالقاعدة نفسها.
+ */
+const NAME_STOP = [
+  'ابغي', 'ابي', 'اريد', 'احتاج', 'ودي', 'ابحث', 'مطلوب', 'اسال', 'حاب', 'ابا',
+  'عندي', 'لدي', 'املك', 'معي', 'ابيع', 'اعرض', 'للبيع', 'للايجار', 'صاحب', 'مالك',
+];
+
+/**
+ * اسم المرسِل من نصٍّ حرّ: «انا سعد» و«معك أبو خالد» و«اسمي ريما الحربي».
+ * يعيد '' إن لم يُقرأ — ولا يُخمَّن: اسمٌ مخترَع في سجلّ عميل أسوأ من حقلٍ فارغ.
+ */
+export function parseSenderName(text) {
+  const m = /(?:انا|اسمي|معك|معاك|معي)\s+([\u0600-\u06FF]{2,}(?:\s+[\u0600-\u06FF]{2,}){0,2})/.exec(prep(String(text ?? '')));
+  if (!m) return '';
+  const words = [];
+  for (const w of m[1].trim().split(/\s+/)) {
+    if (NAME_STOP.includes(w)) break;
+    words.push(w);
+    if (words.length === 2) break; // اسم ثنائي يكفي
+  }
+  return words.join(' ').replace(/[،؛,.:]+$/, '').trim(); // علامة ترقيم لاصقة ليست من الاسم
+}
+
 /* ===== قراءة طلب عميل من رسالة واتساب (المرحلة ١١) ===== */
 
 const BUDGET_WORDS = String.raw`الميزانيه|ميزانيتي|ميزانيه|بحدود|حدود|ما يتجاوز|لا يتجاوز|الى|حتى|بحد اقصى|سقف|المبلغ|عندي`;
@@ -296,15 +385,15 @@ export function parseRequestText(text, { districts = [], types = [], cities = []
   if (picked.length) add('districts', 'الأحياء', picked, picked.join('، '));
 
   /* سقف الميزانية: كلمة ميزانية أولًا، وإلا السعر الذي قرأه المحلّل العام */
-  const budgetRe = rx(String.raw`(?:${BUDGET_WORDS})\D{0,12}(NUM)\s*(مليون|ملايين|الف|الاف)?`);
+  // الكسر المنطوق هنا كذلك: «ميزانيتي مليونين ونص» سقفُها ٢٫٥ لا ٢ — والفرقُ نصفُ مليون
+  // في مطابقةٍ تُقصي عروضًا تناسبه.
+  const budgetRe = rx(String.raw`(?:${BUDGET_WORDS})\D{0,12}(NUM)\s*(مليون|ملايين|الف|الاف)?(?:\s*و\s*(${FRACTION_WORDS}))?`);
   const m = budgetRe.exec(body);
   let budget = null;
   if (m) {
-    let value = toNumber(m[1]);
-    if (value != null) {
-      const unit = m[2] ? prep(m[2]) : '';
-      if (unit.startsWith('مليون') || unit.startsWith('ملايين')) value *= 1e6;
-      else if (unit.startsWith('الف') || unit.startsWith('الاف')) value *= 1000;
+    const count = toNumber(m[1]);
+    if (count != null) {
+      const value = m[2] ? scaled(count, m[2], m[3]) : count;
       if (value >= 1000 && value <= 2e9) budget = Math.round(value);
     }
   }
@@ -315,21 +404,77 @@ export function parseRequestText(text, { districts = [], types = [], cities = []
 
   /* جوال المرسل واسمه (للبحث عن عميل موجود أو إنشائه) */
   if (base.fields.advertiserPhone) add('phone', 'جوال العميل', base.fields.advertiserPhone, base.fields.advertiserPhone);
-  const nameMatch = /(?:انا|اسمي|معك|معاك)\s+([\u0600-\u06FF]{2,}(?:\s+[\u0600-\u06FF]{2,}){0,2})/.exec(prep(raw));
-  if (nameMatch) {
-    // الاسم يتوقف عند أول فعل طلب («انا سعد ابغى فلة» = سعد، لا «سعد ابغى فلة»)
-    const STOP = ['ابغي', 'ابي', 'اريد', 'احتاج', 'ودي', 'ابحث', 'مطلوب', 'عندي', 'اسال', 'حاب'];
-    const words = [];
-    for (const w of nameMatch[1].trim().split(/\s+/)) {
-      if (STOP.includes(w)) break;
-      words.push(w);
-      if (words.length === 2) break; // اسم ثنائي يكفي
-    }
-    const name = words.join(' ').replace(/[،؛,.:]+$/, '').trim(); // علامة ترقيم لاصقة ليست من الاسم
-    if (name) add('name', 'اسم العميل', name, name);
-  }
+  const name = parseSenderName(raw);
+  if (name) add('name', 'اسم العميل', name, name);
 
   if (!fields.type) warnings.push('لم يُعرف نوع العقار من النص — اختره بنفسك');
   if (!fields.purpose) warnings.push('لم يُعرف الغرض (بيع/إيجار/استثمار) من النص — اختره بنفسك');
+  return { fields, found, warnings };
+}
+
+/* ===== قراءة عرض المالك من رسالة واتساب (المرحلة ٣٩) ===== */
+
+/** ما يقوله المالك حين يعرض ملكه — تُميّز رسالته عن رسالة الباحث. */
+const OWNER_WORDS = /عندي|لدي|املك|امتلك|معي|ابيع|للبيع عندي|اعرض|عرض|صاحب|مالك|ورثه|ورثنا/;
+
+/** كلماتُ رقم الصك، وهي أشكالٌ يكتبها الناس فعلًا لا صيغةٌ واحدة رسمية. */
+const DEED_RE = /(?:رقم\s*)?(?:الصك|صك|الصكوك)\D{0,12}([0-9]{6,20}|[0-9/\-]{8,25})/;
+
+/**
+ * يقرأ **عرض مالكٍ** من نصٍّ حرّ: رسالةُ من يعرض عقاره عليك، لا إعلانُ منصّة ولا طلبُ باحث.
+ *
+ * وهو مقابلُ `parseRequestText`: ذاك يقرأ من **يطلب** فيُنشئ باحثًا وطلبًا، وهذا يقرأ من
+ * **يعرض** فيُنشئ مالكًا وعقارًا. والفرقُ بينهما ليس في الحقول وحدها بل في معناها: السعر
+ * هنا **سعرُ عرضٍ** لا سقفَ ميزانية، والحي **واحدٌ** لا عدّة (العقار في حيٍّ واحد، والباحث
+ * يقبل عدّة)، والغرضُ **مجموعة** (قد يبيع أو يؤجّر) لا واحدًا.
+ *
+ * يعيد استعمال `parseListingText` نفسه — لا منطقَ قراءةٍ ثالث يُكتب ثم ينحرف عن أخوَيه.
+ * **دالة خالصة تعمل محليًا**: بلا شبكة ولا مفتاح ولا خروج بيانات من الجهاز.
+ *
+ * @returns {{ fields: object, found: Array<{key,label,text}>, warnings: string[] }}
+ */
+export function parseOfferText(text, { districts = [], types = [], cities = [] } = {}) {
+  const base = parseListingText(text, { districts, types, cities });
+  const fields = {};
+  const found = [];
+  const warnings = [...base.warnings];
+  const raw = String(text ?? '');
+  if (!raw.trim()) return { fields, found, warnings };
+
+  const add = (key, label, value, display) => { fields[key] = value; found.push({ key, label, text: display }); };
+  const t = prep(raw);
+  const body = t.replace(/(?:https?:\/\/|www\.)[^\s"'<>،؛)]+/gi, ' ');
+
+  /* حقول العقار كما قرأها المحلّل العام — بمعانيها هنا لا بمعانيها هناك */
+  const carry = ['type', 'city', 'district', 'area', 'price', 'purposes'];
+  for (const key of carry) {
+    if (base.fields[key] == null) continue;
+    if (Array.isArray(base.fields[key]) && !base.fields[key].length) continue;
+    const src = base.found.find((f) => f.key === key);
+    const label = key === 'price' ? 'السعر المطلوب' : src?.label || key;
+    add(key, label, base.fields[key], src?.text ?? String(base.fields[key]));
+  }
+  if (base.fields.mapsText) add('mapsText', 'رابط الموقع', base.fields.mapsText, base.fields.mapsText);
+
+  /* صاحب العرض: جوالُه واسمه — بهما يُنشأ المالك أو يُوجد سجلُّه */
+  if (base.fields.advertiserPhone) add('phone', 'جوال المالك', base.fields.advertiserPhone, base.fields.advertiserPhone);
+  const name = parseSenderName(raw);
+  if (name) add('name', 'اسم المالك', name, name);
+
+  /* رقم الصك: يكتبه المالك كثيرًا، وكان يضيع في الملاحظات فلا يُبحث ولا يدخل عقدًا */
+  const deed = DEED_RE.exec(body);
+  if (deed) {
+    const value = deed[1].replace(/[^\d/-]/g, '');
+    if (value.length >= 6) add('deedNumber', 'رقم الصك', value, value);
+  }
+
+  /* هل هذه رسالةُ مالكٍ أصلًا؟ */
+  if (!OWNER_WORDS.test(body)) {
+    warnings.push('لا يبدو أنّ النص عرضُ مالك — إن كان طلبَ باحثٍ فاستعمل «لصق رسالة عميل» في صفحة الطلبات');
+  }
+  if (!fields.type) warnings.push('لم يُعرف نوع العقار من النص — اختره بنفسك');
+  if (!fields.city) warnings.push('لم تُعرف المدينة من النص — اخترها بنفسك');
+  if (fields.price == null) warnings.push('لم يُقرأ سعر — العقار بلا سعر يُحفظ، لكن السعر يُغيّر كلّ مطابقة');
+
   return { fields, found, warnings };
 }
