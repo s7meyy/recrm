@@ -393,6 +393,15 @@ input[type="tel"].input, input[type="email"].input, input[type="url"].input {
 .map-legend-item { display: inline-flex; align-items: center; gap: 6px; }
 .map-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
 .map-dot-external { background: #6b4fa0; border: 1px dashed #fff; box-shadow: 0 0 0 1px #6b4fa0; }
+/* دليل ألوان الخريطة يُضغط فيُفرز به (المرحلة ٣٨) — مساحة اللمس ٤٤px حتى في الدليل. */
+.map-legend-btn {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  color: inherit; font: inherit; padding: 6px 10px; min-height: var(--dhad-size-touch); cursor: pointer;
+}
+.map-legend-btn:hover { border-color: var(--accent); }
+.map-legend-btn.active { border-color: var(--accent); background: var(--accent-soft); color: var(--text); font-weight: 600; }
+.map-legend-note { flex-basis: 100%; }
+.map-scheme { align-items: center; }
 .map-popup { display: flex; flex-direction: column; gap: 4px; min-width: 160px; }
 .map-popup-title { display: flex; align-items: center; gap: 6px; font-weight: 700; }
 .map-popup-actions { margin-top: 6px; }
@@ -818,3 +827,94 @@ body.assistant-mode [data-owner-only] { display: none !important; }
 .steps-list li { margin-bottom: var(--dhad-space-1); }
 /* نصّ التفريغ بجوار الصوت لا فوق ملاحظتك: الآلي يخطئ في العربية، ومحوُ ما كتبتَه خسارة. */
 .audio-transcript { display: block; margin-top: var(--dhad-space-2); color: var(--muted); line-height: var(--dhad-line-reading); }
+
+/* ===== المرحلة ٣٨ — رقاقة «الكل» ===== */
+/* تُميَّز عن الخيارات بحدٍّ متقطّع: هي أمرٌ لا خيار، ومساواتها بها تُربك العين. */
+.chip-all { border-style: dashed; font-weight: 700; }
+.chip-all.active { border-style: solid; }
+
+/* التقويم بالتقويمين (المرحلة ٣٨): اليوم الهجري رقمٌ صغير بجانب الميلادي لا بديلٌ عنه. */
+.cal-num { display: flex; align-items: baseline; gap: 5px; }
+.cal-num-hijri { font-size: var(--fs-sm); color: var(--muted); font-weight: 400; unicode-bidi: isolate; }
+.section-title-alt { font-size: var(--fs-sm); font-weight: 400; }
+
+/* وسائط: مقطعٌ يُعلَّم بعلامةٍ ظاهرة فلا يُظنّ صورةً ساكنة (المرحلة ٣٨). */
+.media-kind {
+  position: absolute; inset-block-end: 4px; inset-inline-start: 4px;
+  background: rgba(0, 0, 0, 0.72); color: #fff; font-size: var(--fs-sm);
+  padding: 2px 7px; border-radius: var(--radius); pointer-events: none;
+}
+.img-tile video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.media-noposter { background: var(--surface-2); }
+
+/* ===== صفحة الختم (المرحلة ٣٨) ===== */
+.logo-row { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+.logo-tile {
+  width: 150px; border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--surface-2); padding: 8px; display: flex; flex-direction: column; gap: 6px;
+}
+.logo-tile img { width: 100%; height: 70px; object-fit: contain; background: var(--surface); border-radius: 4px; }
+.logo-name { font-size: var(--fs-sm); font-weight: 600; overflow-wrap: anywhere; }
+.logo-tools { display: flex; gap: 4px; flex-wrap: wrap; }
+.stamp-pattern {
+  border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 12px; margin-bottom: 12px; background: var(--surface-2);
+}
+.stamp-pattern-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap: 8px; }
+.stamp-range { flex: 1; min-width: 120px; padding: 0; }
+.stamp-preview { margin-top: 12px; }
+.stamp-preview img { max-width: 100%; border-radius: var(--radius); border: 1px solid var(--line); }
+.queue-row {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 8px 0; border-bottom: 1px solid var(--line); min-height: var(--dhad-size-touch);
+}
+.queue-name { flex: 1; min-width: 140px; overflow-wrap: anywhere; }
+.queue-failed { background: var(--danger-soft); }
+.queue-done { opacity: 0.75; }
+.stamp-library { align-items: flex-start; }
+.stamp-tile {
+  width: 210px; border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 8px; display: flex; flex-direction: column; gap: 6px; background: var(--surface-2);
+}
+.stamp-tile img, .stamp-tile video { width: 100%; height: 130px; object-fit: cover; border-radius: 4px; background: var(--surface); }
+.stamp-meta { display: flex; flex-direction: column; gap: 3px; }
+.stamp-tools { display: flex; gap: 4px; flex-wrap: wrap; }
+.notice-warn { background: var(--warn-soft); }
+
+/* ===== الأوامر الصوتية (المرحلة ٣٨) ===== */
+.voice-dock {
+  /* في واجهةٍ عربية القائمةُ الجانبية على اليمين، و«inset-inline-start» يمينٌ كذلك —
+   * فكان الزرّ يقف فوق روابط القائمة ويحجب أحدها. مكانه الجهة المقابلة. */
+  position: fixed; inset-inline-end: 16px;
+  inset-block-end: calc(16px + env(safe-area-inset-bottom, 0px));
+  z-index: var(--dhad-z-sidebar, 35); display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
+}
+/* نافذةٌ مفتوحة تغطّي الزرّ: لا يقف فوق أزرار الحوار فيُضغط بالخطأ. */
+body.modal-open .voice-dock { display: none; }
+.voice-btn {
+  width: 52px; height: 52px; min-width: var(--dhad-size-touch); min-height: var(--dhad-size-touch);
+  border-radius: 50%; border: 1px solid var(--line-strong); background: var(--surface);
+  font-size: 22px; cursor: pointer; box-shadow: var(--shadow-modal);
+}
+.voice-btn:hover { border-color: var(--accent); }
+.voice-btn.voice-on { background: var(--danger); border-color: var(--danger); }
+.voice-bar {
+  max-width: min(320px, calc(100vw - 32px));
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg);
+  padding: 12px; box-shadow: var(--shadow-modal); font-size: var(--fs-sm);
+}
+.voice-heard { font-weight: 600; margin-bottom: 4px; overflow-wrap: anywhere; }
+.voice-heard:empty { display: none; }
+.voice-status.ok { color: var(--ok); }
+.voice-status.bad { color: var(--danger); }
+.voice-help { margin-top: 8px; }
+.voice-help summary { cursor: pointer; min-height: var(--dhad-size-touch); display: flex; align-items: center; }
+@media print { .voice-dock { display: none; } }
+
+/* سجلّ الحملة (المرحلة ٣٨). */
+.campaign-log { margin-top: 12px; }
+.campaign-log:empty { display: none; }
+.wa-webhook {
+  display: block; padding: 8px; background: var(--surface-2);
+  border-radius: var(--radius); overflow-wrap: anywhere;
+}

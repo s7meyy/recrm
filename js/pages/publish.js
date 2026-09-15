@@ -5,7 +5,7 @@
 // متصفح جهازك، فلا شيء يتحدث في السحابة تلقائيًا. وأي تعديل بعد النشر يحتاج ضغطة نشر جديدة.
 //
 // ما يخرج من الجهاز: الحقول التسويقية فقط للعقارات المختارة (نوع، حي، مدينة، مساحة، سعر إن
-// اخترت إظهاره، ملاحظات، صور). **لا يخرج أبدًا:** اسم المالك وجواله، ملاحظاتك الداخلية عنه،
+// اخترت إظهاره، ملاحظات، صور — **الصور وحدها دون المقاطع**، المرحلة ٣٨). **لا يخرج أبدًا:** اسم المالك وجواله، ملاحظاتك الداخلية عنه،
 // الإحداثيات الدقيقة (يُشتق منها رابط خرائط فقط إن اخترت)، ولا أي عميل أو طلب أو مطابقة.
 
 import { repo } from '../data/repository.js';
@@ -14,6 +14,7 @@ import { getLists, typeLabel, getCompany, getPublishSettings, setPublishSettings
 import { el, clear, labeled, selectEl, checkbox, badge, toast, emptyState, confirmDialog, debounce, openModal } from '../util/dom.js';
 import { formatSAR, formatArea, formatDateTime, formatNumber } from '../util/format.js';
 import { mapsLink } from '../util/location.js';
+import { isVideo } from '../data/images.js';
 import { matchesQuery } from '../util/arabic.js';
 import { qrBlock } from '../util/qr.js';
 import { runPlans } from '../util/plans.js';
@@ -40,6 +41,10 @@ async function loadData(ctx) {
   ctx.publish = publish;
   ctx.clients = clients; // لازم لاختيار عميل القائمة المخصّصة (المرحلة ١١)
   ctx.selected = new Set(publish.listingIds);
+  // المقاطع لا تُنشر (المرحلة ٣٨): مقطعٌ واحد بحدّه ٦٠ م.ب يساوي مئاتِ الصور رفعًا
+  // وتخزينًا، وصفحةُ العميل تُفتح من جوّالٍ على بياناته. فتُنشر الصور وحدها، ويُقال ذلك
+  // صراحةً في الصفحة — لا يُحذف شيءٌ ولا يُرفع شيءٌ في الخفاء.
+  ctx.videoIds = new Set((await repo.images.list()).filter(isVideo).map((r) => r.id));
   ctx.publishedRefs = new Map(publish.publishedRefs || []);
 
   // عدّاد المشاهدات (المرحلة ٢٥): فشله لا يُعطّل الصفحة — تظهر «؟» مكان الرقم.
@@ -189,7 +194,14 @@ function drawList(ctx) {
       el('td', { text: (p.purposes || []).map((k) => labelFor(ENUMS.purposes, k)).join('، ') || '—' }),
       el('td', { class: 'num', text: formatArea(p.area) }),
       el('td', { class: 'num', text: formatSAR(p.price) }),
-      el('td', { text: `${(p.images || []).length}` }),
+      // عمود الصور يقول ما يُنشر فعلًا، والمقاطع تُذكر منفصلةً لئلّا يُظنّ أنّها نُشرت.
+      el('td', {}, (() => {
+        const all = p.images || [];
+        const vids = all.filter((id) => ctx.videoIds.has(id)).length;
+        return el('span', {},
+          String(all.length - vids),
+          vids ? el('span', { class: 'muted small', title: 'المقاطع لا تُنشر في الصفحة العامة', text: ` (+${vids} مقطع لا يُنشر)` }) : null);
+      })()),
       el('td', {}, viewCell(ctx, p)),
       el('td', {}, shareButton(ctx, p)));
   });
@@ -336,7 +348,7 @@ function toPublicListing(ctx, property, index) {
     area: property.area ?? null,
     price: ctx.publish.showPrice !== false ? (property.price ?? null) : null,
     notes: property.notes || '',
-    images: [...(property.images || [])],
+    images: (property.images || []).filter((id) => !ctx.videoIds.has(id)),
     mapUrl: property.location ? mapsLink(property.location) : null,
     contactPhone: ctx.publish.contactPhone || ctx.company.phone || '',
   };

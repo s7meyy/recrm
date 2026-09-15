@@ -30,16 +30,42 @@ function toDate(iso) {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+/**
+ * الهجري مع الميلادي (المرحلة ٣٨).
+ *
+ * التاريخ يُقرأ في هذا البلد هجريًّا وميلاديًّا معًا، وكان المشروع كلّه ميلاديًّا وحده.
+ * وبدل تعديل واحدٍ وخمسين موضعًا يستدعي `formatDate` — وينسى الواحدُ منها فيبقى نصفُ
+ * البرنامج بتقويمٍ ونصفُه بآخر — يُضاف الهجري هنا، في المصدر، فيصل إلى الجميع دفعةً.
+ * ومن لا يريده يُطفئه من الإعدادات، فيعود كلُّ شيء كما كان بلا استثناء.
+ */
+let hijriOn = true;
+let hijriFmt = null;
+let hijriShortFmt = null;
+try {
+  hijriFmt = new Intl.DateTimeFormat('ar-SA-u-ca-islamic-umalqura-nu-latn', { year: 'numeric', month: 'long', day: 'numeric' });
+  hijriShortFmt = new Intl.DateTimeFormat('ar-SA-u-ca-islamic-umalqura-nu-latn', { month: 'short', day: 'numeric' });
+} catch (_) { /* متصفّح لا يعرف أمّ القرى — يبقى الميلادي وحده */ }
+
+export function setHijriMode(on) { hijriOn = !!on && !!hijriFmt; }
+export function hijriMode() { return hijriOn && !!hijriFmt; }
+
 export function formatDate(iso) {
   const d = toDate(iso);
   if (!d) return '—';
-  return dateFormat ? dateFormat.format(d) : d.toLocaleDateString();
+  const greg = dateFormat ? dateFormat.format(d) : d.toLocaleDateString();
+  if (!hijriOn || !hijriFmt) return greg;
+  return `${greg} · ${hijriFmt.format(d)}`;
 }
 
 export function formatDateTime(iso) {
   const d = toDate(iso);
   if (!d) return '—';
-  return dateTimeFormat ? dateTimeFormat.format(d) : d.toLocaleString();
+  const greg = dateTimeFormat ? dateTimeFormat.format(d) : d.toLocaleString();
+  // في التاريخ والوقت معًا يُختصر الهجري إلى اليوم والشهر: السنة مكرَّرة في الميلادي
+  // بجانبه، والسطر يطول فيُقطع في الجداول. واسم الشهر وحده يدلّ على التقويم، فلا يُلحق
+  // بـ«هـ» بلا سنة — «٤ ربيع الآخر هـ» ليست عربيّة.
+  if (!hijriOn || !hijriShortFmt) return greg;
+  return `${greg} · ${hijriShortFmt.format(d)}`;
 }
 
 const pad = (x) => String(x).padStart(2, '0');

@@ -13,6 +13,8 @@ process.env.PUBLISH_TOKEN = 'test-publish-token';
 // طرف Meta (المرحلة ٣٠): قيم اختبار حتى تعمل المصافحة والتوقيع بمنطقهما الحقيقي.
 process.env.META_VERIFY_TOKEN = 'test-verify-token';
 process.env.META_APP_SECRET = 'test-app-secret';
+process.env.WHATSAPP_VERIFY_TOKEN = 'wa-verify-token';
+process.env.WHATSAPP_APP_SECRET = 'wa-app-secret';
 process.env.APP_PASSWORD = process.env.TEST_OPEN ? '' : 'secret-pass';
 process.env.APP_SECRET = 'topsecret';
 process.env.VAPID_PUBLIC = 'BAS0l8XI1NXI4hkFooiusZNcycHEynQFewSBXSMWVPKWwoN_QzrKBJmrjMU8WEielVM9bVn7rjhXZ6lI8c5gZvY';
@@ -33,6 +35,8 @@ const bookFn = (await import(`${ROOT}/netlify/functions/book.js`)).default;
 const metaFn = (await import(`${ROOT}/netlify/functions/meta-lead.js`)).default;
 const integrationsFn = (await import(`${ROOT}/netlify/functions/integrations.js`)).default;
 const meFn = (await import(`${ROOT}/netlify/functions/me.js`)).default;
+const fetchMediaFn = (await import(`${ROOT}/netlify/functions/fetch-media.js`)).default;
+const whatsappFn = (await import(`${ROOT}/netlify/functions/whatsapp.js`)).default;
 const gateFn = (await import(`${ROOT}/netlify/edge-functions/gate.js`)).default;
 const { config: gateConfig } = await import(`${ROOT}/netlify/edge-functions/gate.js`);
 
@@ -65,6 +69,8 @@ const server = http.createServer(async (req, res) => {
   try {
     if (url.pathname === '/api/integrations') response = await integrationsFn(request);
     else if (url.pathname === '/api/me') response = await meFn(request);
+    else if (url.pathname === '/api/fetch-media') response = await fetchMediaFn(request);
+    else if (url.pathname === '/api/whatsapp') response = await whatsappFn(request);
     else if (url.pathname === '/api/publish') response = await publishFn(request);
     else if (url.pathname === '/api/listings') response = await listingsFn(request);
     else if (url.pathname === '/api/media') response = await mediaFn(request);

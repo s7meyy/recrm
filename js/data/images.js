@@ -1,6 +1,13 @@
+// الوسائط: صورٌ ومقاطع (المرحلة ٣٨).
+//
 // الصور: ضغط قبل التخزين (JPEG بحد أقصى 1600 بكسل + مصغّرة 320 بكسل)، تخزين في مخزن images
 // منفصل عن سجل العقار، وذاكرة روابط مؤقتة للعرض، وحذف فردي لتخفيف المساحة.
 // تنبيه للمرحلة ٢: الضغط عبر canvas يزيل بيانات EXIF (ومنها إحداثيات GPS) — اقرأها من الملف الأصلي قبل الضغط.
+//
+// المقاطع (المرحلة ٣٨): تُحفظ **كما هي بلا ضغط**، ويُلتقط لها إطارٌ أوّل صورةً للعرض.
+// وهذا قولٌ صريح لا تفصيلٌ تقنيّ: ضغط المقطع في المتصفّح يعني إعادة ترميزه كاملًا، وهو
+// عملٌ يستغرق دقائق ويستهلك البطارية ويفقد الجودة — فلا يُدَّعى ولا يُفعل خلسةً. ولذلك
+// حدٌّ أعلى للحجم يُقال للمستخدم صراحةً قبل أن يمتلئ جهازه.
 
 import { repo } from './repository.js';
 
@@ -57,6 +64,85 @@ export async function compressImage(file, limits = IMAGE_LIMITS) {
   }
 }
 
+export const VIDEO_LIMITS = {
+  maxBytes: 60 * 1024 * 1024, // ٦٠ م.ب — مقطعٌ أطول يملأ مخزن المتصفّح فيتوقّف كلّ شيء
+  posterDim: 480,
+  posterQuality: 0.75,
+};
+
+export const isVideo = (rec) => String(rec?.mime || '').startsWith('video/');
+export const isVideoFile = (file) => String(file?.type || '').startsWith('video/');
+
+/**
+ * إطارٌ من المقطع صورةً للعرض. يُؤخذ من الثانية الأولى لا من الصفر: أوّل إطارٍ في كثيرٍ
+ * من المقاطع أسودُ خالص، فتبدو المكتبة كلّها مربّعاتٍ سوداء.
+ */
+export function videoPoster(file, limits = VIDEO_LIMITS) {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const video = document.createElement('video');
+    let done = false;
+    const finish = (value) => {
+      if (done) return;
+      done = true;
+      URL.revokeObjectURL(url);
+      resolve(value);
+    };
+    // لقطة الإطار قد تفشل لأسبابٍ كثيرة (ترميزٌ لا يعرفه المتصفّح، ملفٌّ ناقص) —
+    // وفشلُها لا يمنع حفظ المقطع: يُحفظ بلا صورةٍ ويُعرض بعلامة «مقطع».
+    const fail = () => finish({ poster: null, width: null, height: null, duration: null });
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = 'metadata';
+    video.onerror = fail;
+    setTimeout(fail, 8000); // لا ننتظر إلى الأبد: ملفٌّ عصيّ يُحفظ بلا صورة
+    video.onloadeddata = () => {
+      const seekTo = Math.min(1, (video.duration || 1) / 2);
+      const grab = () => {
+        try {
+          const w = video.videoWidth;
+          const h = video.videoHeight;
+          if (!w || !h) return fail();
+          const ratio = Math.min(1, limits.posterDim / Math.max(w, h));
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.max(1, Math.round(w * ratio));
+          canvas.height = Math.max(1, Math.round(h * ratio));
+          const c = canvas.getContext('2d');
+          if (!c) return fail();
+          c.drawImage(video, 0, 0, canvas.width, canvas.height);
+          canvas.toBlob(
+            (blob) => finish({ poster: blob || null, width: w, height: h, duration: video.duration || null }),
+            'image/jpeg', limits.posterQuality,
+          );
+        } catch (_) { fail(); }
+        return undefined;
+      };
+      video.onseeked = grab;
+      try { video.currentTime = seekTo; } catch (_) { grab(); }
+    };
+    video.src = url;
+  });
+}
+
+/** يخزّن مقطعًا كما هو ويعيد سجلّه. لا ضغط ولا إعادة ترميز — راجع رأس الملف. */
+export async function storeVideo(file, { entity = 'property', entityId = null } = {}, limits = VIDEO_LIMITS) {
+  if (file.size > limits.maxBytes) {
+    throw new Error(`المقطع ${formatBytes(file.size)} وهو أكبر من الحدّ (${formatBytes(limits.maxBytes)}). `
+      + 'المقاطع تُحفظ كما هي بلا ضغط — اقتطع منه أو صوّره بجودة أقلّ.');
+  }
+  const { poster, width, height, duration } = await videoPoster(file, limits);
+  return repo.images.create({
+    entity, entityId, mime: file.type || 'video/mp4', blob: file, thumb: poster,
+    width, height, duration,
+    size: file.size, originalName: file.name || '', originalSize: file.size ?? null,
+  });
+}
+
+/** يخزّن ملفًا أيًّا كان نوعه: صورةً مضغوطة أو مقطعًا كما هو. */
+export async function storeMedia(file, opts = {}) {
+  return isVideoFile(file) ? storeVideo(file, opts) : storeImage(file, opts);
+}
+
 /** يضغط ويخزّن الصورة ويعيد سجلها (يُضاف id إلى property.images من المستدعي). */
 export async function storeImage(file, { entity = 'property', entityId = null } = {}) {
   const { blob, width, height, thumb } = await compressImage(file);
@@ -71,11 +157,40 @@ export async function getImageUrl(id, { thumb = false } = {}) {
   const key = `${id}:${thumb ? 't' : 'f'}`;
   if (urlCache.has(key)) return urlCache.get(key);
   const rec = await repo.images.get(id);
+  // مقطعٌ بلا صورةٍ ملتقطة لا يُسلَّم مقطعًا لطالب صورة (المرحلة ٣٨): كان يُعاد الـblob
+  // نفسه فيُوضع في <img> فلا يظهر شيء ولا يقول شيءٌ عن السبب.
+  if (rec && thumb && isVideo(rec) && !rec.thumb) return null;
   const blob = rec ? (thumb && rec.thumb ? rec.thumb : rec.blob) : null;
   if (!blob) return null;
   const url = URL.createObjectURL(blob);
   urlCache.set(key, url);
   return url;
+}
+
+/**
+ * أوّل معرّفٍ يصلح صورةً ساكنة من قائمة وسائط (المرحلة ٣٨).
+ * الطباعة والصفحة العامة تريدان صورةً لا مقطعًا: ورقةٌ لا تشغّل فيديو، وبطاقةُ عرضٍ
+ * لا تُظهر مربّعًا فارغًا. والمقطع بصورته الملتقطة يصلح، وبلا صورةٍ لا يصلح.
+ */
+export async function firstStillId(ids = []) {
+  for (const id of ids) {
+    const rec = await repo.images.get(id);
+    if (!rec) continue;
+    if (!isVideo(rec) || rec.thumb) return id;
+  }
+  return null;
+}
+
+/** يقسم قائمة وسائط إلى صورٍ ومقاطع، بالترتيب نفسه. */
+export async function splitMedia(ids = []) {
+  const images = [];
+  const videos = [];
+  for (const id of ids) {
+    const rec = await repo.images.get(id);
+    if (!rec) continue;
+    (isVideo(rec) ? videos : images).push(id);
+  }
+  return { images, videos };
 }
 
 /** يحرّر كل روابط العرض المؤقتة (يُستدعى عند تغيير الصفحة). */
@@ -104,7 +219,18 @@ export async function deleteImages(ids = []) {
 export async function imagesSummary() {
   const all = await repo.images.list();
   const bytes = all.reduce((sum, r) => sum + (r.size || 0) + (r.thumb?.size || 0), 0);
-  return { count: all.length, bytes };
+  // المقاطع تُعدّ وتُوزن على حدة (المرحلة ٣٨): مقطعٌ واحد قد يساوي مئة صورة، فخلطهما
+  // في رقمٍ واحد يُخفي سبب امتلاء المساحة عمّن يبحث عنه.
+  const videos = all.filter(isVideo);
+  const videoBytes = videos.reduce((sum, r) => sum + (r.size || 0) + (r.thumb?.size || 0), 0);
+  return {
+    count: all.length,
+    bytes,
+    videoCount: videos.length,
+    videoBytes,
+    imageCount: all.length - videos.length,
+    imageBytes: bytes - videoBytes,
+  };
 }
 
 export function formatBytes(bytes) {

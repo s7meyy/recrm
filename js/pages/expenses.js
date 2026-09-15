@@ -1,7 +1,11 @@
-// صفحة المصاريف (المرحلة ١٣): الإيراد بلا مصروف ليس ربحًا.
+// صفحة المالية (المرحلة ١٣، ووُسّعت في ٣٨): الإيراد بلا مصروف ليس ربحًا — والعكس كذلك.
 //
-// كيان بسيط عمدًا (تاريخ، مبلغ، تصنيف، ملاحظة، ربط اختياري بصفقة أو عقار) — لا محاسبة
-// مزدوجة ولا مراكز تكلفة؛ الغرض أن يصير رقم الداشبورد **صافي ربح** لا إيرادًا.
+// كانت «المصاريف» وحدها، فكان صافي الربح = عمولات الصفقات − المصاريف. وذلك يُسقط كل دخلٍ
+// لا يأتي من عمولة صفقة: **إدارة أملاك، واستشارة، وتسويقٌ لعميل، وإيجار مملوك**. فكان
+// الرقم يقول أقلّ من الحقيقة، وصاحبه يظنّ شهرًا خاسرًا وهو رابح.
+//
+// وكيانا الصفحة بسيطان عمدًا (تاريخ، مبلغ، تصنيف، ملاحظة، ربط اختياري) — لا محاسبة مزدوجة
+// ولا مراكز تكلفة؛ الغرض أن يصير رقم الداشبورد **صافي ربح** صادقًا.
 
 import { repo, ValidationError } from '../data/repository.js';
 import { ENUMS, labelFor } from '../data/schema.js';
@@ -12,20 +16,29 @@ import {
 import { formatSAR, formatDate, formatNumber, toInputDate, fromInputDate } from '../util/format.js';
 import { matchesQuery } from '../util/arabic.js';
 
-const categoryLabel = (key) => labelFor(ENUMS.expenseCategories, key);
+const categoryLabel = (key, kind = 'expense') => labelFor(kind === 'income' ? ENUMS.incomeCategories : ENUMS.expenseCategories, key);
+
+/** الكيانان متوازيان، فتُكتب الصفحة مرّة ويُبدَّل ما يخصّ النوع في مكانٍ واحد. */
+const categoriesFor = (ctx) => (ctx.kind === 'income' ? ENUMS.incomeCategories : ENUMS.expenseCategories);
+const entityFor = (ctx) => (ctx.kind === 'income' ? repo.incomes : repo.expenses);
+const itemsFor = (ctx) => (ctx.kind === 'income' ? ctx.incomes : ctx.expenses);
+const kindWord = (ctx) => (ctx.kind === 'income' ? 'إيراد' : 'مصروف');
 
 export async function render(container) {
-  const ctx = { container, query: '', category: '', months: 6, nodes: {} };
+  const ctx = { container, query: '', category: '', months: 6, kind: 'expense', nodes: {} };
   await loadData(ctx);
   build(ctx);
 }
 
 async function loadData(ctx) {
-  const [expenses, deals, properties, lists] = await Promise.all([
-    repo.expenses.list(), repo.deals.list(), repo.properties.list(), getLists(),
+  const [expenses, incomes, deals, properties, lists] = await Promise.all([
+    repo.expenses.list(), repo.incomes.list(), repo.deals.list(), repo.properties.list(), getLists(),
   ]);
-  expenses.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  const byDate = (a, b) => (b.date || '').localeCompare(a.date || '');
+  expenses.sort(byDate);
+  incomes.sort(byDate);
   ctx.expenses = expenses;
+  ctx.incomes = incomes;
   ctx.deals = deals;
   ctx.properties = properties;
   ctx.lists = lists;
@@ -38,12 +51,12 @@ async function refresh(ctx) {
 }
 
 /** ملخّص شهري: عمولاتك ناقص مصاريفك = صافي الربح. */
-export function monthlySummary({ expenses = [], deals = [], months = 6 } = {}, now = new Date()) {
+export function monthlySummary({ expenses = [], deals = [], incomes = [], months = 6 } = {}, now = new Date()) {
   const key = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   const buckets = new Map();
   for (let i = 0; i < months; i++) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    buckets.set(key(d), { month: key(d), commission: 0, expenses: 0, net: 0 });
+    buckets.set(key(d), { month: key(d), commission: 0, income: 0, expenses: 0, net: 0 });
   }
   const add = (iso, field, value) => {
     const d = new Date(iso);
@@ -53,7 +66,10 @@ export function monthlySummary({ expenses = [], deals = [], months = 6 } = {}, n
   };
   for (const deal of deals) add(deal.date, 'commission', deal.commission);
   for (const e of expenses) add(e.date, 'expenses', e.amount);
-  const rows = [...buckets.values()].map((b) => ({ ...b, net: b.commission - b.expenses }));
+  // الإيراد المسجَّل يُضاف إلى العمولات (المرحلة ٣٨) — ولا يُخلط بها في العمود كي يبقى
+  // كل مصدرٍ ظاهرًا: من أراد أن يعرف «كم من دخلي ليس عمولة» وجد الجواب.
+  for (const i of incomes) add(i.date, 'income', i.amount);
+  const rows = [...buckets.values()].map((b) => ({ ...b, net: b.commission + b.income - b.expenses }));
   return rows;
 }
 
@@ -65,15 +81,27 @@ function build(ctx) {
     onInput: debounce((e) => { ctx.query = e.target.value.trim(); renderList(ctx); }, 150),
   });
   const categoryFilter = selectEl({
-    options: [{ value: '', label: 'كل التصنيفات' }, ...ENUMS.expenseCategories.map((c) => ({ value: c.key, label: c.label }))],
-    value: '', onChange: (e) => { ctx.category = e.target.value; renderList(ctx); },
+    options: [{ value: '', label: 'كل التصنيفات' }, ...categoriesFor(ctx).map((c) => ({ value: c.key, label: c.label }))],
+    value: ctx.category, onChange: (e) => { ctx.category = e.target.value; renderList(ctx); },
+  });
+
+  // مبدّل النوع: الصفحة واحدة والكيانان متوازيان، فلا صفحتان ولا رابطان في القائمة.
+  const seg = el('div', { class: 'seg' },
+    ...[['expense', 'المصاريف'], ['income', 'الإيرادات']].map(([kind, label]) => el('button', {
+      type: 'button', class: `seg-btn${ctx.kind === kind ? ' active' : ''}`, text: label,
+      onClick: () => { ctx.kind = kind; ctx.category = ''; build(ctx); },
+    })));
+
+  ctx.nodes.addBtn = el('button', {
+    type: 'button', class: 'btn btn-primary',
+    text: ctx.kind === 'income' ? '+ إيراد' : '+ مصروف',
+    onClick: () => openForm(ctx, null),
   });
 
   ctx.container.append(
     el('div', { class: 'page-head' },
-      el('h1', {}, 'المصاريف ', ctx.nodes.count),
-      el('div', { class: 'head-actions' }, search,
-        el('button', { type: 'button', class: 'btn btn-primary', text: '+ مصروف', onClick: () => openForm(ctx, null) }))),
+      el('h1', {}, 'المالية ', ctx.nodes.count),
+      el('div', { class: 'head-actions' }, seg, search, ctx.nodes.addBtn)),
     el('div', { class: 'toolbar' }, categoryFilter));
 
   ctx.nodes.summary = el('div');
@@ -84,23 +112,25 @@ function build(ctx) {
 }
 
 function renderSummary(ctx) {
-  const rows = monthlySummary({ expenses: ctx.expenses, deals: ctx.deals, months: ctx.months });
+  const rows = monthlySummary({ expenses: ctx.expenses, incomes: ctx.incomes, deals: ctx.deals, months: ctx.months });
   const area = ctx.nodes.summary;
   clear(area);
   const current = rows[0];
   area.append(el('div', { class: 'stat-strip' },
     stat(formatSAR(current.commission), 'عمولات هذا الشهر'),
+    stat(formatSAR(current.income), 'إيرادات أخرى'),
     stat(formatSAR(current.expenses), 'مصاريف هذا الشهر'),
     stat(formatSAR(current.net), current.net < 0 ? 'خسارة هذا الشهر' : 'صافي ربح هذا الشهر')));
 
   area.append(el('div', { class: 'table-wrap' }, el('table', { class: 'table' },
-    el('thead', {}, el('tr', {}, ['الشهر', 'العمولات', 'المصاريف', 'صافي الربح'].map((t) => el('th', { text: t })))),
+    el('thead', {}, el('tr', {}, ['الشهر', 'العمولات', 'إيرادات أخرى', 'المصاريف', 'صافي الربح'].map((t) => el('th', { text: t })))),
     el('tbody', {}, rows.map((r) => el('tr', {},
       el('td', { text: r.month }),
       el('td', { class: 'num', text: formatSAR(r.commission) }),
+      el('td', { class: 'num', text: formatSAR(r.income) }),
       el('td', { class: 'num', text: formatSAR(r.expenses) }),
       el('td', {}, badge(formatSAR(r.net), r.net < 0 ? 'badge-danger' : 'badge-ok'))))))));
-  area.append(el('p', { class: 'muted small', text: 'صافي الربح = عمولاتك من الصفقات − مصاريفك. سعر البيع نفسه ليس دخلك، فلا يدخل هنا.' }));
+  area.append(el('p', { class: 'muted small', text: 'صافي الربح = عمولاتك من الصفقات + إيراداتك الأخرى − مصاريفك. وسعر البيع نفسه ليس دخلك، فلا يدخل هنا.' }));
 }
 
 function stat(value, label) {
@@ -110,13 +140,16 @@ function stat(value, label) {
 }
 
 function renderList(ctx) {
-  const items = ctx.expenses.filter((e) => (!ctx.category || e.category === ctx.category)
+  const all = itemsFor(ctx);
+  const items = all.filter((e) => (!ctx.category || e.category === ctx.category)
     && (!ctx.query || matchesQuery(e.searchKey || '', ctx.query)));
-  ctx.nodes.count.textContent = `(${items.length}${items.length === ctx.expenses.length ? '' : ` من ${ctx.expenses.length}`})`;
+  ctx.nodes.count.textContent = `(${items.length}${items.length === all.length ? '' : ` من ${all.length}`})`;
   const area = ctx.nodes.list;
   clear(area);
-  if (!ctx.expenses.length) {
-    area.append(emptyState('لا مصاريف مسجّلة بعد. سجّل وقودك وإعلاناتك ليصير رقم الأرباح صادقًا.'));
+  if (!all.length) {
+    area.append(emptyState(ctx.kind === 'income'
+      ? 'لا إيرادات مسجّلة بعد. سجّل إدارة الأملاك والاستشارات ليصير رقم أرباحك كاملًا — العمولات وحدها ليست كل دخلك.'
+      : 'لا مصاريف مسجّلة بعد. سجّل وقودك وإعلاناتك ليصير رقم الأرباح صادقًا.'));
     return;
   }
   if (!items.length) { area.append(emptyState('لا نتائج.')); return; }
@@ -125,7 +158,7 @@ function renderList(ctx) {
     el('thead', {}, el('tr', {}, ['التاريخ', 'التصنيف', 'المبلغ', 'الملاحظة', 'مرتبط بـ', ''].map((t) => el('th', { text: t })))),
     el('tbody', {}, items.map((e) => el('tr', { onClick: () => openForm(ctx, e) },
       el('td', { text: formatDate(e.date) }),
-      el('td', {}, badge(categoryLabel(e.category))),
+      el('td', {}, badge(categoryLabel(e.category, ctx.kind), ctx.kind === 'income' ? 'badge-ok' : '')),
       el('td', { class: 'num strong', text: formatSAR(e.amount) }),
       el('td', { text: e.note || '—' }),
       el('td', { text: linkedLabel(ctx, e) }),
@@ -133,10 +166,11 @@ function renderList(ctx) {
         type: 'button', class: 'icon-btn', text: '✕', title: 'حذف',
         onClick: async (ev) => {
           ev.stopPropagation();
-          const ok = await confirmDialog({ title: 'حذف المصروف', message: `حذف مصروف ${formatSAR(e.amount)}؟`, confirmText: 'حذف', danger: true });
+          const word = kindWord(ctx);
+          const ok = await confirmDialog({ title: `حذف ${word === 'إيراد' ? 'الإيراد' : 'المصروف'}`, message: `حذف ${word} ${formatSAR(e.amount)}؟`, confirmText: 'حذف', danger: true });
           if (!ok) return;
-          await repo.expenses.remove(e.id);
-          toast('حُذف المصروف', 'success');
+          await entityFor(ctx).remove(e.id);
+          toast(`حُذف ${word}`, 'success');
           await refresh(ctx);
         },
       }))))))));
@@ -156,13 +190,15 @@ function linkedLabel(ctx, e) {
 
 async function openForm(ctx, existing) {
   const isEdit = !!existing;
-  const draft = existing ? { ...existing } : { ...repo.expenses.defaults(), date: new Date().toISOString() };
+  const entity = entityFor(ctx);
+  const word = kindWord(ctx);
+  const draft = existing ? { ...existing } : { ...entity.defaults(), date: new Date().toISOString() };
   const errorsBox = el('div', { class: 'form-errors', hidden: true });
 
   const dateInput = el('input', { class: 'input', type: 'date', value: toInputDate(draft.date || null) });
   const amountInput = el('input', { class: 'input', type: 'number', min: '0', step: '1', value: draft.amount ?? '' });
   const categorySelect = selectEl({
-    options: ENUMS.expenseCategories.map((c) => ({ value: c.key, label: c.label })), value: draft.category || 'other',
+    options: categoriesFor(ctx).map((c) => ({ value: c.key, label: c.label })), value: draft.category || 'other',
   });
   const noteInput = el('input', { class: 'input', type: 'text', value: draft.note || '', placeholder: 'تفصيل قصير' });
   // المصدر (المرحلة ٣٥): من قائمة المصادر نفسها التي تُوسم بها عملاؤك — وإلا لم يلتقِ
@@ -190,10 +226,10 @@ async function openForm(ctx, existing) {
     };
     saveBtn.disabled = true;
     try {
-      if (isEdit) await repo.expenses.update(existing.id, data);
-      else await repo.expenses.create(data);
+      if (isEdit) await entity.update(existing.id, data);
+      else await entity.create(data);
       modal.close();
-      toast(isEdit ? 'تم الحفظ' : 'أُضيف المصروف', 'success');
+      toast(isEdit ? 'تم الحفظ' : `أُضيف ${word}`, 'success');
       await refresh(ctx);
     } catch (err) {
       clear(errorsBox);
@@ -205,13 +241,14 @@ async function openForm(ctx, existing) {
   });
 
   const modal = openModal({
-    title: isEdit ? 'تعديل مصروف' : 'مصروف جديد',
+    title: isEdit ? `تعديل ${word}` : `${word} جديد`,
     body: el('div', {}, errorsBox, el('div', { class: 'form-grid' },
       labeled('التاريخ', dateInput, { required: true }),
       labeled('المبلغ (ريال)', amountInput, { required: true }),
       labeled('التصنيف', categorySelect),
       labeled('مرتبط بصفقة', dealSelect, { hint: 'اختياري — يفيد في معرفة تكلفة كل صفقة' }),
-      labeled('المصدر الذي صُرف عليه', el('div', {}, sourceSelect, sourceList), { hint: 'اختياري — يحوّل تقرير المصادر من عدّ صفقات إلى ربحٍ بعد الكلفة' }),
+      labeled(ctx.kind === 'income' ? 'المصدر الذي جاء منه' : 'المصدر الذي صُرف عليه', el('div', {}, sourceSelect, sourceList),
+        { hint: 'اختياري — يحوّل تقرير المصادر من عدّ صفقات إلى ربحٍ بعد الكلفة' }),
       labeled('ملاحظة', noteInput, { full: true }))),
     footer: [
       el('button', { type: 'button', class: 'btn btn-ghost', text: 'إلغاء', onClick: () => modal.close() }),

@@ -7,6 +7,8 @@ import { getLists, getCompleteness } from '../data/settings.js';
 import { el, clear, labeled, badge, openModal, confirmDialog, toast, selectEl } from '../util/dom.js';
 import { openCaptureForm } from './tour-capture.js';
 import { renderQueue } from './tour-approve.js';
+import { formatDate } from '../util/format.js';
+import { hijriSupported, formatHijri } from '../util/hijri.js';
 
 // يقرأ #/tours/queue ليفتح تبويب "بانتظار الاعتماد" مباشرة (يستعمله طابور الداشبورد)،
 // بنفس نمط #/matches/<requestId> الموثّق. أي مسار آخر (بما فيه #/tours العادي) يفتح تبويب الجولات.
@@ -109,7 +111,7 @@ function renderToursList(ctx) {
     grid.append(el('article', { class: 'card' },
       el('div', { class: 'card-body' },
         el('div', { class: 'card-top' },
-          el('span', { class: 'card-type', text: tour.date || 'بلا تاريخ' }),
+          el('span', { class: 'card-type', text: tour.date ? formatDate(tour.date) : 'بلا تاريخ' }),
           tour.inferred ? badge('مُستنتجة من الصور', 'badge-outline') : null),
         el('div', { class: 'card-place' }, tour.districts?.length ? tour.districts.join('، ') : 'بلا أحياء محددة'),
         tour.notes ? el('div', { class: 'muted small', text: tour.notes }) : null,
@@ -166,6 +168,15 @@ function openTourForm(ctx, existing) {
   const draft = existing || repo.tours.defaults();
 
   const dateInput = el('input', { class: 'input', type: 'date', value: draft.date || '' });
+  // حقل التاريخ في المتصفّح ميلاديّ لا يُبدَّل — فيُكتب ما اخترتَه هجريًّا تحته لحظةً بلحظة،
+  // فيراجعه من يواعد الناس بالهجري قبل الحفظ. (المرحلة ٣٨)
+  const hijriHint = el('div', { class: 'muted small', style: { marginTop: '-4px' } });
+  const paintHijri = () => {
+    hijriHint.textContent = dateInput.value ? `الموافق ${formatHijri(dateInput.value)}` : '';
+  };
+  dateInput.addEventListener('change', paintHijri);
+  dateInput.addEventListener('input', paintHijri);
+  paintHijri();
   const citySelect = selectEl({ options: ctx.lists.cities.map((c) => ({ value: c, label: c })), value: draft.city });
   const districts = districtsField(ctx.lists, citySelect.value, draft.districts);
   citySelect.addEventListener('change', () => districts.setCity(citySelect.value));
@@ -211,6 +222,7 @@ function openTourForm(ctx, existing) {
     body: el('div', { class: 'form-grid one' },
       errorsBox,
       labeled('التاريخ', dateInput, { required: true }),
+      hijriSupported() ? hijriHint : null,
       labeled('المدينة', citySelect),
       labeled('الأحياء', districts.element),
       labeled('ملاحظات', notesInput)),

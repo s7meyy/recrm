@@ -138,7 +138,9 @@ console.log('\n--- ٥. بحوث محفوظة ---');
 await page.evaluate(() => { location.hash = '#/properties'; });
 await page.waitForTimeout(1500);
 ok('لا زر حفظ قبل أي فرز', await page.locator('button:has-text("احفظ هذا البحث")').count() === 0);
-await page.locator('.filters .chip').first().click();
+// رقاقة «الكل» (المرحلة ٣٨) صارت أوّل الصفّ، وهي لا تُضيّق النتيجة — فالمجموعة الفارغة
+// تعني «الكل» أصلًا. فنختار أوّل **خيار** حقيقي كي يضيق العدد فعلًا.
+await page.locator('.filters .chip:not(.chip-all)').first().click();
 await page.waitForTimeout(500);
 ok('زر الحفظ يظهر بعد الفرز', await page.locator('button:has-text("احفظ هذا البحث")').count() === 1);
 const beforeCount = (await page.locator('#page .count').innerText());

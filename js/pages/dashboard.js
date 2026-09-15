@@ -32,11 +32,12 @@ async function loadData() {
     repo.invoices.list(), repo.expenses.list(), repo.requests.list(),
   ]);
   const showings = await repo.showings.list(); // المعاينات (المرحلة ٢٧)
+  const incomes = await repo.incomes.list(); // الإيرادات (المرحلة ٣٨)
   const company = await getCompany(); // نسبة العمولة لتوقّع الإيراد (المرحلة ٢٨)
   const approved = properties.filter((p) => p.captureStatus === 'approved');
   const clientMap = new Map(clients.map((c) => [c.id, c]));
   const dealPropertyIds = new Set(deals.map((d) => d.propertyId).filter(Boolean));
-  return { clients, properties, approved, tours, matches, externals, deals, lists, completeness, followUp, tasks, invoices, expenses, requests, showings, company, clientMap, dealPropertyIds };
+  return { clients, properties, approved, tours, matches, externals, deals, lists, completeness, followUp, tasks, invoices, expenses, incomes, requests, showings, company, clientMap, dealPropertyIds };
 }
 
 /* ===== أدوات تجميع عامة ===== */
@@ -151,7 +152,7 @@ function statChip(value, label) {
 }
 
 function buildLayout(container, data) {
-  const { clients, properties, approved, tours, matches, externals, deals, lists, completeness, followUp, tasks, invoices, expenses, requests, showings, company, clientMap, dealPropertyIds } = data;
+  const { clients, properties, approved, tours, matches, externals, deals, lists, completeness, followUp, tasks, invoices, expenses, incomes, requests, showings, company, clientMap, dealPropertyIds } = data;
   clear(container);
 
   const pending = properties.filter((p) => p.captureStatus !== 'approved').length;
@@ -202,6 +203,7 @@ function buildLayout(container, data) {
       breakdownColumn('الغرض', countBy(approved, (p) => (p.purposes || []).map((k) => labelFor(ENUMS.purposes, k)))))));
 
   /* العملاء بالمرحلة */
+  grid.append(panel('مراحل الصفقات', 'أين تقف صفقاتك المفتوحة — والبند الذي تتعثّر عنده أكثرها.', ...dealStageSection(deals)));
   grid.append(panel('العملاء بحسب المرحلة', null,
     el('ul', { class: 'simple-list' }, ENUMS.clientStages.map((s) => {
       const n = clients.filter((c) => c.stage === s.key).length;
@@ -241,7 +243,7 @@ function buildLayout(container, data) {
     el('div', { class: 'muted small', text: 'صفقات العروض الخارجية (بلا عقار من مخزونك) تدخل الإيراد والعمولة أعلاه، ولا تدخل معدل التحويل.' })));
 
   /* صافي الربح ولماذا تضيع الصفقات (المرحلة ١٣) */
-  grid.append(moneyPanel('صافي الربح', null, ...profitSection({ deals, expenses })));
+  grid.append(moneyPanel('صافي الربح', null, ...profitSection({ deals, expenses, incomes })));
   grid.append(panel('أين تضيع: قمع التحويل', null, ...funnelSection({ requests, matches })));
   grid.append(panel('لماذا تضيع الصفقات', null, ...rejectSection(matches)));
   grid.append(panel('لماذا يتركك الناس', 'سبب موت الطلب كلّه لا سبب رفض عرضٍ واحد.', ...lossSection(requests)));
@@ -481,7 +483,7 @@ function funnelSection({ requests, matches }) {
 }
 
 /** عمولاتك ناقص مصاريفك — سعر البيع نفسه ليس دخلك فلا يدخل هنا. */
-function profitSection({ deals, expenses }) {
+function profitSection({ deals, expenses, incomes = [] }) {
   const now = new Date();
   const inRange = (iso, kind) => {
     const d = new Date(iso);
@@ -491,12 +493,16 @@ function profitSection({ deals, expenses }) {
   const sum = (list, key, kind) => list.filter((x) => inRange(x.date, kind)).reduce((a, x) => a + (Number(x[key]) || 0), 0);
   const rows = [['month', 'هذا الشهر'], ['year', 'هذه السنة']].map(([kind, label]) => {
     const commission = sum(deals, 'commission', kind);
+    // الإيراد المسجَّل (المرحلة ٣٨): إدارة أملاك واستشارات وغيرها. وبدونه كان الرقم
+    // يقول أقلّ من الحقيقة، فيُظنّ شهرٌ خاسرًا وهو رابح.
+    const income = sum(incomes, 'amount', kind);
     const spent = sum(expenses, 'amount', kind);
-    return { label, commission, spent, net: commission - spent };
+    return { label, commission, income, spent, net: commission + income - spent };
   });
   return [
     el('dl', { class: 'kv' }, rows.flatMap((r) => [
       el('dt', { text: `عمولات ${r.label}` }), el('dd', { text: formatSAR(r.commission) }),
+      el('dt', { text: `إيرادات أخرى ${r.label}` }), el('dd', { text: formatSAR(r.income) }),
       el('dt', { text: `مصاريف ${r.label}` }), el('dd', { text: formatSAR(r.spent) }),
       el('dt', { text: `صافي ${r.label}` }), el('dd', {}, badge(formatSAR(r.net), r.net < 0 ? 'badge-danger' : 'badge-ok')),
     ])),
@@ -549,6 +555,51 @@ function lossSection(requests) {
       : el('div', { class: 'muted small', text: 'لم يُسجَّل سبب لأي طلب موقوف بعد — اختر السبب عند تغيير حالة الطلب إلى «موقوف».' }),
     withReason.length && withReason.length < 10
       ? el('div', { class: 'muted small', text: 'العيّنة صغيرة: لا تبنِ قرارًا على أقل من عشرة أسباب.' })
+      : null,
+  ].filter(Boolean);
+}
+
+/**
+ * مراحل الصفقات (المرحلة ٣٨): أين تقف صفقاتك المفتوحة؟
+ *
+ * «مراحل العملاء» موجودة منذ زمن، ولا مقابل لها في الصفقة — مع أن للصفقة مسارًا مكتوبًا
+ * منذ المرحلة ٢٤ (`checklist`): اتفاقية موقّعة، صورة هوية، توثيق العقد، استلام العمولة.
+ * وهو يُملأ في كل صفقة ولا يُجمع في مكان، فلا يُرى **أين تتعثّر صفقاتك عامّةً**.
+ *
+ * والبند الذي يتخلّف فيه أكثرُ صفقاتك هو عنق الزجاجة عندك — وقد يكون ورقةً تنتظرها من
+ * غيرك، أو خطوةً تؤجّلها أنت.
+ */
+function dealStageSection(deals) {
+  const open = deals.filter((d) => Array.isArray(d.checklist) && d.checklist.length);
+  if (!open.length) {
+    return [el('div', { class: 'muted small', text: 'لا صفقات لها مسار بعد — يُنشأ المسار من قالبه في الإعدادات عند إنشاء الصفقة.' })];
+  }
+  // البنود بترتيبها في أول صفقة: هو ترتيب القالب نفسه.
+  const steps = new Map();
+  for (const d of open) {
+    for (const step of d.checklist) {
+      const key = step.label || step.key;
+      if (!key) continue;
+      if (!steps.has(key)) steps.set(key, { label: key, done: 0, total: 0 });
+      const row = steps.get(key);
+      row.total++;
+      if (step.done) row.done++;
+    }
+  }
+  const rows = [...steps.values()];
+  const stuck = rows.filter((r) => r.total > 0).sort((a, b) => (a.done / a.total) - (b.done / b.total))[0];
+  return [
+    el('div', { class: 'stat-strip' },
+      statChip(open.length, 'صفقة لها مسار'),
+      statChip(open.filter((d) => d.checklist.every((s2) => s2.done)).length, 'اكتمل مسارها')),
+    ...rows.map((r) => el('div', { class: 'goal-row' },
+      el('div', { class: 'goal-head' },
+        el('span', { text: r.label }),
+        el('span', { class: 'num', text: `${formatNumber(r.done)} / ${formatNumber(r.total)}` })),
+      el('div', { class: 'goal-track' },
+        el('div', { class: `goal-fill${r.done === r.total ? ' done' : ''}`, style: { width: `${Math.round((r.done / r.total) * 100)}%` } })))),
+    stuck && stuck.done < stuck.total
+      ? el('p', { class: 'muted small', text: `أكثر ما تتعثّر عنده صفقاتك: «${stuck.label}» — ${formatNumber(stuck.total - stuck.done)} صفقة تنتظره.` })
       : null,
   ].filter(Boolean);
 }

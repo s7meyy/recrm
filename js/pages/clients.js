@@ -6,7 +6,7 @@ import { getLists, addClientTag, typeLabel, statusLabel, getFollowUpSettings } f
 import { sourceField, rememberSource, sourceBadge } from '../util/source-field.js';
 import {
   el, clear, labeled, fieldGroup, selectEl, checkbox, badge, openModal, confirmDialog,
-  promptDialog, toast, emptyState, debounce,
+  promptDialog, toast, emptyState, debounce, allChip,
 } from '../util/dom.js';
 import {
   formatDate, formatDateTime, formatSAR, formatNumber, relativeDays, daysBetween, daysWord,
@@ -120,6 +120,8 @@ function renderFilters(ctx) {
     const options = optionsFor(ctx, group);
     if (!options.length) continue;
     const chips = el('div', { class: 'chips' });
+    chips.append(allChip(ctx.filters[group], options.map((o) => o.value),
+      () => { renderFilters(ctx); renderList(ctx); }));
     for (const opt of options) {
       const n = ctx.clients.filter((c) => passes(ctx, c, group) && VALUES[group](c).includes(opt.value)).length;
       const active = ctx.filters[group].has(opt.value);

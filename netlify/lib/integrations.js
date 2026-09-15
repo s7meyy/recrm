@@ -105,7 +105,11 @@ export const INTEGRATIONS = {
   whatsapp: {
     key: 'whatsapp',
     label: 'واتساب للأعمال — رسالة بقالب معتمَد',
+    // استقبال الرسائل (المرحلة ٣٨) يحتاج اثنين آخرين: رمزَ مصافحةٍ تُثبت به ملكيّة
+    // العنوان، وسرَّ التطبيق الذي تُوقَّع به الرسائل الواردة. وبلا الثاني لا يُقبل واردٌ
+    // أصلًا — راجع netlify/functions/whatsapp.js.
     env: ['WHATSAPP_PHONE_ID', 'WHATSAPP_TOKEN'],
+    envOptional: ['WHATSAPP_VERIFY_TOKEN', 'WHATSAPP_APP_SECRET'],
     actions: ['template.send'],
     async run(action, payload) {
       if (action !== 'template.send') throw new Error('إجراء غير معروف');
@@ -219,6 +223,10 @@ export function statusAll() {
       configured: missing.length === 0,
       missing,
       env: def.env,
+      // اختياريّ لا يمنع الأساسَ من العمل، لكن نقصانه يُعطّل بابًا بعينه — فيُقال
+      // منفصلًا لا مخلوطًا بالناقص الأساسي (المرحلة ٣٨).
+      optional: def.envOptional || [],
+      missingOptional: (def.envOptional || []).filter((name) => !has(name)),
       actions: def.actions,
     };
   });

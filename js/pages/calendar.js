@@ -9,7 +9,8 @@ import { monthEvents, monthGrid, icsCalendar, EVENT_KINDS, dayKey } from '../uti
 import { agreementState } from '../util/agreements.js';
 import { downloadBlob } from '../data/backup.js';
 import { el, clear, badge, toast } from '../util/dom.js';
-import { formatNumber, formatDateTime } from '../util/format.js';
+import { formatNumber, formatDateTime, hijriMode } from '../util/format.js';
+import { hijriSupported, hijriDay, hijriRange, formatHijri } from '../util/hijri.js';
 
 const MONTHS = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
 const WEEKDAYS = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
@@ -59,7 +60,13 @@ function build(ctx) {
           title: 'ملف تفتحه فيُضاف إلى تقويم جوالك',
           onClick: () => exportMonth(ctx, events),
         }))),
-    el('h2', { class: 'section-title', text: `${MONTHS[ctx.month]} ${ctx.year}` }),
+    // عنوان الشهر بالتقويمين (المرحلة ٣٨): الشهر الميلادي يقع غالبًا على شهرين هجريَّين،
+    // فيُذكران معًا — لا أوّلهما وحده، وإلّا كان نصف الشهر معنونًا بما ليس فيه.
+    el('h2', { class: 'section-title' },
+      `${MONTHS[ctx.month]} ${ctx.year}`,
+      hijriMode() && hijriSupported()
+        ? el('span', { class: 'muted section-title-alt', text: ` · ${hijriRange(new Date(ctx.year, ctx.month, 1), new Date(ctx.year, ctx.month + 1, 0))}` })
+        : null),
   );
 
   if (!events.length) {
@@ -79,7 +86,13 @@ function build(ctx) {
       const list = days.get(key) || [];
       const isToday = key === dayKey(new Date());
       return el('td', { class: `cal-cell${isToday ? ' cal-today' : ''}` },
-        el('div', { class: 'cal-num', text: formatNumber(date.getDate()) }),
+        el('div', { class: 'cal-num' },
+          formatNumber(date.getDate()),
+          hijriMode() && hijriSupported()
+            // الفاصل نصٌّ في الصفحة لا زخرفةَ CSS: المولَّد لا يُنسخ وقد يتخطّاه قارئ
+            // الشاشة، فيُقرأ اليومان رقمًا واحدًا «١١٩».
+            ? el('span', { class: 'cal-num-hijri', title: formatHijri(date), text: `· ${hijriDay(date)}` })
+            : null),
         ...list.slice(0, 4).map((e) => el('a', {
           class: `cal-event cal-${e.kind}`,
           href: e.href || '#/calendar',

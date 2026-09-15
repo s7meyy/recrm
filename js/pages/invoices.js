@@ -334,8 +334,72 @@ async function openForm(ctx, existing, newType = 'invoice') {
   };
   drawItems();
 
+  /**
+   * البنود الجاهزة ونسبة الوساطة (المرحلة ٣٨).
+   *
+   * **البنود**: الوصف نفسه يتكرّر عشرات المرّات ويختلف كتابةً في كلٍّ منها. قائمةٌ من
+   * الإعدادات تجعله اختيارًا — ويبقى قابلًا للتعديل في المستند (القالب لا يحبس مستندًا).
+   *
+   * **والنسبة**: كانت تُقرأ من الإعدادات ولا تُرى هنا، فمن أراد تغييرها لفاتورةٍ واحدة
+   * خرج من المستند إلى صفحة الإعدادات وغيّرها **للمستندات كلّها**، أو حسبها بيده. وهذه
+   * تحسبها في مكانها: تكتب سعر الصفقة، فيُحسب البند بنسبتك — والنسبة قابلة للتعديل هنا
+   * **بلا أن تُحفظ في الإعدادات**، فتعديلُ فاتورةٍ لا يغيّر ما بعدها.
+   */
+  const products = String(ctx.company.invoiceProducts || '').split('\n')
+    .map((line) => {
+      const [description, price] = line.split('|');
+      return { description: (description || '').trim(), unitPrice: Number(price) || 0 };
+    })
+    .filter((x) => x.description);
+
+  const percentInput = el('input', {
+    class: 'input commission-percent', type: 'number', min: '0', max: '100', step: '0.25',
+    'aria-label': 'نسبة الوساطة (٪)',
+    value: ctx.company.commissionPercent ?? 2.5, style: { maxWidth: '90px' },
+  });
+  const dealPriceInput = el('input', {
+    class: 'input commission-price', type: 'number', min: '0', step: '1000',
+    'aria-label': 'سعر الصفقة',
+    placeholder: 'سعر الصفقة', style: { maxWidth: '150px' },
+  });
+  const commissionBtn = el('button', {
+    type: 'button', class: 'btn btn-sm', text: 'أضف بند العمولة',
+    onClick: () => {
+      const price = Number(dealPriceInput.value) || 0;
+      const percent = Number(percentInput.value) || 0;
+      if (price <= 0) { toast('اكتب سعر الصفقة أولًا', 'error'); return; }
+      items.push({
+        description: `عمولة وساطة ${percent}٪ من ${formatSAR(price)}`,
+        qty: 1,
+        unitPrice: Math.round(price * percent) / 100,
+      });
+      drawItems();
+    },
+  });
+
+  const productSelect = selectEl({
+    class: 'input product-picker',
+    'aria-label': 'بند جاهز',
+    options: products.map((p2, i) => ({ value: String(i), label: p2.unitPrice ? `${p2.description} — ${formatSAR(p2.unitPrice)}` : p2.description })),
+    placeholder: 'بند جاهز…',
+    onChange: (e) => {
+      const chosen = products[Number(e.target.value)];
+      if (!chosen) return;
+      items.push({ description: chosen.description, qty: 1, unitPrice: chosen.unitPrice });
+      e.target.value = '';
+      drawItems();
+    },
+  });
+
   const itemsBlock = el('div', { class: 'panel-block' },
     el('h3', { text: 'البنود' }),
+    el('div', { class: 'row', style: { marginBottom: '10px', gap: '8px' } },
+      products.length ? productSelect : null,
+      el('span', { class: 'muted small', text: 'أو احسب العمولة:' }),
+      dealPriceInput,
+      percentInput,
+      el('span', { class: 'muted small', text: '٪' }),
+      commissionBtn),
     el('div', { class: 'table-wrap' },
       el('table', { class: 'table invoice-items' },
         el('thead', {}, el('tr', {}, ['الوصف', 'الكمية', 'سعر الوحدة', 'الإجمالي', ''].map((t) => el('th', { text: t })))),

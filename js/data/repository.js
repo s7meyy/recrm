@@ -53,6 +53,26 @@ function cleanLocation(loc) {
   return { lat, lng };
 }
 
+/**
+ * عقد إدارة الأملاك (المرحلة ٣٨).
+ * null إن لم يكن العقار تحت الإدارة. والأجر إمّا نسبةً من الإيجار وإمّا مبلغًا شهريًّا —
+ * لا ثالث لهما في العُرف هنا، فأيُّ قيمةٍ أخرى تُردّ إلى النسبة لا تُحفظ خطأً صامتًا.
+ */
+function cleanManagement(m) {
+  if (!m || typeof m !== 'object') return null;
+  const feeType = m.feeType === 'fixed' ? 'fixed' : 'percent';
+  const out = {
+    startAt: m.startAt || null,
+    endAt: m.endAt || null,
+    feeType,
+    feeValue: toNumberOrNull(m.feeValue),
+    notes: trim(m.notes),
+  };
+  // عقدٌ بلا بدايةٍ ولا نهايةٍ ولا أجرٍ ولا ملاحظة ليس عقدًا — يُعامَل كأنّه ليس.
+  const empty = !out.startAt && !out.endAt && out.feeValue == null && !out.notes;
+  return empty && m.active !== true ? null : out;
+}
+
 const inEnum = (list, key) => list.some((x) => x.key === key);
 
 /* تطبيع كل كيان قبل الحفظ */
@@ -104,9 +124,13 @@ const PREPARE = {
     rec.typeFields = obj(rec.typeFields);
     rec.extra = obj(rec.extra);
     rec.referralSource = trim(rec.referralSource); // تاق المصدر — غير `source` (مسار الإدخال)
+    rec.management = cleanManagement(rec.management); // إدارة الأملاك (المرحلة ٣٨)
     rec.searchKey = buildSearchKey([
       rec.city, rec.district, rec.notes, ...Object.values(rec.typeFields), ...Object.values(rec.extra),
       rec.referralSource,
+      // «إدارة أملاك» كلمةٌ يبحث بها من يبحث — فتدخل مفتاح البحث لا تبقى حقلًا صامتًا.
+      rec.management ? 'إدارة أملاك' : '',
+      rec.management?.notes || '',
     ]);
   },
   tours(rec) {
@@ -939,6 +963,7 @@ export const repo = {
   invoices: makeEntity('invoices'),
   trash,
   expenses: makeEntity('expenses'),
+  incomes: makeEntity('incomes'), // الإيرادات (المرحلة ٣٨)
   audio: makeEntity('audio'), // الملاحظات الصوتية (المرحلة ٢٦)
   showings: makeEntity('showings'), // المعاينات (المرحلة ٢٧)
 

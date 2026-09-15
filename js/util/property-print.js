@@ -5,7 +5,7 @@
 import { el, clear } from './dom.js';
 import { formatSAR, formatArea, formatDate, formatNumber, daysWord } from './format.js';
 import { formatPhone } from './phone.js';
-import { getImageUrl } from '../data/images.js';
+import { getImageUrl, splitMedia } from '../data/images.js';
 import { labelFor, ENUMS, TYPE_FIELD_GROUPS } from '../data/schema.js';
 import { typeLabel, typeGroup } from '../data/settings.js';
 import { propertyEvidence, MIN_SAMPLE } from './property-evidence.js';
@@ -57,7 +57,10 @@ function printNode(node) {
 /** بطاقة عقار واحدة كعنصر (تُستعمل مفردة أو داخل كتالوج). */
 async function propertyCard(property, { lists, publicUrl = '' } = {}) {
   const images = [];
-  for (const id of (property.images || []).slice(0, MAX_IMAGES)) {
+  // الورقة لا تشغّل مقطعًا (المرحلة ٣٨): تُطبع الصور وحدها، والمقاطع تُتخطّى صامتةً
+  // لا تُطبع مربّعاتٍ سوداء.
+  const stills = (await splitMedia(property.images || [])).images;
+  for (const id of stills.slice(0, MAX_IMAGES)) {
     try {
       const url = await getImageUrl(id);
       if (url) images.push(el('img', { class: 'print-photo', src: url, alt: '' }));

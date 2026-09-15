@@ -1,7 +1,7 @@
 // مخططات الكيانات: الحقول، القيم الافتراضية، القوائم الثابتة، والحقول التي تظهر بحسب نوع العقار.
 // الحقول المشتركة لكل سجل (تضيفها طبقة البيانات): id, createdAt, updatedAt, createdBy, updatedBy, searchKey.
 
-export const STORES = ['clients', 'properties', 'tours', 'requests', 'matches', 'externalListings', 'deals', 'images', 'settings', 'taskLists', 'tasks', 'notes', 'invoices', 'expenses', 'audio', 'showings'];
+export const STORES = ['clients', 'properties', 'tours', 'requests', 'matches', 'externalListings', 'deals', 'images', 'settings', 'taskLists', 'tasks', 'notes', 'invoices', 'expenses', 'incomes', 'audio', 'showings'];
 // ملاحظة: `trash` (سلة المحذوفات، المرحلة ٢١) ليست في STORES عمدًا — شبكة أمان محلّية
 // لا بيانات تُصدَّر: إدراجها في النسخة الاحتياطية يضخّمها بما حذفتَه قصدًا.
 
@@ -71,6 +71,16 @@ export const ENUMS = {
     { key: 'client', label: 'عميل' },
     { key: 'property', label: 'عقار' },
     { key: 'request', label: 'طلب' },
+  ],
+  // مصادر الإيراد (المرحلة ٣٨): دخلٌ لا يأتي من عمولة صفقة — وكان لا يُسجَّل أصلًا،
+  // فصافي الربح يقول أقلّ من الحقيقة، والداشبورد يعرض نصف الصورة.
+  incomeCategories: [
+    { key: 'commission', label: 'عمولة وساطة' },
+    { key: 'management', label: 'إدارة أملاك' },
+    { key: 'consulting', label: 'استشارة أو تقييم' },
+    { key: 'marketing', label: 'تسويق لعميل' },
+    { key: 'rent', label: 'إيجار مملوك' },
+    { key: 'other', label: 'أخرى' },
   ],
   expenseCategories: [ // المصاريف (المرحلة ١٣) — صافي الربح = العمولات − هذه
     { key: 'fuel', label: 'وقود ومواصلات' },
@@ -261,7 +271,13 @@ export const SCHEMAS = {
       referralSource: '', // تاق المصدر (المرحلة ٨) — لا يخلط بـ source أعلاه (مسار الإدخال: جولة/يدوي/خارجي)
       // تاريخ السعر (المرحلة ١٩): [{ at, price }] يُضاف إليه تلقائيًا عند كل تغيير سعر.
       // يجيب: كم خفّض المالك؟ وكم مضى على هذا السعر؟ — وكلاهما ورقة تفاوض.
-      priceHistory: []
+      priceHistory: [],
+      // إدارة الأملاك (المرحلة ٣٨): العقار قد يُدار لصاحبه لا يُباع له — إيجارٌ يُحصَّل،
+      // وصيانةٌ تُتابَع، وعقدٌ يُجدَّد بأجرٍ معلوم. وكان هذا يُكتب في الملاحظات نصًّا حرًّا
+      // فلا يُفرز به ولا يُذكَّر بانتهائه ولا يُحسب دخلُه.
+      // null = ليس تحت الإدارة. وإلّا: { startAt, endAt, feeType, feeValue, notes }
+      //   feeType: 'percent' (من الإيجار) | 'fixed' (مبلغ شهريّ)
+      management: null,
     }),
   },
   tours: {
@@ -390,6 +406,18 @@ export const SCHEMAS = {
     defaults: () => ({
       text: '', color: null, pinned: false, archived: false, tags: [],
       linkType: null, linkId: null, // ENUMS.linkTypes
+    }),
+  },
+  incomes: { // الإيرادات (المرحلة ٣٨): دخلٌ خارج عمولات الصفقات
+    required: ['date', 'amount'],
+    labels: { date: 'التاريخ', amount: 'المبلغ' },
+    defaults: () => ({
+      date: '', amount: null,
+      category: 'other', // ENUMS.incomeCategories
+      note: '',
+      clientId: null, propertyId: null, dealId: null, // ربط اختياري
+      // مصدر العميل الذي جاء منه هذا الدخل — يلتقي بتقرير المصادر كما يلتقي المصروف.
+      source: '',
     }),
   },
   expenses: { // المصاريف (المرحلة ١٣): الإيراد بلا مصروف ليس ربحًا

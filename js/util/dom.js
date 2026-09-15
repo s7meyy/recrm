@@ -164,3 +164,31 @@ export function toast(message, kind = 'info', ms = 3500) {
   root.append(node);
   setTimeout(() => node.remove(), ms);
 }
+
+
+/**
+ * رقاقة «الكل» في رأس صفّ فلاتر (المرحلة ٣٨).
+ *
+ * ضغطةٌ تحدّد كل خيارات المجموعة، وأخرى تمحو التحديد كلّه. وفائدتها ليست تغيير النتيجة
+ * — المجموعة الفارغة تعني «الكل» في كل الفلاتر هنا أصلًا — وإنما **طريق العمل**:
+ * أن تحدّد الكل ثم تنزع اثنين أسرع من أن تحدّد ستةً واحدًا واحدًا. ولذلك تُظهر حالتها:
+ * مُضيئةً حين يكون الكلّ محدَّدًا، ورماديةً حين لا شيء.
+ *
+ * @param {Set} set مجموعة القيم المحدَّدة (تُعدَّل في مكانها)
+ * @param {string[]} values كل القيم الممكنة في هذه المجموعة
+ * @param {() => void} onChange يُستدعى بعد التبديل
+ */
+export function allChip(set, values, onChange) {
+  const total = values.length;
+  const allOn = total > 0 && values.every((v) => set.has(v));
+  return el('button', {
+    type: 'button',
+    class: `chip chip-all${allOn ? ' active' : ''}`,
+    title: allOn ? 'امحُ التحديد' : 'حدّد الكل',
+    onClick: () => {
+      if (allOn) set.clear();
+      else for (const v of values) set.add(v);
+      onChange();
+    },
+  }, allOn ? 'امحُ الكل' : 'الكل', el('span', { class: 'chip-count', text: String(total) }));
+}

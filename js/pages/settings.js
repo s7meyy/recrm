@@ -4,7 +4,7 @@
 import { repo, getCurrentUser } from '../data/repository.js';
 import { ENUMS, COMPLETENESS_CANDIDATES, labelFor } from '../data/schema.js';
 import {
-  updateUserName, getLists, addPropertyType, removePropertyType, addPropertyStatus, removePropertyStatus,
+  updateUserName, userHandle, getLists, addPropertyType, removePropertyType, addPropertyStatus, removePropertyStatus,
   addClientTag, removeClientTag, isBuiltinClientTag, addSource, removeSource, addCity, addDistrict, removeDistrict,
   getCustomFields, addCustomField, removeCustomField, getCompleteness, setCompleteness, getBackupInfo,
   getMatchingSettings, setMatchingSettings, DEFAULT_MATCHING, getZones, addZone, updateZone, removeZone,
@@ -36,7 +36,8 @@ import { audioSummary } from '../data/audio.js';
 import { seedExists, insertSeed, clearSeed } from '../data/seed.js';
 import { el, clear, labeled, selectEl, checkbox, badge, confirmDialog, openModal, toast, appendChildren } from '../util/dom.js';
 import { clientTagClass } from '../data/schema.js';
-import { formatDateTime, relativeDays } from '../util/format.js';
+import { formatDate, formatDateTime, relativeDays, setHijriMode } from '../util/format.js';
+import { hijriSupported } from '../util/hijri.js';
 
 const dataChanged = () => window.dispatchEvent(new CustomEvent('kassab:data-changed'));
 
@@ -47,7 +48,7 @@ export async function render(container) {
   container.append(grid);
   grid.append(
     panel('المستخدم الحالي', 'اسمك يُسجَّل على كل ما تنشئه أو تعدّله (تمهيدًا لتعدد المستخدمين لاحقًا).', userBody),
-    panel('المظهر', 'فاتح أو داكن، أو اتباع إعداد جهازك.', themeBody),
+    panel('المظهر والتاريخ', 'فاتح أو داكن، وإظهار التاريخ الهجري مع الميلادي.', themeBody),
     panel('القفل التلقائي', 'يقفل التطبيق بعد مدّة بلا نشاط — لأن جوالًا على طاولة مجلس يعني قائمة عملائك مكشوفة. معطَّل حتى تضبط مدّته.', autoLockBody),
     panel('ترتيب صفحات القائمة الجانبية', 'رتّب الصفحات كما تريد رؤيتها في القائمة. كل الصفحات تبقى ظاهرة؛ الترتيب فقط هو ما يُحفظ.', sidebarOrderBody),
     panel('بيانات الشركة والمستندات', 'ما يُطبع أعلى الفاتورة وعرض السعر: الاسم والشعار وبيانات التواصل، وسلسلتا الترقيم التلقائي.', companyBody),
@@ -103,7 +104,18 @@ async function userBody() {
         try { await updateUserName(input.value); toast('تم حفظ الاسم', 'success'); } catch (err) { errToast(err); }
       },
     }),
-    el('span', { class: 'muted small' }, `المعرّف: ${user.id}`),
+    // «المعرّف» كان سطرًا من ٣٦ حرفًا لا يُقرأ ولا يُملى في الهاتف. وهو يلزم أحيانًا
+    // (يُوسَم به من غيَّر السجلّ في «ماذا تغيّر ومتى»)، فلا يُحذف: يُختصر إلى يوزرٍ قصير
+    // يُقرأ ويُنطق، والكامل تحت الضغط ينسخه من أراده. (المرحلة ٣٨)
+    el('button', {
+      type: 'button', class: 'btn btn-ghost btn-sm', title: `المعرّف الكامل: ${user.id} — اضغط لنسخه`,
+      onClick: async () => {
+        try {
+          await navigator.clipboard.writeText(user.id);
+          toast('نُسخ المعرّف الكامل', 'success');
+        } catch { toast(`المعرّف: ${user.id}`); }
+      },
+    }, 'يوزر: ', el('span', { class: 'ltr', text: userHandle(user) })),
     // بوابة الدخول (المرحلة ٩) تُدار من الخادم؛ هذا الرابط يمسح كوكي الجلسة فقط.
     el('a', { class: 'btn btn-ghost', href: '/__logout', text: 'تسجيل الخروج' }));
 }
@@ -1512,7 +1524,7 @@ async function themeBody(redraw) {
     { key: 'light', label: '☀️ فاتح' },
     { key: 'dark', label: '🌙 داكن' },
   ];
-  return el('div', { class: 'row' }, options.map((o) => el('button', {
+  const themeRow = el('div', { class: 'row' }, options.map((o) => el('button', {
     type: 'button', class: `btn${o.key === current ? ' btn-primary' : ''}`, text: o.label,
     onClick: async () => {
       await setUI({ theme: o.key });
@@ -1520,4 +1532,28 @@ async function themeBody(redraw) {
       await redraw();
     },
   })));
+
+  // التاريخ الهجري (المرحلة ٣٨): مع الميلادي لا بدلًا منه — ما يُحفظ يبقى ميلاديًّا،
+  // وهذا عرضٌ فقط. ويُطفأ لمن لا يريده فيعود كلُّ تاريخٍ كما كان.
+  const today = new Date().toISOString();
+  const sample = el('div', { class: 'muted small' });
+  const paintSample = () => { sample.textContent = `مثال: ${formatDate(today)}`; };
+  const hijriBox = checkbox('أظهر التاريخ الهجري مع الميلادي', {
+    checked: ui.hijri !== false,
+    onChange: async (e) => {
+      await setUI({ hijri: e.target.checked });
+      setHijriMode(e.target.checked);
+      paintSample();
+      toast(e.target.checked ? 'الهجري يظهر مع الميلادي في كل الصفحات' : 'عاد التاريخ ميلاديًّا وحده', 'success');
+    },
+  });
+  paintSample();
+
+  return el('div', {},
+    themeRow,
+    el('div', { class: 'panel-block' },
+      el('h3', { text: 'التاريخ' }),
+      hijriSupported()
+        ? el('div', {}, hijriBox, sample)
+        : el('div', { class: 'muted small', text: 'متصفّحك لا يعرف تقويم أمّ القرى، فيبقى التاريخ ميلاديًّا. جرّب متصفّحًا أحدث.' })));
 }

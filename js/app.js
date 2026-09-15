@@ -10,6 +10,8 @@ import { startFollowUpAlerts } from './util/follow-up-alerts.js';
 import { initGlobalSearch } from './util/global-search.js';
 import { applySidebarOrder } from './util/sidebar.js';
 import { applyTheme } from './util/theme.js';
+import { setHijriMode } from './util/format.js';
+import { initVoiceBar } from './util/voice-bar.js';
 import { startAutoLock } from './util/auto-lock.js';
 import { initClientMode, applyClientMode, clientModeOn } from './util/client-mode.js';
 import { el, clear, toast } from './util/dom.js';
@@ -35,6 +37,9 @@ import * as clientPage from './pages/client.js';
 import * as healthPage from './pages/health.js';
 import * as settingsPage from './pages/settings.js';
 import * as integrationsPage from './pages/integrations.js';
+import * as managementPage from './pages/management.js';
+import * as stampPage from './pages/stamp.js';
+import * as whatsappPage from './pages/whatsapp.js';
 import { applyRole } from './util/role.js';
 
 // سجل الصفحات: الصفحات اللاحقة تُضاف هنا وفي القائمة الجانبية في index.html.
@@ -51,8 +56,11 @@ const ROUTES = {
   external: { title: 'العروض الخارجية', render: externalPage.render },
   pricing: { title: 'تقدير السعر', render: pricingPage.render },
   calendar: { title: 'التقويم', render: calendarPage.render },
+  management: { title: 'إدارة الأملاك', render: managementPage.render },
+  stamp: { title: 'ختم الصور والمقاطع', render: stampPage.render },
+  whatsapp: { title: 'واتساب', render: whatsappPage.render },
   invoices: { title: 'الفواتير وعروض الأسعار', render: invoicesPage.render },
-  expenses: { title: 'المصاريف', render: expensesPage.render },
+  expenses: { title: 'المالية', render: expensesPage.render },
   publish: { title: 'الصفحة العامة للعروض', render: publishPage.render },
   tasks: { title: 'المهام', render: tasksPage.render },
   notes: { title: 'الأفكار والملاحظات', render: notesPage.render },
@@ -109,7 +117,9 @@ function markTableHeaders(root) {
 }
 
 /** مساراتٌ كلّها مال: لا تُفتح بدور المساعد (المرحلة ٣٦). */
-const OWNER_ONLY_ROUTES = new Set(['invoices', 'expenses', 'integrations']);
+// «واتساب» للمالك وحده (المرحلة ٣٨): الحملة تُرسل باسم المكتب وتُحاسَب عليه،
+// والوارد فيه أرقام العملاء وكلامهم.
+const OWNER_ONLY_ROUTES = new Set(['invoices', 'expenses', 'integrations', 'whatsapp']);
 
 async function navigate() {
   const name = routeName();
@@ -300,11 +310,16 @@ async function init() {
     toast(e.reason?.message || 'حدث خطأ غير متوقع', 'error');
   });
 
-  applyTheme((await getUI()).theme || 'system'); // قبل أول رسم كي لا يومض البياض
+  const ui0 = await getUI();
+  applyTheme(ui0.theme || 'system'); // قبل أول رسم كي لا يومض البياض
+  // الهجري مع الميلادي (المرحلة ٣٨): يُضبط قبل أول رسم، فلا تُرسم صفحةٌ بتقويمٍ ثم تُعاد
+  // بآخر. والافتراضي مُشغَّل — هذا بلدٌ يُؤرَّخ فيه بالتقويمين معًا.
+  setHijriMode(ui0.hijri !== false);
   if (!location.hash) history.replaceState(null, '', `#/${DEFAULT_ROUTE}`);
   await applySidebarOrder(); // ترتيب صفحات القائمة الجانبية المحفوظ من الإعدادات (المرحلة ٨)
   await initSidebarState(); // قبل أول تنقّل كي لا تُطوى القائمة ثم تُفتح أمام عينك
   initGlobalSearch();
+  initVoiceBar(); // أمرٌ بالصوت في كل صفحة (المرحلة ٣٨) — لا يسمع شيئًا حتى تضغطه
   initClientMode(); // وضع العرض للعميل (المرحلة ١٣)
   startFollowUpAlerts();
   await initAutoLock(); // القفل التلقائي بعد خمول (المرحلة ٣٢)

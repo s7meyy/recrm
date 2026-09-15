@@ -14,7 +14,7 @@ import { parseListingText } from '../data/listing-parse.js';
 import { storeImage, getImageUrl, removeImage } from '../data/images.js';
 import {
   el, clear, badge, labeled, fieldGroup, selectEl, checkbox, emptyState, debounce,
-  openModal, confirmDialog, toast,
+  openModal, confirmDialog, toast, allChip,
 } from '../util/dom.js';
 import { formatSAR, formatArea, formatNumber, formatDate, toInputDate, fromInputDate } from '../util/format.js';
 import { matchesQuery } from '../util/arabic.js';
@@ -168,6 +168,8 @@ function renderFilters(ctx) {
     const options = optionsFor(ctx, group);
     if (!options.length) continue;
     const chips = el('div', { class: 'chips' });
+    chips.append(allChip(ctx.filters[group], options.map((o) => o.value),
+      () => { renderNotice(ctx); renderFilters(ctx); renderList(ctx); }));
     for (const opt of options) {
       const n = ctx.items.filter((x) => passes(ctx, x, group) && VALUES[group](x).includes(opt.value)).length;
       const active = ctx.filters[group].has(opt.value);

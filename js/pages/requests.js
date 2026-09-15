@@ -12,7 +12,7 @@ import { loadMatchingContext, candidatesFor, priceFlexFor, areaFlexFor } from '.
 import { priceSamples, budgetRealityGap } from '../util/price-stats.js';
 import {
   el, clear, labeled, fieldGroup, selectEl, badge, openModal, confirmDialog, promptDialog,
-  toast, emptyState, debounce,
+  toast, emptyState, debounce, allChip,
 } from '../util/dom.js';
 import { formatSAR, formatArea, formatNumber } from '../util/format.js';
 import { matchesQuery } from '../util/arabic.js';
@@ -135,6 +135,8 @@ function renderFilters(ctx) {
     const options = optionsFor(ctx, group);
     if (!options.length) continue;
     const chips = el('div', { class: 'chips' });
+    chips.append(allChip(ctx.filters[group], options.map((o) => o.value),
+      () => { renderFilters(ctx); renderList(ctx); }));
     for (const opt of options) {
       const n = ctx.requests.filter((r) => passes(ctx, r, group) && VALUES[group](r).includes(opt.value)).length;
       const active = ctx.filters[group].has(opt.value);

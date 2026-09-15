@@ -16,7 +16,7 @@ import {
 import { loadMatchingContext, candidatesFor, scoreOne, hardReasonLabel, priceFlexFor } from '../data/matching.js';
 import { runPlans } from '../util/plans.js';
 import {
-  el, clear, labeled, selectEl, checkbox, badge, openModal, toast, emptyState,
+  el, clear, labeled, selectEl, checkbox, badge, openModal, toast, emptyState, allChip,
 } from '../util/dom.js';
 import { formatSAR, formatArea, formatNumber, toInputDate, fromInputDate, toInputDateTime, fromInputDateTime } from '../util/format.js';
 import { formatPhone } from '../util/phone.js';
@@ -162,6 +162,8 @@ function renderControls(ctx) {
   /* حالات المطابقة */
   const allRows = requestsInView(ctx).flatMap((r) => rowsFor(ctx, r));
   const chips = el('div', { class: 'chips' });
+  chips.append(allChip(ctx.statusFilter, ENUMS.matchStatuses.map((s) => s.key),
+    () => { if (ctx.statusFilter.has('not_interested')) ctx.showRejected = true; renderControls(ctx); renderList(ctx); }));
   for (const st of ENUMS.matchStatuses) {
     const n = allRows.filter((row) => rowStatus(row) === st.key).length;
     const active = ctx.statusFilter.has(st.key);

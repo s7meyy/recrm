@@ -34,6 +34,10 @@ const SUITES = [
   ['evidence-revival-unit.mjs', null],
   ['role-unit.mjs', null],
   ['integrations-unit.mjs', null],
+  ['hijri-unit.mjs', null],
+  ['voice-unit.mjs', null],
+  ['whatsapp-unit.mjs', null],
+  ['management-unit.mjs', null],
   ['app-pages.mjs', OPEN],
   ['mobile-smoke.mjs', OPEN],
   ['design-dhad.mjs', OPEN],
@@ -61,6 +65,12 @@ const SUITES = [
   ['scale-perf.mjs', OPEN],
   ['debts.mjs', OPEN],
   ['integrations.mjs', OPEN],
+  ['products-and-user.mjs', OPEN],
+  ['map-colors.mjs', OPEN],
+  ['hijri.mjs', OPEN],
+  ['stamp.mjs', OPEN],
+  ['voice.mjs', OPEN],
+  ['management.mjs', OPEN],
   ['gate-and-publish.mjs', LOCKED],
   ['rename-and-vault.mjs', LOCKED],
   ['offer-pwa-push.mjs', LOCKED],
@@ -69,6 +79,8 @@ const SUITES = [
   ['intake-and-views.mjs', LOCKED],
   ['booking.mjs', LOCKED],
   ['english-meta.mjs', LOCKED],
+  ['stamp-links.mjs', LOCKED],
+  ['whatsapp.mjs', LOCKED],
 ];
 
 function startServer(port, open) {
@@ -117,8 +129,12 @@ for (const [file, port] of wanted) {
   const r = await runSuite(file, port);
   totalPass += r.pass;
   totalFail += r.fail;
-  const bad = r.fail > 0 || (r.code !== 0 && r.pass === 0);
-  console.log(`${bad ? '✗' : '✓'} ${file.padEnd(26)} ${r.pass} PASS  ${r.fail} FAIL`);
+  // خروجٌ بغير صفر = انهيار الحزمة، ولو بعد نجاحاتٍ سُجِّلت. كان يُحسب نجاحًا ما دام
+  // سطر PASS واحد قد طُبع، فتسقط بقيّة الحزمة صامتةً وتُقرأ خضراء (المرحلة ٣٨).
+  const crashed = r.code !== 0;
+  if (crashed) totalFail += 1;
+  const bad = r.fail > 0 || crashed;
+  console.log(`${bad ? '✗' : '✓'} ${file.padEnd(26)} ${r.pass} PASS  ${r.fail} FAIL${crashed ? `  (انهارت: رمز ${r.code})` : ''}`);
   if (bad) console.log(r.out.split('\n').filter((l) => /^FAIL|Error|error/.test(l)).slice(0, 6).map((l) => `    ${l}`).join('\n'));
 }
 

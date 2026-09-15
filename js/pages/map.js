@@ -16,25 +16,24 @@
 import { repo } from '../data/repository.js';
 import { getLists, typeLabel, statusLabel } from '../data/settings.js';
 import { EXCLUDED_EXTERNAL_STATUSES } from '../data/matching.js';
+import { ENUMS } from '../data/schema.js';
 import { LISTING_GROUPS, LISTING_VALUES, listingFilterOptions } from '../util/property-filters.js';
-import { el, clear, badge, checkbox, openModal, toast, appendChildren } from '../util/dom.js';
+import { el, clear, badge, checkbox, openModal, toast, appendChildren, allChip } from '../util/dom.js';
 import { orderRoute, routeLength, googleMapsRoute, MAX_STOPS } from '../util/route.js';
 import { formatNumber } from '../util/format.js';
+import { MAP_SCHEMES, colorFor, legendFor, schemeValue, SCHEME_FILTER_GROUP, EXTERNAL_COLOR } from '../util/map-colors.js';
 
 const RIYADH_CENTER = [24.7136, 46.6753];
 const CLUSTER_THRESHOLD = 15; // تحت هذا العدد تُعرض العلامات فرادى بلا تجميع
 const CLUSTER_PIXEL_RADIUS = 44; // تجميع بسيط بالمسافة بالبكسل عند التكبير الحالي — بلا مكتبة خارجية
 
-const STATUS_COLOR = {
-  agreed: '#1f7a3f', refused: '#b4432f', sold: '#0f6e56', rented: '#0f6e56', not_contacted: '#8a5a00',
-};
-const EXTERNAL_COLOR = '#6b4fa0';
 
 export async function render(container) {
   const ctx = {
     container,
     filters: Object.fromEntries(LISTING_GROUPS.map(([k]) => [k, new Set()])),
     showExternal: true, base: 'streets',
+    scheme: 'status', // معنى اللون على الخريطة (المرحلة ٣٨)
     properties: [], externals: [], noLocationCount: 0, noLocationExternalCount: 0,
     lists: null, nodes: {},
     map: null, L: null, baseLayers: null, markersLayer: null,
@@ -100,6 +99,25 @@ function buildLayout(ctx) {
     return baseButtons[key];
   }));
 
+  // معنى اللون (المرحلة ٣٨): الخريطة نفسها تُقرأ ثلاث قراءات — من وافق، وما للبيع
+  // وما للإيجار، وأين الأراضي وأين الشقق. والاختيار يبدّل الألوان والدليل معًا.
+  const schemeButtons = {};
+  const schemeSeg = el('div', { class: 'seg map-scheme' },
+    el('span', { class: 'muted small', style: { padding: '0 8px' }, text: 'اللون بحسب:' }),
+    MAP_SCHEMES.map(([key, label]) => {
+      schemeButtons[key] = el('button', {
+        type: 'button', class: `seg-btn${ctx.scheme === key ? ' active' : ''}`, text: label,
+        'data-scheme': key,
+        onClick: () => {
+          if (ctx.scheme === key) return;
+          ctx.scheme = key;
+          for (const [k, b] of Object.entries(schemeButtons)) b.classList.toggle('active', k === key);
+          renderMarkers(ctx, { fit: false });
+        },
+      });
+      return schemeButtons[key];
+    }));
+
   const showExternalBox = checkbox('إظهار العروض الخارجية', {
     checked: ctx.showExternal,
     onChange: (e) => { ctx.showExternal = e.target.checked; renderFilters(ctx); renderMarkers(ctx); },
@@ -109,20 +127,68 @@ function buildLayout(ctx) {
   ctx.container.append(
     el('div', { class: 'page-head' },
       el('h1', {}, 'خريطة العقارات ', ctx.nodes.count),
-      el('div', { class: 'head-actions' }, baseSeg, showExternalBox,
+      el('div', { class: 'head-actions' }, baseSeg, schemeSeg, showExternalBox,
         el('button', { type: 'button', class: 'btn btn-sm', text: '🚗 خطّط جولة اليوم', onClick: () => openRoutePlanner(ctx) }))),
   );
 
   ctx.nodes.notice = el('div');
   ctx.nodes.filters = el('div', { class: 'filters' });
-  ctx.nodes.legend = el('div', { class: 'map-legend' },
-    el('span', { class: 'map-legend-item' }, el('span', { class: 'map-dot', style: { background: '#5f6b64' } }), 'عقار من مخزونك (اللون بحسب حالته)'),
-    el('span', { class: 'map-legend-item' }, el('span', { class: 'map-dot map-dot-external' }), 'عرض خارجي'));
+  ctx.nodes.legend = el('div', { class: 'map-legend' });
   ctx.nodes.mapCanvas = el('div', { class: 'map-canvas' }, el('div', { class: 'map-loading', text: 'جارٍ تحميل الخريطة…' }));
 
   ctx.container.append(ctx.nodes.notice, ctx.nodes.filters, ctx.nodes.legend, ctx.nodes.mapCanvas);
   renderNotice(ctx);
+  renderLegend(ctx);
   renderFilters(ctx);
+}
+
+/**
+ * دليل الألوان: كل لونٍ واسمُه وعددُ ما يحمله من الظاهر على الخريطة، والضغط عليه يفرز به
+ * (وضغطُه ثانيةً يمسح الفرز) — فالدليل يُقرأ ويُستعمل، لا يُقرأ وحده. واللون لا يُترك وحده
+ * دالًّا أبدًا: اسمه مكتوبٌ بجانبه، فيقرؤه من لا يفرّق بين الأخضر والأحمر.
+ */
+function renderLegend(ctx) {
+  const wrap = ctx.nodes.legend;
+  if (!wrap) return;
+  clear(wrap);
+
+  const items = ctx.properties.filter((p) => passes(ctx, p));
+  const counts = new Map();
+  for (const p of items) {
+    const v = schemeValue(ctx.scheme, p);
+    if (v) counts.set(v, (counts.get(v) || 0) + 1);
+  }
+
+  const group = SCHEME_FILTER_GROUP[ctx.scheme];
+  const rows = legendFor(ctx.scheme, { lists: ctx.lists, counts });
+  for (const row of rows) {
+    const active = group ? ctx.filters[group].has(row.value) : false;
+    const dot = el('span', { class: 'map-dot', style: { background: row.color } });
+    const label = `${row.label}${row.count != null ? ` (${formatNumber(row.count)})` : ''}`;
+    if (!group) {
+      wrap.append(el('span', { class: 'map-legend-item' }, dot, label));
+      continue;
+    }
+    wrap.append(el('button', {
+      type: 'button', class: `map-legend-item map-legend-btn${active ? ' active' : ''}`,
+      title: active ? `أزل فرز «${row.label}»` : `اعرض «${row.label}» وحده`,
+      'aria-pressed': active ? 'true' : 'false',
+      onClick: () => {
+        if (active) ctx.filters[group].delete(row.value); else ctx.filters[group].add(row.value);
+        renderFilters(ctx);
+        renderMarkers(ctx);
+      },
+    }, dot, label));
+  }
+
+  if (ctx.showExternal) {
+    wrap.append(el('span', { class: 'map-legend-item' },
+      el('span', { class: 'map-dot map-dot-external', style: ctx.scheme === 'status' ? { background: EXTERNAL_COLOR } : null }),
+      ctx.scheme === 'status' ? 'عرض خارجي (لا حالة لك فيه)' : 'عرض خارجي (الحلقة المتقطّعة)'));
+  }
+  if (ctx.scheme === 'purpose') {
+    wrap.append(el('span', { class: 'muted small map-legend-note', text: 'العقار لغرضين يأخذ لون أوّلهما — افرز بغرضٍ واحدٍ إن أردتَ يقينًا.' }));
+  }
 }
 
 /**
@@ -233,6 +299,8 @@ function renderFilters(ctx) {
     const options = listingFilterOptions(group, { items, lists: ctx.lists, filters: ctx.filters });
     if (!options.length) continue;
     const chips = el('div', { class: 'chips' });
+    chips.append(allChip(ctx.filters[group], options.map((o) => o.value),
+      () => { renderFilters(ctx); renderMarkers(ctx); }));
     for (const opt of options) {
       const n = items.filter((it) => passes(ctx, it, group) && LISTING_VALUES[group](it).includes(opt.value)).length;
       const active = ctx.filters[group].has(opt.value);
@@ -294,13 +362,22 @@ async function initMap(ctx) {
   renderMarkers(ctx);
 }
 
+const purposeText = (item) => {
+  const keys = Array.isArray(item.purposes) ? item.purposes : [];
+  const labels = ENUMS.purposes.filter((x) => keys.includes(x.key)).map((x) => x.label);
+  return labels.length ? `الغرض: ${labels.join(' و')}` : 'بلا غرض محدَّد';
+};
+
 function propertyMarker(ctx, p) {
-  const color = STATUS_COLOR[p.status] || '#5f6b64';
+  const color = colorFor(ctx.scheme, p, { lists: ctx.lists });
   const marker = ctx.L.circleMarker([p.location.lat, p.location.lng], {
     radius: 9, weight: 2, color: '#ffffff', fillColor: color, fillOpacity: 0.9,
   });
   const box = el('div', { class: 'map-popup' },
     el('div', { class: 'map-popup-title' }, typeLabel(ctx.lists, p.type), badge(statusLabel(ctx.lists, p.status))),
+    // الغرض مكتوبًا في النافذة (المرحلة ٣٨): اللون يدلّ، والكلمة تُثبت — ومن لا يفرّق
+    // الألوان يقرأ هنا ما لا يراه هناك.
+    el('div', { class: 'muted small' }, purposeText(p)),
     el('div', { class: 'muted small' }, [p.district, p.city].filter(Boolean).join('، ') || 'بلا حي'),
     el('div', {}, p.price == null ? badge('السعر غير معروف', 'badge-outline') : `${formatNumber(p.price)} ريال`),
     el('div', { class: 'map-popup-actions' },
@@ -314,10 +391,12 @@ function propertyMarker(ctx, p) {
 
 function externalMarker(ctx, x) {
   const marker = ctx.L.circleMarker([x.location.lat, x.location.lng], {
-    radius: 7, weight: 2, dashArray: '3,2', color: '#ffffff', fillColor: EXTERNAL_COLOR, fillOpacity: 0.85,
+    radius: 7, weight: 2, dashArray: '3,2', color: '#ffffff',
+    fillColor: colorFor(ctx.scheme, x, { lists: ctx.lists, external: true }), fillOpacity: 0.85,
   });
   const box = el('div', { class: 'map-popup' },
     el('div', { class: 'map-popup-title' }, x.type ? typeLabel(ctx.lists, x.type) : 'بلا نوع', badge('خارجي', 'badge-accent')),
+    el('div', { class: 'muted small' }, purposeText(x)),
     el('div', { class: 'muted small' }, [x.district, x.city].filter(Boolean).join('، ') || 'بلا حي'),
     el('div', {}, x.price == null ? badge('السعر غير معروف', 'badge-outline') : `${formatNumber(x.price)} ريال`),
     el('div', { class: 'map-popup-actions' },
@@ -406,6 +485,7 @@ function renderMarkers(ctx, { fit = true } = {}) {
     const total = ctx.properties.length + (ctx.showExternal ? ctx.externals.length : 0);
     ctx.nodes.count.textContent = items.length === total ? `(${formatNumber(items.length)})` : `(${formatNumber(items.length)} من ${formatNumber(total)})`;
   }
+  renderLegend(ctx); // الأعداد في الدليل تتبع الظاهر فعلًا، لا كل المخزون
   if (!fit) return; // إعادة تجميع بعد تكبير/تصغير فقط — لا تحريك العرض
   if (items.length) ctx.map.fitBounds(items.map((it) => [it.lat, it.lng]), { padding: [28, 28], maxZoom: 15 });
   else ctx.map.setView(RIYADH_CENTER, 11);

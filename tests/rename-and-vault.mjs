@@ -96,11 +96,18 @@ const rotation = await page.evaluate(async () => {
 });
 ok('تُحفظ آخر ٥ نسخ فقط (لا تضخّم)', rotation === 5, String(rotation));
 
-// الخادم لا يستطيع قراءة المحتوى
+// الخادم لا يستطيع قراءة المحتوى.
+// المفتاح يُقرأ **بعد** التدوير لا قبله: التدوير يُبقي آخر خمسٍ فيسقط أوّلُ ما رُفع،
+// فسؤال الخادم عنه يعيد فراغًا — وكان هذا يُسقط الحزمة صامتةً فلا يُفحص التشفير أصلًا.
+const freshKey = await page.evaluate(async () => {
+  const { listBackups } = await import('/js/data/vault.js');
+  return (await listBackups())[0]?.key;
+});
+ok('في الخزنة نسخةٌ يمكن سؤال الخادم عنها', !!freshKey, String(freshKey));
 const rawBody = await page.evaluate(async (key) => {
   const res = await fetch(`/api/vault?key=${encodeURIComponent(key)}`, { credentials: 'same-origin' });
   return (await res.json()).payload;
-}, vault.key);
+}, freshKey);
 ok('ما يصل الخادم كتلة مشفَّرة لا تحوي بياناتك', !rawBody.includes('باحث عن فلة') && !rawBody.includes('سعد التميمي') && rawBody.includes('AES-GCM'), rawBody.slice(0, 80));
 
 // الاسترجاع على "جهاز آخر" (سياق متصفح جديد بنفس الدخول)

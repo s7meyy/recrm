@@ -6,10 +6,12 @@ import {
   getLists, addPropertyType, addPropertyStatus, addCity, addDistrict,
   getCustomFields, getCompleteness, getUI, setUI, typeLabel, statusLabel, typeGroup,
 } from '../data/settings.js';
-import { storeImage, getImageUrl, deleteImages } from '../data/images.js';
+import {
+  storeMedia, getImageUrl, deleteImages, isVideo, isVideoFile, firstStillId, VIDEO_LIMITS, formatBytes,
+} from '../data/images.js';
 import {
   el, clear, labeled, fieldGroup, selectEl, checkbox, badge, openModal, confirmDialog,
-  promptDialog, toast, emptyState, debounce,
+  promptDialog, toast, emptyState, debounce, allChip,
 } from '../util/dom.js';
 import { formatSAR, formatArea, formatDate, formatNumber, daysWord, toInputDate, fromInputDate } from '../util/format.js';
 import { matchesQuery } from '../util/arabic.js';
@@ -17,6 +19,7 @@ import { formatPhone } from '../util/phone.js';
 import { parseLocation, isShortMapLink, mapsLink, locationToText } from '../util/location.js';
 import { LISTING_GROUPS, LISTING_VALUES, listingFilterOptions } from '../util/property-filters.js';
 import { sourceField, rememberSource, sourceBadge } from '../util/source-field.js';
+import { FEE_TYPES, contractState, STATE_LABEL, monthlyFee } from '../util/management.js';
 import { announceMatches } from '../util/match-alert.js';
 import { getTemplates, getCompany, getSavedSearches, addSavedSearch, removeSavedSearch, getPublishSettings } from '../data/settings.js';
 import { getCurrentUser } from '../data/repository.js';
@@ -30,8 +33,17 @@ import { capped, PAGE_SIZE } from '../util/render-cap.js';
 
 // "الحالة" فرز خاص بالعقارات (بلا معنى للعروض الخارجية) فيبقى معرَّفًا هنا؛ بقية المجموعات
 // مشتركة مع خريطة العقارات عبر util/property-filters.js فلا تنحرف الصفحتان عن بعضهما.
-const GROUPS = [['status', 'الحالة'], ...LISTING_GROUPS];
-const VALUES = { status: (p) => [p.status], ...LISTING_VALUES };
+// «الإدارة» مجموعة فرزٍ كغيرها (المرحلة ٣٨) — فالوسم يُفرز به ويُعدّ، لا يُقرأ في الملاحظات.
+const GROUPS = [['status', 'الحالة'], ...LISTING_GROUPS, ['management', 'الإدارة']];
+const VALUES = {
+  status: (p) => [p.status],
+  ...LISTING_VALUES,
+  management: (p) => [p.management ? 'managed' : 'none'],
+};
+const MANAGEMENT_OPTIONS = [
+  { value: 'managed', label: 'تحت إدارتنا' },
+  { value: 'none', label: 'ليست تحت إدارتنا' },
+];
 const STATUS_STYLE = { agreed: 'badge-ok', refused: 'badge-danger', sold: 'badge-accent', rented: 'badge-accent', not_contacted: 'badge-warn' };
 
 // يقرأ #/properties/<id> (نفس نمط #/matches/<requestId> الموثّق) — يتيح لخريطة العقارات
@@ -269,6 +281,7 @@ async function renderSaved(ctx) {
 
 function optionsFor(ctx, group) {
   if (group === 'status') return ctx.lists.propertyStatuses.map((s) => ({ value: s.key, label: s.label }));
+  if (group === 'management') return MANAGEMENT_OPTIONS;
   return listingFilterOptions(group, { items: ctx.properties, lists: ctx.lists, filters: ctx.filters });
 }
 
@@ -279,6 +292,9 @@ function renderFilters(ctx) {
     const options = optionsFor(ctx, group);
     if (!options.length) continue;
     const chips = el('div', { class: 'chips' });
+    // «الكل» أوّل الصفّ (المرحلة ٣٨): تحديد الكلّ ثم نزع اثنين أسرع من تحديد ستّة.
+    chips.append(allChip(ctx.filters[group], options.map((o) => o.value),
+      () => { renderFilters(ctx); renderList(ctx); renderSaved(ctx); }));
     for (const opt of options) {
       const n = ctx.properties.filter((p) => passes(ctx, p, group) && VALUES[group](p).includes(opt.value)).length;
       const active = ctx.filters[group].has(opt.value);
@@ -375,7 +391,11 @@ function thumbInto(node, p, thumb = true) {
   if (!p.images?.length) return;
   const img = el('img', { alt: '', loading: 'lazy' });
   node.append(img);
-  getImageUrl(p.images[0], { thumb }).then((url) => { if (url) img.src = url; });
+  // الغلاف أوّلُ ما يصلح صورةً (المرحلة ٣٨): مقطعٌ بلا صورةٍ ملتقطة لا يصلح غلافًا،
+  // فيُتخطّى إلى ما بعده بدل أن تبقى البطاقة بمربّعٍ فارغ.
+  firstStillId(p.images)
+    .then((id) => (id ? getImageUrl(id, { thumb }) : null))
+    .then((url) => { if (url) img.src = url; });
 }
 
 function renderGrid(ctx, items) {
@@ -425,6 +445,16 @@ const COLUMNS = [
   { key: 'status', label: 'الحالة', render: (p, ctx) => statusBadge(ctx, p.status), sort: (p, ctx) => statusLabel(ctx.lists, p.status) },
   { key: 'owner', label: 'صاحب العقار', sensitive: true, get: (p, ctx) => ownerLabel(ctx, p) || '—', sort: (p, ctx) => ownerLabel(ctx, p) },
   { key: 'complete', label: 'الاكتمال', render: (p, ctx) => completenessBadge(ctx, p), sort: (p, ctx) => (completeness(ctx, p).complete ? 1 : 0), num: true },
+  // عمودٌ يُرتَّب به: «أظهر ما تحت إدارتي أوّلًا» سؤالٌ يُسأل كلَّ صباح (المرحلة ٣٨).
+  {
+    key: 'management',
+    label: 'الإدارة',
+    render: (p) => (p.management
+      ? badge(STATE_LABEL[contractState(p.management)], contractState(p.management) === 'expired' ? 'badge-danger' : contractState(p.management) === 'ending' ? 'badge-warn' : 'badge-ok')
+      : el('span', { class: 'muted', text: '—' })),
+    sort: (p) => (p.management ? 1 : 0),
+    num: true,
+  },
   { key: 'createdAt', label: 'أُضيف في', get: (p) => formatDate(p.createdAt), sort: (p) => p.createdAt },
 ];
 
@@ -729,6 +759,26 @@ async function openForm(ctx, existing) {
     onChange: () => { newOwnerBox.hidden = ownerSelect.value !== '__new__'; },
   });
   // اتفاقية الوساطة (المرحلة ٣١): تاريخ توقيعها ومدّتها — منها يُحسب تنبيه انتهائها.
+  // إدارة الأملاك (المرحلة ٣٨): خيارٌ في النموذج نفسه — لا صفحةٌ أخرى تُفتح بعد الحفظ.
+  // وحقول العقد لا تظهر إلّا لمن أشّر عليه، فلا يُثقَل النموذج على من لا يُدير شيئًا.
+  const mgmt = draft.management || null;
+  const mgmtBox = checkbox('هذا العقار تحت إدارتنا', { checked: !!mgmt });
+  const mgmtStart = el('input', { class: 'input', type: 'date', value: mgmt?.startAt ? toInputDate(mgmt.startAt) : '' });
+  const mgmtEnd = el('input', { class: 'input', type: 'date', value: mgmt?.endAt ? toInputDate(mgmt.endAt) : '' });
+  const mgmtFeeType = selectEl({
+    options: FEE_TYPES.map((f) => ({ value: f.key, label: f.label })),
+    value: mgmt?.feeType || 'percent',
+  });
+  const mgmtFee = el('input', { class: 'input', type: 'number', min: '0', step: '0.5', value: mgmt?.feeValue ?? '' });
+  const mgmtNotes = el('input', { class: 'input', type: 'text', value: mgmt?.notes || '', placeholder: 'ما تتولّاه: تحصيل، صيانة، تجديد…' });
+  const mgmtFields = el('div', { class: 'form-grid', hidden: !mgmt },
+    labeled('بداية عقد الإدارة', mgmtStart),
+    labeled('نهاية عقد الإدارة', mgmtEnd, { hint: 'يُنبّهك «إدارة الأملاك» قبل انتهائه بشهر' }),
+    labeled('نوع الأجر', mgmtFeeType),
+    labeled('قيمة الأجر', mgmtFee, { hint: 'نسبةً مئويةً من الإيجار، أو مبلغًا شهريًّا بالريال' }),
+    labeled('ماذا نتولّى؟', mgmtNotes, { full: true }));
+  mgmtBox.querySelector('input').addEventListener('change', (e) => { mgmtFields.hidden = !e.target.checked; });
+
   const agreementInput = el('input', { class: 'input', type: 'date', value: draft.agreementSignedAt ? toInputDate(draft.agreementSignedAt) : '' });
   const agreementDaysInput = el('input', { class: 'input', type: 'number', min: '1', step: '1', value: draft.agreementDays ?? '', placeholder: 'من الإعدادات' });
   const newOwnerName = el('input', { class: 'input', type: 'text', placeholder: 'اسم المالك' });
@@ -782,10 +832,22 @@ async function openForm(ctx, existing) {
   const deedInput = el('input', { class: 'input', type: 'text', value: draft.deedNumber || '', placeholder: 'رقم الصك كما هو' });
   const source = sourceField(draft.referralSource, ctx.lists.sources);
 
-  /* الصور */
+  /* الوسائط: صورٌ ومقاطع (المرحلة ٣٨) */
   const fileInput = el('input', {
-    type: 'file', accept: 'image/*', multiple: true, class: 'visually-hidden',
-    onChange: (e) => { state.newFiles.push(...e.target.files); e.target.value = ''; renderImages(); },
+    type: 'file', accept: 'image/*,video/*', multiple: true, class: 'visually-hidden',
+    onChange: (e) => {
+      // الحدُّ يُقال قبل الحفظ لا بعده: من اختار مقطعًا كبيرًا يعرف الآن، لا بعد أن
+      // ينتظر الحفظ ثم يقرأ خطأً.
+      for (const f of e.target.files) {
+        if (isVideoFile(f) && f.size > VIDEO_LIMITS.maxBytes) {
+          toast(`«${f.name}» ${formatBytes(f.size)} — أكبر من حدّ المقاطع (${formatBytes(VIDEO_LIMITS.maxBytes)}). المقاطع تُحفظ بلا ضغط.`, 'error', 7000);
+          continue;
+        }
+        state.newFiles.push(f);
+      }
+      e.target.value = '';
+      renderImages();
+    },
   });
   const imagesBox = el('div', { class: 'images-box' });
   const renderImages = () => {
@@ -794,11 +856,19 @@ async function openForm(ctx, existing) {
     state.previewUrls = [];
     draft.images.forEach((id, index) => {
       const removed = state.removedImages.has(id);
+      // المقطع يُعرض بصورته الملتقطة وعليه علامة تشغيل، وينفتح بالضغط — لا يُحمَّل
+      // عشرةُ مقاطع في الصفحة دفعةً فتثقل على جوّالٍ في السيارة.
       const img = el('img', { alt: '' });
+      const tag = el('span', { class: 'media-kind', hidden: true, text: '▶ مقطع' });
       getImageUrl(id, { thumb: true }).then((url) => { if (url) img.src = url; });
+      repo.images.get(id).then((rec) => {
+        if (!rec || !isVideo(rec)) return;
+        tag.hidden = false;
+        if (!rec.thumb) img.classList.add('media-noposter');
+      });
       // الأولى هي الغلاف: هي التي يراها العميل في الصفحة العامة وبطاقة الطباعة (المرحلة ١٣).
       const isCover = index === 0;
-      imagesBox.append(el('div', { class: `img-tile${removed ? ' removed' : ''}${isCover ? ' is-cover' : ''}` }, img,
+      imagesBox.append(el('div', { class: `img-tile${removed ? ' removed' : ''}${isCover ? ' is-cover' : ''}` }, img, tag,
         isCover ? el('span', { class: 'img-cover-tag', text: 'الغلاف' }) : null,
         el('div', { class: 'img-tools' },
           index > 0 ? el('button', {
@@ -821,10 +891,14 @@ async function openForm(ctx, existing) {
     state.newFiles.forEach((file, index) => {
       const url = URL.createObjectURL(file);
       state.previewUrls.push(url);
-      imagesBox.append(el('div', { class: 'img-tile new' }, el('img', { src: url, alt: '' }),
+      const preview = isVideoFile(file)
+        ? el('video', { src: url, muted: true, playsinline: '', preload: 'metadata' })
+        : el('img', { src: url, alt: '' });
+      imagesBox.append(el('div', { class: 'img-tile new' }, preview,
+        isVideoFile(file) ? el('span', { class: 'media-kind', text: `▶ ${formatBytes(file.size)}` }) : null,
         el('button', { type: 'button', class: 'img-remove', text: '✕', title: 'إزالة', onClick: () => { state.newFiles.splice(index, 1); renderImages(); } })));
     });
-    imagesBox.append(el('label', { class: 'img-add' }, '+ إضافة صور', fileInput));
+    imagesBox.append(el('label', { class: 'img-add' }, '+ إضافة وسائط', fileInput));
   };
 
   /* التجميع والحفظ */
@@ -853,6 +927,14 @@ async function openForm(ctx, existing) {
       notes: notesInput.value.trim(),
       deedNumber: deedInput.value.trim(),
       typeFields, extra,
+      management: mgmtBox.querySelector('input').checked ? {
+        active: true,
+        startAt: fromInputDate(mgmtStart.value),
+        endAt: fromInputDate(mgmtEnd.value),
+        feeType: mgmtFeeType.value,
+        feeValue: mgmtFee.value === '' ? null : Number(mgmtFee.value),
+        notes: mgmtNotes.value.trim(),
+      } : null,
       agreementSignedAt: fromInputDate(agreementInput.value),
       agreementDays: agreementDaysInput.value === '' ? null : Number(agreementDaysInput.value),
       referralSource: source.input.value, // تاق المصدر — غير `source` أدناه (مسار الإدخال)
@@ -890,7 +972,7 @@ async function openForm(ctx, existing) {
         const ids = [];
         for (const file of state.newFiles) {
           try {
-            const img = await storeImage(file, { entity: 'property', entityId: rec.id });
+            const img = await storeMedia(file, { entity: 'property', entityId: rec.id });
             ids.push(img.id);
           } catch (err) {
             toast(`تعذر حفظ الصورة ${file.name || ''}: ${err.message}`, 'error', 6000);
@@ -948,6 +1030,10 @@ async function openForm(ctx, existing) {
       labeled('توقيع اتفاقية الوساطة', agreementInput, { hint: 'يُنبّهك «يومي» قبل انتهائها — والعقار بلا اتفاقية قد تخسره' }),
       labeled('مدّة الاتفاقية (يومًا)', agreementDaysInput, { hint: 'اتركه فارغًا لتُستعمل المدّة الافتراضية من الإعدادات' }),
       newOwnerBox),
+    el('div', { class: 'form-section' },
+      el('h3', { text: 'إدارة الأملاك' }),
+      el('p', { class: 'muted small', text: 'الوساطة تنتهي بالصفقة، والإدارة تبدأ بعدها: إيجارٌ يُحصَّل، وعقدٌ يُجدَّد، وأجرٌ يُستحقّ شهرًا بعد شهر.' }),
+      mgmtBox, mgmtFields),
     typeBox,
     customBox,
     isEdit ? evidenceSection(ctx, existing) : null,
@@ -955,7 +1041,7 @@ async function openForm(ctx, existing) {
     el('div', { class: 'form-section' },
       el('div', { class: 'form-grid one' },
         labeled('الملاحظات', notesInput),
-        fieldGroup('الصور', el('div', {}, imagesBox, el('span', { class: 'field-hint', text: 'الصورة الأولى هي الغلاف الذي يراه العميل — رتّبها بالأسهم أو اضغط ★. وتُضغط الصور تلقائيًا قبل الحفظ.' }))))),
+        fieldGroup('الوسائط', el('div', {}, imagesBox, el('span', { class: 'field-hint', text: 'صورٌ ومقاطع. الأولى هي الغلاف الذي يراه العميل — رتّبها بالأسهم أو اضغط ★. الصور تُضغط تلقائيًا، والمقاطع تُحفظ كما هي بلا ضغط (حدّها ٦٠ م.ب).' }))))),
   );
 
   renderTypeFields();
