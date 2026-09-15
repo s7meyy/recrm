@@ -469,6 +469,10 @@ input[type="date"].input, input[type="datetime-local"].input { direction: ltr; t
   .print-photos { display: grid; grid-template-columns: 1fr 1fr; gap: 6mm; margin-bottom: 8mm; }
   .print-photo { width: 100%; height: 55mm; object-fit: cover; border: 1px solid #ccc; }
   .print-table th { text-align: right; background: #f4f4f4; }
+  /* تقرير المقارنة السوقية (المرحلة ٢٦) */
+  .print-section-title { font-size: 13pt; margin: 14px 0 6px; border-bottom: 1px solid #999; padding-bottom: 3px; }
+  .print-cma-range { margin-bottom: 6px; }
+  .print-cma-big { font-size: 15pt; font-weight: 700; }
 }
 
 /* ===== المرحلة ١٠ — تنبيه المطابقات بعد حفظ عقار ===== */
@@ -498,6 +502,13 @@ input[type="date"].input, input[type="datetime-local"].input { direction: ltr; t
 .badge.price-low { background: var(--ok-soft); color: var(--ok); }
 .badge.price-mid { background: var(--surface-2); color: var(--muted); }
 .mic-btn.mic-on { background: var(--danger-soft); color: var(--danger); }
+
+/* ===== المرحلة ٢٦ — الملاحظة الصوتية ===== */
+.audio-note { flex-wrap: wrap; gap: 8px; align-items: center; }
+.audio-note audio { max-width: 100%; min-width: 0; }
+.audio-note .mic-on { background: var(--danger-soft); color: var(--danger); }
+.contact-audio { display: inline-flex; align-items: center; max-width: 100%; }
+.contact-audio audio { max-width: 100%; height: 34px; }
 
 /* ===== المرحلة ١٢ — صفحة الفرص ===== */
 .section-title { font-size: var(--fs-lg); margin: 6px 0 10px; }

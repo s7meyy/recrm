@@ -28,6 +28,7 @@ import { requestFollowUpPermission } from '../util/follow-up-alerts.js';
 import { getPlans, setPlans, PLAN_TRIGGERS, PLAN_STEP_TYPES, SAMPLE_PLAN } from '../data/settings.js';
 import { exportBackup, downloadBlob, markExported, readBackupFile, importBackup } from '../data/backup.js';
 import { imagesSummary, formatBytes } from '../data/images.js';
+import { audioSummary } from '../data/audio.js';
 import { seedExists, insertSeed, clearSeed } from '../data/seed.js';
 import { el, clear, labeled, selectEl, checkbox, badge, confirmDialog, openModal, toast, appendChildren } from '../util/dom.js';
 import { clientTagClass } from '../data/schema.js';
@@ -172,10 +173,15 @@ async function backupBody(redraw) {
 /* ===== التخزين ===== */
 
 async function storageBody() {
-  const summary = await imagesSummary();
+  const [summary, voice] = await Promise.all([imagesSummary(), audioSummary()]);
   const rows = [
     el('dt', { text: 'الصور' }), el('dd', { text: `${summary.count} صورة — ${formatBytes(summary.bytes)}` }),
   ];
+  // الملاحظات الصوتية (المرحلة ٢٦): لا تظهر ما لم توجد — سطرٌ بصفرٍ دائم ضجيج.
+  if (voice.count) {
+    rows.push(el('dt', { text: 'الملاحظات الصوتية' }),
+      el('dd', { text: `${voice.count} تسجيلًا — ${formatBytes(voice.bytes)}` }));
+  }
   let warning = null;
   if (navigator.storage?.estimate) {
     try {

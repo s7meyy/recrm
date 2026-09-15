@@ -1,7 +1,7 @@
 // مخططات الكيانات: الحقول، القيم الافتراضية، القوائم الثابتة، والحقول التي تظهر بحسب نوع العقار.
 // الحقول المشتركة لكل سجل (تضيفها طبقة البيانات): id, createdAt, updatedAt, createdBy, updatedBy, searchKey.
 
-export const STORES = ['clients', 'properties', 'tours', 'requests', 'matches', 'externalListings', 'deals', 'images', 'settings', 'taskLists', 'tasks', 'notes', 'invoices', 'expenses'];
+export const STORES = ['clients', 'properties', 'tours', 'requests', 'matches', 'externalListings', 'deals', 'images', 'settings', 'taskLists', 'tasks', 'notes', 'invoices', 'expenses', 'audio'];
 // ملاحظة: `trash` (سلة المحذوفات، المرحلة ٢١) ليست في STORES عمدًا — شبكة أمان محلّية
 // لا بيانات تُصدَّر: إدراجها في النسخة الاحتياطية يضخّمها بما حذفتَه قصدًا.
 
@@ -305,6 +305,14 @@ export const SCHEMAS = {
     defaults: () => ({
       entity: 'property', entityId: null, mime: 'image/jpeg',
       blob: null, thumb: null, width: null, height: null, size: 0, originalName: '', originalSize: null,
+    }),
+  },
+  audio: { // الملاحظات الصوتية (المرحلة ٢٦): مخزن مستقل كالصور — الصوت لا يُحشر في سجل العميل
+    required: [],
+    labels: {},
+    defaults: () => ({
+      entity: 'contact', entityId: null, // entityId = معرّف العميل صاحب السجل
+      mime: 'audio/webm', blob: null, seconds: 0, size: 0,
     }),
   },
   taskLists: { // صفحة المهام (المرحلة ٧)

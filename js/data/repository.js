@@ -298,8 +298,8 @@ const VALIDATE = {
 /* ===== سلة المحذوفات (المرحلة ٢١) ===== */
 
 const TRASH_DAYS = 30;
-// الصور قد تبلغ ميغابايتات، والملفات المؤقتة والمطابقات تُعاد حسابًا لا استرجاعًا.
-const TRASH_SKIP = ['images', 'matches'];
+// الصور والتسجيلات قد تبلغ ميغابايتات، والمطابقات تُعاد حسابًا لا استرجاعًا.
+const TRASH_SKIP = ['images', 'matches', 'audio'];
 
 /**
  * ينسخ السجل إلى السلة قبل حذفه.
@@ -525,6 +525,98 @@ const clients = Object.assign(makeEntity('clients'), {
     await adapter.delete('clients', id);
   },
 
+  /**
+   * ما سينتقل لو دُمج `dropId` في `keepId` — يُعرض عليك قبل الدمج.
+   */
+  async mergeImpact(keepId, dropId) {
+    const [properties, requests, deals, invoices, tasks, drop] = await Promise.all([
+      adapter.getByIndex('properties', 'ownerId', dropId),
+      adapter.getByIndex('requests', 'clientId', dropId),
+      adapter.getByIndex('deals', 'clientId', dropId),
+      adapter.getByIndex('invoices', 'clientId', dropId),
+      adapter.getAll('tasks'),
+      this.get(dropId),
+    ]);
+    return {
+      properties: properties.length, requests: requests.length, deals: deals.length, invoices: invoices.length,
+      tasks: tasks.filter((t) => t.linkType === 'client' && t.linkId === dropId).length,
+      contacts: (drop?.contacts || []).length,
+    };
+  },
+
+  /**
+   * دمج عميلين (المرحلة ٢٦): كل ما يشير إلى `dropId` يصير يشير إلى `keepId`، ثم يُحذف المكرّر.
+   *
+   * **لا يضيع شيء ولا يُطمس شيء:**
+   *   • المرتبطات (عقارات · طلبات · صفقات · فواتير · مهام) تُنقل — لا تُحذف ولا تُترك يتيمة.
+   *   • سجل التواصل يُدمج ويُرتَّب بالتاريخ، فتاريخ العميل يعود قطعة واحدة.
+   *   • الحقول الفارغة في المُبقى تُملأ من المحذوف، و**المملوءة لا تُمسّ أبدًا**.
+   *   • ملاحظات المحذوف تُلحق بملاحظات المُبقى مفصولةً بسطر يقول من أين جاءت.
+   *   • جوالٌ ثانٍ مختلف يُحفظ في `phone2` إن كان فارغًا، وإلا ذُكر في الملاحظات — رقمٌ يضيع
+   *     في الدمج خسارةٌ لا تُعوَّض.
+   *
+   * وهو **غير قابل للتراجع**: الشاشة تسأل، والسجل المحذوف يذهب إلى سلة المحذوفات كغيره.
+   */
+  async merge(keepId, dropId) {
+    if (keepId === dropId) throw new Error('لا يُدمج سجل في نفسه');
+    const [keep, drop] = await Promise.all([this.get(keepId), this.get(dropId)]);
+    if (!keep || !drop) throw new Error('أحد السجلين غير موجود');
+
+    const stamp = { updatedAt: nowISO(), updatedBy: currentUser.id };
+    const [properties, requests, deals, invoices, tasks] = await Promise.all([
+      adapter.getByIndex('properties', 'ownerId', dropId),
+      adapter.getByIndex('requests', 'clientId', dropId),
+      adapter.getByIndex('deals', 'clientId', dropId),
+      adapter.getByIndex('invoices', 'clientId', dropId),
+      adapter.getAll('tasks'),
+    ]);
+    for (const p of properties) await adapter.put('properties', { ...p, ownerId: keepId, ...stamp });
+    for (const r of requests) await adapter.put('requests', { ...r, clientId: keepId, ...stamp });
+    for (const d of deals) await adapter.put('deals', { ...d, clientId: keepId, ...stamp });
+    for (const inv of invoices) await adapter.put('invoices', { ...inv, clientId: keepId, ...stamp });
+    for (const t of tasks) {
+      if (t.linkType === 'client' && t.linkId === dropId) await adapter.put('tasks', { ...t, linkId: keepId, ...stamp });
+    }
+
+    // كل أرقام المحذوف — جوالاه معًا — تُقارن بأرقام المُبقى: رقمٌ يضيع في الدمج لا يُعوَّض.
+    const extras = [drop.phone, drop.phone2]
+      .filter((p) => p && p !== keep.phone && p !== keep.phone2);
+    const extraPhone = keep.phone2 ? '' : extras[0] || ''; // يملأ الخانة الفارغة إن وُجدت
+    const leftover = extras.filter((p) => p !== extraPhone); // وما لا خانة له يُكتب في الملاحظات
+    const notes = [
+      keep.notes,
+      drop.notes ? `— من السجل المدموج (${drop.name || drop.phone || 'بلا اسم'}):\n${drop.notes}` : '',
+      leftover.length ? `جوال إضافي من السجل المدموج: ${leftover.join('، ')}` : '',
+    ].filter(Boolean).join('\n');
+
+    const contacts = [...(keep.contacts || []), ...(drop.contacts || [])]
+      .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+
+    await adapter.put('clients', {
+      ...keep,
+      name: keep.name || drop.name,
+      phone: keep.phone || drop.phone,
+      phone2: keep.phone2 || extraPhone,
+      referralSource: keep.referralSource || drop.referralSource,
+      stage: keep.stage,
+      roles: uniq([...(keep.roles || []), ...(drop.roles || [])]),
+      tags: uniq([...(keep.tags || []), ...(drop.tags || [])]),
+      contacts,
+      notes,
+      createdAt: [keep.createdAt, drop.createdAt].filter(Boolean).sort()[0] || keep.createdAt,
+      ...stamp,
+      searchKey: buildSearchKey([
+        keep.name || drop.name, keep.notes, drop.notes, drop.name,
+        ...phoneSearchForms(keep.phone || drop.phone), ...phoneSearchForms(keep.phone2 || extraPhone), ...leftover,
+      ]),
+    });
+
+    // لم يبقَ ما يشير إليه: يُحذف مباشرة (ويُحفظ في سلة المحذوفات كأي حذف).
+    await keepInTrash('clients', dropId);
+    await adapter.delete('clients', dropId);
+    return this.get(keepId);
+  },
+
   /** يبحث بالجوال (أي صيغة) في phone ثم phone2. */
   async findByPhone(phone) {
     const p = normalizePhone(phone);
@@ -535,12 +627,14 @@ const clients = Object.assign(makeEntity('clients'), {
     return all.find((c) => c.phone2 === p) ?? null;
   },
 
-  async addContact(clientId, { type, date, note = '', followUpAt = null }) {
+  async addContact(clientId, { type, date, note = '', followUpAt = null, audioId = null, audioSeconds = 0 }) {
     const client = await this.get(clientId);
     if (!client) throw new Error('العميل غير موجود');
     if (!inEnum(ENUMS.contactTypes, type)) throw new ValidationError(['نوع التواصل غير معروف']);
     const contact = {
       id: newId(), type, date: date || nowISO(), note: trim(note), followUpAt: followUpAt || null,
+      // ملاحظة صوتية (المرحلة ٢٦): معرّف في مخزن audio لا الملف نفسه — سجل العميل يبقى خفيفًا.
+      audioId: audioId || null, audioSeconds: audioId ? Number(audioSeconds) || 0 : 0,
       createdAt: nowISO(), createdBy: currentUser.id,
     };
     return this.update(clientId, { contacts: [...client.contacts, contact] });
@@ -553,9 +647,15 @@ const clients = Object.assign(makeEntity('clients'), {
     return this.update(clientId, { contacts });
   },
 
+  /**
+   * حذف سجل تواصل — ويحذف معه تسجيله الصوتي إن وُجد (المرحلة ٢٦).
+   * ملفٌّ يبقى بلا سجلٍّ يشير إليه مساحةٌ ضائعة لا يراها أحد.
+   */
   async removeContact(clientId, contactId) {
     const client = await this.get(clientId);
     if (!client) throw new Error('العميل غير موجود');
+    const gone = (client.contacts || []).find((c) => c.id === contactId);
+    if (gone?.audioId) await adapter.delete('audio', gone.audioId).catch(() => {});
     return this.update(clientId, { contacts: client.contacts.filter((c) => c.id !== contactId) });
   },
 
@@ -751,6 +851,7 @@ export const repo = {
   invoices: makeEntity('invoices'),
   trash,
   expenses: makeEntity('expenses'),
+  audio: makeEntity('audio'), // الملاحظات الصوتية (المرحلة ٢٦)
 
   /** وصول خام للمخازن (النسخ الاحتياطي والبيانات التجريبية). */
   raw: {

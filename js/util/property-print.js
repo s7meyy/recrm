@@ -3,7 +3,7 @@
 // بلا مكتبة وبلا تصوير DOM (تصدير الصورة مرفوض بقرار المالك منذ المرحلة ٨).
 
 import { el, clear } from './dom.js';
-import { formatSAR, formatArea, formatDate } from './format.js';
+import { formatSAR, formatArea, formatDate, formatNumber, daysWord } from './format.js';
 import { formatPhone } from './phone.js';
 import { getImageUrl } from '../data/images.js';
 import { labelFor, ENUMS, TYPE_FIELD_GROUPS } from '../data/schema.js';
@@ -141,4 +141,89 @@ export async function printAgreement(property, { lists, company = {}, owner = nu
     el('section', { class: 'print-signatures' },
       el('div', {}, el('div', { text: 'الطرف الأول (المالك)' }), el('div', { class: 'print-sign-line' })),
       el('div', {}, el('div', { text: 'الطرف الثاني (الوسيط)' }), el('div', { class: 'print-sign-line' })))));
+}
+
+/* ===== تقرير المقارنة السوقية للمالك (المرحلة ٢٦) ===== */
+
+const CONFIDENCE_LABEL = { high: 'عالية', medium: 'متوسطة', low: 'منخفضة' };
+const SOURCE_LABEL = { inventory: 'من مخزونك', external: 'عرض معلن', deal: 'صفقة منجزة' };
+
+/**
+ * تقرير مقارنة سوقية (CMA) يُسلَّم للمالك.
+ *
+ * المالك يقول «عقاري يساوي كذا» ولا تملك ورقةً تردّ بها. هذه هي الورقة: **رقمٌ من بياناتك
+ * أنت، بعيّنته ومصدرها وتاريخها** — لا تقديرٌ من نموذج ولا مؤشرٌ من موقع لا يعرف حيّه.
+ *
+ * ثلاثة قيود مكتوبة **في الورقة نفسها** لا هنا فقط، لأن من يقرؤها ليس أنت:
+ *   ١) العيّنة وحجمها ومصدرها معروضة صفًّا صفًّا — لا رقم بلا سنده.
+ *   ٢) درجة الثقة معلنة، والعيّنة الصغيرة تُقال صراحةً «لا تكفي لقرار».
+ *   ٣) ليست تقييمًا معتمدًا ولا شهادة تقييم نظامية — وهذا مكتوب في التذييل.
+ *
+ * @param {object} property العقار
+ * @param {{ lists, company, owner, estimate, trend, asking }} ctx `estimate` ناتج estimatePrice
+ */
+export async function printCma(property, { lists, company = {}, owner = null, estimate = null, trend = null } = {}) {
+  const where = [property.district, property.city].filter(Boolean).join('، ');
+  const subtitle = `${typeLabel(lists, property.type)}${where ? ` — ${where}` : ''} · ${formatDate(new Date().toISOString())}`;
+
+  const facts = [
+    ['المالك', owner?.name || '—'],
+    ['العقار', `${typeLabel(lists, property.type)}${where ? ` — ${where}` : ''}`],
+    ['المساحة', formatArea(property.area)],
+    ['السعر المطلوب حاليًا', formatSAR(property.price)],
+  ];
+
+  // النطاق المقترح: الربيع الأول والثالث لسعر المتر مضروبين في المساحة — لا رقم واحد
+  // يوهم بدقّة لا يملكها الحساب.
+  const range = estimate?.ok
+    ? el('section', { class: 'print-cma-range' },
+        el('table', { class: 'print-table' }, el('tbody', {},
+          el('tr', {}, el('th', { style: { width: '40%' }, text: 'النطاق المقترح' }),
+            el('td', { class: 'print-cma-big', text: `${formatSAR(estimate.low)} — ${formatSAR(estimate.high)}` })),
+          el('tr', {}, el('th', { text: 'الأقرب إلى الوسيط' }), el('td', { text: formatSAR(estimate.estimate) })),
+          el('tr', {}, el('th', { text: 'وسيط سعر المتر' }), el('td', { text: `${formatSAR(estimate.ppm.median)} / م²` })),
+          el('tr', {}, el('th', { text: 'العيّنة' }),
+            el('td', { text: `${formatNumber(estimate.count)} عقارًا ${estimate.basis === 'district' ? 'في الحي نفسه' : 'في المدينة'}`
+              + ` (${formatNumber(estimate.sources.inventory)} من مخزونك · ${formatNumber(estimate.sources.external)} معلنة · ${formatNumber(estimate.sources.deal)} صفقات)` })),
+          el('tr', {}, el('th', { text: 'درجة الثقة' }),
+            el('td', { text: `${CONFIDENCE_LABEL[estimate.confidence] || '—'} — تشتّت العيّنة ${formatNumber(Math.round(estimate.spread * 100))}٪` })))))
+    : el('p', { class: 'print-notes', text: estimate?.reason === 'area'
+        ? 'لا مساحة مسجَّلة لهذا العقار، فلا يمكن حساب سعر المتر — أضف المساحة ثم أعد التقرير.'
+        : `العيّنة المتاحة ${formatNumber(estimate?.count || 0)} عقارًا، وهي لا تكفي لنطاقٍ يُبنى عليه قرار. التقرير يعرض ما توفّر من مقارنات دون رقم مقترح.` });
+
+  const rows = (estimate?.comparables || []).map((c) => el('tr', {},
+    el('td', { text: [c.district, c.city].filter(Boolean).join('، ') || '—' }),
+    el('td', { text: formatArea(c.area) }),
+    el('td', { text: formatSAR(c.price) }),
+    el('td', { text: `${formatSAR(c.ppm)} / م²` }),
+    el('td', { text: SOURCE_LABEL[c.source] || c.source }),
+    el('td', { text: c.at ? formatDate(c.at) : '—' })));
+
+  const comparables = rows.length
+    ? el('table', { class: 'print-table' },
+        el('thead', {}, el('tr', {}, ['الموقع', 'المساحة', 'السعر', 'سعر المتر', 'المصدر', 'التاريخ'].map((t) => el('th', { text: t })))),
+        el('tbody', {}, rows))
+    : el('p', { class: 'print-notes', text: 'لا مقارنات متاحة بعد لهذا النوع في هذا الموقع.' });
+
+  const history = trend
+    ? el('p', { class: 'print-notes', text: `حركة السعر المسجَّلة: ${formatNumber(trend.changes)} تغييرًا`
+        + `${trend.dropPct > 0 ? ` · خُفّض ${formatNumber(trend.dropPct)}٪ عن أول سعر` : ''}`
+        + `${trend.days != null ? ` · مضى على السعر الحالي ${daysWord(trend.days)}` : ''}` })
+    : null;
+
+  printNode(el('article', { class: 'print-doc' },
+    await officeHeader(company, 'تقرير مقارنة سوقية', subtitle),
+    el('table', { class: 'print-table' },
+      el('tbody', {}, facts.map(([label, value]) => el('tr', {},
+        el('th', { style: { width: '30%' }, text: label }),
+        el('td', { text: value }))))),
+    el('h2', { class: 'print-section-title', text: 'السعر المقترح' }),
+    range,
+    history,
+    el('h2', { class: 'print-section-title', text: 'العقارات المقارَنة' }),
+    comparables,
+    el('footer', { class: 'print-footer' },
+      'هذا التقرير مبني على بيانات هذا المكتب وحده (مخزونه وعروض معلنة رصدها وصفقات أتمّها) '
+      + 'وقت طباعته، وهو تقديرٌ استرشادي للتفاوض — وليس تقييمًا عقاريًا معتمدًا ولا شهادة تقييم نظامية. '
+      + (company.phone ? `للاستفسار: ${formatPhone(company.phone)}${company.name ? ` — ${company.name}` : ''}` : ''))));
 }

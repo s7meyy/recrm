@@ -21,8 +21,8 @@ import { announceMatches } from '../util/match-alert.js';
 import { getTemplates, getCompany, getSavedSearches, addSavedSearch, removeSavedSearch } from '../data/settings.js';
 import { getCurrentUser } from '../data/repository.js';
 import { renderTemplate, templateValues, whatsappLink } from '../util/templates.js';
-import { buildPriceIndex, comparePrice, priceTrend } from '../util/price-stats.js';
-import { printProperty, printPropertyCatalog, printAgreement } from '../util/property-print.js';
+import { buildPriceIndex, comparePrice, priceTrend, priceSamples, estimatePrice } from '../util/price-stats.js';
+import { printProperty, printPropertyCatalog, printAgreement, printCma } from '../util/property-print.js';
 
 // "الحالة" فرز خاص بالعقارات (بلا معنى للعروض الخارجية) فيبقى معرَّفًا هنا؛ بقية المجموعات
 // مشتركة مع خريطة العقارات عبر util/property-filters.js فلا تنحرف الصفحتان عن بعضهما.
@@ -72,6 +72,8 @@ async function loadData(ctx) {
   ctx.completeness = completeness;
   // مؤشر سعر المتر من بياناتك أنت (المرحلة ١١): المخزون المعتمد + العروض النشطة + الصفقات.
   ctx.priceIndex = buildPriceIndex({ properties, externals, deals });
+  // العيّنة الخام (المرحلة ٢٦): يحتاجها تقرير المالك ليعرض المقارنات صفًّا صفًّا لا وسيطًا فقط.
+  ctx.priceSamples = priceSamples({ properties, externals, deals });
 }
 
 async function refresh(ctx) {
@@ -561,6 +563,19 @@ async function openShareMenu(ctx, p) {
       onClick: async () => {
         modalRef?.close();
         await printProperty(p, { lists: ctx.lists, company });
+      },
+    }),
+    el('button', {
+      type: 'button', class: 'btn btn-ghost', text: '📊 تقرير مقارنة سوقية للمالك (طباعة)',
+      onClick: async () => {
+        modalRef?.close();
+        // العقار نفسه يُستثنى من عيّنته: سعره المطلوب هو ما نختبره، فإدخاله يجعل الرقم يصدّق نفسه.
+        const estimate = estimatePrice({
+          area: p.area, type: p.type, city: p.city, district: p.district,
+          purpose: (p.purposes || []).includes('rent') && !(p.purposes || []).includes('sale') ? 'rent' : 'sale',
+          excludeId: p.id,
+        }, ctx.priceSamples);
+        await printCma(p, { lists: ctx.lists, company, owner, estimate, trend: priceTrend(p) });
       },
     }),
     el('button', {

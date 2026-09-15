@@ -15,6 +15,7 @@ import { el, clear, badge, emptyState, confirmDialog, toast, openModal, labeled 
 import { formatSAR, formatDate, formatDateTime, relativeDays, daysBetween, daysWord } from '../util/format.js';
 import { formatPhone, toInternational } from '../util/phone.js';
 import { clientName } from './requests.js';
+import { audioNoteField } from '../util/audio-note.js';
 
 export async function render(container) {
   const data = await loadData();
@@ -232,13 +233,16 @@ function askLogContact(client, type) {
   setTimeout(() => {
     const noteInput = el('input', { class: 'input', type: 'text', placeholder: 'خلاصة المكالمة (اختياري)' });
     const followInput = el('input', { class: 'input', type: 'date' });
+    const audio = audioNoteField(); // ملاحظة صوتية (المرحلة ٢٦) — بعد المكالمة مباشرة حيث الكلام حاضر
     const save = async () => {
       try {
+        const voice = audio ? await audio.save(client.id) : null;
         await repo.clients.addContact(client.id, {
           type,
           date: new Date().toISOString(),
           note: noteInput.value.trim(),
           followUpAt: followInput.value ? new Date(`${followInput.value}T09:00:00`).toISOString() : null,
+          audioId: voice?.audioId || null, audioSeconds: voice?.audioSeconds || 0,
         });
         modal.close();
         toast('سُجّل التواصل', 'success');
@@ -252,7 +256,11 @@ function askLogContact(client, type) {
         el('p', { class: 'muted small', text: 'يُحدَّث «آخر تواصل» فلا يظهر العميل متأخرًا وأنت كلّمته.' }),
         el('div', { class: 'form-grid' },
           labeled('ملاحظة', noteInput, { full: true }),
-          labeled('موعد المتابعة القادم', followInput, { hint: 'اختياري — يظهر في «متابعات اليوم»' }))),
+          labeled('موعد المتابعة القادم', followInput, { hint: 'اختياري — يظهر في «متابعات اليوم»' }),
+          audio ? el('div', { class: 'field field-full' },
+            el('span', { class: 'field-label', text: 'ملاحظة صوتية' }), audio.node,
+            el('span', { class: 'field-hint', text: 'تبقى في جهازك: لا تُرفع ولا تُفرَّغ نصًّا في أي خدمة.' })) : null)),
+      onClose: () => audio?.discard(),
       footer: [
         el('button', { type: 'button', class: 'btn btn-primary', text: 'سجّل', onClick: save }),
         el('button', { type: 'button', class: 'btn btn-ghost', text: 'لم أتواصل', onClick: () => modal.close() }),

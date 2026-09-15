@@ -18,7 +18,7 @@ const db = await page.evaluate(async () => new Promise((res) => {
   const rq = indexedDB.open('motabiq');
   rq.onsuccess = () => { const d = rq.result; res({ v: d.version, stores: [...d.objectStoreNames] }); d.close(); };
 }));
-ok('القاعدة رُقّيت إلى ٥ ومخزن السلة موجود', db.v === 5 && db.stores.includes('trash'), `v${db.v}`);
+ok('القاعدة مُرقّاة ومخزن السلة موجود', db.v >= 5 && db.stores.includes('trash'), `v${db.v}`);
 
 /* ===== الحذف يمرّ بالسلة ===== */
 const flow = await page.evaluate(async () => {

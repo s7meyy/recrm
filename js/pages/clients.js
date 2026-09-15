@@ -9,12 +9,14 @@ import {
   promptDialog, toast, emptyState, debounce,
 } from '../util/dom.js';
 import {
-  formatDate, formatDateTime, formatSAR, relativeDays, daysBetween, daysWord,
+  formatDate, formatDateTime, formatSAR, formatNumber, relativeDays, daysBetween, daysWord,
   toInputDateTime, fromInputDateTime, fromInputDate,
 } from '../util/format.js';
 import { matchesQuery } from '../util/arabic.js';
 import { scoreClient } from '../util/lead-score.js';
 import { formatPhone } from '../util/phone.js';
+import { findDuplicates, suggestKeeper } from '../util/duplicates.js';
+import { audioNoteField, audioPlayer } from '../util/audio-note.js';
 
 const GROUPS = [['role', 'الدور'], ['stage', 'المرحلة'], ['tag', 'التصنيف']];
 const VALUES = { role: (c) => c.roles || [], stage: (c) => [c.stage], tag: (c) => c.tags || [] };
@@ -80,7 +82,9 @@ function buildLayout(ctx) {
         class: 'input search', type: 'search', placeholder: 'بحث بالاسم أو الجوال أو الملاحظات…',
         onInput: debounce((e) => { ctx.query = e.target.value; renderFilters(ctx); renderList(ctx); }, 150),
       }),
+      ctx.nodes.dupBtn = el('button', { type: 'button', class: 'btn', hidden: true, onClick: () => openDuplicates(ctx) }),
       el('button', { type: 'button', class: 'btn btn-primary', text: '+ إضافة عميل', onClick: () => openForm(ctx, null) }))));
+  drawDupButton(ctx);
   ctx.nodes.filters = el('div', { class: 'filters' });
   ctx.nodes.list = el('div');
   ctx.container.append(ctx.nodes.filters, ctx.nodes.list);
@@ -229,6 +233,7 @@ async function openDetail(ctx, clientId) {
     const dateInput = el('input', { class: 'input', type: 'datetime-local', value: toInputDateTime() });
     const noteInput = el('textarea', { class: 'input', rows: 2, placeholder: 'ماذا دار في التواصل؟' });
     const followInput = el('input', { class: 'input', type: 'date' });
+    const audio = audioNoteField(); // null في متصفح لا يدعم التسجيل — فلا يُركَّب زرّ لا يعمل
     const addBtn = el('button', {
       type: 'button', class: 'btn btn-primary btn-sm', text: 'تسجيل التواصل',
       onClick: async () => {
@@ -236,8 +241,11 @@ async function openDetail(ctx, clientId) {
         if (!date) { toast('حدد تاريخ التواصل', 'error'); return; }
         addBtn.disabled = true;
         try {
+          // الصوت يُحفظ أولًا: لو فشل حفظه لا يُسجَّل تواصلٌ يشير إلى ملفٍ ليس موجودًا.
+          const voice = audio ? await audio.save(client.id) : null;
           client = await repo.clients.addContact(client.id, {
             type: typeSel.value, date, note: noteInput.value, followUpAt: fromInputDate(followInput.value),
+            audioId: voice?.audioId || null, audioSeconds: voice?.audioSeconds || 0,
           });
           toast('سُجّل التواصل', 'success');
           draw();
@@ -257,6 +265,9 @@ async function openDetail(ctx, clientId) {
         labeled('التاريخ والوقت', dateInput),
         labeled('ملاحظة', noteInput, { full: true }),
         labeled('موعد المتابعة القادمة', followInput, { hint: 'اختياري' }),
+        audio ? el('div', { class: 'field field-full' },
+          el('span', { class: 'field-label', text: 'ملاحظة صوتية' }), audio.node,
+          el('span', { class: 'field-hint', text: 'تبقى في جهازك: لا تُرفع ولا تُفرَّغ نصًّا في أي خدمة.' })) : null,
         el('div', { class: 'field', style: { justifyContent: 'flex-end' } }, addBtn)),
       contacts.length
         ? el('div', { class: 'contact-list' }, contacts.map((c) => el('div', { class: 'contact-item' },
@@ -272,6 +283,7 @@ async function openDetail(ctx, clientId) {
               await refresh(ctx);
             },
           }),
+          c.audioId ? audioPlayer(c.audioId, c.audioSeconds) : null,
           c.note ? el('span', { class: 'contact-note', text: c.note }) : null,
           c.followUpAt ? el('span', { class: 'contact-follow' }, 'متابعة: ', formatDate(c.followUpAt), ` (${relativeDays(c.followUpAt)})`) : null)))
         : el('p', { class: 'muted small', text: 'لم يُسجَّل أي تواصل بعد.' })));
@@ -429,4 +441,106 @@ async function openForm(ctx, existing) {
     ],
   });
   setTimeout(() => nameInput.focus(), 0);
+}
+
+
+/* ===== دمج العملاء المكرّرين (المرحلة ٢٦) ===== */
+
+/** الزرّ لا يظهر إلا إن وُجد تكرار فعلًا — لا زرّ دائم يذكّرك بمشكلة ليست عندك. */
+function drawDupButton(ctx) {
+  const btn = ctx.nodes.dupBtn;
+  if (!btn) return;
+  const pairs = findDuplicates(ctx.clients);
+  btn.hidden = pairs.length === 0;
+  btn.textContent = `عملاء مكرّرون (${formatNumber(pairs.length)})`;
+}
+
+/**
+ * شاشة الدمج: زوجٌ زوجًا، مع **معاينة ما سينتقل** قبل التأكيد.
+ *
+ * ولا يُدمج شيء آليًا مهما بلغ اليقين: سجلّان بجوالٍ واحد قد يكونان أبًا وابنه على رقم واحد،
+ * والقرار قرارك.
+ */
+function openDuplicates(ctx) {
+  const body = el('div', {});
+  let modal = null;
+
+  const draw = async () => {
+    clear(body);
+    const pairs = findDuplicates(ctx.clients);
+    if (!pairs.length) {
+      body.append(el('p', { class: 'muted small', text: 'لا تكرار — كل عميل سجلّ واحد.' }));
+      return;
+    }
+    body.append(el('p', { class: 'muted small', text: 'الدمج ينقل كل ما يشير إلى السجل المكرّر (عقارات وطلبات وصفقات وفواتير ومهام) ويدمج سجل التواصل، ثم يحذفه إلى سلة المحذوفات. راجع قبل أن تؤكّد.' }));
+    for (const pair of pairs.slice(0, 20)) {
+      body.append(await dupRow(ctx, pair, draw));
+    }
+    if (pairs.length > 20) body.append(el('p', { class: 'muted small', text: `+ ${formatNumber(pairs.length - 20)} زوجًا آخر — تظهر بعد دمج هذه.` }));
+  };
+
+  const dupRow = async (context, pair, refreshRows) => {
+    const suggested = suggestKeeper(pair.a, pair.b);
+    let keep = suggested;
+    let drop = suggested.id === pair.a.id ? pair.b : pair.a;
+    const impactNode = el('div', { class: 'muted small' });
+    const label = (c) => `${c.name || 'بلا اسم'} · ${formatPhone(c.phone) || 'بلا جوال'} · ${formatNumber((c.contacts || []).length)} تواصل`;
+    const keepNode = el('div', { class: 'strong' });
+    const dropNode = el('div', { class: 'muted small' });
+
+    const showImpact = async () => {
+      keepNode.textContent = `يبقى: ${label(keep)}`;
+      dropNode.textContent = `يُحذف: ${label(drop)}`;
+      const impact = await repo.clients.mergeImpact(keep.id, drop.id);
+      const parts = [
+        impact.properties ? `${formatNumber(impact.properties)} عقار` : '',
+        impact.requests ? `${formatNumber(impact.requests)} طلب` : '',
+        impact.deals ? `${formatNumber(impact.deals)} صفقة` : '',
+        impact.invoices ? `${formatNumber(impact.invoices)} فاتورة` : '',
+        impact.tasks ? `${formatNumber(impact.tasks)} مهمة` : '',
+        impact.contacts ? `${formatNumber(impact.contacts)} تواصل` : '',
+      ].filter(Boolean);
+      impactNode.textContent = parts.length ? `سينتقل: ${parts.join(' · ')}` : 'لا مرتبطات تنتقل — السجل المكرّر فارغ.';
+    };
+    await showImpact();
+
+    return el('div', { class: 'today-row' },
+      el('div', {},
+        el('div', { class: 'row' },
+          badge(pair.label, pair.sure ? 'badge-ok' : 'badge-warn'),
+          pair.sure ? null : el('span', { class: 'muted small', text: 'تشابه اسم فقط — تحقّق بنفسك' })),
+        keepNode, dropNode, impactNode),
+      el('div', { class: 'row' },
+        el('button', {
+          type: 'button', class: 'btn btn-ghost btn-sm', text: '⇄ اعكس',
+          title: 'اجعل الآخر هو الباقي',
+          onClick: async () => { const t = keep; keep = drop; drop = t; await showImpact(); },
+        }),
+        el('button', {
+          type: 'button', class: 'btn btn-sm', text: 'ادمج',
+          onClick: async () => {
+            const ok = await confirmDialog({
+              title: 'دمج سجلّين',
+              message: `سيبقى «${keep.name || keep.phone}» وينتقل إليه كل ما يخص «${drop.name || drop.phone}»، ثم يُحذف السجل الثاني.\n\nهذا لا يُتراجع عنه بضغطة — السجل المحذوف يبقى في سلة المحذوفات بلا مرتبطاته.`,
+              confirmText: 'ادمج',
+            });
+            if (!ok) return;
+            try {
+              await repo.clients.merge(keep.id, drop.id);
+              toast('دُمج السجلان', 'success');
+              await loadData(context);
+              renderFilters(context);
+              renderList(context);
+              drawDupButton(context);
+              await refreshRows();
+            } catch (err) {
+              toast(err.message || 'تعذّر الدمج', 'error');
+            }
+          },
+        }),
+        el('a', { class: 'btn btn-ghost btn-sm', href: `#/client/${keep.id}`, text: 'الملف', onClick: () => modal?.close() })));
+  };
+
+  modal = openModal({ title: 'عملاء مكرّرون', size: 'wide', body });
+  draw();
 }

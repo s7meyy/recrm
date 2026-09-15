@@ -14,6 +14,7 @@ import { receivables } from '../util/receivables.js';
 import { el, clear, badge, emptyState, openModal, labeled, checkbox, promptDialog, toast } from '../util/dom.js';
 import { formatSAR, formatArea, formatDate, formatDateTime, formatNumber, daysWord, toInputDate, fromInputDate } from '../util/format.js';
 import { formatPhone, toInternational } from '../util/phone.js';
+import { audioPlayer } from '../util/audio-note.js';
 
 function routeClientId() {
   const m = /^#\/client\/([^/?#]+)/.exec(location.hash || '');
@@ -97,7 +98,7 @@ export async function render(container) {
     ? el('div', {}, contacts.slice(0, 10).map((c) => row(
       labelFor(ENUMS.contactTypes, c.type),
       `${formatDateTime(c.date)}${c.note ? ` — ${c.note}` : ''}`,
-      null)))
+      c.audioId ? audioPlayer(c.audioId, c.audioSeconds) : null)))
     : el('p', { class: 'muted small', text: 'لم يُسجَّل تواصل بعد — سجّله من «يومي» بعد كل مكالمة.' })));
 
   /* ===== ما عُرض عليه ===== */
