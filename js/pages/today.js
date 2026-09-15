@@ -6,7 +6,7 @@
 
 import { repo } from '../data/repository.js';
 import { ENUMS, labelFor, clientPriority, clientTagClass, reviewCandidates } from '../data/schema.js';
-import { getLists, getCompleteness, getFollowUpSettings, typeLabel, getUI, setUI, getGoals, getCompany } from '../data/settings.js';
+import { getLists, getCompleteness, getFollowUpSettings, typeLabel, getUI, setUI, getGoals, getCompany, getPlaybooks } from '../data/settings.js';
 import { loadMatchingContext, candidatesFor, matchReadiness } from '../data/matching.js';
 import { buildOpportunityIndex, topOpportunities } from '../util/opportunity.js';
 import { receivables } from '../util/receivables.js';
@@ -133,6 +133,36 @@ function dueWhen(r) {
   if (r.days > 0) return `تأخّر ${daysWord(r.days)}${r.dated ? '' : ' عن تاريخه'}`;
   if (r.days === 0) return 'يستحق اليوم';
   return `يستحق بعد ${daysWord(-r.days)}`;
+}
+
+/**
+ * نقاط المكالمة (المرحلة ٢٨): ما تقوله وأنت تتكلّم، مطويّة افتراضيًا.
+ *
+ * **مطويّة بقصد:** الاستمارة لتسجيل ما جرى لا لتلقينك، ومن أرادها فتحها. وهي نصّ محض —
+ * لا تُنشئ مهمة ولا تُرسل شيئًا ولا تُخزَّن مع العميل، وتُحرَّر كلها من الإعدادات.
+ */
+function playbookBox() {
+  const box = el('details', { class: 'playbook-box' }, el('summary', { text: 'نقاط تقولها في المكالمة' }));
+  const body = el('div', { class: 'muted small', text: 'جارٍ التحميل…' });
+  box.append(body);
+  getPlaybooks().then((books) => {
+    clear(body);
+    if (!books.length) {
+      body.append(el('p', { class: 'muted small', text: 'لا نصوص محفوظة — أضفها من الإعدادات.' }));
+      return;
+    }
+    const select = selectEl({ options: books.map((b) => ({ value: b.id, label: b.name })), value: books[0].id });
+    const points = el('ul', { class: 'simple-list' });
+    const draw = () => {
+      clear(points);
+      const book = books.find((b) => b.id === select.value) || books[0];
+      points.append(...book.points.map((t) => el('li', {}, el('span', { text: t }))));
+    };
+    select.addEventListener('change', draw);
+    body.append(select, points, el('a', { class: 'btn btn-ghost btn-sm', href: '#/settings', text: 'حرّرها →' }));
+    draw();
+  }).catch(() => { clear(body); body.append(el('p', { class: 'muted small', text: 'تعذّر تحميل النصوص.' })); });
+  return box;
 }
 
 /** عنوان المعاينة: العقار الذي ستعاينه، من مخزونك أو من العروض الخارجية. */
@@ -316,6 +346,7 @@ function askLogContact(client, type) {
     const noteInput = el('input', { class: 'input', type: 'text', placeholder: 'خلاصة المكالمة (اختياري)' });
     const followInput = el('input', { class: 'input', type: 'date' });
     const audio = audioNoteField(); // ملاحظة صوتية (المرحلة ٢٦) — بعد المكالمة مباشرة حيث الكلام حاضر
+    const playbook = playbookBox(); // نقاط تقولها (المرحلة ٢٨)
     const save = async () => {
       try {
         const voice = audio ? await audio.save(client.id) : null;
@@ -341,7 +372,8 @@ function askLogContact(client, type) {
           labeled('موعد المتابعة القادم', followInput, { hint: 'اختياري — يظهر في «متابعات اليوم»' }),
           audio ? el('div', { class: 'field field-full' },
             el('span', { class: 'field-label', text: 'ملاحظة صوتية' }), audio.node,
-            el('span', { class: 'field-hint', text: 'تبقى في جهازك: لا تُرفع ولا تُفرَّغ نصًّا في أي خدمة.' })) : null)),
+            el('span', { class: 'field-hint', text: 'تبقى في جهازك: لا تُرفع ولا تُفرَّغ نصًّا في أي خدمة.' })) : null),
+        playbook),
       onClose: () => audio?.discard(),
       footer: [
         el('button', { type: 'button', class: 'btn btn-primary', text: 'سجّل', onClick: save }),

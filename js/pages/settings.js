@@ -26,6 +26,7 @@ import { applyTheme } from '../util/theme.js';
 import { storeImage, getImageUrl, removeImage } from '../data/images.js';
 import { requestFollowUpPermission } from '../util/follow-up-alerts.js';
 import { getPlans, setPlans, PLAN_TRIGGERS, PLAN_STEP_TYPES, SAMPLE_PLAN } from '../data/settings.js';
+import { getPlaybooks, setPlaybooks } from '../data/settings.js';
 import { exportBackup, downloadBlob, markExported, readBackupFile, importBackup } from '../data/backup.js';
 import { imagesSummary, formatBytes } from '../data/images.js';
 import { audioSummary } from '../data/audio.js';
@@ -58,6 +59,7 @@ export async function render(container) {
     panel('متابعة العملاء', 'حدّ "لم يُتواصل معه" في الداشبورد، وتنبيه المتصفح عند تجاوز عميل له.', followUpBody),
     panel('استيراد وتصدير', 'استيراد جهات اتصالك عملاءَ دفعة واحدة، وتصدير جداولك إلى ملفات تفتحها في إكسل.', exchangeBody),
     panel('خطط المتابعة', 'سلسلة خطوات بأيامها تُنشأ مهامها تلقائيًا عند حدث — بدل أن تتذكّر أنت. لا تعمل خطة حتى تُفعّلها.', plansBody),
+    panel('نقاط المكالمات', 'ما تقوله في كل نوع مكالمة — يظهر مطويًّا داخل نافذة تسجيل التواصل. نصّ محض: لا يُنشئ مهمة ولا يُرسل شيئًا.', playbooksBody),
     panel('قوالب رسائل واتساب', 'رسائل جاهزة تُرسل بنقرة من قائمة مشاركة العقار، وتُعبَّأ ببيانات العقار والعميل تلقائيًا.', templatesBody),
     panel('تنبيهات الخلفية', 'تذكير المهام يصلك على الجهاز حتى بعد إغلاق التبويب. لا يغادر جهازك إلا موعد التذكير — بلا عناوين ولا أسماء.', pushBody),
     panel('سلة المحذوفات', 'نسخة من كل سجل حذفته خلال ثلاثين يومًا. يُستعاد السجل نفسه — أما ما حُذف تبعًا له (طلبات العميل مثلًا) فلا يعود.', trashBody),
@@ -572,6 +574,55 @@ async function followUpBody() {
         updateNote();
       },
     })));
+}
+
+/* ===== نقاط المكالمات (المرحلة ٢٨) ===== */
+
+async function playbooksBody(redraw) {
+  const books = await getPlaybooks();
+  const wrap = el('div', {});
+  const draft = books.map((b) => ({ ...b, points: [...b.points] }));
+
+  const draw = () => {
+    clear(wrap);
+    if (!draft.length) {
+      wrap.append(el('p', { class: 'muted small', text: 'لا نصوص. أضف واحدًا، أو أعد الجاهزة بحذف الكل ثم إعادة تحميل الصفحة.' }));
+    }
+    draft.forEach((book, i) => {
+      const nameInput = el('input', { class: 'input', type: 'text', value: book.name, onInput: (e) => { book.name = e.target.value; } });
+      const pointsInput = el('textarea', {
+        class: 'input', rows: Math.max(3, book.points.length + 1), value: book.points.join('\n'),
+        onInput: (e) => { book.points = e.target.value.split('\n'); },
+      });
+      wrap.append(el('div', { class: 'panel-block' },
+        el('div', { class: 'form-grid' },
+          labeled('الاسم', nameInput),
+          el('div', { class: 'field', style: { justifyContent: 'flex-end' } },
+            el('button', {
+              type: 'button', class: 'btn btn-ghost btn-sm', text: '🗑️ احذفه',
+              onClick: () => { draft.splice(i, 1); draw(); },
+            })),
+          labeled('النقاط', pointsInput, { full: true, hint: 'نقطة في كل سطر' }))));
+    });
+  };
+  draw();
+
+  return el('div', {}, wrap,
+    el('div', { class: 'row', style: { marginTop: '12px' } },
+      el('button', {
+        type: 'button', class: 'btn btn-sm', text: '+ نصّ جديد',
+        onClick: () => { draft.push({ name: '', points: [''] }); draw(); },
+      }),
+      el('button', {
+        type: 'button', class: 'btn btn-primary', text: 'حفظ النقاط',
+        onClick: async () => {
+          try {
+            await setPlaybooks(draft);
+            toast('حُفظت النقاط', 'success');
+            await redraw();
+          } catch (err) { errToast(err); }
+        },
+      })));
 }
 
 /* ===== خطط المتابعة (المرحلة ٢٣) ===== */

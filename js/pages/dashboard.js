@@ -6,12 +6,13 @@
 
 import { repo } from '../data/repository.js';
 import { ENUMS, labelFor, invoiceGrandTotal } from '../data/schema.js';
-import { getLists, getCompleteness, getFollowUpSettings, typeLabel, statusLabel } from '../data/settings.js';
+import { getLists, getCompleteness, getFollowUpSettings, typeLabel, statusLabel, getCompany } from '../data/settings.js';
 import { tourStats } from './tours.js';
 import { buildPriceIndex } from '../util/price-stats.js';
 import { conversionFunnel } from '../util/funnel.js';
 import { sourceReport, propertyProfit } from '../util/sources.js';
 import { showingStats } from '../util/showings.js';
+import { revenueForecast } from '../util/forecast.js';
 import { el, clear, badge } from '../util/dom.js';
 import { formatNumber, formatSAR, daysBetween, relativeDays, countWord } from '../util/format.js';
 import { formatPhone, toInternational } from '../util/phone.js';
@@ -30,10 +31,11 @@ async function loadData() {
     repo.invoices.list(), repo.expenses.list(), repo.requests.list(),
   ]);
   const showings = await repo.showings.list(); // المعاينات (المرحلة ٢٧)
+  const company = await getCompany(); // نسبة العمولة لتوقّع الإيراد (المرحلة ٢٨)
   const approved = properties.filter((p) => p.captureStatus === 'approved');
   const clientMap = new Map(clients.map((c) => [c.id, c]));
   const dealPropertyIds = new Set(deals.map((d) => d.propertyId).filter(Boolean));
-  return { clients, properties, approved, tours, matches, externals, deals, lists, completeness, followUp, tasks, invoices, expenses, requests, showings, clientMap, dealPropertyIds };
+  return { clients, properties, approved, tours, matches, externals, deals, lists, completeness, followUp, tasks, invoices, expenses, requests, showings, company, clientMap, dealPropertyIds };
 }
 
 /* ===== أدوات تجميع عامة ===== */
@@ -133,7 +135,7 @@ function statChip(value, label) {
 }
 
 function buildLayout(container, data) {
-  const { clients, properties, approved, tours, matches, externals, deals, lists, completeness, followUp, tasks, invoices, expenses, requests, showings, clientMap, dealPropertyIds } = data;
+  const { clients, properties, approved, tours, matches, externals, deals, lists, completeness, followUp, tasks, invoices, expenses, requests, showings, company, clientMap, dealPropertyIds } = data;
   clear(container);
 
   const pending = properties.filter((p) => p.captureStatus !== 'approved').length;
@@ -227,6 +229,10 @@ function buildLayout(container, data) {
   grid.append(panel('أين تضيع: قمع التحويل', null, ...funnelSection({ requests, matches })));
   grid.append(panel('لماذا تضيع الصفقات', null, ...rejectSection(matches)));
 
+  /* توقّع الإيراد (المرحلة ٢٨) */
+  grid.append(panel('العمولة المتوقَّعة', 'من طلباتك النشطة ونسب قمعك أنت — تقدير لا وعد.',
+    ...forecastSection({ requests, matches, deals, company })));
+
   /* المعاينات ونسبتها إلى الصفقات (المرحلة ٢٧) */
   grid.append(panel('المعاينات', 'الموعد الذي يصير صفقة — والذي لا يصير.', ...showingSection({ showings, deals })));
 
@@ -251,6 +257,43 @@ function buildLayout(container, data) {
  * مؤشرات المستندات المالية: الفواتير وعروض الأسعار منفصلان (عرض السعر ليس إيرادًا).
  * الإجمالي يُحسب من البنود لحظة العرض بـinvoiceTotal — لا مجموع مخزَّن (القسم ١٦).
  */
+/**
+ * توقّع الإيراد (المرحلة ٢٨): أنبوبك × احتمالك التاريخي × نسبة عمولتك.
+ * **ولا رقم قبل عيّنة كافية:** نسبةٌ من صفقتين ليست نسبة، فيُعرض الأنبوب وحده حتى تكبر.
+ */
+function forecastSection({ requests, matches, deals, company }) {
+  const f = revenueForecast({
+    requests, matches, deals, commissionPercent: Number(company.commissionPercent) || 2.5,
+  });
+  const pct = (v) => (v == null ? '—' : `${formatNumber(Math.round(v * 100))}٪`);
+  if (!f.ok) {
+    return [
+      el('dl', { class: 'kv' },
+        el('dt', { text: 'قيمة الطلبات النشطة' }), el('dd', { text: formatSAR(f.pipeline) }),
+        el('dt', { text: 'طلبات بميزانية' }), el('dd', { text: formatNumber(f.counted) })),
+      el('div', { class: 'muted small', text: `لا توقّع بعد: يحتاج ${formatNumber(f.minDeals)} صفقات مكتملة فأكثر ليُبنى على تاريخك أنت. عندك ${formatNumber(f.closed)}.` }),
+      f.noBudget ? el('div', { class: 'muted small', text: `${formatNumber(f.noBudget)} طلبًا نشطًا بلا ميزانية — لا يدخل الحساب.` }) : null,
+    ].filter(Boolean);
+  }
+  return [
+    el('dl', { class: 'kv' },
+      el('dt', { text: 'العمولة المتوقَّعة' }),
+      el('dd', {}, badge(`${formatSAR(f.low)} — ${formatSAR(f.high)}`, 'badge-ok')),
+      el('dt', { text: 'الأقرب إلى الوسط' }), el('dd', { text: formatSAR(f.expected) }),
+      el('dt', { text: 'قيمة الأنبوب' }), el('dd', { text: formatSAR(f.pipeline) })),
+    el('div', { class: 'table-wrap' }, el('table', { class: 'table' },
+      el('thead', {}, el('tr', {}, ['المرحلة', 'طلبات', 'قيمتها', 'احتمالك', 'متوقَّع'].map((t) => el('th', { text: t })))),
+      el('tbody', {}, f.stages.map((st) => el('tr', {},
+        el('td', { class: 'strong', text: st.label }),
+        el('td', { class: 'num', text: formatNumber(st.count) }),
+        el('td', { class: 'num', text: formatSAR(st.value) }),
+        el('td', { class: 'num', text: pct(st.rate) }),
+        el('td', { class: 'num strong', text: formatSAR(st.expected) })))))),
+    f.noBudget ? el('div', { class: 'muted small', text: `${formatNumber(f.noBudget)} طلبًا نشطًا بلا ميزانية — خارج الحساب لأن قيمته لا تُخمَّن.` }) : null,
+    el('div', { class: 'muted small', text: 'الاحتمال محسوب من طلباتك التي أُنجزت فعلًا، والقيمة من سقف الميزانية. وهو تقدير يتحرك مع بياناتك — لا وعد.' }),
+  ].filter(Boolean);
+}
+
 /**
  * المعاينات (المرحلة ٢٧): وحدتها **المعاينة** لا الطلب، ولذلك هي لوحة مستقلة لا مرحلة في
  * القمع — القمع كل مراحله بالطلب وكل مرحلة مجموعة جزئية مما قبلها، والمعاينة تكسر الشرطين.

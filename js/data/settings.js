@@ -25,6 +25,7 @@ export const SETTINGS_KEYS = {
   goals: 'goals', // أهداف شهرية (المرحلة ١٣)
   savedSearches: 'savedSearches', // بحوث محفوظة لكل صفحة (المرحلة ١٧)
   plans: 'plans', // خطط المتابعة المتسلسلة (المرحلة ٢٣)
+  playbooks: 'playbooks', // نقاط تقولها في كل نوع مكالمة (المرحلة ٢٨)
 };
 
 const EMPTY_LISTS = () => ({ propertyTypes: [], propertyStatuses: [], clientTags: [], cities: [], districts: {}, sources: [] });
@@ -708,5 +709,72 @@ export async function setPlans(plans) {
       .slice(0, 20),
   })).filter((plan) => plan.steps.length);
   await repo.settings.set(SETTINGS_KEYS.plans, clean);
+  return clean;
+}
+
+
+/* ===== نصوص المكالمات (المرحلة ٢٨) ===== */
+
+/**
+ * ما تقوله في المكالمة: نقاطٌ أمام عينك وأنت تتكلم، لا نصٌّ يُقرأ حرفيًا.
+ *
+ * **جاهزة من أول تشغيل وقابلة للتعديل والحذف كاملًا:** هذه اجتهاد يُراجَع لا وحي، وأنت
+ * أدرى بسوقك وبأسلوبك. وهي نصّ محض — لا تُنشئ مهمة ولا تُرسل رسالة ولا تُخزَّن مع العميل.
+ */
+export const DEFAULT_PLAYBOOKS = [
+  {
+    id: 'pb_intro', name: 'مكالمة تعارف',
+    points: [
+      'عرّف بنفسك وبالمكتب في جملة واحدة، ثم اسأل: هل الوقت مناسب؟',
+      'اسأل عن الغرض: سكن أم استثمار؟ ومتى يريد الانتقال؟',
+      'اسأل عن الميزانية بصيغة مدى لا رقم: «من كم إلى كم؟»',
+      'اسأل: هل تعاملت مع وسيط آخر على هذا الطلب؟',
+      'اختم بخطوة محدّدة بموعد: «أرسل لك ثلاثة عروض قبل الغد».',
+    ],
+  },
+  {
+    id: 'pb_after_showing', name: 'بعد المعاينة',
+    points: [
+      'ابدأ بسؤال مفتوح: «ما رأيك؟» ثم اصمت واترك له الكلام.',
+      'إن تحفّظ فاسأل: ما الذي كنت تتمنّاه مختلفًا؟',
+      'افصل بين اعتراض السعر واعتراض العقار — علاجهما مختلف.',
+      'اسأل عمّن يشاركه القرار، وهل رآه؟',
+      'اتفق على الخطوة التالية قبل أن تنهي المكالمة.',
+    ],
+  },
+  {
+    id: 'pb_price', name: 'التفاوض على السعر',
+    points: [
+      'اسأل عن الرقم الذي يراه عادلًا، ولماذا.',
+      'اعرض تقرير المقارنة السوقية بدل الجدل: أرقام حيّه لا رأيك.',
+      'لا تَعِد بخفضٍ لم يوافق عليه المالك.',
+      'ابحث عن بديل للسعر: موعد الإفراغ، الأثاث، تقسيط الدفعة.',
+      'اكتب ما اتُّفق عليه وأرسله له نصًّا بعد المكالمة مباشرة.',
+    ],
+  },
+  {
+    id: 'pb_owner', name: 'إقناع المالك بالسعر',
+    points: [
+      'اعرض عدد المعاينات وما قاله المعاينون — الوقائع لا الرأي.',
+      'أرِه تقرير المقارنة السوقية مطبوعًا.',
+      'اذكر كلفة الانتظار: كم شهرًا مضى، وكم يكلّفه الشهر.',
+      'اقترح خفضًا محدّدًا بنسبة ومدّة تجربة، لا خفضًا مفتوحًا.',
+      'إن رفض فاتفق على مراجعة بعد أسبوعين — ولا تترك الملف مفتوحًا بلا موعد.',
+    ],
+  },
+];
+
+export async function getPlaybooks() {
+  const stored = await repo.settings.get(SETTINGS_KEYS.playbooks, null);
+  return Array.isArray(stored) ? stored : DEFAULT_PLAYBOOKS;
+}
+
+export async function setPlaybooks(books) {
+  const clean = (Array.isArray(books) ? books : []).map((b) => ({
+    id: b.id || shortKey('pb'),
+    name: norm(b.name) || 'نصّ بلا اسم',
+    points: (Array.isArray(b.points) ? b.points : []).map((p) => norm(p)).filter(Boolean),
+  })).filter((b) => b.points.length);
+  await repo.settings.set(SETTINGS_KEYS.playbooks, clean);
   return clean;
 }

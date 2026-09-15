@@ -18,11 +18,12 @@ import { parseLocation, isShortMapLink, mapsLink, locationToText } from '../util
 import { LISTING_GROUPS, LISTING_VALUES, listingFilterOptions } from '../util/property-filters.js';
 import { sourceField, rememberSource, sourceBadge } from '../util/source-field.js';
 import { announceMatches } from '../util/match-alert.js';
-import { getTemplates, getCompany, getSavedSearches, addSavedSearch, removeSavedSearch } from '../data/settings.js';
+import { getTemplates, getCompany, getSavedSearches, addSavedSearch, removeSavedSearch, getPublishSettings } from '../data/settings.js';
 import { getCurrentUser } from '../data/repository.js';
 import { renderTemplate, templateValues, whatsappLink } from '../util/templates.js';
 import { buildPriceIndex, comparePrice, priceTrend, priceSamples, estimatePrice } from '../util/price-stats.js';
 import { printProperty, printPropertyCatalog, printAgreement, printCma } from '../util/property-print.js';
+import { adCopy, adGaps } from '../util/ad-copy.js';
 
 // "الحالة" فرز خاص بالعقارات (بلا معنى للعروض الخارجية) فيبقى معرَّفًا هنا؛ بقية المجموعات
 // مشتركة مع خريطة العقارات عبر util/property-filters.js فلا تنحرف الصفحتان عن بعضهما.
@@ -74,6 +75,9 @@ async function loadData(ctx) {
   ctx.priceIndex = buildPriceIndex({ properties, externals, deals });
   // العيّنة الخام (المرحلة ٢٦): يحتاجها تقرير المالك ليعرض المقارنات صفًّا صفًّا لا وسيطًا فقط.
   ctx.priceSamples = priceSamples({ properties, externals, deals });
+  // أرقام العروض المنشورة (المرحلة ٢٨): يذكرها نصّ الإعلان ليطابق ما يراه العميل على صفحتك.
+  const publish = await getPublishSettings();
+  ctx.publishedRefs = new Map(publish.publishedRefs || []);
 }
 
 async function refresh(ctx) {
@@ -566,6 +570,10 @@ async function openShareMenu(ctx, p) {
       },
     }),
     el('button', {
+      type: 'button', class: 'btn btn-ghost', text: '📣 نصّ إعلان جاهز',
+      onClick: () => { modalRef?.close(); openAdCopy(ctx, p, company); },
+    }),
+    el('button', {
       type: 'button', class: 'btn btn-ghost', text: '📊 تقرير مقارنة سوقية للمالك (طباعة)',
       onClick: async () => {
         modalRef?.close();
@@ -934,5 +942,59 @@ async function openForm(ctx, existing) {
       el('button', { type: 'button', class: 'btn btn-ghost', text: 'إلغاء', onClick: () => modal.close() }),
       saveBtn,
     ],
+  });
+}
+
+
+/**
+ * نصّ الإعلان الجاهز (المرحلة ٢٨).
+ *
+ * **لا يُكتب إلا ما هو مسجَّل:** لا «موقع مميز» ولا «فرصة لا تُعوَّض». والنصّ الذي يَعِد
+ * بما ليس في السجل يكسر ثقة المشتري حين يرى العقار — وهي أغلى مما يجلبه إعلان.
+ * وما ينقص الإعلانَ يُقال لك **قبل** النسخ لا بعد النشر.
+ */
+function openAdCopy(ctx, property, company) {
+  const ref = ctx.publishedRefs?.get?.(property.id) || '';
+  const copy = adCopy(property, {
+    typeLabel: typeLabel(ctx.lists, property.type),
+    group: typeGroup(ctx.lists, property.type),
+    company, ref,
+  });
+  const gaps = adGaps(property);
+
+  const blocks = copy.channels.map((ch) => {
+    const area = el('textarea', { class: 'input', rows: ch.key === 'portal' ? 10 : 6, value: ch.text });
+    return el('div', { class: 'panel-block' },
+      el('h3', { text: ch.label }),
+      el('p', { class: 'muted small', text: ch.hint }),
+      area,
+      el('div', { class: 'row' },
+        el('button', {
+          type: 'button', class: 'btn btn-sm', text: '📋 نسخ',
+          onClick: async () => {
+            try { await navigator.clipboard.writeText(area.value); toast('نُسخ النص', 'success'); }
+            catch (_) { area.select(); toast('انسخه يدويًا — المتصفح منع النسخ التلقائي', 'info', 6000); }
+          },
+        }),
+        el('span', {
+          class: ch.over ? 'badge badge-danger' : 'muted small',
+          text: ch.limit
+            ? `${formatNumber([...area.value].length)} / ${formatNumber(ch.limit)} حرفًا${ch.over ? ' — تجاوز الحدّ' : ''}`
+            : `${formatNumber([...area.value].length)} حرفًا`,
+        })));
+  });
+
+  const modal = openModal({
+    title: 'نصّ إعلان جاهز',
+    size: 'wide',
+    body: el('div', {},
+      gaps.length
+        ? el('div', { class: 'notice notice-warn' },
+            el('strong', { text: 'قبل أن تنشر: ' }),
+            gaps.join(' · '))
+        : null,
+      el('p', { class: 'muted small', text: 'النصّ مبنيّ من الحقول المسجَّلة وحدها — عدّله كما تشاء قبل النسخ، ولا يُكتب فيه ما ليس في السجل.' }),
+      ...blocks),
+    footer: [el('button', { type: 'button', class: 'btn btn-ghost', text: 'إغلاق', onClick: () => modal.close() })],
   });
 }

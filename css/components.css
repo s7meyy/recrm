@@ -510,6 +510,12 @@ input[type="date"].input, input[type="datetime-local"].input { direction: ltr; t
 .contact-audio { display: inline-flex; align-items: center; max-width: 100%; }
 .contact-audio audio { max-width: 100%; height: 34px; }
 
+/* ===== المرحلة ٢٨ — نقاط المكالمة ===== */
+.playbook-box { margin-top: 12px; border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 10px; }
+.playbook-box > summary { cursor: pointer; font-weight: 600; }
+.playbook-box .simple-list li { display: block; padding: 4px 0; }
+.playbook-box select { margin: 8px 0; }
+
 /* ===== المرحلة ١٢ — صفحة الفرص ===== */
 .section-title { font-size: var(--fs-lg); margin: 6px 0 10px; }
 .match-alert-row .match-alert-name { flex: 1; }
