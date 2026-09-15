@@ -172,6 +172,15 @@ function photosBlock(photos = []) {
   </section>`;
 }
 
+/** خط عربي يرفعه المستخدم فيُضمَّن في الملف، فلا يعتمد الإخراج على خطوط الجهاز. */
+function fontFace(font) {
+  if (!font?.dataUrl) return '';
+  const fmt = font.dataUrl.includes('font/woff2') ? 'woff2' : (font.dataUrl.includes('font/woff') ? 'woff' : 'truetype');
+  return `@font-face{font-family:"RabihArabic";src:url(${font.dataUrl}) format("${fmt}");font-display:swap}
+body{font-family:"RabihArabic","Segoe UI",Tahoma,sans-serif!important}
+`;
+}
+
 const CSS = `
 :root{--ink:#14181f;--muted:#5b6472;--line:#d9dee6;--navy:#16324f;--gold:#9a7b26;--bg:#fff}
 *{box-sizing:border-box}
@@ -251,7 +260,8 @@ figcaption{font-size:9pt;color:var(--muted);margin-top:1mm;text-align:center}
  * @param {Array}  o.photos  [{url, caption}]
  * @returns {string} HTML كامل مكتفٍ بذاته
  */
-export function buildReportHtml({ place, ctx = {}, markdown = '', photos = [] }) {
+export function buildReportHtml({ place, ctx = {}, markdown = '', photos = [], show = {}, font = null }) {
+  const opt = { toc: true, stars: true, topics: true, photos: true, ...show };
   const s = stats(place);
   const body = tocFrom(mdToHtml(markdown));
   const date = new Date().toLocaleDateString('ar-SA-u-ca-gregory');
@@ -282,17 +292,17 @@ export function buildReportHtml({ place, ctx = {}, markdown = '', photos = [] })
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>تقرير ${name} — رابح</title>
-<style>${CSS}</style>
+<style>${fontFace(font)}${CSS}</style>
 </head>
 <body>
 <div class="page">
 ${cover}
 <main class="body">
-${body.toc}
-${starBars(place)}
-${topicsBlock(place)}
+${opt.toc ? body.toc : ''}
+${opt.stars ? starBars(place) : ''}
+${opt.topics ? topicsBlock(place) : ''}
 ${body.html}
-${photosBlock(photos)}
+${opt.photos ? photosBlock(photos) : ''}
 </main>
 ${footer}
 </div>

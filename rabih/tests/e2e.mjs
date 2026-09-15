@@ -197,6 +197,35 @@ try {
   const inRep = await page.frameLocator('#r-frame').locator('.body').textContent();
   inRep.includes('خطة العمل') ? ok('الخطة تظهر في التقرير') : bad('الخطة في التقرير');
 
+  console.log('٧-ج) القوالب والتصدير');
+  const tplOpts = await page.$$eval('#r-template option', o => o.map(x => x.textContent));
+  tplOpts.length === 3 ? ok('ثلاثة قوالب: ' + tplOpts.join('، ')) : bad('القوالب', tplOpts.join('|'));
+  const fullHeads = await page.frameLocator('#r-frame').locator('.body h2').count();
+  await page.selectOption('#r-template', 'brief');
+  await page.waitForTimeout(600);
+  const briefHeads = await page.frameLocator('#r-frame').locator('.body h2').count();
+  briefHeads < fullHeads ? ok(`قالب الصفحة الواحدة يقصّ (${fullHeads} ← ${briefHeads} قسمًا)`) : bad('قصّ القالب', `${fullHeads}/${briefHeads}`);
+  const note = await page.textContent('#tpl-note');
+  note.includes('يُستبعد') ? ok('يُعلن ما سيُستبعد قبل الإخراج') : bad('إعلان الاستبعاد', note.slice(0,70));
+  const noTopics = await page.frameLocator('#r-frame').locator('.topics').count();
+  noTopics === 0 ? ok('القالب المختصر يُخفي المواضيع') : bad('إخفاء المواضيع', noTopics);
+  await page.selectOption('#r-template', 'full');
+  await page.waitForTimeout(500);
+  const back = await page.frameLocator('#r-frame').locator('.body h2').count();
+  back === fullHeads ? ok('العودة للقالب الكامل تستعيد كل الأقسام') : bad('استعادة الأقسام', `${back}/${fullHeads}`);
+
+  const dl = page.waitForEvent('download', { timeout: 8000 });
+  await page.click('#btn-download-xlsx');
+  const file = await dl;
+  const fname = file.suggestedFilename();
+  fname.endsWith('.xlsx') && /^[\x20-\x7E]+$/.test(fname)
+    ? ok('تنزيل Excel باسم لاتيني يحفظ الامتداد: ' + fname)
+    : bad('تنزيل Excel', fname);
+  const xpath = '/tmp/rabih-e2e.xlsx';
+  await file.saveAs(xpath);
+  const size = (await import('node:fs')).statSync(xpath).size;
+  size > 3000 ? ok(`ملف Excel سليم الحجم (${size} بايت)`) : bad('حجم Excel', size);
+
   console.log('٨) الأرشيف والاستعادة');
   await page.click('[data-go="archive"]');
   await page.waitForTimeout(500);
@@ -272,6 +301,18 @@ try {
   bench2.includes('الترتيب') ? ok('الترتيب محسوب: ' + (bench2.match(/الترتيب \d+ من \d+/) || [''])[0]) : bad('الترتيب');
   const meCells = await page.$$eval('#bench-box .me', n => n.length);
   meCells >= 1 ? ok('صفّ المنشأة مميَّز') : bad('تمييز الصف', meCells);
+
+  console.log('٨-د) العمل بلا اتصال');
+  const swReg = await page.evaluate(async () => {
+    const r = await navigator.serviceWorker.getRegistration();
+    return !!r;
+  });
+  swReg ? ok('عامل الخدمة مسجَّل') : bad('عامل الخدمة');
+  const mani = await page.evaluate(async () => {
+    const res = await fetch('manifest.webmanifest');
+    return res.ok ? (await res.json()).short_name : null;
+  });
+  mani === 'رابح' ? ok('بيان التطبيق يُقرأ') : bad('بيان التطبيق', mani);
 
   console.log('٩) الجوال (390px)');
   await page.setViewportSize({ width: 390, height: 844 });

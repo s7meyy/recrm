@@ -3,7 +3,7 @@
 import { REGIONS, CITIES, citiesOfRegion, cityById, regionById } from './data/cities.js';
 import { CATEGORY_GROUPS, ALL_CATEGORIES, categoryById } from './data/categories.js';
 import { districtsOf, addDistrict } from './data/districts.js';
-import { parseMapsUrl, slugify } from './maps.js';
+import { parseMapsUrl, asciiName } from './maps.js';
 import { emptyPlace, assignReviewIds, validate, stats } from './schema.js';
 import { parseReviews, parseHeader } from './parse.js';
 import { STEPS, STAGE_NAMES, MODEL_PICKS } from './prompts.js';
@@ -13,6 +13,8 @@ import { verify } from './verify.js';
 import { scan, withoutFlagged, FLAGS } from './anomaly.js';
 import { comparablePlaces, timeline, competitors, benchmark } from './compare.js';
 import { extractTasks, mergeTasks, progress, planMarkdown, defaultDue, STATUS } from './plan.js';
+import { TEMPLATES, DEFAULT_TEMPLATE, applyTemplate, droppedSections } from './templates.js';
+import { buildXlsx, jobSheets, archiveSheet } from './export.js';
 import { newId, saveJob, getJob, allJobs, deleteJob, buildTree, jobPath } from './store.js';
 
 const $  = (s, r = document) => r.querySelector(s);
@@ -49,7 +51,7 @@ function message(host, kind, title, items = []) {
 }
 
 function download(filename, content, type = 'text/plain;charset=utf-8') {
-  const blob = new Blob([content], { type });
+  const blob = content instanceof Blob ? content : new Blob([content], { type });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url; a.download = filename;
@@ -83,6 +85,8 @@ function blankJob() {
     photos: [],
     plan: [],
     planInReport: false,
+    template: DEFAULT_TEMPLATE,
+    font: null,          // { name, dataUrl } خط عربي يرفعه المستخدم
   };
 }
 
@@ -533,7 +537,7 @@ function renderPipeline() {
     });
     btnDl.addEventListener('click', () => {
       const text = buildPrompt();
-      if (text) download(`رابح-${step.key}-${slugify(job.place.identity.name)}.txt`, text);
+      if (text) download(`rabih-${step.key}-${asciiName(job.place.identity.name)}.txt`, text);
     });
 
     const lbl = el('label', null, 'إجابة النموذج');
@@ -588,7 +592,7 @@ function updateProgress() {
 function bindPipelineView() {
   $('#btn-open-openrouter').addEventListener('click', () => window.open('https://openrouter.ai/chat', '_blank', 'noopener'));
   $('#btn-export-job').addEventListener('click', () => {
-    download(`رابح-حالة-${slugify(job.place.identity.name)}.json`, JSON.stringify(job, null, 2), 'application/json');
+    download(`rabih-state-${asciiName(job.place.identity.name)}.json`, JSON.stringify(job, null, 2), 'application/json');
   });
   $('#btn-to-report').addEventListener('click', () => {
     const final = (job.out.am || '').trim();
@@ -606,17 +610,22 @@ function bindPipelineView() {
 function loadReportView() {
   $('#r-md').value = job.reportMd || job.out.am || '';
   $('#plan-in-report').checked = !!job.planInReport;
+  fillTemplates();
+  showFontState();
   renderPlan();
   renderReport();
   renderStepsBar('report');
 }
 
 function currentHtml() {
+  const tpl = TEMPLATES[job.template] || TEMPLATES[DEFAULT_TEMPLATE];
   return buildReportHtml({
     place: job.place,
     ctx: job.ctx,
-    markdown: reportMarkdown(),
+    markdown: applyTemplate(reportMarkdown(), tpl.id),
     photos: job.photos,
+    show: tpl.show,
+    font: job.font,
   });
 }
 
@@ -627,7 +636,7 @@ function renderReport() {
 
 function reportFileName(ext) {
   const c = job.ctx;
-  return `${slugify(job.place.identity.name)}-${slugify(c.cityName)}-${new Date().toISOString().slice(0, 10)}.${ext}`;
+  return `rabih-${asciiName(job.place.identity.name)}-${asciiName(c.cityName, 'ksa')}-${new Date().toISOString().slice(0, 10)}.${ext}`;
 }
 
 function shareText() {
@@ -849,8 +858,76 @@ function bindCompareView() {
   $('#cmp-target').addEventListener('change', renderBenchmark);
 }
 
+/* ───────────────────────── القوالب والخط والتصدير ───────────────────────── */
+
+function fillTemplates() {
+  const sel = $('#r-template');
+  if (!sel) return;
+  sel.innerHTML = Object.values(TEMPLATES).map((t) =>
+    `<option value="${t.id}"${(job.template || DEFAULT_TEMPLATE) === t.id ? ' selected' : ''}>${t.name}</option>`).join('');
+  showTemplateNote();
+}
+
+function showTemplateNote() {
+  const tpl = TEMPLATES[job.template] || TEMPLATES[DEFAULT_TEMPLATE];
+  const dropped = droppedSections(reportMarkdown(), tpl.id);
+  $('#tpl-note').innerHTML = `${tpl.note}${
+    dropped.length ? `<br><b>يُستبعد من هذا الإخراج:</b> ${dropped.join('، ')}. (النص الأصلي محفوظ كما هو.)` : ''}`;
+}
+
+function showFontState() {
+  const note = $('#font-note');
+  if (!note) return;
+  if (job.font?.name) {
+    note.innerHTML = `الخط المضمَّن: <b>${job.font.name}</b> — <a href="#" id="font-clear">إزالته</a>`;
+    const clear = $('#font-clear');
+    if (clear) clear.addEventListener('click', (e) => {
+      e.preventDefault();
+      job.font = null; showFontState(); renderReport(); scheduleSave(); toast('أُزيل الخط');
+    });
+  } else {
+    note.textContent = 'بدونه يُستعمل خط الجهاز. تضمينه يزيد حجم الملف نحو ٣٠٠ كيلوبايت ويثبّت الشكل عند كل مستقبِل.';
+  }
+}
+
+function bindOutputView() {
+  $('#r-template').addEventListener('change', (e) => {
+    job.template = e.target.value;
+    showTemplateNote();
+    renderReport();
+    scheduleSave();
+  });
+
+  $('#r-font').addEventListener('change', (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (f.size > 2 * 1024 * 1024) { toast('الخط أكبر من ٢ ميغابايت'); e.target.value = ''; return; }
+    const fr = new FileReader();
+    fr.onload = () => {
+      job.font = { name: f.name, dataUrl: fr.result };
+      showFontState(); renderReport(); scheduleSave();
+      toast('ضُمِّن الخط في التقرير');
+    };
+    fr.onerror = () => toast('تعذّرت قراءة ملف الخط');
+    fr.readAsDataURL(f);
+    e.target.value = '';
+  });
+
+  $('#btn-download-xlsx').addEventListener('click', () => {
+    download(reportFileName('xlsx'), buildXlsx(jobSheets(job)));
+    toast('نُزِّل ملف Excel');
+  });
+
+  $('#btn-archive-xlsx').addEventListener('click', async () => {
+    const jobs = await allJobs();
+    if (!jobs.length) { toast('الأرشيف فارغ'); return; }
+    download(`rabih-archive-${new Date().toISOString().slice(0, 10)}.xlsx`, buildXlsx(archiveSheet(jobs)));
+  });
+}
+
 function bindReportView() {
   $('#r-md').addEventListener('input', (e) => { job.reportMd = e.target.value; scheduleSave(); });
+  $('#r-md').addEventListener('blur', showTemplateNote);
   $('#btn-render').addEventListener('click', () => { renderReport(); toast('حُدّثت المعاينة'); });
 
   $('#btn-print').addEventListener('click', () => {
@@ -969,7 +1046,7 @@ function bindArchiveView() {
   });
   $('#btn-export-all').addEventListener('click', async () => {
     const jobs = await allJobs();
-    download(`رابح-أرشيف-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(jobs, null, 2), 'application/json');
+    download(`rabih-archive-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(jobs, null, 2), 'application/json');
   });
   $('#ar-import').addEventListener('change', async (e) => {
     const f = e.target.files?.[0];
@@ -997,6 +1074,7 @@ async function boot() {
   bindPipelineView();
   bindReportView();
   bindPlanView();
+  bindOutputView();
   bindCompareView();
   bindArchiveView();
 
@@ -1031,6 +1109,11 @@ async function boot() {
     toast('استُعيد آخر تقرير');
   } else {
     show('new');
+  }
+
+  // العمل بلا اتصال: لا شيء يُرسَل إلى خادم أصلًا، والاتصال إنما يلزم لأول تحميل.
+  if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+    navigator.serviceWorker.register('./sw.js').catch(() => { /* لا يمنع التشغيل */ });
   }
 
   window.addEventListener('beforeunload', (e) => {
