@@ -66,11 +66,26 @@ function breakdownColumn(title, pairs, { limit = 8, emptyText = 'لا بيانا
     rest > 0 ? el('div', { class: 'muted small', text: `+ ${formatNumber(rest)} أخرى` }) : null);
 }
 
+/**
+ * لوحة في الداشبورد. و`money: true` توسمها **حسّاسة** (المرحلة ٣٦).
+ *
+ * كان `data-sensitive` موسومًا في ثمانية مواضع في صفحتين، يغطّي اسم المالك وجوّال العميل
+ * وملاحظاتك — **ولا يغطّي العمولة إطلاقًا**. فكان «وضع العرض للعميل» يُريه أرباحك، ووضعُ
+ * المساعد كذلك. وهذا خُلْفٌ لما وعدتْ به الميزة، وخُلْفُ الوعد في حجبٍ أسوأ من غيابه:
+ * تبني عليه ثقةً لا يستحقّها.
+ */
 function panel(title, desc, ...content) {
   return el('div', { class: 'panel' },
     el('h2', { text: title }),
     desc ? el('div', { class: 'panel-desc', text: desc }) : null,
     ...content);
+}
+
+/** لوحةٌ فيها مال: تُخفى في «وضع العرض للعميل» وفي وضع المساعد. */
+function moneyPanel(title, desc, ...content) {
+  const node = panel(title, desc, ...content);
+  node.setAttribute('data-sensitive', '');
+  return node;
 }
 
 /* ===== المؤشرات ===== */
@@ -216,7 +231,7 @@ function buildLayout(container, data) {
       : el('div', { class: 'muted small', text: 'لا مطابقات محفوظة بعد.' })));
 
   /* الصفقات والإيراد */
-  grid.append(panel('الصفقات والإيراد', null,
+  grid.append(moneyPanel('الصفقات والإيراد', null,
     el('dl', { class: 'kv' },
       el('dt', { text: 'إيراد هذا الشهر' }), el('dd', { text: formatSAR(deal.monthRevenue) }),
       el('dt', { text: 'عمولة هذا الشهر' }), el('dd', { text: formatSAR(deal.monthCommission) }),
@@ -226,13 +241,13 @@ function buildLayout(container, data) {
     el('div', { class: 'muted small', text: 'صفقات العروض الخارجية (بلا عقار من مخزونك) تدخل الإيراد والعمولة أعلاه، ولا تدخل معدل التحويل.' })));
 
   /* صافي الربح ولماذا تضيع الصفقات (المرحلة ١٣) */
-  grid.append(panel('صافي الربح', null, ...profitSection({ deals, expenses })));
+  grid.append(moneyPanel('صافي الربح', null, ...profitSection({ deals, expenses })));
   grid.append(panel('أين تضيع: قمع التحويل', null, ...funnelSection({ requests, matches })));
   grid.append(panel('لماذا تضيع الصفقات', null, ...rejectSection(matches)));
   grid.append(panel('لماذا يتركك الناس', 'سبب موت الطلب كلّه لا سبب رفض عرضٍ واحد.', ...lossSection(requests)));
 
   /* توقّع الإيراد (المرحلة ٢٨) */
-  grid.append(panel('العمولة المتوقَّعة', 'من طلباتك النشطة ونسب قمعك أنت — تقدير لا وعد.',
+  grid.append(moneyPanel('العمولة المتوقَّعة', 'من طلباتك النشطة ونسب قمعك أنت — تقدير لا وعد.',
     ...forecastSection({ requests, matches, deals, company })));
 
   /* المعاينات ونسبتها إلى الصفقات (المرحلة ٢٧) */
@@ -242,14 +257,14 @@ function buildLayout(container, data) {
   if (discount) grid.append(discount);
 
   /* من أين يأتي المال، وأي عقار يستحق جهدك (المرحلة ٢٤) */
-  grid.append(panel('مصادر العملاء', 'أي مصدرٍ أعطاك صفقات لا مجرد أسماء.', ...sourceSection({ clients, requests, deals, expenses })));
-  grid.append(panel('ربحية العقارات', 'العمولة الصافية ناقص ما صُرف على العقار.', ...propertySection({ properties, deals, expenses, lists })));
+  grid.append(moneyPanel('مصادر العملاء', 'أي مصدرٍ أعطاك صفقات لا مجرد أسماء.', ...sourceSection({ clients, requests, deals, expenses })));
+  grid.append(moneyPanel('ربحية العقارات', 'العمولة الصافية ناقص ما صُرف على العقار.', ...propertySection({ properties, deals, expenses, lists })));
 
   /* مؤشر السوق من بياناتك (المرحلة ١١) */
   grid.append(panel('مؤشر سعر المتر', null, ...priceSection({ properties, externals, deals, lists })));
 
   /* الفواتير وعروض الأسعار (المرحلة ١٠) */
-  grid.append(panel('الفواتير وعروض الأسعار', null, ...invoiceSection(invoices)));
+  grid.append(moneyPanel('الفواتير وعروض الأسعار', null, ...invoiceSection(invoices)));
 
   /* الجولات الميدانية */
   grid.append(panel('الجولات الميدانية', null, ...tourSection({ tours, properties, clientMap, completeness, dealPropertyIds })));

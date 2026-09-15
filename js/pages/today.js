@@ -389,8 +389,11 @@ async function markCommissionPaid(event, r) {
   build(container, await loadData());
 }
 
-function section(title, count, body, { href = null, hrefText = null, tone = '' } = {}) {
-  return el('section', { class: `panel today-panel ${tone}`.trim() },
+function section(title, count, body, { href = null, hrefText = null, tone = '', money = false } = {}) {
+  // `money` توسم اللوحة حسّاسة (المرحلة ٣٦): لا يراها العميل على شاشتك ولا يراها المساعد.
+  return el('section', money
+    ? { class: `panel today-panel ${tone}`.trim(), 'data-sensitive': '' }
+    : { class: `panel today-panel ${tone}`.trim() },
     el('div', { class: 'today-head' },
       el('h2', {}, title, count != null ? el('span', { class: 'count', text: ` (${count})` }) : null),
       href ? el('a', { class: 'btn btn-ghost btn-sm', href, text: hrefText || 'فتح →' }) : null),
@@ -511,7 +514,7 @@ function build(container, d) {
       goalBar('صفقات', d.progress.deals, d.progress.goals.dealsPerMonth, (v) => String(v)),
       goalBar('عمولات', d.progress.commission, d.progress.goals.commissionPerMonth, formatSAR),
       el('p', { class: 'muted small', text: `مصاريف هذا الشهر: ${formatSAR(d.progress.spent)} · الصافي: ${formatSAR(d.progress.commission - d.progress.spent)}` })),
-    { href: '#/expenses', hrefText: 'المصاريف →' }));
+    { href: '#/expenses', hrefText: 'المصاريف →', money: true }));
   }
 
   /* طلبات من صفحتك العامة لم يُردَّ عليها (المرحلة ٣٥) — لا شيء أعجل منها */
@@ -576,7 +579,7 @@ function build(container, d) {
                 onClick: (e) => markPaymentPaid(e, r),
               })
               : el('a', { class: 'btn btn-ghost btn-sm', href: `#/invoices/${r.id}`, text: 'فتح' })))),
-      { href: '#/invoices', hrefText: 'الفواتير →', tone: d.due.overdueCount ? 'today-warn' : '' }));
+      { href: '#/invoices', hrefText: 'الفواتير →', tone: d.due.overdueCount ? 'today-warn' : '', money: true }));
   }
 
   /* ذكرى الصفقة (المرحلة ٣٢): أرخص إحالة في الوساطة كلمةٌ في يومها */

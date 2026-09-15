@@ -7,7 +7,7 @@
 // العبارة تُحفظ في هذا الجهاز (إن اخترت) كي يعمل الرفع التلقائي؛ الخطر المفترض هنا هو ضياع
 // الجهاز لا اختراقه محليًا — ومن يملك جهازك المفتوح يرى البيانات نفسها في التطبيق أصلًا.
 
-import { exportBackup, readBackupFile, importBackup, mergeBackup, restoreRisk } from './backup.js';
+import { exportBackup, readBackupFile, importBackup, mergeBackup, restoreRisk, importSettings } from './backup.js';
 
 const ENDPOINT = '/api/vault';
 const PBKDF2_ROUNDS = 200000;
@@ -222,6 +222,13 @@ export async function restoreBackup(passphrase, key = null) {
  * وهذا ما يجعل جهازين لا يمحو أحدهما الآخر — وهو الطريق المعتاد للنقل بين الأجهزة،
  * والاستبدال يبقى لحالةٍ واحدة: جهازٌ جديد فارغ، أو جهازٌ أفسدتَ بياناته وتريد الرجوع.
  */
+/** ينقل إعدادات النسخة إلى هذا الجهاز — قرارٌ صريح منفصل عن الدمج. */
+export async function settingsFromVault(passphrase, key = null) {
+  const { data, exportedAt, key: target } = await fetchBackup(passphrase, key);
+  const stats = await importSettings(data);
+  return { ...stats, exportedAt, key: target };
+}
+
 export async function mergeFromVault(passphrase, key = null) {
   const { data, counts, exportedAt, key: target } = await fetchBackup(passphrase, key);
   const stats = await mergeBackup(data);

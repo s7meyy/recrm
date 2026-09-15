@@ -235,6 +235,8 @@ export async function mergeBackup(parsed) {
   }
 
   for (const store of repo.raw.stores) {
+    // الإعدادات لا تُدمج مفتاحًا مفتاحًا (انظر التوثيق أعلاه)، وتُنقل كاملةً بقرارٍ صريح
+    // عبر `importSettings`. والسلّة شواهدُ حذفٍ تُقرأ ولا تُكتب هنا.
     if (store === 'settings' || store === 'trash') continue;
     const incoming = parsed.db?.[store];
     if (!Array.isArray(incoming)) continue;
@@ -264,4 +266,35 @@ export async function mergeBackup(parsed) {
 
   await setLastExport(new Date().toISOString());
   return stats;
+}
+
+
+/**
+ * نقل **الإعدادات وحدها** من نسخة (المرحلة ٣٦).
+ *
+ * الدمج لا يمسّ الإعدادات بقصد: مفتاحٌ نصفُه من هنا ونصفُه من هناك إعدادٌ لا معنى له.
+ * وأثرُ ذلك أن جهازًا جديدًا يُدمج فيه تصل بياناته بلا قوالب رسائلك ولا خطط متابعتك ولا
+ * بيانات مكتبك. فهذا يجعله **قرارًا صريحًا**: زرٌّ يستبدل إعدادات هذا الجهاز بإعدادات
+ * النسخة، لا شيئًا يقع صامتًا في أثناء دمجٍ طلبتَه لغيره.
+ *
+ * @param {object} parsed النسخة المقروءة
+ * @param {{ keep }} options `keep` مفاتيح لا تُستبدل — والخزنة منها دائمًا: عبارتها السرّية
+ *   تخصّ هذا الجهاز، ونقلُها من نسخةٍ يعني كتابة عبارة جهازٍ آخر فوق عبارتك.
+ * @returns {{ moved: number, kept: string[] }}
+ */
+export async function importSettings(parsed, { keep = ['vault'] } = {}) {
+  const rows = Array.isArray(parsed?.db?.settings) ? parsed.db.settings : [];
+  if (!rows.length) return { moved: 0, kept: [] };
+  const out = [];
+  const kept = [];
+  for (const row of rows) {
+    // مفتاح مخزن الإعدادات `key` لا `id` — ونقبل الاثنين لأن نسخًا قديمة قد تحمل أيًّا منهما.
+    const key = row?.key ?? row?.id;
+    if (!key) continue;
+    if (keep.includes(key)) { kept.push(key); continue; }
+    out.push({ key, value: row.value, updatedAt: row.updatedAt || new Date().toISOString(), updatedBy: row.updatedBy || null });
+  }
+  if (out.length) await repo.raw.putMany('settings', out);
+  // ما كان عندك ولم يأتِ في النسخة يبقى: النقل إضافةٌ واستبدال، لا مسحٌ لما لا مقابل له.
+  return { moved: out.length, kept };
 }

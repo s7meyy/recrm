@@ -15,7 +15,7 @@ import {
 } from '../data/settings.js';
 import {
   listBackups, uploadBackup, restoreBackup, uploadImages, listImageBackups, restoreImages,
-  inspectBackup, mergeFromVault,
+  inspectBackup, mergeFromVault, settingsFromVault,
 } from '../data/vault.js';
 import { pushSupported, enablePush, disablePush, currentSubscription, syncReminders } from '../util/push.js';
 import { TEMPLATE_VARS } from '../util/templates.js';
@@ -1018,6 +1018,11 @@ async function vaultBody(redraw) {
               onClick: () => doMerge(b.key),
             }),
             el('button', {
+              type: 'button', class: 'btn btn-sm', text: 'الإعدادات',
+              title: 'ينقل قوالبك وخططك وبيانات مكتبك من هذه النسخة — والدمج لا ينقلها بقصد',
+              onClick: () => doSettings(b.key),
+            }),
+            el('button', {
               type: 'button', class: 'btn btn-sm', text: 'استبدال',
               title: 'يمحو ما في الجهاز ويضع النسخة مكانه',
               onClick: () => doRestore(b.key),
@@ -1037,6 +1042,26 @@ async function vaultBody(redraw) {
       const s2 = res.stats;
       toast(`دُمجت نسخة ${formatDateTime(res.exportedAt)} — أُضيف ${s2.added} · حُدّث ${s2.updated} · بقي أحدث ${s2.kept}`, 'success', 6000);
       setTimeout(() => location.reload(), 1400);
+    } catch (err) { errToast(err); }
+  };
+
+  /**
+   * نقل الإعدادات وحدها (المرحلة ٣٦): الدمج لا يمسّها بقصد، فيصل جهازٌ جديد بلا قوالبك
+   * ولا خططك ولا بيانات مكتبك. وهذا يجعل نقلها **قرارًا صريحًا** لا أثرًا جانبيًّا.
+   * وعبارة الخزنة السرّية لا تُنقل: تخصّ هذا الجهاز، وكتابةُ عبارة جهازٍ آخر فوقها عطب.
+   */
+  const doSettings = async (key) => {
+    const ok = await confirmDialog({
+      title: 'نقل الإعدادات من النسخة',
+      message: 'ستُستبدل إعدادات هذا الجهاز (القوائم والقوالب والخطط وبيانات المكتب) بما في النسخة.'
+        + '\nوعبارة الخزنة السرّية لا تُنقل — تبقى عبارة هذا الجهاز.\n\nالمتابعة؟',
+      confirmText: 'انقل الإعدادات',
+    });
+    if (!ok) return;
+    try {
+      const res = await settingsFromVault(passInput.value.trim(), key);
+      toast(`نُقل ${res.moved} إعدادًا — يُعاد التحميل…`, 'success');
+      setTimeout(() => location.reload(), 1200);
     } catch (err) { errToast(err); }
   };
 
@@ -1159,10 +1184,11 @@ async function vaultBody(redraw) {
       el('button', { type: 'button', class: 'btn', text: 'تحديث القائمة', onClick: () => { drawList(); drawImages(); } })),
     el('div', { class: 'panel-block' }, el('h3', { text: 'نسخ البيانات (آخر ٥)' }), listBox),
     el('div', { class: 'panel-block' }, el('h3', { text: 'الصور' }), imagesBox,
+      el('p', { class: 'muted small', text: 'الترتيب بين جهازين: استرجع الصور أوّلًا ثم ارفعها — فترفع دفعتك وفيها صور الجهازين، وتلتقي المكتبتان. والاسترجاع يضيف ولا يمحو.' }),
       el('p', { class: 'muted small', text: 'الصور تسعة أعشار الحجم، وبياناتك كلها في العشر الباقي.'
         + ' فتُرفع البيانات كل يوم (سريعة ولا تفشل)، والصور في كتلٍ منفصلة كل أسبوع.'
         + ' وكانت النسخة الواحدة تحمل الاثنين فتتجاوز حدّ الرفع بعد عشرين عقارًا بصورها — فيفشل الرفع بلا رسالة، وصاحبه يحسب نسخته محفوظة.' })),
-    el('p', { class: 'muted small', text: 'للنقل إلى جهاز آخر: افتح التطبيق عليه، اكتب العبارة السرّية نفسها، ثم **دمج** —'
+    el('p', { class: 'muted small', text: 'للنقل إلى جهاز آخر: افتح التطبيق عليه، اكتب العبارة السرّية نفسها، ثم «دمج» —'
       + ' فيجتمع عمل الجهازين ولا يُمحى شيء. و«استبدال» لجهازٍ جديد فارغ أو لبياناتٍ أفسدتها وتريد الرجوع،'
       + ' وهو يقول لك قبله كم سجلًّا أحدث سيمحو.' }),
   );

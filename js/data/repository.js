@@ -316,6 +316,13 @@ const VALIDATE = {
 /* ===== سلة المحذوفات (المرحلة ٢١) ===== */
 
 const TRASH_DAYS = 30;
+// شاهد الحذف يعيش أطول من السجل المحفوظ (المرحلة ٣٦).
+//
+// سلّة المحذوفات تحفظ **السجل كاملًا** ليُستعاد، وثلاثون يومًا مدّةٌ كافية لذلك وتكفي
+// ألّا تنتفخ. لكن الدمج بين جهازين يحتاج شيئًا آخر: أن يعرف **أن هذا حُذف** — ولو بعد
+// سنة. فجهازٌ غاب أكثر من شهر كان يُحيي كل ما حذفتَه في غيابه.
+// والشاهد سطرٌ لا سجل: معرّفٌ ومخزنٌ وتاريخ. ألفُ حذفٍ منه أقلّ من صورةٍ واحدة.
+const TOMBSTONE_DAYS = 400;
 // الصور والتسجيلات قد تبلغ ميغابايتات، والمطابقات تُعاد حسابًا لا استرجاعًا.
 const TRASH_SKIP = ['images', 'matches', 'audio'];
 
@@ -578,6 +585,7 @@ const clients = Object.assign(makeEntity('clients'), {
     for (const r of requests) {
       const matches = await adapter.getByIndex('matches', 'requestId', r.id);
       if (matches.length) await adapter.deleteMany('matches', matches.map((m) => m.id));
+      await keepInTrash('requests', r.id);
       await adapter.delete('requests', r.id);
     }
     for (const d of deals) await adapter.put('deals', { ...d, clientId: null, ...stamp });
@@ -586,6 +594,11 @@ const clients = Object.assign(makeEntity('clients'), {
     for (const inv of await adapter.getByIndex('invoices', 'clientId', id)) {
       await adapter.put('invoices', { ...inv, clientId: null, ...stamp });
     }
+    // السلّة قبل الحذف (المرحلة ٣٦). وكانت **مفقودة هنا وحدها**: `remove` المشتركة تحفظ
+    // في السلّة منذ المرحلة ٢١، وحذف العميل يتجاوزها لأنه مكتوبٌ بنفسه لقواعد الارتباط.
+    // فكان حذف عميلٍ بلا رجعة — ولا شاهدَ حذفٍ له، فيُحييه أوّلُ دمجٍ من جهازٍ آخر.
+    // والطلبات المحذوفة معه تُحفظ كذلك: هي ما لا يُستعاد من مكانٍ آخر.
+    await keepInTrash('clients', id);
     await adapter.delete('clients', id);
   },
 
@@ -848,17 +861,26 @@ const settings = {
  * ليست كيانًا كامل الأركان: لا مخطط ولا تحقّق — سجلّ محفوظ كما كان لحظة حذفه.
  */
 const trash = {
-  /** الأحدث حذفًا أولًا، بعد كنس ما تجاوز المدة. */
+  /** الأحدث حذفًا أولًا، بعد كنس ما تجاوز المدة. والشواهد الخفيفة لا تُعرض: لا شيء فيها. */
   async list() {
     await trash.prune();
     const all = await adapter.getAll('trash');
-    return all.sort((a, b) => (b.deletedAt || '').localeCompare(a.deletedAt || ''));
+    return all.filter((t) => t.data)
+      .sort((a, b) => (b.deletedAt || '').localeCompare(a.deletedAt || ''));
   },
 
   /** يمسح ما تجاوز ثلاثين يومًا — السلة شبكة أمان قصيرة لا أرشيف دائم. */
   async prune(days = TRASH_DAYS) {
     const cutoff = Date.now() - days * 86400000;
-    const old = (await adapter.getAll('trash')).filter((t) => new Date(t.deletedAt).getTime() < cutoff);
+    const stoneCutoff = Date.now() - TOMBSTONE_DAYS * 86400000;
+    // التقليم يُفرغ السجل المحفوظ ولا يحذف السطر: يبقى شاهدًا خفيفًا حتى `TOMBSTONE_DAYS`.
+    for (const t of await adapter.getAll('trash')) {
+      const at = new Date(t.deletedAt).getTime();
+      if (at >= cutoff || !t.data) continue;
+      if (at < stoneCutoff) continue; // يُحذف كاملًا أدناه
+      await adapter.put('trash', { ...t, data: null, pruned: true });
+    }
+    const old = (await adapter.getAll('trash')).filter((t) => new Date(t.deletedAt).getTime() < stoneCutoff);
     if (old.length) await adapter.deleteMany('trash', old.map((t) => t.id));
     return old.length;
   },
@@ -870,6 +892,8 @@ const trash = {
   async restore(trashId) {
     const entry = await adapter.get('trash', trashId);
     if (!entry) throw new Error('العنصر لم يعد في السلة');
+    // الشاهد الخفيف لا يُستعاد: سطرٌ يقول «حُذف» ولا يحمل السجل نفسه.
+    if (!entry.data) throw new Error(`مضى على الحذف أكثر من ${TRASH_DAYS} يومًا، فلم يبقَ إلا أثرُه — استعِده من نسخةٍ احتياطية`);
     const existing = await adapter.get(entry.store, entry.recordId);
     if (existing) throw new Error('يوجد سجل بالمعرّف نفسه الآن — لم يُستبدل');
     await adapter.put(entry.store, entry.data);

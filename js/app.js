@@ -106,6 +106,9 @@ function markTableHeaders(root) {
   for (const th of root.querySelectorAll('tbody th:not([scope])')) th.setAttribute('scope', 'row');
 }
 
+/** مساراتٌ كلّها مال: لا تُفتح بدور المساعد (المرحلة ٣٦). */
+const OWNER_ONLY_ROUTES = new Set(['invoices', 'expenses']);
+
 async function navigate() {
   const name = routeName();
   const route = ROUTES[name];
@@ -121,6 +124,17 @@ async function navigate() {
   applyClientMode(clientModeOn()); // الروابط تُعاد بناؤها/تُرتَّب، فيُعاد تطبيق الإخفاء
   // الدرج على الجوال يُطوى بعد اختيار صفحة (وإلا غطّى الصفحة)، أما على الحاسوب فاختيارك يبقى.
   if (isNarrow()) setSidebarExpanded(false);
+  // صفحتان كلّهما مال: لا تُفتحان بدور المساعد ولو كُتب عنوانهما بالعنوان مباشرةً
+  // (المرحلة ٣٦). وإخفاء رابطٍ ليس منعًا، والمنع هنا يسبق الرسم.
+  if (OWNER_ONLY_ROUTES.has(name) && document.body.classList.contains('assistant-mode')) {
+    clear(page);
+    page.append(el('div', { class: 'empty' },
+      el('p', { class: 'strong', text: 'هذه الصفحة للمالك وحده.' }),
+      el('p', { class: 'muted', text: 'الفواتير والمصاريف تعرض أرباح المكتب، فلا تُفتح بحساب المساعد.' }),
+      el('a', { class: 'btn btn-primary', href: '#/today', text: 'إلى «يومي»' })));
+    document.title = 'كسّاب';
+    return;
+  }
   document.title = `${route.title} — كسّاب`;
   // إعلانٌ لقارئ الشاشة: الموجّه يبدّل المحتوى بلا تحميل صفحة، فلا يعلم القارئ أن شيئًا
   // تغيّر — يبقى صامتًا والمستعمل ينتظر. والمنطقة الحيّة تقول له اسم الصفحة.

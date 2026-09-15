@@ -58,6 +58,7 @@ const SUITES = [
   ['calendar-lock.mjs', OPEN],
   ['evidence-revival.mjs', OPEN],
   ['scale-perf.mjs', OPEN],
+  ['debts.mjs', OPEN],
   ['gate-and-publish.mjs', LOCKED],
   ['rename-and-vault.mjs', LOCKED],
   ['offer-pwa-push.mjs', LOCKED],

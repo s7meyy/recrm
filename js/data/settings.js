@@ -3,7 +3,7 @@
 
 import { repo, newId, setCurrentUser } from './repository.js';
 import { BUILTIN_PROPERTY_TYPES, BUILTIN_PROPERTY_STATUSES, BUILTIN_CLIENT_TAGS, DEFAULT_COMPLETENESS } from './schema.js';
-import { RIYADH_DISTRICTS, RIYADH_SECTORS, DEFAULT_CITY } from './riyadh-districts.js';
+import { DEFAULT_CITY, BUILTIN_CITIES, builtinDistricts, builtinZones } from './saudi-cities.js';
 import { DEFAULT_TEMPLATES } from '../util/templates.js';
 
 export const SETTINGS_KEYS = {
@@ -68,11 +68,11 @@ async function writeExtras(extras) {
  */
 export async function getLists() {
   const extras = await readExtras();
-  const cities = [...new Set([DEFAULT_CITY, ...extras.cities])];
+  // المدن المعبّأة مسبقًا كلّها (المرحلة ٣٦) لا الرياض وحدها، ومعها ما أضافه المستخدم.
+  const cities = [...new Set([...BUILTIN_CITIES, ...extras.cities])];
   const districtsByCity = {};
   for (const city of cities) {
-    const builtin = city === DEFAULT_CITY ? RIYADH_DISTRICTS : [];
-    districtsByCity[city] = sortAr(new Set([...builtin, ...(extras.districts[city] || [])]));
+    districtsByCity[city] = sortAr(new Set([...builtinDistricts(city), ...(extras.districts[city] || [])]));
   }
   const builtinTags = BUILTIN_CLIENT_TAGS.map((t) => t.label);
   return {
@@ -196,7 +196,7 @@ export async function addCity(name) {
   const extras = await readExtras();
   const city = norm(name);
   if (!city) throw new Error('اسم المدينة مطلوب');
-  if (city !== DEFAULT_CITY && !extras.cities.includes(city)) {
+  if (!BUILTIN_CITIES.includes(city) && !extras.cities.includes(city)) {
     extras.cities.push(city);
     await writeExtras(extras);
   }
@@ -208,7 +208,8 @@ export async function addDistrict(city, name) {
   const district = norm(name);
   const cityName = norm(city);
   if (!cityName || !district) throw new Error('المدينة والحي مطلوبان');
-  if (cityName === DEFAULT_CITY && RIYADH_DISTRICTS.includes(district)) return district;
+  // حيٌّ معبّأ مسبقًا لا يُضاف إلى الإضافات: موجودٌ أصلًا، وتكرارُه يضاعفه في القوائم.
+  if (builtinDistricts(cityName).includes(district)) return district;
   const list = extras.districts[cityName] || [];
   if (!list.includes(district)) {
     extras.districts[cityName] = [...list, district];
@@ -361,9 +362,14 @@ export async function setMatchingSettings(patch) {
 
 /* ===== نطاقات الأحياء (المرحلة ٣) ===== */
 
-const zonesDraft = () => ({
-  [DEFAULT_CITY]: RIYADH_SECTORS.map((s) => ({ key: s.key, label: s.label, districts: [...s.districts] })),
-});
+const zonesDraft = () => {
+  const draft = {};
+  for (const city of BUILTIN_CITIES) {
+    const zones = builtinZones(city);
+    if (zones.length) draft[city] = zones;
+  }
+  return draft;
+};
 
 /**
  * كل النطاقات لكل المدن. عند أول قراءة تُنسخ قطاعات الرياض مسودّةً قابلة للتعديل والحذف،
