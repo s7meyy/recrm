@@ -1,0 +1,81 @@
+# نشر «رابح» على GitHub Pages.
+#
+# Pages هنا يقرأ من فرع `gh-pages` مباشرةً (المصدر: Deploy from a branch)، وهذه الوظيفة
+# تُزامن مجلد `rabih/` إلى ذلك الفرع، فيُعيد GitHub بناء الموقع تلقائيًّا عند كل دفعة.
+#
+# **لماذا لا actions/deploy-pages؟** جُرِّبت أولًا فسقطت: مفتاح الوظيفة لا يملك صلاحية
+# إنشاء موقع Pages («Resource not accessible by integration»)، وإنشاؤه يحتاج صلاحية
+# إدارة لا تُمنَح لـGITHUB_TOKEN. ودفعُ فرع `gh-pages` فعّل Pages من تلقائه.
+#
+# لا يمسّ كسّاب: المنشور مجلد `rabih/` وحده، ونشرة Netlify في deploy.yml لا تتأثر.
+#
+# الرابط: https://s7meyy.github.io/recrm/
+
+name: نشر رابح على Pages
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: الفرع الذي يُقرأ منه مجلد rabih
+        required: false
+        default: claude/sleepy-tesla-ikhvof
+  push:
+    branches: [main]
+    paths:
+      - 'rabih/**'
+
+permissions:
+  contents: write
+
+# لا تُلغى نشرةٌ جارية: قطعها في منتصفها قد يترك فرع النشر ناقصًا.
+concurrency:
+  group: rabih-pages
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: جلب فرع المصدر
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref_name }}
+          fetch-depth: 0
+
+      # فحصٌ صريح خيرٌ من نشرةٍ فارغة تمحو الموقع القائم.
+      - name: تحقّق من وجود المجلد
+        run: |
+          if [ ! -f rabih/index.html ]; then
+            echo "::error::لا يوجد rabih/index.html في هذا الفرع — راجع مُدخَل ref."
+            exit 1
+          fi
+
+      - name: مزامنة gh-pages
+        env:
+          MSG: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          rm -rf rabih/tests rabih/node_modules
+          touch rabih/.nojekyll   # يمنع Jekyll من ابتلاع المجلدات ذات الشرطة السفلية
+
+          # نسخة العمل في مجلد مستقل كي لا تختلط بملفات المستودع.
+          tmp="$(mktemp -d)"
+          cp -a rabih/. "$tmp"/
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git fetch origin gh-pages --depth=1 || true
+          git checkout -q gh-pages 2>/dev/null || git checkout -q --orphan gh-pages
+          git rm -rq --cached . 2>/dev/null || true
+          find . -maxdepth 1 -mindepth 1 ! -name '.git' -exec rm -rf {} +
+          cp -a "$tmp"/. .
+
+          git add -A
+          if git diff --cached --quiet; then
+            echo "لا تغيير — الموقع محدَّث."
+            exit 0
+          fi
+          git commit -q -m "مزامنة رابح من ${MSG}"
+          git push origin gh-pages
