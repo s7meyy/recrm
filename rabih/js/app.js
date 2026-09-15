@@ -33,6 +33,7 @@ import * as models from './models.js';
 import { TOPICS, addKeyword, removeKeyword, customKeywords, resetCustom } from './lexicon.js';
 import { parsePopularTimes, parseQna, peakInsight, tagLanguages, qnaInsight, contextBlock } from './peak.js';
 import { fetchPlace, merge as mergePlace } from './places.js';
+import { fetchAllReviews, mergeReviews } from './reviews.js';
 import { compare as compareOutputs, mergeHint } from './agreement.js';
 import * as history from './history.js';
 import * as tour from './tour.js';
@@ -432,6 +433,7 @@ function bindDataView() {
   });
 
   $('#btn-places').addEventListener('click', onFetchPlaces);
+  $('#btn-fetch-reviews').addEventListener('click', onFetchReviews);
   $('#d-photos').addEventListener('change', onPhotos);
   $('#btn-to-pipeline').addEventListener('click', () => {
     const v = validate(job.place);
@@ -440,6 +442,70 @@ function bindDataView() {
     renderPipeline();
     show('pipeline');
   });
+}
+
+/**
+ * جلب **كل** التعليقات من مزوّد وسيط.
+ *
+ * ولا يُدهَس ما لُصق بيدك: الجديد يُدمج ويُعلَن كم أُضيف وكم كان مكررًا.
+ * والمُعاد يُقارَن بما يقوله قوقل (`claimed`) فيُقاس النقص ولا يُخفى.
+ */
+async function onFetchReviews() {
+  const url = (job.mapsUrl || '').trim();
+  if (!url) { message('#reviews-msg', 'err', 'لا رابط في هذا التقرير.'); return; }
+
+  const btn = $('#btn-fetch-reviews');
+  const limit = parseInt($('#rv-limit').value || '0', 10) || 0;
+  btn.disabled = true;
+  message('#reviews-msg', 'warn', 'يُجلب من المزوّد… قد يستغرق دقيقة لمحلٍّ كثير التعليقات.');
+
+  const r = await fetchAllReviews(url, { limit, sort: 'newest' });
+  btn.disabled = false;
+
+  if (!r.ok) {
+    message('#reviews-msg', 'err', r.error, r.needsKey ? [
+      'أنشئ حسابًا في Outscraper أو Apify، وخذ المفتاح.',
+      'ضعه في Netlify → Site settings → Environment variables باسم OUTSCRAPER_KEY أو APIFY_TOKEN.',
+      'ثم أعد نشر الموقع وأعد المحاولة.',
+    ] : []);
+    return;
+  }
+
+  const m = mergeReviews(job.place.reviews, r.reviews);
+  job.place.reviews = m.reviews;
+  assignReviewIds(job.place);
+
+  // ما جاء من المزوّد ليس لصقًا، فلا يُكتب في مربع اللصق ولا يُمحى بمسحه.
+  if (r.average !== null && job.place.ratings.average === null) {
+    job.place.ratings.average = r.average;
+    $('#d-avg').value = r.average;
+  }
+  if (r.claimed && job.place.ratings.count === null) {
+    job.place.ratings.count = r.claimed;
+    $('#d-count').value = r.claimed;
+  }
+  if (r.placeName && !job.place.identity.name.trim()) {
+    job.place.identity.name = r.placeName;
+    $('#d-name').value = r.placeName;
+  }
+
+  const lines = [`أُضيف ${m.added} تعليقًا${m.duplicates ? `، وتُرك ${m.duplicates} مكررًا` : ''}.`];
+  if (r.claimed) {
+    const pct = Math.round((job.place.reviews.length / r.claimed) * 100);
+    lines.push(`<b>عندك الآن ${job.place.reviews.length} من أصل ${r.claimed} تقييمًا (${pct}%).</b>`);
+    if (r.fetched < r.claimed) {
+      lines.push('النقص طبيعي: التقييم بلا نصّ لا يُعيده المزوّد، وقوقل يعدّه في الإجمالي.');
+    }
+  }
+  if (r.truncated) lines.push('بُلغ السقف الأعلى (٢٠٠٠)، فما زاد لم يُجلَب.');
+  if (m.empties) lines.push(`${m.empties} عنصرًا بلا نصّ ولا تقييم أُسقط.`);
+  lines.push(`المزوّد: ${r.provider}.`);
+
+  message('#reviews-msg', 'ok', 'تمّ الجلب.', lines);
+  $('#parse-info').textContent = `من المزوّد — ${job.place.reviews.length} تعليقًا`;
+  $('#parse-info').className = 'badge ok';
+  renderParseStats();
+  scheduleSave();
 }
 
 /** جلب بطاقة المنشأة من قوقل عبر الدالة الخادمية. */

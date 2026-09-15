@@ -137,6 +137,41 @@ try {
   await page.click('#btn-clear-reviews');
   await page.waitForTimeout(400);
 
+  console.log('٣-ج) جلب كل التعليقات من مزوّد وسيط');
+  // الدالّة الخادمية لا تعمل في خادم ثابت، فيُعترَض النداء في الصفحة نفسها.
+  await page.evaluate(() => {
+    const real = window.fetch;
+    window.fetch = (input, init) => {
+      const u = String(input?.url || input);
+      if (u.includes('/api/reviews')) {
+        window.__reviewsUrl = u;
+        return Promise.resolve(new Response(JSON.stringify({
+          provider: 'outscraper',
+          placeName: 'مقهى الدرب', average: 4.3, claimed: 310,
+          fetched: 3, truncated: false,
+          reviews: [
+            { author: 'مجلوب أ', rating: 5, text: 'القهوة ممتازة والباريستا محترف.', date: '2026-08-01', ownerReply: 'شكرًا لك.' },
+            { author: 'مجلوب ب', rating: 2, text: 'الانتظار طويل جدًّا في الذروة.', date: '2026-07-11', ownerReply: '' },
+            { author: 'مجلوب ج', rating: 4, text: 'المكان نظيف والأسعار مقبولة.', date: '2026-06-02', ownerReply: '' },
+          ],
+        }), { status: 200, headers: { 'content-type': 'application/json' } }));
+      }
+      return real(input, init);
+    };
+  });
+  await page.click('#btn-fetch-reviews');
+  await page.waitForTimeout(900);
+  const rvMsg = await page.textContent('#reviews-msg');
+  rvMsg.includes('أُضيف 3') ? ok('جُلبت التعليقات وأُضيفت: ' + rvMsg.replace(/\s+/g, ' ').trim().slice(0, 55)) : bad('جلب التعليقات', rvMsg.replace(/\s+/g, ' ').slice(0, 120));
+  rvMsg.includes('310') ? ok('يُعلن كم عندك من أصل كم — فيُقاس النقص') : bad('إعلان نسبة العيّنة', rvMsg.slice(0, 90));
+  (await page.inputValue('#d-count')) === '310' ? ok('عدد التقييمات مُلئ من المزوّد') : bad('عدد التقييمات', await page.inputValue('#d-count'));
+  // إعادة الضغط لا تُضاعف
+  await page.click('#btn-fetch-reviews');
+  await page.waitForTimeout(900);
+  (await page.textContent('#reviews-msg')).includes('أُضيف 0') ? ok('إعادة الجلب لا تُكرّر شيئًا') : bad('الجلب المكرر', (await page.textContent('#reviews-msg')).slice(0, 90));
+  const afterFetch = await page.textContent('#parse-info');
+  /3 تعليقًا/.test(afterFetch) ? ok('العدّاد يعكس المجلوب: ' + afterFetch.trim()) : bad('عدّاد المجلوب', afterFetch);
+
   console.log('٤) لصق التعليقات');
   const paste = `5 | أحمد الشمري | قبل شهر
 القهوة ممتازة والباريستا محترف جدًا، والمكان هادئ للعمل.

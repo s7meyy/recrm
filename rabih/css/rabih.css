@@ -272,3 +272,10 @@ select.model-pick{width:auto;min-width:150px;padding:6px 10px;font-size:13px}
 #design-card > summary::before{content:'▸ ';color:var(--gold)}
 #design-card[open] > summary::before{content:'▾ '}
 #design-preview iframe{height:60vh}
+
+/* حقلٌ صغير داخل صفّ أزرار — حدّ التعليقات بجانب زر الجلب. */
+.inline-field {
+  display: flex; align-items: center; gap: 6px;
+  margin: 0; font-weight: 500; font-size: 13px; color: var(--muted);
+}
+.inline-field input { width: 110px; }

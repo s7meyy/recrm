@@ -1,7 +1,7 @@
 // عامل الخدمة — رابح يعمل بلا إنترنت. لا شيء يُرسَل إلى أي خادم أصلًا،
 // فالاتصال إنما يلزم لتحميل الملفات أول مرة.
 
-const CACHE = 'rabih-v7';
+const CACHE = 'rabih-v8';
 const ASSETS = [
   './', './index.html', './manifest.webmanifest', './icon.svg',
   './css/rabih.css',
@@ -11,7 +11,7 @@ const ASSETS = [
   './js/persist.js', './js/recency.js', './js/group.js', './js/brand.js',
   './js/messages.js', './js/lock.js', './js/queue.js',
   './js/completeness.js', './js/entities.js', './js/replies.js', './js/models.js',
-  './js/peak.js', './js/agreement.js', './js/history.js', './js/tour.js', './js/places.js', './js/confidence.js',
+  './js/peak.js', './js/agreement.js', './js/history.js', './js/tour.js', './js/places.js', './js/confidence.js', './js/reviews.js',
   './js/data/cities.js', './js/data/categories.js', './js/data/districts.js',
 ];
 

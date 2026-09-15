@@ -119,6 +119,14 @@
     <div class="card">
       <h2>٢. بطاقة المنشأة</h2>
       <p class="hint">املأ ما تراه في أعلى صفحة المنشأة. المتوسط وعدد التقييمات مهمّان لقياس نسبة العيّنة.</p>
+      <div class="row" id="reviews-row">
+        <button type="button" class="btn gold sm" id="btn-fetch-reviews">جلب كل التعليقات تلقائيًّا</button>
+        <label class="inline-field" for="rv-limit">حدّ أقصى
+          <input id="rv-limit" type="number" min="0" max="2000" step="50" placeholder="0 = الكل"></label>
+        <span class="fine">من مزوّد وسيط يعمل على الخادم. يحتاج مفتاحًا (<code>OUTSCRAPER_KEY</code> أو <code>APIFY_TOKEN</code>) في بيئة Netlify، وله تكلفة بحسب عدد التعليقات.</span>
+      </div>
+      <div id="reviews-msg"></div>
+
       <div class="row" id="places-row">
         <button type="button" class="btn sm" id="btn-places">جلب البطاقة من قوقل</button>
         <span class="fine">يملأ الاسم والعنوان والهاتف والتقييم والصور — و<b>٥ مراجعات كحدٍّ أقصى</b>، وهو حدُّ قوقل الرسمي. التعليقات الباقية تُلصَق أدناه.</span>
