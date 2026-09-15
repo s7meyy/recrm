@@ -32,6 +32,7 @@ const SUITES = [
   ['agreements-vat-unit.mjs', null],
   ['calendar-lock-unit.mjs', null],
   ['app-pages.mjs', OPEN],
+  ['mobile-smoke.mjs', OPEN],
   ['sidebar-order.mjs', OPEN],
   ['source-and-priority.mjs', OPEN],
   ['invoices.mjs', OPEN],
