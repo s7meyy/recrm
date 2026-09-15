@@ -5,13 +5,19 @@
 
 import { el, clear, badge, emptyState, toast } from '../util/dom.js';
 import { loadIntegrations, runIntegration, explain } from '../data/integrations.js';
+import { resetPublicApi } from '../util/public-api.js';
 
 export async function render(container) {
   clear(container);
   container.append(el('div', { class: 'page-head' },
     el('h1', {}, 'التكاملات'),
     el('div', { class: 'head-actions' },
-      el('button', { type: 'button', class: 'btn', text: 'تحديث الحالة', onClick: () => render(container) }))));
+      // يصفّر «كفّ عن السؤال» قبل أن يعيد: جلسةٌ انتهت تمنع القراءة، وبلا زرٍّ يُعيد
+      // المحاولة يبقى المستخدم أمام صفحةٍ فارغة لا يعرف كيف يُحييها إلا بتحديث المتصفح.
+      el('button', {
+        type: 'button', class: 'btn', text: 'تحديث الحالة',
+        onClick: () => { resetPublicApi(); render(container); },
+      }))));
 
   const rows = await loadIntegrations();
   if (!rows.length) {

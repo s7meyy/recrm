@@ -10,13 +10,20 @@
 // فهذه تسأل مرّة: متى ردّ الخادم «لا صلاحية» كفّت عن السؤال حتى تُحدَّث الصفحة. ولا تُخفي
 // عطبًا: الصفحة تعمل كاملة بلا هاتين اللوحتين، وهما إضافةٌ لا أساس.
 
-let blocked = false;
+// **لكل مسارٍ علَمُه** لا علَمٌ واحد للجميع (صُحّح بعد أن كُشف بالعين).
+//
+// كان العلَم واحدًا، فأوّلُ ٤٠١ من أيّ مسار يُسكِت البقيّة كلّها: صفحة «يومي» تسأل عن
+// الطلبات فتُردّ، فلا تعود صفحةُ التكاملات تسأل عن حالتها أصلًا وتبقى فارغة بلا سبب ظاهر.
+// وذلك خلطٌ بين «هذا المسار مرفوض» و«لا فائدة من أي سؤال».
+const blocked = new Set();
 
 /** تُستدعى بعد تسجيل دخولٍ جديد أو عند إعادة المحاولة يدويًا. */
-export function resetPublicApi() { blocked = false; }
+export function resetPublicApi() { blocked.clear(); }
 
-/** هل كفّت عن السؤال في هذه الجلسة؟ */
-export function publicApiBlocked() { return blocked; }
+/** هل كفّت عن سؤال هذا المسار في هذه الجلسة؟ (وبلا مسار: أكفّت عن شيء؟) */
+export function publicApiBlocked(path = null) {
+  return path ? blocked.has(path) : blocked.size > 0;
+}
 
 /**
  * يقرأ من دالةٍ خادمية ويعيد `fallback` عند أي تعثّر — ولا يرمي أبدًا.
@@ -24,10 +31,10 @@ export function publicApiBlocked() { return blocked; }
  * @param {*} fallback ما يُعاد عند التعثّر
  */
 export async function readPublicApi(path, fallback = null) {
-  if (blocked) return fallback;
+  if (blocked.has(path)) return fallback;
   try {
     const res = await fetch(path, { credentials: 'same-origin' });
-    if (res.status === 401 || res.status === 403) { blocked = true; return fallback; }
+    if (res.status === 401 || res.status === 403) { blocked.add(path); return fallback; }
     if (!res.ok) return fallback;
     return await res.json();
   } catch (_) {
