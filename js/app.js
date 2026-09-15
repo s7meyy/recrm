@@ -4,7 +4,7 @@ import { repo } from './data/repository.js';
 import { ensureUser, getUI, setUI, getVaultSettings, setVaultSettings } from './data/settings.js';
 import { insertSeed } from './data/seed.js';
 import { backupStatus, exportBackup, downloadBlob, markExported } from './data/backup.js';
-import { uploadBackup } from './data/vault.js';
+import { uploadBackup, uploadImages } from './data/vault.js';
 import { revokeImageUrls } from './data/images.js';
 import { startFollowUpAlerts } from './util/follow-up-alerts.js';
 import { initGlobalSearch } from './util/global-search.js';
@@ -34,6 +34,7 @@ import * as notesPage from './pages/notes.js';
 import * as clientPage from './pages/client.js';
 import * as healthPage from './pages/health.js';
 import * as settingsPage from './pages/settings.js';
+import { applyRole } from './util/role.js';
 
 // سجل الصفحات: الصفحات اللاحقة تُضاف هنا وفي القائمة الجانبية في index.html.
 const ROUTES = {
@@ -91,20 +92,46 @@ function routeName() {
   return m && ROUTES[m[1]] ? m[1] : DEFAULT_ROUTE;
 }
 
+/**
+ * `scope` على رؤوس الجداول (المرحلة ٣٥).
+ *
+ * بدونها لا يعرف قارئ الشاشة أيّ رأسٍ يخصّ أيّ خلية، فيقرأ «٢٬١٠٠٬٠٠٠» ولا يقول «السعر».
+ * والجداول تُبنى في عشرين صفحة، فوضعُها في كل موضع تكرارٌ يُنسى في الصفحة الحادية
+ * والعشرين. فتُوضع هنا مرّة بعد كل رسم: ما في `thead` رأسُ عمود، وما في `tbody` رأسُ صفّ
+ * (وهو نمط جداول الحقائق في التطبيق: الوصف يمينًا والقيمة يسارًا).
+ */
+function markTableHeaders(root) {
+  if (!root) return;
+  for (const th of root.querySelectorAll('thead th:not([scope])')) th.setAttribute('scope', 'col');
+  for (const th of root.querySelectorAll('tbody th:not([scope])')) th.setAttribute('scope', 'row');
+}
+
 async function navigate() {
   const name = routeName();
   const route = ROUTES[name];
   const page = document.getElementById('page');
-  document.querySelectorAll('.sidebar-nav a').forEach((a) => a.classList.toggle('active', a.dataset.route === name));
+  // `aria-current="page"` لا الصنف وحده (المرحلة ٣٥): الصنف لونٌ يراه المبصر، والسمة هي
+  // ما يقوله قارئ الشاشة — «الصفحة الحالية». وبدونها يسمع تسعة عشر رابطًا متساوية.
+  document.querySelectorAll('.sidebar-nav a').forEach((a) => {
+    const on = a.dataset.route === name;
+    a.classList.toggle('active', on);
+    if (on) a.setAttribute('aria-current', 'page');
+    else a.removeAttribute('aria-current');
+  });
   applyClientMode(clientModeOn()); // الروابط تُعاد بناؤها/تُرتَّب، فيُعاد تطبيق الإخفاء
   // الدرج على الجوال يُطوى بعد اختيار صفحة (وإلا غطّى الصفحة)، أما على الحاسوب فاختيارك يبقى.
   if (isNarrow()) setSidebarExpanded(false);
   document.title = `${route.title} — كسّاب`;
+  // إعلانٌ لقارئ الشاشة: الموجّه يبدّل المحتوى بلا تحميل صفحة، فلا يعلم القارئ أن شيئًا
+  // تغيّر — يبقى صامتًا والمستعمل ينتظر. والمنطقة الحيّة تقول له اسم الصفحة.
+  const live = document.getElementById('route-live');
+  if (live) live.textContent = route.title;
   revokeImageUrls();
   clear(page);
   const token = ++renderToken;
   try {
     await route.render(page);
+    markTableHeaders(page);
   } catch (err) {
     if (token !== renderToken) return;
     console.error(err);
@@ -155,6 +182,7 @@ async function refreshBanner() {
 /* ===== الرفع التلقائي للنسخة السحابية المشفَّرة (المرحلة ١٠) ===== */
 
 const VAULT_EVERY_HOURS = 24;
+const VAULT_IMAGES_EVERY_HOURS = 168; // أسبوع: الصور ثقيلة ونادرة التغيّر
 
 /**
  * يرفع نسخة مشفَّرة مرة كل يوم إن فُعّل الخيار ووُجدت عبارة سرّية.
@@ -169,12 +197,26 @@ async function autoVaultBackup() {
     if (hours < VAULT_EVERY_HOURS) return;
     const counts = await repo.counts();
     if (!DATA_STORES.some((s) => counts[s] > 0)) return; // لا ترفع قاعدة فارغة فوق نسخة صالحة
+    // البيانات وحدها: سريعة ولا تتجاوز حدّ الرفعة مهما كثرت سجلاتك.
     const res = await uploadBackup(vault.passphrase);
     await setVaultSettings({ lastUploadAt: res.at });
     await markExported();
     window.dispatchEvent(new CustomEvent('kassab:data-changed'));
   } catch (err) {
     console.warn('تعذر رفع النسخة السحابية تلقائيًا', err);
+  }
+
+  // والصور أسبوعيًّا في كتلٍ منفصلة (المرحلة ٣٥): ثقيلة وبطيئة ونادرة التغيّر، ورفعُها
+  // كل يوم إهدارٌ لبيانات جواله. وفشلُها **لا يمسّ** نسخة البيانات التي رُفعت قبلها.
+  try {
+    const vault = await getVaultSettings();
+    if (!vault.auto || !vault.passphrase) return;
+    const hours = vault.lastImagesAt ? (Date.now() - new Date(vault.lastImagesAt).getTime()) / 3600000 : Infinity;
+    if (hours < VAULT_IMAGES_EVERY_HOURS) return;
+    const res = await uploadImages(vault.passphrase);
+    if (res.parts) await setVaultSettings({ lastImagesAt: new Date().toISOString() });
+  } catch (err) {
+    console.warn('تعذر رفع كتل الصور تلقائيًا', err);
   }
 }
 
@@ -252,6 +294,9 @@ async function init() {
   await initAutoLock(); // القفل التلقائي بعد خمول (المرحلة ٣٢)
   await navigate();
   refreshBanner();
+  // دور المستعمل (المرحلة ٣٥): بلا await كذلك — الصفحة تظهر ثم تُخفى الحقول الحسّاسة إن
+  // كان الداخل مساعدًا. والمنع الحقيقي على الخادم لا هنا.
+  applyRole().catch(() => {});
   autoVaultBackup(); // بلا await: لا يؤخّر ظهور الصفحة
   registerServiceWorker();
 }

@@ -30,16 +30,43 @@ function safeEqual(a, b) {
   return diff === 0;
 }
 
-async function makeToken(secret) {
+/**
+ * الكوكي تحمل **الدور** موقَّعًا معها (المرحلة ٣٥): `expires.role.mac`.
+ *
+ * والتوقيع على `expires.role` معًا لا على المدّة وحدها — وإلا لبدّل المساعدُ دورَه بيده
+ * وبقي التوقيع صالحًا. وهذه هي العلّة المعتادة في الكوكي الموقَّعة: يُوقَّع بعضُها ويُترك
+ * بعضُها، فيصير الباقي قابلًا للكتابة.
+ *
+ * والشكل القديم (`expires.mac`) يبقى مقبولًا ويُقرأ **مالكًا**: الكوكي القائمة في جوّالك
+ * الآن لا يجوز أن تُبطلها ترقيةٌ لم تطلبها.
+ */
+export const ROLES = { owner: 'owner', assistant: 'assistant' };
+
+async function makeToken(secret, role = ROLES.owner) {
   const expires = Date.now() + MAX_AGE_DAYS * 86400000;
-  return `${expires}.${await sign(String(expires), secret)}`;
+  const payload = `${expires}.${role}`;
+  return `${payload}.${await sign(payload, secret)}`;
+}
+
+/** @returns {Promise<string|null>} الدور إن صحّت الكوكي، وإلا null. */
+async function tokenRole(token, secret) {
+  if (!token || !token.includes('.')) return null;
+  const parts = token.split('.');
+  if (parts.length === 2) {
+    // الشكل القديم: مدّةٌ وتوقيع، وصاحبه مالك.
+    const [expires, mac] = parts;
+    if (!/^\d+$/.test(expires) || Number(expires) < Date.now()) return null;
+    return safeEqual(mac, await sign(expires, secret)) ? ROLES.owner : null;
+  }
+  if (parts.length !== 3) return null;
+  const [expires, role, mac] = parts;
+  if (!/^\d+$/.test(expires) || Number(expires) < Date.now()) return null;
+  if (role !== ROLES.owner && role !== ROLES.assistant) return null;
+  return safeEqual(mac, await sign(`${expires}.${role}`, secret)) ? role : null;
 }
 
 async function validToken(token, secret) {
-  if (!token || !token.includes('.')) return false;
-  const [expires, mac] = token.split('.');
-  if (!/^\d+$/.test(expires) || Number(expires) < Date.now()) return false;
-  return safeEqual(mac, await sign(expires, secret));
+  return (await tokenRole(token, secret)) !== null;
 }
 
 function loginPage({ error = false, target = '/' } = {}) {
@@ -125,8 +152,14 @@ export default async (request, context) => {
     if (request.method !== 'POST') return loginPage();
     const form = await request.formData();
     const target = String(form.get('to') || '/');
-    if (!safeEqual(String(form.get('password') || ''), password)) return loginPage({ error: true, target });
-    const token = await makeToken(secret);
+    const given = String(form.get('password') || '');
+    // كلمة سرّ المساعد (اختيارية): بابٌ ثانٍ تفتحه لمن يعمل معك وتغلقه وحده متى شئت،
+    // بلا أن تغيّر كلمتك أنت. ولا تُقبل إن ساوت كلمتك — فبابٌ واحد بمفتاحين وهمٌ لا فصل.
+    const assistant = Netlify.env.get('ASSISTANT_PASSWORD');
+    const isOwner = safeEqual(given, password);
+    const isAssistant = !!assistant && assistant !== password && safeEqual(given, assistant);
+    if (!isOwner && !isAssistant) return loginPage({ error: true, target });
+    const token = await makeToken(secret, isOwner ? ROLES.owner : ROLES.assistant);
     return new Response(null, {
       status: 302,
       headers: {

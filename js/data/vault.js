@@ -7,10 +7,16 @@
 // العبارة تُحفظ في هذا الجهاز (إن اخترت) كي يعمل الرفع التلقائي؛ الخطر المفترض هنا هو ضياع
 // الجهاز لا اختراقه محليًا — ومن يملك جهازك المفتوح يرى البيانات نفسها في التطبيق أصلًا.
 
-import { exportBackup, readBackupFile, importBackup } from './backup.js';
+import { exportBackup, readBackupFile, importBackup, mergeBackup, restoreRisk } from './backup.js';
 
 const ENDPOINT = '/api/vault';
 const PBKDF2_ROUNDS = 200000;
+
+// حدّ الحجم (المرحلة ٣٥) — نفس حدّ الدالة، مفحوصًا قبل الشبكة كي لا تُشفَّر ميغابايتات
+// ثم تُرمى. ودونه بهامش: التشفير يزيد الحجم نحو الثلث (base64 ومغلّف JSON).
+export const MAX_PAYLOAD = 4_500_000;
+// الصور تُرفع كتلًا، وحجم الكتلة قبل التشفير يُبقي المشفَّر تحت الحدّ.
+const IMAGE_CHUNK_BYTES = 3_000_000;
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
@@ -71,24 +77,119 @@ export async function listBackups() {
   return (await call('')).backups || [];
 }
 
-/** يبني نسخة كاملة، يشفّرها، ويرفعها. يعيد `{ key, at, bytes }`. */
-export async function uploadBackup(passphrase) {
+const mb = (bytes) => `${Math.round(bytes / 100000) / 10} ميغابايت`;
+
+/**
+ * يبني نسخة **بيانات** (بلا صور افتراضيًا)، يشفّرها، ويرفعها. يعيد `{ key, at, bytes }`.
+ *
+ * والصور خارجها بقصد (المرحلة ٣٥): هي تسعة أعشار الحجم، وبياناتك كلها في العشر الباقي.
+ * فكانت النسخة الكاملة تتجاوز حدّ الدالة بعد عشرين عقارًا بصورها، **فيفشل الرفع بصمت
+ * وأنت تحسب بياناتك محفوظة**. والبيانات وحدها تُرفع كل يوم بلا مشقّة، والصور في كتلٍ
+ * منفصلة على مهلٍ (`uploadImages`).
+ */
+export async function uploadBackup(passphrase, { includeImages = false } = {}) {
   if (!passphrase) throw new Error('حدد العبارة السرّية أولًا');
-  const { blob, counts } = await exportBackup();
+  const { blob, counts } = await exportBackup({ includeImages });
   const payload = await encryptText(await blob.text(), passphrase);
+  if (payload.length > MAX_PAYLOAD) {
+    throw new Error(`النسخة ${mb(payload.length)} والحدّ ${mb(MAX_PAYLOAD)}`
+      + (includeImages ? ' — ارفع البيانات وحدها ثم الصور في كتلٍ منفصلة.' : ' — بياناتك تجاوزت حدّ الرفعة الواحدة، صدّر ملفًا محليًّا واحتفظ به.'));
+  }
   const result = await call('', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ payload, counts }),
   });
-  return { ...result, bytes: payload.length };
+  return { ...result, bytes: payload.length, includeImages };
 }
 
 /**
- * ينزّل نسخة ويفكّها ويستبدل بها كل بيانات هذا الجهاز.
- * **يستبدل ولا يدمج** — نفس سلوك الاستيراد من ملف منذ المرحلة ١.
+ * يرفع الصور في كتلٍ، كلٌّ منها تحت حدّ الدالة.
+ *
+ * والكتل كلها تحمل معرّف دفعةٍ واحد، فيعرف الاسترجاع أنه جمعها كاملة — ويعرف الخادم أن
+ * يقلّمها **بالدفعة لا بالعدد**، فلا تبقى من دفعةِ عشرِ كتلٍ اثنتان لا تصلحان لشيء.
+ *
+ * @returns {{ batch, parts, bytes, images }}
  */
-export async function restoreBackup(passphrase, key = null) {
+export async function uploadImages(passphrase, { onProgress = null } = {}) {
+  if (!passphrase) throw new Error('حدد العبارة السرّية أولًا');
+  const { repo } = await import('./repository.js');
+  const { serializeImage } = await import('./backup.js');
+  const records = await repo.raw.getAll('images');
+  const batch = new Date().toISOString();
+  if (!records.length) return { batch, parts: 0, bytes: 0, images: 0 };
+
+  // نُجمّع حتى يبلغ حجم الكتلة الحدّ، ثم نبدأ كتلةً جديدة. وصورةٌ واحدة تتجاوز الحدّ
+  // وحدها تُرفع في كتلتها — وإلا لسقطت وسقط معها الباقي.
+  const chunks = [];
+  let current = [];
+  let size = 0;
+  for (const rec of records) {
+    const row = await serializeImage(rec);
+    const text = JSON.stringify(row);
+    if (current.length && size + text.length > IMAGE_CHUNK_BYTES) {
+      chunks.push(current);
+      current = [];
+      size = 0;
+    }
+    current.push(row);
+    size += text.length;
+  }
+  if (current.length) chunks.push(current);
+
+  let bytes = 0;
+  for (let i = 0; i < chunks.length; i++) {
+    const payload = await encryptText(JSON.stringify({ batch, part: i, parts: chunks.length, images: chunks[i] }), passphrase);
+    if (payload.length > MAX_PAYLOAD) {
+      throw new Error(`كتلة صور واحدة ${mb(payload.length)} وهي فوق الحدّ — صورةٌ ضخمة بعينها، احذفها أو أعد رفعها مضغوطة.`);
+    }
+    await call('?kind=images', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ payload, part: i, parts: chunks.length, batch }),
+    });
+    bytes += payload.length;
+    onProgress?.(i + 1, chunks.length);
+  }
+  return { batch, parts: chunks.length, bytes, images: records.length };
+}
+
+/** كتل الصور المحفوظة سحابيًا. */
+export async function listImageBackups() {
+  return (await call('?kind=images')).backups || [];
+}
+
+/**
+ * يسترجع آخر دفعة صور كاملة ويضيفها إلى مخزن الصور.
+ * **ولا يسترجع دفعةً ناقصة**: صورٌ نصفها أسوأ من لا شيء، لأنك تحسبها كاملة.
+ */
+export async function restoreImages(passphrase) {
+  if (!passphrase) throw new Error('حدد العبارة السرّية أولًا');
+  const metas = await listImageBackups();
+  if (!metas.length) throw new Error('لا كتل صور في الخزنة بعد');
+  const batch = metas[0].at;
+  const mine = metas.filter((m) => (m.at || '') === batch);
+  const expected = mine[0]?.parts ?? mine.length;
+  if (mine.length !== expected) {
+    throw new Error(`الدفعة ناقصة: ${mine.length} من ${expected} كتلة — ارفع الصور من جديد قبل الاسترجاع.`);
+  }
+  const { repo } = await import('./repository.js');
+  const { deserializeImage } = await import('./backup.js');
+  let count = 0;
+  for (const meta of mine) {
+    const { payload } = await call(`?kind=images&key=${encodeURIComponent(meta.key)}`);
+    const parsed = JSON.parse(await decryptText(payload, passphrase));
+    const rows = (parsed.images || []).map(deserializeImage);
+    // `putMany` لا `replaceAll`: الصور **تُضاف** ولا تمحو ما في الجهاز — قد يكون فيه
+    // أحدثُ مما في الكتلة، ومحوُه لاسترجاعٍ جزئيّ خسارةٌ لا استرجاع.
+    if (rows.length) await repo.raw.putMany('images', rows);
+    count += rows.length;
+  }
+  return { images: count, parts: mine.length, at: batch };
+}
+
+/** ينزّل نسخة ويفكّها ويقرؤها — بلا كتابةِ شيء. تُستعمل للفحص قبل القرار. */
+export async function fetchBackup(passphrase, key = null) {
   if (!passphrase) throw new Error('حدد العبارة السرّية أولًا');
   const target = key || (await listBackups())[0]?.key;
   if (!target) throw new Error('لا توجد نسخة سحابية بعد');
@@ -96,8 +197,35 @@ export async function restoreBackup(passphrase, key = null) {
   const plain = await decryptText(payload, passphrase);
   const file = new File([plain], 'vault.json', { type: 'application/json' });
   const { data, counts, exportedAt } = await readBackupFile(file);
+  return { data, counts, exportedAt, key: target };
+}
+
+/** ماذا يخسر هذا الجهاز لو استُبدل بهذه النسخة؟ يُسأل **قبل** أي استرجاع. */
+export async function inspectBackup(passphrase, key = null) {
+  const found = await fetchBackup(passphrase, key);
+  return { ...found, risk: await restoreRisk(found.data) };
+}
+
+/**
+ * ينزّل نسخة ويستبدل بها بيانات الجهاز.
+ * **يستبدل ولا يدمج** — نفس سلوك الاستيراد من ملف منذ المرحلة ١، وللدمج `mergeFromVault`.
+ */
+export async function restoreBackup(passphrase, key = null) {
+  const { data, counts, exportedAt, key: target } = await fetchBackup(passphrase, key);
   await importBackup(data);
   return { counts, exportedAt, key: target };
+}
+
+/**
+ * ينزّل نسخة و**يدمجها** في بيانات الجهاز: الأحدث يفوز لكل سجلٍّ على حدة.
+ *
+ * وهذا ما يجعل جهازين لا يمحو أحدهما الآخر — وهو الطريق المعتاد للنقل بين الأجهزة،
+ * والاستبدال يبقى لحالةٍ واحدة: جهازٌ جديد فارغ، أو جهازٌ أفسدتَ بياناته وتريد الرجوع.
+ */
+export async function mergeFromVault(passphrase, key = null) {
+  const { data, counts, exportedAt, key: target } = await fetchBackup(passphrase, key);
+  const stats = await mergeBackup(data);
+  return { counts, exportedAt, key: target, stats };
 }
 
 /** فحص سريع: هل الخزنة متاحة وهل الجلسة صالحة؟ (تُستعمل لإخفاء اللوحة محليًا بلا خادم.) */

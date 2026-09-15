@@ -20,6 +20,7 @@ import {
 } from '../util/dom.js';
 import { formatSAR, formatArea, formatNumber, toInputDate, fromInputDate, toInputDateTime, fromInputDateTime } from '../util/format.js';
 import { formatPhone } from '../util/phone.js';
+import { capped } from '../util/render-cap.js';
 
 const STATUS_STYLE = { new: 'badge-outline', presented: 'badge-accent', interested: 'badge-ok', not_interested: '', won: 'badge-ok' };
 const clientName = (c) => (c ? (c.name || formatPhone(c.phone) || 'عميل بلا اسم') : 'عميل محذوف');
@@ -77,7 +78,7 @@ function requestsInView(ctx) {
 }
 
 /** صفوف طلب واحد: المرشحون فوق الشريط + كل مطابقة محفوظة ولو خرجت من الترشيح. */
-function rowsFor(ctx, request) {
+function rowsFor(ctx, request, rowLimit = 0) {
   const records = ctx.recordsByRequest.get(request.id) || [];
   const recordByListing = new Map(records
     .filter((r) => r.propertyId || r.externalId)
@@ -85,7 +86,9 @@ function rowsFor(ctx, request) {
   const rows = [];
   const seen = new Set();
 
-  for (const cand of candidatesFor(request, ctx.match, { minScore: ctx.threshold, includeExternal: ctx.includeExternal })) {
+  for (const cand of candidatesFor(request, ctx.match, {
+    minScore: ctx.threshold, includeExternal: ctx.includeExternal, limit: rowLimit,
+  })) {
     const key = `${cand.kind}:${cand.listing.id}`;
     seen.add(key);
     rows.push({ ...cand, record: recordByListing.get(key) || null, stale: false, reason: null });
@@ -236,9 +239,27 @@ function renderList(ctx) {
     return;
   }
 
+  // حدّ الرسم (المرحلة ٣٥). وهنا العلّة **حسابية** لا عرضية: كل طلبٍ يُرسم يستدعي
+  // `rowsFor` فيحسب مرشّحيه. وبقياسٍ على خمسة آلاف عقار استغرقت الصفحة **٩٫٣ ثانية**
+  // وعناصرها لا تتجاوز مئتين — فالوقت كلّه في الحساب. وحدّ الطلبات المرسومة يحدّ الحسابَ
+  // نفسه، لا الرسم وحده. والعدد المعروض فوق يبقى على ما رُسم، ويقول كم بقي.
+  const MATCH_PAGE = 25;
+  // خمسة عشر لا خمسون: كل صفٍّ يحمل قائمة حالةٍ (`<select>`)، وهي أثقل ما يُنشئه المتصفح.
+  // قيسَ: ١٢٥٠ صفًّا = ١٢٥٠ قائمة = تسع ثوانٍ من الرسم وحده. وخمسة عشر مرشّحًا بأعلى
+  // الدرجات هي ما يُنظر فيه فعلًا، والباقي معدودٌ تحتها.
+  const ROWS_PER_REQUEST = 15;
+  const { visible: pageRequests, more: moreRequests } = capped(requests, ctx.shownRequests || MATCH_PAGE);
   let shown = 0;
-  for (const request of requests) {
-    const rows = visibleRows(ctx, rowsFor(ctx, request));
+  for (const request of pageRequests) {
+    // وحدّ الصفوف داخل الطلب الواحد (المرحلة ٣٥): بخمسة آلاف عقارٍ متقارب يجد الطلبُ
+    // الواحد آلافَ المرشّحين، فتُرسم آلافُ الصفوف ولا تُقرأ. والصفوف مرتَّبة بالدرجة
+    // تنازليًّا، فأعلى خمسين هي التي يُنظر فيها فعلًا — والعدد الكامل مكتوبٌ فوقها.
+    // حدٌّ داخل المحرك لا بعده: `candidatesFor` تبني كائنًا لكل مرشّح، وبخمسة آلاف عقارٍ
+    // متقارب يجد الطلبُ الواحد قرابة ألفي مرشّح — فخمسة وعشرون طلبًا تعني ٤٤ ألف كائن
+    // تُبنى لتُرمى. والحدّ يوقف البناء لا العرض وحده. والمرفوضة المحفوظة تُضاف بعده كما هي.
+    const allRows = visibleRows(ctx, rowsFor(ctx, request, ROWS_PER_REQUEST));
+    const rows = allRows.slice(0, ROWS_PER_REQUEST);
+    const hiddenRows = Math.max(0, allRows.length - rows.length);
     shown += rows.length;
     const client = ctx.clientsById.get(request.clientId);
     const block = el('section', { class: 'panel match-block' },
@@ -256,10 +277,22 @@ function renderList(ctx) {
       block.append(el('p', { class: 'muted small', text: 'لا مطابقات بهذه الشروط. جرّب إنزال الشريط أو مراجعة الأحياء وسقف الميزانية.' }));
     } else {
       block.append(el('div', { class: 'match-list' }, rows.map((row) => matchRow(ctx, request, row))));
+      if (rows.length >= ROWS_PER_REQUEST) {
+        block.append(el('p', { class: 'muted small', text: `أعلى ${formatNumber(ROWS_PER_REQUEST)} مرشّحًا درجةً. ارفع الشريط أو ضيّق الطلب لترى غيرهم.` }));
+      }
     }
     area.append(block);
   }
-  ctx.nodes.count.textContent = `(${formatNumber(shown)})`;
+  if (moreRequests) {
+    area.append(el('div', { class: 'row', style: { justifyContent: 'center', marginTop: '16px' } },
+      el('button', {
+        type: 'button', class: 'btn', text: `أظهر ${formatNumber(Math.min(moreRequests, MATCH_PAGE))} طلبًا آخر (بقي ${formatNumber(moreRequests)})`,
+        onClick: () => { ctx.shownRequests = (ctx.shownRequests || MATCH_PAGE) + MATCH_PAGE; renderList(ctx); },
+      })));
+  }
+  ctx.nodes.count.textContent = moreRequests
+    ? `(${formatNumber(shown)} — من ${formatNumber(pageRequests.length)} طلبًا من ${formatNumber(requests.length)})`
+    : `(${formatNumber(shown)})`;
 }
 
 function matchRow(ctx, request, row) {

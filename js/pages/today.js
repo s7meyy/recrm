@@ -21,6 +21,7 @@ import { formatPhone, toInternational } from '../util/phone.js';
 import { clientName } from './requests.js';
 import { audioNoteField } from '../util/audio-note.js';
 import { openedNotCalled } from '../util/list-opens.js';
+import { readPublicApi } from '../util/public-api.js';
 import { orderByCallTime, callFit, noShowCounts, windowAt } from '../util/call-timing.js';
 
 export async function render(container) {
@@ -46,11 +47,17 @@ async function loadData() {
   const publishSettings = await getPublishSettings();
   const hasPublished = (publishSettings.publishedRefs || []).length > 0;
   const clientLists = hasPublished
-    ? await fetch('/api/client-list', { credentials: 'same-origin' })
-      .then((r) => (r.ok ? r.json() : { lists: [] }))
-      .then((j) => j.lists || [])
-      .catch(() => [])
+    ? ((await readPublicApi('/api/client-list', { lists: [] })) || {}).lists || []
     : [];
+
+  // الطلبات التي لم يُردَّ عليها (المرحلة ٣٥).
+  //
+  // الطلب الجديد يُنبَّه عليه فورًا منذ المرحلة ٢٢، لكنه بعدها **لا يُرى إلا في صفحة
+  // «الصفحة العامة للعروض»** — صفحةٍ تفتحها لتنشر لا لتعمل. فتنبيهٌ ضاع من فوق الشاشة
+  // يعني طلبًا لا يراه أحد. وبقاؤه في المخزن هو علامة أنه لم يُردَّ عليه: إدخالُه عميلًا
+  // أو صرفُه يحذفه.
+  const pendingLeads = (((await readPublicApi('/api/lead', { leads: [] })) || {}).leads || [])
+    .map((l) => ({ ...l, kind: 'lead' }));
   const since = ui.lastVisitAt || null;
   const due = receivables({ invoices, deals }); // المستحقات (المرحلة ١٧)
   // عملاء جدد بلا ردّ (المرحلة ٢٣): «سرعة الردّ» أقوى ما تبيعه الأنظمة الكبرى، وحسابه بسيط.
@@ -90,14 +97,28 @@ async function loadData() {
     .filter((t) => new Date(t.dueAt).getTime() <= now + 86400000)
     .sort((a, b) => (a.dueAt || '').localeCompare(b.dueAt || ''));
 
-  /* مطابقات جديدة: مرشّح فوق الحدّ لم يُسجَّل عليه أي تصرّف بعد */
+  /* مطابقات جديدة: مرشّح فوق الحدّ لم يُسجَّل عليه أي تصرّف بعد.
+   *
+   * **وبحدٍّ على الطلبات المفحوصة** (المرحلة ٣٥). قيسَ: بخمسة آلاف عقار وثلاثمئة طلب نشط
+   * كان هذا يبني **٦١١٬٨٠٧ مرشّحًا** ويرتّبها — تسع ثوانٍ — لتُعرض منها ثمانية. واللوحة
+   * ترتّب بأولوية العميل أوّلًا، فنفحص الطلبات بذلك الترتيب نفسه ونقف عند حدٍّ: من هم
+   * أولى بمكالمتك يُفحصون، ومن دونهم صفحةُ المطابقات لهم. وبلا هذا الحدّ تتجمّد أكثر
+   * صفحاتك فتحًا على الجوّال.
+   */
+  const NEW_MATCH_REQUEST_CAP = 40;
+  const NEW_MATCH_PER_REQUEST = 20;
   const saved = new Set(ctx.matches.map((m) => `${m.requestId}:${m.propertyId || m.externalId}`));
   const newMatches = [];
-  for (const request of ctx.requests) {
-    if (request.status !== 'active') continue;
+  const scanned = ctx.requests
+    .filter((r) => r.status === 'active')
+    .sort((a, b) => clientPriority(clientsById.get(b.clientId)) - clientPriority(clientsById.get(a.clientId)))
+    .slice(0, NEW_MATCH_REQUEST_CAP);
+  for (const request of scanned) {
+    let taken = 0;
     for (const row of candidatesFor(request, ctx, { minScore: ctx.settings.minScore })) {
       if (saved.has(`${request.id}:${row.listing.id}`)) continue;
       newMatches.push({ request, client: clientsById.get(request.clientId), row });
+      if (++taken >= NEW_MATCH_PER_REQUEST) break;
     }
   }
   newMatches.sort((a, b) => (clientPriority(b.client) - clientPriority(a.client)) || (b.row.score - a.row.score));
@@ -157,6 +178,8 @@ async function loadData() {
     pendingFeedback: needFeedback(showings),
     // فتح قائمته ولم يتصل (المرحلة ٣٥)
     openedLists,
+    // طلبات لم يُردَّ عليها (المرحلة ٣٥) — الأقدم أولًا: هو أخطرها
+    pendingLeads: [...pendingLeads].sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt))),
     // الاتصال في وقته (المرحلة ٣٥): الفترة الحالية، ومن أخلف مواعيده.
     callWindow: windowAt(now),
     noShows: noShowCounts(showings),
@@ -489,6 +512,21 @@ function build(container, d) {
       goalBar('عمولات', d.progress.commission, d.progress.goals.commissionPerMonth, formatSAR),
       el('p', { class: 'muted small', text: `مصاريف هذا الشهر: ${formatSAR(d.progress.spent)} · الصافي: ${formatSAR(d.progress.commission - d.progress.spent)}` })),
     { href: '#/expenses', hrefText: 'المصاريف →' }));
+  }
+
+  /* طلبات من صفحتك العامة لم يُردَّ عليها (المرحلة ٣٥) — لا شيء أعجل منها */
+  if (d.pendingLeads.length) {
+    grid.append(section('طلبات من صفحتك لم يُردَّ عليها', d.pendingLeads.length,
+      el('div', {},
+        el('p', { class: 'muted small', text: 'زائرٌ ترك رقمه ولم يُدخَل بعد. إدخاله عميلًا — أو صرفه — يُخرجه من هنا.' }),
+        ...d.pendingLeads.slice(0, 8).map((lead) => row(
+          el('span', {}, lead.name || 'بلا اسم',
+            lead.ref ? badge(`عرض ${lead.ref}`, '') : null),
+          `${lead.phone ? formatPhone(lead.phone) : 'بلا رقم'} · ${relativeDays(lead.createdAt)}`,
+          el('div', { class: 'row' },
+            lead.phone ? el('a', { class: 'btn btn-ghost btn-sm', href: `tel:${lead.phone}`, text: '📞', title: 'اتصال' }) : null,
+            el('a', { class: 'btn btn-sm', href: '#/publish', text: 'أدخِله' }))))),
+      { href: '#/publish', hrefText: 'الطلبات →', tone: 'today-warn' }));
   }
 
   /* عملاء ينتظرون ردّك (المرحلة ٢٣) — أول لوحة لأن التأخير هنا يكلّف عميلًا لا وقتًا */

@@ -15,6 +15,7 @@ import { el, clear, badge, emptyState, openModal, labeled, checkbox, promptDialo
 import { formatSAR, formatArea, formatDate, formatDateTime, formatNumber, daysWord, toInputDate, fromInputDate } from '../util/format.js';
 import { formatPhone, toInternational } from '../util/phone.js';
 import { audioPlayer } from '../util/audio-note.js';
+import { historyBox } from '../util/history-view.js';
 
 function routeClientId() {
   const m = /^#\/client\/([^/?#]+)/.exec(location.hash || '');
@@ -75,6 +76,11 @@ export async function render(container) {
 
   const grid = el('div', { class: 'today-grid' });
   container.append(grid);
+
+  // سجلّ التغييرات (المرحلة ٣٥): «متى صار مهتمًّا؟» و«من غيّر رقمه؟» أسئلةٌ تُطرح، وجوابها
+  // كان يُكتب في السجل ولا يُعرض. ومطويٌّ لأنه جوابٌ عند الحاجة لا معلومةٌ تُقرأ كل مرّة.
+  const hist = historyBox(client);
+  if (hist) container.append(hist);
 
   /* ===== طلباته ومرشّحوها ===== */
   grid.append(panel('طلباته', requests.length, requests.length

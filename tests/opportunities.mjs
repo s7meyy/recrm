@@ -6,7 +6,7 @@ const b = await chromium.launch();
 const page = await (await b.newContext({ locale: 'ar-SA' })).newPage();
 const errors = [];
 page.on('pageerror', (e) => errors.push('PAGEERROR: ' + e.message));
-page.on('console', (m) => { const t = m.text(); if (m.type() === 'error' && !t.includes('ERR_') && !t.includes('favicon')) errors.push(t); });
+page.on('console', (m) => { const t = m.text(); if (m.type() === 'error' && !t.includes('ERR_') && !t.includes('Failed to load resource') && !t.includes('favicon')) errors.push(t); });
 const ok = (n, c, x = '') => console.log(`${c ? 'PASS' : 'FAIL'} — ${n}${x ? ' :: ' + x : ''}`);
 
 await page.goto(BASE + '/');

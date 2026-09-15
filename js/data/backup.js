@@ -40,7 +40,7 @@ function dataUrlToBlob(dataUrl) {
   return new Blob([bytes], { type: m[1] || 'image/jpeg' });
 }
 
-async function serializeImage(rec) {
+export async function serializeImage(rec) {
   return {
     ...rec,
     blob: rec.blob ? await blobToDataUrl(rec.blob) : null,
@@ -48,7 +48,7 @@ async function serializeImage(rec) {
   };
 }
 
-function deserializeImage(rec) {
+export function deserializeImage(rec) {
   return {
     ...rec,
     blob: typeof rec.blob === 'string' ? dataUrlToBlob(rec.blob) : (rec.blob ?? null),
@@ -64,12 +64,16 @@ function stamp(iso) {
  * يبني ملف النسخة الاحتياطية بأجزاء (لا تُبنى سلسلة نصية واحدة ضخمة).
  * @returns {{ blob: Blob, filename: string, counts: object, exportedAt: string }}
  */
-export async function exportBackup() {
+export async function exportBackup({ includeImages = true } = {}) {
   const exportedAt = new Date().toISOString();
   const parts = [`{"app":"${BACKUP_APP}","format":${BACKUP_FORMAT},"exportedAt":"${exportedAt}","db":{`];
   const counts = {};
   let firstStore = true;
-  for (const store of STORE_ORDER) {
+  // نسخةٌ بلا صور (المرحلة ٣٥): الصور تسعة أعشار الحجم، وبياناتك كلها في العشر الباقي.
+  // ومخزن `images` يبقى **مذكورًا فارغًا** لا محذوفًا: الاستيراد يمسح كل مخزنٍ يجده،
+  // فحذفُه من النسخة يعني أن استيرادها لا يمسح صورك — وهو الصواب هنا بالضبط.
+  const stores = includeImages ? STORE_ORDER : STORE_ORDER.filter((x) => x !== 'images');
+  for (const store of stores) {
     const records = await repo.raw.getAll(store);
     counts[store] = records.length;
     parts.push(`${firstStore ? '' : ','}"${store}":[`);
@@ -83,9 +87,10 @@ export async function exportBackup() {
   parts.push('}}');
   return {
     blob: new Blob(parts, { type: 'application/json' }),
-    filename: `kassab-backup-${stamp(exportedAt)}.json`,
+    filename: `kassab-backup-${includeImages ? '' : 'data-'}${stamp(exportedAt)}.json`,
     counts,
     exportedAt,
+    includeImages,
   };
 }
 
@@ -125,11 +130,20 @@ export async function readBackupFile(file) {
   return { data: parsed, counts, exportedAt: parsed.exportedAt || null };
 }
 
-/** يستبدل كل المخازن بمحتوى النسخة، ثم يعتبر البيانات مُصدَّرة الآن. */
+/**
+ * يستبدل المخازن **الموجودة في النسخة** بمحتواها، ثم يعتبر البيانات مُصدَّرة الآن.
+ *
+ * **ومخزنٌ غائب عن النسخة لا يُمسّ** (المرحلة ٣٥). كان الاستيراد يمرّ على المخازن كلها
+ * ويضع `[]` لما لم يجده — فيمسحه. وذلك صحيحٌ لنسخةٍ كاملة (فيها كل مخزنٍ ولو فارغًا)،
+ * وكارثةٌ لنسخة البيانات وحدها: استرجاعُها كان **يمحو مكتبة صورك كلّها**.
+ *
+ * وهو يصلح عطبًا أقدم أيضًا: نسخةٌ أُخذت قبل أن يوجد مخزنٌ ما كانت تمحوه عند الاسترجاع.
+ */
 export async function importBackup(parsed) {
   const dataByStore = {};
   for (const store of repo.raw.stores) {
-    const rows = Array.isArray(parsed.db[store]) ? parsed.db[store] : [];
+    if (!Array.isArray(parsed.db?.[store])) continue; // غائب عن النسخة: يبقى كما هو
+    const rows = parsed.db[store];
     dataByStore[store] = store === 'images' ? rows.map(deserializeImage) : rows;
   }
   await repo.raw.replaceAll(dataByStore);
@@ -150,4 +164,104 @@ export async function backupStatus() {
     hasData,
     due: hasData && (hoursSince == null || hoursSince >= REMINDER_HOURS),
   };
+}
+
+/* ===== المرحلة ٣٥ — حارس الاسترجاع، والدمج بدل الاستبدال ===== */
+
+/** المخازن التي يُقاس بها «عمل الجهاز»: سجلات المستخدم لا الإعدادات ولا الصور. */
+const WORK_STORES = STORE_ORDER.filter((s) => s !== 'settings' && s !== 'images' && s !== 'trash');
+
+/**
+ * أحدث لحظة عملٍ على هذا الجهاز — أو null إن لم يكن فيه شيء.
+ *
+ * يحتاجها الحارس: استرجاعٌ يستبدل عملَ اليوم بنسخة الأمس **كارثةٌ صامتة**، ومقارنةُ
+ * تاريخين تمنعها بلا أي بنيةٍ جديدة، فكل سجلّ يحمل `updatedAt` منذ زمن.
+ */
+export async function localNewestAt() {
+  let newest = null;
+  for (const store of WORK_STORES) {
+    for (const rec of await repo.raw.getAll(store)) {
+      const at = rec?.updatedAt || rec?.createdAt;
+      if (at && (!newest || at > newest)) newest = at;
+    }
+  }
+  return newest;
+}
+
+/**
+ * ماذا يخسر هذا الجهاز لو استُبدل بهذه النسخة؟
+ * @returns {{ localNewest, snapshotAt, wouldLose, newerCount }}
+ */
+export async function restoreRisk(parsed) {
+  const snapshotAt = parsed?.exportedAt || null;
+  const localNewest = await localNewestAt();
+  let newerCount = 0;
+  if (snapshotAt) {
+    for (const store of WORK_STORES) {
+      for (const rec of await repo.raw.getAll(store)) {
+        const at = rec?.updatedAt || rec?.createdAt;
+        if (at && at > snapshotAt) newerCount++;
+      }
+    }
+  }
+  return {
+    localNewest,
+    snapshotAt,
+    wouldLose: !!(localNewest && snapshotAt && localNewest > snapshotAt),
+    newerCount,
+  };
+}
+
+/**
+ * يدمج نسخة في بيانات الجهاز بدل أن يستبدلها (المرحلة ٣٥).
+ *
+ * **الأحدث يفوز لكل سجلٍّ على حدة** بـ`updatedAt` — وهو مكتوبٌ في كل سجلّ منذ البداية،
+ * فلا يحتاج الدمج بنيةً جديدة. ولذلك صار جهازان لا يمحو أحدهما الآخر: تعمل على الجوال
+ * وعلى المكتب، وترفع من كلٍّ وتدمج في كلٍّ، فيجتمع العملان.
+ *
+ * **والمحذوف يبقى محذوفًا**: سلّة المحذوفات شواهدُ حذف، فسجلٌّ حُذف هنا بعد تاريخ النسخة
+ * لا يُحييه الدمج. ولولا ذلك لعاد كل ما حذفتَه مع أول دمج.
+ *
+ * **والإعدادات لا تُدمج**: مفتاحٌ واحد نصفُه من هنا ونصفُه من هناك إعدادٌ لا معنى له.
+ * تبقى إعدادات هذا الجهاز كما هي، ويُستبدل كاملها من «استرجاع» الصريح وحده.
+ *
+ * @returns {{ added, updated, kept, skippedDeleted }}
+ */
+export async function mergeBackup(parsed) {
+  const stats = { added: 0, updated: 0, kept: 0, skippedDeleted: 0 };
+  const deletedAt = new Map();
+  for (const entry of await repo.raw.getAll('trash')) {
+    if (entry?.recordId && entry.deletedAt) deletedAt.set(`${entry.store}:${entry.recordId}`, entry.deletedAt);
+  }
+
+  for (const store of repo.raw.stores) {
+    if (store === 'settings' || store === 'trash') continue;
+    const incoming = parsed.db?.[store];
+    if (!Array.isArray(incoming)) continue;
+
+    const mine = await repo.raw.getAll(store);
+    const byId = new Map(mine.map((r) => [r.id, r]));
+    const toPut = [];
+
+    for (const raw of incoming) {
+      const rec = store === 'images' ? deserializeImage(raw) : raw;
+      if (!rec?.id) continue;
+
+      // حُذف هنا بعد أن كُتب هناك: الحذف أحدث، فلا يُحيا.
+      const killed = deletedAt.get(`${store}:${rec.id}`);
+      const stamp = rec.updatedAt || rec.createdAt || '';
+      if (killed && killed > stamp) { stats.skippedDeleted++; continue; }
+
+      const current = byId.get(rec.id);
+      if (!current) { toPut.push(rec); stats.added++; continue; }
+      const currentStamp = current.updatedAt || current.createdAt || '';
+      // التساوي يبقي ما في الجهاز: لا فائدة من كتابةٍ لا تغيّر شيئًا.
+      if (stamp > currentStamp) { toPut.push(rec); stats.updated++; } else { stats.kept++; }
+    }
+
+    if (toPut.length) await repo.raw.putMany(store, toPut);
+  }
+
+  await setLastExport(new Date().toISOString());
+  return stats;
 }

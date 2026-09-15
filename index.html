@@ -16,8 +16,12 @@
   <link rel="stylesheet" href="./css/components.css">
 </head>
 <body>
+  <!-- رابط التخطّي: أول ما يصله المفتاح، ويقفز فوق تسعة عشر رابطًا إلى المحتوى.
+       ولا يظهر إلا عند التركيز، فلا يزاحم البصر شيئًا. -->
+  <a href="#page" class="skip-link">تخطَّ إلى المحتوى</a>
   <div class="app-shell">
-    <input type="checkbox" id="sidebar-toggle" class="sidebar-toggle-checkbox">
+    <input type="checkbox" id="sidebar-toggle" class="sidebar-toggle-checkbox"
+           aria-label="توسيع القائمة أو طيّها">
     <aside class="sidebar" id="sidebar" aria-label="الصفحات">
       <div class="sidebar-head">
         <a class="brand sidebar-brand" href="#/today">ك</a>
@@ -59,7 +63,7 @@
       <div id="backup-banner" class="banner" hidden></div>
       <div id="client-mode-banner" class="banner banner-client" hidden></div>
 
-      <main id="page" class="page"></main>
+      <main id="page" class="page" tabindex="-1"></main>
     </div>
   </div>
 
@@ -68,6 +72,8 @@
 
   <div id="modal-root"></div>
   <div id="toast-root" class="toast-root" aria-live="polite"></div>
+  <!-- تُعلن اسم الصفحة عند كل تنقّل: الموجّه لا يُحمّل صفحة، فلا يعلم قارئ الشاشة بشيء. -->
+  <div id="route-live" class="visually-hidden" role="status" aria-live="polite"></div>
 
   <noscript>
     <div class="page"><div class="error-box">هذا التطبيق يحتاج تفعيل JavaScript في المتصفح.</div></div>

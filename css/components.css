@@ -780,3 +780,35 @@ body.client-mode #client-mode-btn { background: var(--accent); color: #fff; }
 }
 .evidence-group { margin-bottom: var(--dhad-space-3); }
 .evidence-title { margin: 0 0 var(--dhad-space-2); font-size: var(--fs-sm); color: var(--muted); font-weight: 700; }
+
+/* ===== المرحلة ٣٥ — رابط التخطّي =====
+ * لا يظهر إلا عند التركيز: من يتنقّل بالمفاتيح يجده أول شيء فيقفز فوق تسعة عشر رابطًا
+ * إلى المحتوى، ومن لا يحتاجه لا يراه. وخارج الشاشة بـ`translateY` لا بـ`display:none`
+ * لأن المخفيّ بالأخير لا يصله تركيزٌ أصلًا. */
+.skip-link {
+  position: fixed; z-index: calc(var(--dhad-z-toast) + 1);
+  inset-block-start: max(var(--dhad-space-2), env(safe-area-inset-top, 0px));
+  inset-inline-start: max(var(--dhad-space-2), env(safe-area-inset-right, 0px));
+  display: inline-flex; align-items: center; min-height: var(--dhad-size-touch);
+  padding-inline: var(--dhad-space-4); border-radius: var(--radius);
+  background: var(--accent); color: var(--on-fill); font-weight: 700; text-decoration: none;
+  transform: translateY(-200%);
+  transition: transform var(--dhad-duration-base) var(--dhad-ease);
+}
+.skip-link:focus-visible { transform: translateY(0); }
+/* الهدف يأخذ التركيز بلا خطٍّ حوله: القفزة نفسها هي الأثر المرئي. */
+#page:focus { outline: none; }
+
+/* ===== المرحلة ٣٥ — سجلّ التغييرات ===== */
+.history-box { margin-top: var(--dhad-space-3); border: 1px solid var(--line); border-radius: var(--radius); padding: var(--dhad-space-2) var(--dhad-space-3); }
+.history-box > summary { cursor: pointer; font-weight: 600; min-height: var(--control); display: flex; align-items: center; }
+.history-row { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; padding: var(--dhad-space-2) 0; }
+.history-change { display: block; font-size: var(--fs-sm); line-height: var(--dhad-line-body); }
+
+/* ===== المرحلة ٣٥ — وضع المساعد =====
+ * يستعمل آلية «وضع العرض للعميل» نفسها (`[data-sensitive]`) القائمة منذ المرحلة ١٣:
+ * الحقول الحسّاسة موسومة أصلًا في كل صفحة، فلا وسم جديد يُضاف ولا موضع يُنسى. */
+body.assistant-mode [data-sensitive] { display: none !important; }
+/* ولوحة الخزنة تُخفى كاملة: الخادم يرفض الرفع والاسترجاع بدور المساعد، وإظهار زرٍّ
+   يُردّ صاحبُه بـ٤٠٣ إزعاجٌ لا حماية. */
+body.assistant-mode [data-owner-only] { display: none !important; }

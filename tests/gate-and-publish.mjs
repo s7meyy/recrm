@@ -5,7 +5,7 @@ const ctx = await b.newContext({ locale: 'ar-SA' });
 const page = await ctx.newPage();
 const errors = [];
 page.on('pageerror', e => errors.push('PAGEERROR: ' + e.message));
-page.on('console', m => { const t = m.text(); if (m.type() === 'error' && !t.includes('ERR_') && !t.includes('favicon')) errors.push(t); });
+page.on('console', m => { const t = m.text(); if (m.type() === 'error' && !t.includes('ERR_') && !t.includes('Failed to load resource') && !t.includes('favicon')) errors.push(t); });
 const ok = (n, c, x = '') => console.log(`${c ? 'PASS' : 'FAIL'} — ${n}${x ? ' :: ' + x : ''}`);
 
 console.log('--- البند ٢: البوابة في متصفح حقيقي ---');

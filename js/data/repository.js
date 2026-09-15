@@ -375,6 +375,51 @@ const CASCADE = {
   },
 };
 
+/* ===== سجلّ «ماذا تغيّر ومتى» (المرحلة ٣٥) ===== */
+
+/**
+ * الحقول المتتبَّعة لكل مخزن — **مختارةٌ لا كلّ شيء**.
+ *
+ * لأن السؤال الذي يُطرح فعلًا محدود: «قلتَ لي سعرًا غير هذا»، «متى صار موافقًا؟»،
+ * «من غيّر مرحلة هذا العميل؟». وتتبّعُ كل حقل يضخّم كل سجلّ بما لا يُسأل عنه،
+ * وبياناتك في متصفحٍ له حدّ مساحة.
+ */
+const TRACKED = {
+  properties: ['price', 'status', 'captureStatus', 'area', 'ownerName', 'agreementSignedAt'],
+  clients: ['stage', 'phone', 'phone2', 'doNotContact', 'referralSource'],
+  requests: ['status', 'budgetMax', 'area', 'closeReason'],
+  deals: ['finalPrice', 'commission', 'partnerName', 'partnerShare', 'commissionPaidAt'],
+  invoices: ['type', 'number', 'status'],
+};
+
+/** أطول سجلّ يُحتفظ به لكل عنصر: عشرون تغييرًا تغطّي السؤال، وما قبلها أرشيفٌ لا يُفتح. */
+export const HISTORY_LIMIT = 20;
+
+const sameValue = (a, b) => (a ?? null) === (b ?? null)
+  || (typeof a === 'object' && typeof b === 'object' && JSON.stringify(a ?? null) === JSON.stringify(b ?? null));
+
+/**
+ * يسجّل ما تغيّر من الحقول المتتبَّعة — **في المستودع لا في الصفحة**، فيشمل كل مسار تعديل
+ * (النموذج، والاستيراد، والاعتماد، والدمج) ولا يعتمد على تذكّر كل صفحة أن تسجّل.
+ *
+ * ويُكتب على السجل نفسه لا في مخزنٍ جديد: نفس نمط `priceHistory` القائم منذ المرحلة ١٩،
+ * فيدخل النسخ الاحتياطي والدمج بلا سطرٍ واحد إضافي فيهما.
+ */
+function recordHistory(store, before, after) {
+  const fields = TRACKED[store];
+  if (!fields) return;
+  const changes = {};
+  for (const field of fields) {
+    if (!(field in after)) continue;
+    if (sameValue(before?.[field], after[field])) continue;
+    changes[field] = [before?.[field] ?? null, after[field] ?? null];
+  }
+  if (!Object.keys(changes).length) return;
+  const entry = { at: after.updatedAt, by: after.updatedBy || null, changes };
+  const past = Array.isArray(before?.history) ? before.history : [];
+  after.history = [...past, entry].slice(-HISTORY_LIMIT);
+}
+
 function makeEntity(store) {
   const schema = SCHEMAS[store];
 
@@ -440,6 +485,7 @@ function makeEntity(store) {
           rec.priceHistory = [...seeded, { at: rec.updatedAt, price: after }];
         }
       }
+      recordHistory(store, current, rec);
       prepare(rec);
       await adapter.put(store, rec);
       return rec;

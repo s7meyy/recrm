@@ -25,6 +25,8 @@ import { buildPriceIndex, comparePrice, priceTrend, priceSamples, estimatePrice 
 import { printProperty, printPropertyCatalog, printAgreement, printCma } from '../util/property-print.js';
 import { adCopy, adGaps } from '../util/ad-copy.js';
 import { propertyEvidence, priceDrops, MIN_SAMPLE } from '../util/property-evidence.js';
+import { historyBox } from '../util/history-view.js';
+import { capped, PAGE_SIZE } from '../util/render-cap.js';
 
 // "الحالة" فرز خاص بالعقارات (بلا معنى للعروض الخارجية) فيبقى معرَّفًا هنا؛ بقية المجموعات
 // مشتركة مع خريطة العقارات عبر util/property-filters.js فلا تنحرف الصفحتان عن بعضهما.
@@ -322,7 +324,23 @@ function renderList(ctx) {
     area.append(emptyState('لا نتائج تطابق الفرز أو البحث.'));
     return;
   }
-  area.append(ctx.view === 'table' ? renderTable(ctx, items) : renderGrid(ctx, items));
+  // حدّ الرسم (المرحلة ٣٥): الفرز والبحث والعدّ فوق على المجموعة كاملة، والمرسوم مئتان.
+  //
+  // ويعود الحدّ إلى أوّله كلما تغيّر الفرز أو البحث: من ضغط «أظهر المزيد» على نتيجةٍ ثم
+  // بحث عن غيرها لا يريد ألفًا من الجديدة. والتغيّر يُعرف بتوقيعٍ هنا لا بتعديل ثمانية
+  // مواضع تستدعي الرسم — فموضعٌ يُنسى يعيد العلّة.
+  const signature = `${ctx.query || ''}|${ctx.view}|${ctx.sort?.key || ''}|${ctx.sort?.dir || ''}|`
+    + Object.entries(ctx.filters || {}).map(([g, set]) => `${g}:${[...set].sort().join(',')}`).join('|');
+  if (signature !== ctx.lastSignature) { ctx.shown = PAGE_SIZE; ctx.lastSignature = signature; }
+  const { visible, more } = capped(items, ctx.shown || PAGE_SIZE);
+  area.append(ctx.view === 'table' ? renderTable(ctx, visible) : renderGrid(ctx, visible));
+  if (more) {
+    area.append(el('div', { class: 'row', style: { justifyContent: 'center', marginTop: '16px' } },
+      el('button', {
+        type: 'button', class: 'btn', text: `أظهر ${formatNumber(Math.min(more, PAGE_SIZE))} أخرى (بقي ${formatNumber(more)})`,
+        onClick: () => { ctx.shown = (ctx.shown || PAGE_SIZE) + PAGE_SIZE; renderList(ctx); },
+      })));
+  }
 }
 
 function ownerLabel(ctx, p) {
@@ -930,6 +948,7 @@ async function openForm(ctx, existing) {
     typeBox,
     customBox,
     isEdit ? evidenceSection(ctx, existing) : null,
+    isEdit ? historyBox(existing, { lists: ctx.lists }) : null,
     el('div', { class: 'form-section' },
       el('div', { class: 'form-grid one' },
         labeled('الملاحظات', notesInput),

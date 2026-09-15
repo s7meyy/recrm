@@ -289,24 +289,38 @@ export function buildMatchIndex({ properties = [], externals = [] } = {}) {
 
 const bucketOf = (map, request) => map?.get(`${norm(request.city)}|${request.type}|${request.purpose}`) || [];
 
-export function candidatesFor(request, ctx, { minScore = 0, includeExternal = true } = {}) {
+export function candidatesFor(request, ctx, { minScore = 0, includeExternal = true, limit = 0 } = {}) {
   const districts = requestDistricts(request, ctx.zonesByCity?.[request.city] || []);
   const pre = preparePer(request, ctx.settings, districts);
   const out = [];
+  // أدنى درجةٍ داخل الحصيلة حين تمتلئ — تُرفع كلما دخل أفضل منها، فتصير قاطعًا يمنع
+  // بناء كائنٍ لمرشّحٍ لن يبقى. وهذا كل مكسب `limit` (المرحلة ٣٥): الترتيب لا يتغيّر،
+  // وإنما **لا تُخصَّص ذاكرةٌ لما سيُرمى**.
+  let floor = minScore;
   const collect = (listings, kind) => {
     for (const listing of listings || []) {
       const result = scoreListing(request, listing, { settings: ctx.settings, districts, kind, pre });
       if (!result.ok || result.score < minScore) continue;
+      if (limit && out.length >= limit && result.score <= floor) continue;
       out.push({ listing, kind, score: result.score, tags: result.tags, parts: result.parts, priceUnknown: result.priceUnknown });
+      // لا نرتّب في كل إدخال: نقصّ على مِثلَي الحدّ فيبقى القصّ نادرًا والنتيجة مضبوطة.
+      if (limit && out.length >= limit * 2) {
+        out.sort(byScore);
+        out.length = limit;
+        floor = out[out.length - 1].score;
+      }
     }
   };
   // الفهرس إن بُني (loadMatchingContext تبنيه)، وإلا فالمرور الكامل — فالسياق المبنيّ يدويًا يعمل كما كان.
   const index = ctx.matchIndex;
   collect(index ? bucketOf(index.properties, request) : ctx.properties, 'property');
   if (includeExternal) collect(index ? bucketOf(index.externals, request) : ctx.externals, 'external');
-  out.sort((a, b) => b.score - a.score || (b.listing.updatedAt || '').localeCompare(a.listing.updatedAt || ''));
-  return out;
+  out.sort(byScore);
+  return limit ? out.slice(0, limit) : out;
 }
+
+const byScore = (a, b) => b.score - a.score
+  || (b.listing.updatedAt || '').localeCompare(a.listing.updatedAt || '');
 
 /**
  * هل لهذا الطلب مرشّح واحد على الأقل؟ (المرحلة ٢٠)

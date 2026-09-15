@@ -573,6 +573,7 @@ export const DEFAULT_VAULT = {
   auto: false, // رفع تلقائي عند فتح التطبيق إذا مضى أكثر من يوم على آخر رفع
   lastUploadAt: null,
   lastUploadCounts: null,
+  lastImagesAt: null, // آخر رفع لكتل الصور (المرحلة ٣٥) — دورته أسبوعية لا يومية
 };
 
 export async function getVaultSettings() {

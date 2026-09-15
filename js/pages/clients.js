@@ -17,6 +17,7 @@ import { scoreClient } from '../util/lead-score.js';
 import { formatPhone } from '../util/phone.js';
 import { findDuplicates, suggestKeeper } from '../util/duplicates.js';
 import { audioNoteField, audioPlayer } from '../util/audio-note.js';
+import { capped, PAGE_SIZE } from '../util/render-cap.js';
 
 const GROUPS = [['role', 'الدور'], ['stage', 'المرحلة'], ['tag', 'التصنيف']];
 const VALUES = { role: (c) => c.roles || [], stage: (c) => [c.stage], tag: (c) => c.tags || [] };
@@ -183,8 +184,15 @@ function renderList(ctx) {
     area.append(emptyState('لا نتائج تطابق الفرز أو البحث.'));
     return;
   }
+  // حدّ الرسم (المرحلة ٣٥): ألفا عميل تضع ٢٨ ألف عنصر في الصفحة وتستغرق ثانيتين — قيسَ
+  // لا ظُنّ. والفرز والبحث والعدّ فوق على المجموعة كاملة، والمرسوم مئتان.
+  const signature = `${ctx.query || ''}|`
+    + Object.entries(ctx.filters || {}).map(([g, set]) => `${g}:${[...(set || [])].sort().join(',')}`).join('|');
+  if (signature !== ctx.lastSignature) { ctx.shown = PAGE_SIZE; ctx.lastSignature = signature; }
+  const { visible, more } = capped(items, ctx.shown || PAGE_SIZE);
+
   const head = el('tr', {}, ['الأولوية', 'الاسم', 'الجوال', 'الأدوار', 'المرحلة', 'التصنيفات', 'آخر تواصل', 'المتابعة القادمة'].map((t) => el('th', { text: t })));
-  const body = el('tbody', {}, items.map((c) => el('tr', { class: `row-priority-${clientPriority(c)}`, onClick: () => openDetail(ctx, c.id) },
+  const body = el('tbody', {}, visible.map((c) => el('tr', { class: `row-priority-${clientPriority(c)}`, onClick: () => openDetail(ctx, c.id) },
     el('td', {}, scoreBadge(ctx, c)),
     el('td', { class: 'strong' }, c.name || el('span', { class: 'muted', text: 'بلا اسم' }), sourceBadge(c.referralSource)),
     el('td', {}, phoneLink(c.phone)),
@@ -194,6 +202,13 @@ function renderList(ctx) {
     el('td', {}, lastContactNode(c)),
     el('td', {}, followUpNode(c)))));
   area.append(el('div', { class: 'table-wrap' }, el('table', { class: 'table' }, el('thead', {}, head), body)));
+  if (more) {
+    area.append(el('div', { class: 'row', style: { justifyContent: 'center', marginTop: '16px' } },
+      el('button', {
+        type: 'button', class: 'btn', text: `أظهر ${formatNumber(Math.min(more, PAGE_SIZE))} أخرى (بقي ${formatNumber(more)})`,
+        onClick: () => { ctx.shown = (ctx.shown || PAGE_SIZE) + PAGE_SIZE; renderList(ctx); },
+      })));
+  }
 }
 
 /** شارة الدرجة مع سببها في التلميح — درجةٌ لا تُشرح لا تُصحَّح. */

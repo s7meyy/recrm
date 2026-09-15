@@ -13,7 +13,10 @@ import {
   getCompany, setCompany, getVaultSettings, setVaultSettings, getTemplates, setTemplates, resetTemplates,
   getGoals, setGoals,
 } from '../data/settings.js';
-import { listBackups, uploadBackup, restoreBackup } from '../data/vault.js';
+import {
+  listBackups, uploadBackup, restoreBackup, uploadImages, listImageBackups, restoreImages,
+  inspectBackup, mergeFromVault,
+} from '../data/vault.js';
 import { pushSupported, enablePush, disablePush, currentSubscription, syncReminders } from '../util/push.js';
 import { TEMPLATE_VARS } from '../util/templates.js';
 import {
@@ -49,7 +52,8 @@ export async function render(container) {
     panel('ترتيب صفحات القائمة الجانبية', 'رتّب الصفحات كما تريد رؤيتها في القائمة. كل الصفحات تبقى ظاهرة؛ الترتيب فقط هو ما يُحفظ.', sidebarOrderBody),
     panel('بيانات الشركة والمستندات', 'ما يُطبع أعلى الفاتورة وعرض السعر: الاسم والشعار وبيانات التواصل، وسلسلتا الترقيم التلقائي.', companyBody),
     panel('النسخ الاحتياطي', 'البيانات محفوظة في هذا المتصفح فقط. الملف الواحد يحوي كل شيء بما فيه الصور والإعدادات.', backupBody),
-    panel('النسخة السحابية المشفَّرة', 'نسخة مشفَّرة في متصفحك قبل رفعها — الخادم لا يستطيع قراءتها. تحمي بياناتك لو ضاع الجهاز، وتنقلها إلى جهاز آخر.', vaultBody),
+    // للمالك وحده (المرحلة ٣٥): الخزنة فيها بيانات المكتب كلها، والخادم يرفضها بدور المساعد.
+    panel('النسخة السحابية المشفَّرة', 'نسخة مشفَّرة في متصفحك قبل رفعها — الخادم لا يستطيع قراءتها. تحمي بياناتك لو ضاع الجهاز، وتنقلها إلى جهاز آخر.', vaultBody, { ownerOnly: true }),
     panel('التخزين والصور', 'ما تشغله البيانات على هذا الجهاز. لحذف صور بعينها افتح العقار واحذفها من نموذجه.', storageBody),
     panel('القوائم', 'أنواع العقار وحالاته وتصنيفات العملاء والمدن والأحياء. المدمج لا يُحذف؛ ما أضفته يُحذف ما لم يكن مستعملًا.', listsBody),
     panel('الحقول الإضافية', 'حقول تظهر في نموذج العقار لكل الأنواع أو لأنواع محددة.', customFieldsBody),
@@ -68,9 +72,10 @@ export async function render(container) {
   );
 }
 
-function panel(title, desc, bodyFn) {
+function panel(title, desc, bodyFn, { ownerOnly = false } = {}) {
   const body = el('div');
-  const node = el('section', { class: 'panel' }, el('h2', { text: title }), el('p', { class: 'panel-desc', text: desc }), body);
+  const node = el('section', ownerOnly ? { class: 'panel', 'data-owner-only': '' } : { class: 'panel' },
+    el('h2', { text: title }), el('p', { class: 'panel-desc', text: desc }), body);
   const redraw = async () => {
     clear(body);
     try {
@@ -1006,19 +1011,62 @@ async function vaultBody(redraw) {
         el('tbody', {}, backups.map((b) => el('tr', {},
           el('td', { text: formatDateTime(b.at) }),
           el('td', { text: b.size ? formatBytes(b.size) : '—' }),
-          el('td', {}, el('button', {
-            type: 'button', class: 'btn btn-sm', text: 'استرجاع',
-            onClick: () => doRestore(b.key),
-          })))))));
+          el('td', {}, el('div', { class: 'row' },
+            el('button', {
+              type: 'button', class: 'btn btn-sm btn-primary', text: 'دمج',
+              title: 'يضمّ ما في النسخة إلى ما في الجهاز — الأحدث يفوز لكل سجل، ولا يُمحى شيء',
+              onClick: () => doMerge(b.key),
+            }),
+            el('button', {
+              type: 'button', class: 'btn btn-sm', text: 'استبدال',
+              title: 'يمحو ما في الجهاز ويضع النسخة مكانه',
+              onClick: () => doRestore(b.key),
+            }))))))));
     } catch (err) {
       listBox.append(el('p', { class: 'muted small', text: `تعذر قراءة الخزنة: ${err.message}` }));
     }
   };
 
+  /**
+   * الدمج (المرحلة ٣٥): الأحدث يفوز لكل سجلٍّ على حدة — وهو الطريق المعتاد بين جهازين.
+   * لا سؤال هنا لأنه **لا يمحو شيئًا**: يضيف الناقص ويرفع الأقدم، ويبقي ما هو أحدث.
+   */
+  const doMerge = async (key) => {
+    try {
+      const res = await mergeFromVault(passInput.value.trim(), key);
+      const s2 = res.stats;
+      toast(`دُمجت نسخة ${formatDateTime(res.exportedAt)} — أُضيف ${s2.added} · حُدّث ${s2.updated} · بقي أحدث ${s2.kept}`, 'success', 6000);
+      setTimeout(() => location.reload(), 1400);
+    } catch (err) { errToast(err); }
+  };
+
+  /**
+   * الاستبدال: **يمحو** ما في الجهاز. فقبله يُقاس ما سيُمحى ويُقال بالأرقام.
+   *
+   * وكان يسأل سؤالًا عامًّا يُضغط «نعم» فيه بلا قراءة — ومن رفع من جواله ثم استرجع على
+   * مكتبه فقد عمل يومه ولم يدرِ. والتاريخان مكتوبان في السجلات أصلًا، فالسؤال يصير محدَّدًا.
+   */
   const doRestore = async (key) => {
+    let risk = null;
+    try {
+      risk = (await inspectBackup(passInput.value.trim(), key)).risk;
+    } catch (err) { errToast(err); return; }
+
+    const lines = ['سيُستبدل كل ما في هذا المتصفح بمحتوى النسخة.'];
+    if (risk.wouldLose) {
+      lines.push('');
+      lines.push(`⚠️ في هذا الجهاز ${risk.newerCount} سجلًّا أحدث من النسخة.`);
+      lines.push(`آخر عمل هنا: ${formatDateTime(risk.localNewest)}`);
+      lines.push(`وتاريخ النسخة: ${formatDateTime(risk.snapshotAt)}`);
+      lines.push('');
+      lines.push('الاستبدال يمحوها. و«دمج» يبقيها ويضمّ إليها ما في النسخة.');
+    }
+    lines.push('');
+    lines.push('المتابعة؟');
+
     const ok = await confirmDialog({
-      title: 'استرجاع نسخة سحابية',
-      message: 'سيُستبدل كل ما في هذا المتصفح بمحتوى النسخة (نفس سلوك الاستيراد من ملف). المتابعة؟',
+      title: risk.wouldLose ? '⚠️ الاستبدال سيمحو عملًا أحدث' : 'استرجاع نسخة سحابية',
+      message: lines.join('\n'),
       confirmText: 'استبدال واسترجاع', danger: true,
     });
     if (!ok) return;
@@ -1046,18 +1094,77 @@ async function vaultBody(redraw) {
     finally { busy(uploadBtn, false, '☁️ ارفع نسخة الآن'); }
   });
 
+  /* ===== الصور: كتلٌ منفصلة (المرحلة ٣٥) ===== */
+  const imagesBox = el('div');
+  const drawImages = async () => {
+    clear(imagesBox);
+    try {
+      const metas = await listImageBackups();
+      if (!metas.length) { imagesBox.append(el('p', { class: 'muted small', text: 'لا صور مرفوعة بعد.' })); return; }
+      // الكتل تُعرض دفعةً واحدة لا كتلةً كتلة: الدفعة هي وحدة الاسترجاع.
+      const batch = metas[0].at;
+      const mine = metas.filter((m) => (m.at || '') === batch);
+      const bytes = mine.reduce((sum, m) => sum + (m.size || 0), 0);
+      const expected = mine[0]?.parts ?? mine.length;
+      imagesBox.append(el('dl', { class: 'kv' },
+        el('dt', { text: 'آخر دفعة' }), el('dd', { text: formatDateTime(batch) }),
+        el('dt', { text: 'الكتل' }), el('dd', {}, mine.length === expected
+          ? badge(`${mine.length} من ${expected}`, 'badge-ok')
+          : badge(`${mine.length} من ${expected} — ناقصة`, 'badge-danger')),
+        el('dt', { text: 'الحجم' }), el('dd', { text: formatBytes(bytes) })));
+    } catch (err) {
+      imagesBox.append(el('p', { class: 'muted small', text: `تعذر قراءة كتل الصور: ${err.message}` }));
+    }
+  };
+
+  const imgUploadBtn = el('button', { type: 'button', class: 'btn', text: '🖼️ ارفع الصور' });
+  imgUploadBtn.addEventListener('click', async () => {
+    const pass = passInput.value.trim();
+    if (pass.length < 8) { toast('اجعل العبارة السرّية ٨ أحرف فأكثر', 'error'); return; }
+    busy(imgUploadBtn, true, 'يرفع الصور…');
+    try {
+      const res = await uploadImages(pass, {
+        onProgress: (done, all) => { imgUploadBtn.textContent = `كتلة ${done} من ${all}…`; },
+      });
+      await setVaultSettings({ passphrase: pass, lastImagesAt: new Date().toISOString() });
+      toast(res.images ? `رُفعت ${res.images} صورة في ${res.parts} كتلة` : 'لا صور لرفعها', 'success');
+      await drawImages();
+    } catch (err) { errToast(err); }
+    finally { busy(imgUploadBtn, false, '🖼️ ارفع الصور'); }
+  });
+
+  const imgRestoreBtn = el('button', { type: 'button', class: 'btn', text: 'استرجع الصور' });
+  imgRestoreBtn.addEventListener('click', async () => {
+    busy(imgRestoreBtn, true, 'يسترجع…');
+    try {
+      const res = await restoreImages(passInput.value.trim());
+      toast(`استُرجعت ${res.images} صورة من ${res.parts} كتلة`, 'success');
+      dataChanged();
+    } catch (err) { errToast(err); }
+    finally { busy(imgRestoreBtn, false, 'استرجع الصور'); }
+  });
+
   await drawList();
+  await drawImages();
   return el('div', {},
     el('dl', { class: 'kv' },
-      el('dt', { text: 'آخر رفع' }),
-      el('dd', {}, vault.lastUploadAt ? formatDateTime(vault.lastUploadAt) : badge('لم تُرفع نسخة بعد', 'badge-warn'))),
+      el('dt', { text: 'آخر رفع للبيانات' }),
+      el('dd', {}, vault.lastUploadAt ? formatDateTime(vault.lastUploadAt) : badge('لم تُرفع نسخة بعد', 'badge-warn')),
+      el('dt', { text: 'آخر رفع للصور' }),
+      el('dd', {}, vault.lastImagesAt ? formatDateTime(vault.lastImagesAt) : badge('لم تُرفع صور بعد', 'badge-warn'))),
     el('div', { class: 'form-grid' },
       labeled('العبارة السرّية', passInput, { hint: 'تُشتق منها مفتاحية التشفير. نسيانها يعني فقدان النسخ السحابية — لا يستطيع أحد فكّها، ولا الخادم.' }),
       el('div', { class: 'field' }, el('span', { class: 'field-label', text: 'الرفع التلقائي' }), autoBox)),
-    el('div', { class: 'row' }, uploadBtn,
-      el('button', { type: 'button', class: 'btn', text: 'تحديث القائمة', onClick: () => drawList() })),
-    el('div', { class: 'panel-block' }, el('h3', { text: 'النسخ المحفوظة (آخر ٥)' }), listBox),
-    el('p', { class: 'muted small', text: 'للنقل إلى جهاز آخر: افتح التطبيق عليه، اكتب العبارة السرّية نفسها هنا، ثم «استرجاع». تنبيه: الاسترجاع يستبدل بيانات الجهاز كلها، فلا تعمل على جهازين في وقت واحد — آخر رفع يغلب.' }),
+    el('div', { class: 'row' }, uploadBtn, imgUploadBtn, imgRestoreBtn,
+      el('button', { type: 'button', class: 'btn', text: 'تحديث القائمة', onClick: () => { drawList(); drawImages(); } })),
+    el('div', { class: 'panel-block' }, el('h3', { text: 'نسخ البيانات (آخر ٥)' }), listBox),
+    el('div', { class: 'panel-block' }, el('h3', { text: 'الصور' }), imagesBox,
+      el('p', { class: 'muted small', text: 'الصور تسعة أعشار الحجم، وبياناتك كلها في العشر الباقي.'
+        + ' فتُرفع البيانات كل يوم (سريعة ولا تفشل)، والصور في كتلٍ منفصلة كل أسبوع.'
+        + ' وكانت النسخة الواحدة تحمل الاثنين فتتجاوز حدّ الرفع بعد عشرين عقارًا بصورها — فيفشل الرفع بلا رسالة، وصاحبه يحسب نسخته محفوظة.' })),
+    el('p', { class: 'muted small', text: 'للنقل إلى جهاز آخر: افتح التطبيق عليه، اكتب العبارة السرّية نفسها، ثم **دمج** —'
+      + ' فيجتمع عمل الجهازين ولا يُمحى شيء. و«استبدال» لجهازٍ جديد فارغ أو لبياناتٍ أفسدتها وتريد الرجوع،'
+      + ' وهو يقول لك قبله كم سجلًّا أحدث سيمحو.' }),
   );
 }
 
