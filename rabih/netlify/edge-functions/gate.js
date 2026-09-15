@@ -40,6 +40,20 @@ async function validToken(token, secret) {
   return safeEqual(mac, await sign(expires, secret));
 }
 
+/**
+ * وجهةٌ داخلية لا غير.
+ *
+ * `startsWith('/')` وحدها لا تكفي: «//evil.com» يبدأ بشرطة ويقرؤه المتصفح عنوانًا
+ * خارجيًّا بالبروتوكول نفسه. فتصير البوابة أداةَ تحويلٍ مفتوح: رابطٌ من موقعك يقذف
+ * من يفتحه إلى موقع غيرك، ويُستعمل في التصيّد لأن المصدر يبدو موثوقًا.
+ */
+function safeTarget(raw) {
+  const t = String(raw || '');
+  if (!t.startsWith('/')) return '/';
+  if (t.startsWith('//') || t.startsWith('/\\')) return '/';
+  return t;
+}
+
 const esc = (s) => String(s ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
@@ -116,7 +130,7 @@ export default async (request, context) => {
     return new Response(null, {
       status: 302,
       headers: {
-        location: target.startsWith('/') ? target : '/',
+        location: safeTarget(target),
         'set-cookie': `${COOKIE}=${await makeToken(secret)}; Path=/; Max-Age=${MAX_AGE_DAYS * 86400}; HttpOnly; Secure; SameSite=Lax`,
       },
     });

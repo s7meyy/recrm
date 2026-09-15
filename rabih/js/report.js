@@ -8,6 +8,7 @@ import { recentVsOlder, monthly, alerts, topicAges } from './recency.js';
 import { themeCss, coverHeader, footerLine, OFFICE_CSS } from './brand.js';
 import { extract as extractEntities } from './entities.js';
 import { analyze as analyzeReplies } from './replies.js';
+import { block as confidenceBlock } from './confidence.js';
 
 const esc = (s) => String(s ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -292,6 +293,18 @@ code{background:#f3f5f8;padding:0 1mm;border-radius:3px;font-size:10pt}
 .bar-track{background:#eef1f5;border-radius:3px;height:5mm;overflow:hidden}
 .bar-fill{display:block;height:100%;background:linear-gradient(90deg,var(--navy),#3a6ea5)}
 .bar-value{font-size:10pt;color:var(--muted);text-align:left}
+.confidence{break-inside:avoid;margin:0 0 8mm;border:1px solid var(--line);border-radius:8px;padding:5mm 6mm;background:#fbfcfd}
+.conf-head{display:flex;align-items:baseline;gap:4mm;margin:2mm 0 4mm}
+.conf-score{font-size:22pt;font-weight:800;color:var(--navy);line-height:1}
+.conf-level{font-size:11pt;color:var(--muted)}
+.conf-head.up .conf-score{color:#2f7d55}
+.conf-head.down .conf-score{color:#b5462f}
+.conf-bars{display:flex;flex-direction:column;gap:2mm}
+.conf-row{display:grid;grid-template-columns:38mm 1fr 42mm;align-items:center;gap:3mm}
+.conf-name{font-size:10pt;color:var(--navy)}
+.conf-track{background:#eef1f5;border-radius:3px;height:4mm;overflow:hidden}
+.conf-fill{display:block;height:100%;background:linear-gradient(90deg,var(--navy),#3a6ea5)}
+.conf-val{font-size:9.5pt;color:var(--muted);text-align:left}
 .recency{break-inside:avoid;margin:8mm 0}
 .rec-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:4mm;margin:4mm 0}
 .rec-cell{border:1px solid var(--line);border-radius:6px;padding:3mm 4mm;text-align:center}
@@ -347,8 +360,8 @@ figcaption{font-size:9pt;color:var(--muted);margin-top:1mm;text-align:center}
  * @param {Array}  o.photos  [{url, caption}]
  * @returns {string} HTML كامل مكتفٍ بذاته
  */
-export function buildReportHtml({ place, ctx = {}, markdown = '', photos = [], show = {}, font = null, identity = null }) {
-  const opt = { toc: true, stars: true, topics: true, photos: true, recency: true, entities: true, replies: true, ...show };
+export function buildReportHtml({ place, ctx = {}, markdown = '', photos = [], show = {}, font = null, identity = null, job = null }) {
+  const opt = { toc: true, stars: true, topics: true, photos: true, recency: true, entities: true, replies: true, confidence: true, ...show };
   const s = stats(place);
   const body = tocFrom(mdToHtml(markdown));
   const date = new Date().toLocaleDateString('ar-SA-u-ca-gregory');
@@ -387,6 +400,7 @@ export function buildReportHtml({ place, ctx = {}, markdown = '', photos = [], s
 <div class="page">
 ${cover}
 <main class="body">
+${opt.confidence ? confidenceBlock(job || { place, reportMd: markdown }) : ''}
 ${opt.toc ? body.toc : ''}
 ${opt.stars ? starBars(place) : ''}
 ${opt.recency ? recencyBlock(place) : ''}

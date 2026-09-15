@@ -25,6 +25,7 @@ import * as lock from './lock.js';
 import * as queue from './queue.js';
 import { build as buildMessage, subject as messageSubject, situationLabel } from './messages.js';
 import { audit, fixPrompt } from './completeness.js';
+import { score as confidenceScore } from './confidence.js';
 import { extract as extractEntities } from './entities.js';
 import { analyze as analyzeReplies } from './replies.js';
 import { internalBenchmark } from './compare.js';
@@ -41,6 +42,17 @@ import { newId, saveJob, getJob, allJobs, deleteJob, buildTree, jobPath,
 const $  = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const el = (tag, cls, html) => { const n = document.createElement(tag); if (cls) n.className = cls; if (html !== undefined) n.innerHTML = html; return n; };
+
+/**
+ * هروبٌ لكل نصٍّ لا نكتبه نحن: نصوص التعليقات، ومخرجات النماذج، وما يكتبه المستخدم.
+ *
+ * ليست احتياطًا نظريًّا: مخرجُ نموذجٍ يحمل `<img onerror=...>` كان يُنفَّذ فعلًا في
+ * أصل الموقع — حيث يقبع أرشيف العملاء كله في IndexedDB. والطريق واقعي: تعليقٌ خبيث
+ * على قوقل، يُلصَق، فيردّده النموذج في مخرجه، فيُلصَق مخرجه.
+ */
+const esc = (v) => String(v ?? '')
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
 const LAST_JOB = 'rabih:last-job';
 const VIEWS = ['new', 'data', 'pipeline', 'report', 'compare', 'archive', 'settings', 'about'];
@@ -197,7 +209,7 @@ function fillDistricts(cityId, selected = '') {
   const sel = $('#f-district');
   const list = cityId ? districtsOf(cityId) : [];
   sel.innerHTML = '<option value="">— اختر الحي —</option>' +
-    list.map((d) => `<option value="${d}"${d === selected ? ' selected' : ''}>${d}</option>`).join('');
+    list.map((d) => `<option value="${esc(d)}"${d === selected ? ' selected' : ''}>${esc(d)}</option>`).join('');
   if (cityId && !list.length) {
     sel.innerHTML = '<option value="">— لا أحياء مسجّلة، أضف حيًّا —</option>';
   }
@@ -243,7 +255,7 @@ async function fillBrandList() {
   try {
     const jobs = await allJobs();
     const names = [...new Set(jobs.map((j) => (j.ctx?.brand || '').trim()).filter(Boolean))];
-    $('#brand-list').innerHTML = names.map((n) => `<option value="${n}"></option>`).join('');
+    $('#brand-list').innerHTML = names.map((n) => `<option value="${esc(n)}"></option>`).join('');
   } catch { /* لا يمنع التشغيل */ }
 }
 
@@ -578,7 +590,7 @@ function renderEntities() {
   if (!people.length && !products.length) { box.innerHTML = ''; return; }
   const chip = (e) => {
     const cls = e.verdict === 'سلبي' ? 'neg' : (e.verdict === 'إيجابي' ? 'pos' : '');
-    return `<span class="chip ent ${cls}" title="${e.ids.join('، ')}">${e.name} <b>${e.total}</b></span>`;
+    return `<span class="chip ent ${cls}" title="${esc(e.ids.join('، '))}">${esc(e.name)} <b>${e.total}</b></span>`;
   };
   box.innerHTML = `
     ${products.length ? `<p class="fine">أصناف وعبارات متكررة:</p><div class="chips">${products.map(chip).join('')}</div>` : ''}
@@ -622,7 +634,7 @@ function renderContext() {
   const q = qnaInsight(job.place);
   if (q.total) {
     parts.push(`<p class="fine">الأسئلة: ${q.total}، منها ${q.unanswered} بلا جواب.${
-      q.unansweredQuestions.length ? ` مثل: «${q.unansweredQuestions[0]}»` : ''}</p>`);
+      q.unansweredQuestions.length ? ` مثل: «${esc(q.unansweredQuestions[0])}»` : ''}</p>`);
     if (q.note) parts.push(`<div class="msg warn"><b>${q.note}</b></div>`);
   }
 
@@ -642,12 +654,12 @@ function renderAnomaly() {
     const rev = job.place.reviews.find((x) => x.id === f.id);
     const labels = f.flags.map((k) => FLAGS[k].label).join('، ');
     return `<tr><td><span class="rid">${f.id}</span></td><td>${f.score}</td><td>${labels}</td>
-      <td class="snip">${(rev?.text || '(بلا نص)').slice(0, 70)}</td></tr>`;
+      <td class="snip">${esc((rev?.text || '(بلا نص)').slice(0, 70))}</td></tr>`;
   }).join('');
 
   box.innerHTML = `
     <div class="msg ${r.level === 'err' ? 'err' : 'warn'}"><b>${r.summary}</b></div>
-    ${r.clusters.length ? `<p class="fine">نصوص متشابهة: ${r.clusters.map((c) => c.ids.join(' ≈ ')).join(' · ')}</p>` : ''}
+    ${r.clusters.length ? `<p class="fine">نصوص متشابهة: ${esc(r.clusters.map((c) => c.ids.join(' ≈ ')).join(' · '))}</p>` : ''}
     <div class="table-wrap"><table class="mini"><thead><tr><th>التعليق</th><th>الدرجة</th><th>الإشارات</th><th>مقتطف</th></tr></thead><tbody>${rows}</tbody></table></div>
     <div class="row"><button type="button" class="btn ghost sm" id="btn-drop-flagged">استبعاد ما درجته ٣ فأعلى</button>
     <span class="fine">الاستبعاد قرارك أنت؛ لا يُحذف شيء تلقائيًّا.</span></div>`;
@@ -706,7 +718,7 @@ function renderPhotoChips() {
   if (!job.photos.length) { box.innerHTML = '<span class="chip">لا صور</span>'; return; }
   box.innerHTML = '';
   job.photos.forEach((p, i) => {
-    const c = el('span', 'chip', `${p.caption || 'صورة'} `);
+    const c = el('span', 'chip', `${esc(p.caption || 'صورة')} `);
     const b = el('button', 'btn danger sm', '×');
     b.style.padding = '0 6px';
     b.addEventListener('click', () => { job.photos.splice(i, 1); renderPhotoChips(); scheduleSave(); });
@@ -823,10 +835,10 @@ function renderPipeline() {
       const bad = v.badIds.length
         ? `<p class="fine err-text">معرّفات لا وجود لها في بياناتك: ${v.badIds.map((i) => `<span class="rid">${i}</span>`).join('، ')} — هذا اختراع صريح، أعد الخطوة بنموذج آخر.</p>` : '';
       const nums = v.numberIssues.length
-        ? `<ul class="fine">${v.numberIssues.map((n) => `<li>الرقم <b>${n.value}</b> في «${n.context.slice(0, 60)}» — ${n.why}.</li>`).join('')}</ul>` : '';
+        ? `<ul class="fine">${v.numberIssues.map((n) => `<li>الرقم <b>${esc(n.value)}</b> في «${esc(n.context.slice(0, 60))}» — ${esc(n.why)}.</li>`).join('')}</ul>` : '';
       const uns = v.unsupported.length
         ? `<details class="fine"><summary>${v.unsupported.length} حكمًا بلا سند</summary><ul>${
-            v.unsupported.slice(0, 8).map((u) => `<li>${u.text.slice(0, 110)}</li>`).join('')}</ul></details>` : '';
+            v.unsupported.slice(0, 8).map((u) => `<li>${esc(u.text.slice(0, 110))}</li>`).join('')}</ul></details>` : '';
       check.innerHTML = `<div class="msg ${v.level === 'err' ? 'err' : v.level === 'warn' ? 'warn' : 'ok'}">
         <b>مدقّق السند: ${v.summary}</b>${bad}${nums}${uns}</div>`;
     };
@@ -886,8 +898,8 @@ function renderAgreement() {
 
   card.hidden = false;
   const group = (g, cls) => `<div class="agree-group ${cls}">
-    <div class="txt">${g.text}</div>
-    <div class="who">${g.sources.join(' · ')}${g.ids.length ? ` — ${g.ids.map((i) => `<span class="rid">${i}</span>`).join('، ')}` : ' — بلا سند'}</div>
+    <div class="txt">${esc(g.text)}</div>
+    <div class="who">${esc(g.sources.join(' · '))}${g.ids.length ? ` — ${g.ids.map((i) => `<span class="rid">${esc(i)}</span>`).join('، ')}` : ' — بلا سند'}</div>
   </div>`;
 
   box.innerHTML = `
@@ -898,7 +910,7 @@ function renderAgreement() {
       <div class="stat down"><b>انفرد واحد</b><span>${r.stats.unique}</span></div>
     </div>
     ${r.numbers.length ? `<div class="msg err"><b>أرقام متعارضة بين النماذج (${r.numbers.length})</b><ul>${
-      r.numbers.slice(0, 5).map((n) => `<li>${n.values.map((v) => `${v.label}: <b>${v.value}</b>`).join(' · ')}</li>`).join('')}</ul>
+      r.numbers.slice(0, 5).map((n) => `<li>${n.values.map((v) => `${esc(v.label)}: <b>${esc(v.value)}</b>`).join(' · ')}</li>`).join('')}</ul>
       <p class="fine">ارجع إلى «الإحصاءات المحسوبة» — الرقم الصحيح فيها لا عند النماذج.</p></div>` : ''}
     ${r.all.length ? `<div class="agree-head">اتفق الجميع <span class="badge ok">ثقة عالية</span></div>${r.all.slice(0, 8).map((g) => group(g, 'all')).join('')}` : ''}
     ${r.some.length ? `<div class="agree-head">اتفق بعضهم <span class="badge mid">راجعها</span></div>${r.some.slice(0, 6).map((g) => group(g, 'some')).join('')}` : ''}
@@ -945,6 +957,7 @@ function loadReportView() {
   renderPlan();
   renderReport();
   renderCompleteness();
+  renderConfidence();
   history.reset(job.id, $('#r-md').value);
   renderHistory();
   renderSnapshots();
@@ -961,6 +974,7 @@ function currentHtml() {
     show: tpl.show,
     font: job.font,
     identity: identity.load(),
+    job,
   });
 }
 
@@ -1014,9 +1028,9 @@ function renderPlan() {
 
   const rows = job.plan.map((t, i) => `<tr data-i="${i}">
     <td>${i + 1}</td>
-    <td class="task-text" contenteditable="true">${t.text}</td>
-    <td class="task-metric" contenteditable="true">${t.metric || ''}</td>
-    <td>${t.ids.map((x) => `<span class="rid">${x}</span>`).join(' ') || '—'}</td>
+    <td class="task-text" contenteditable="true">${esc(t.text)}</td>
+    <td class="task-metric" contenteditable="true">${esc(t.metric || '')}</td>
+    <td>${t.ids.map((x) => `<span class="rid">${esc(x)}</span>`).join(' ') || '—'}</td>
     <td><input type="date" class="task-due" value="${t.due || ''}"></td>
     <td><select class="task-status">${
       Object.entries(STATUS).map(([k, v]) => `<option value="${k}"${t.status === k ? ' selected' : ''}>${v.label}</option>`).join('')
@@ -1109,7 +1123,7 @@ async function renderCompare() {
 
   const tgt = $('#cmp-target');
   tgt.innerHTML = compareJobs.length
-    ? compareJobs.map((j) => `<option value="${j.id}">${j.place?.identity?.name || 'بلا اسم'} — ${j.ctx?.cityName || ''} ${j.ctx?.districtName || ''}</option>`).join('')
+    ? compareJobs.map((j) => `<option value="${esc(j.id)}">${esc(j.place?.identity?.name || 'بلا اسم')} — ${esc(j.ctx?.cityName || '')} ${esc(j.ctx?.districtName || '')}</option>`).join('')
     : '<option value="">— الأرشيف فارغ —</option>';
   renderBenchmark();
   renderGroups();
@@ -1162,7 +1176,7 @@ function renderTimeline() {
       ${list('شكاوى جديدة', t.topics.new.map((x) => `${x.name} (${x.neg}) — ${x.ids.join('، ')}`), 'bad')}
     </div>
     ${t.plan.total ? `<p class="fine">خطة التقرير الأقدم: أُنجز ${t.plan.done} من ${t.plan.total} مهمة${
-      t.plan.tasks.length ? ` — ${t.plan.tasks.map((x) => x.text).join('؛ ')}` : ''}.</p>` : ''}`;
+      t.plan.tasks.length ? ` — ${esc(t.plan.tasks.map((x) => x.text).join('؛ '))}` : ''}.</p>` : ''}`;
 }
 
 function renderBenchmark() {
@@ -1179,12 +1193,12 @@ function renderBenchmark() {
   const b = benchmark(target, rivals);
   const head = `<tr><th>المنشأة</th><th>الحي</th><th>متوسط قوقل</th><th>التقييمات</th><th>نسبة السلبي</th><th>ردود المالك</th><th>العيّنة</th></tr>`;
   const rows = b.rows.map((r) => `<tr class="${r.isTarget ? 'me' : ''}">
-    <td>${r.name}${r.isTarget ? ' <span class="badge">أنت</span>' : ''}</td>
-    <td>${r.district}</td><td>${r.googleAverage ?? '—'}</td><td>${r.googleCount ?? '—'}</td>
+    <td>${esc(r.name)}${r.isTarget ? ' <span class="badge">أنت</span>' : ''}</td>
+    <td>${esc(r.district)}</td><td>${r.googleAverage ?? '—'}</td><td>${r.googleCount ?? '—'}</td>
     <td>${r.negativeShare ?? '—'}%</td><td>${r.replyRate ?? '—'}%</td><td>${r.total}</td></tr>`).join('');
 
   const topics = b.topics.slice(0, 8).map((t) => `<tr>
-    <td>${t.name}</td>${t.cells.map((c) => `<td class="${c.isTarget ? 'me' : ''}">${c.total ? `${c.total} <small>(سلبي ${c.neg})</small>` : '—'}</td>`).join('')}
+    <td>${esc(t.name)}</td>${t.cells.map((c) => `<td class="${c.isTarget ? 'me' : ''}">${c.total ? `${c.total} <small>(سلبي ${c.neg})</small>` : '—'}</td>`).join('')}
   </tr>`).join('');
 
   const ib = internalBenchmark(compareJobs, target);
@@ -1201,7 +1215,7 @@ function renderBenchmark() {
     ${ibHtml}
     <div class="table-wrap"><table class="mini"><thead>${head}</thead><tbody>${rows}</tbody></table></div>
     ${topics ? `<h3 class="sub">المحاور المشتركة</h3><div class="table-wrap"><table class="mini">
-      <thead><tr><th>الموضوع</th>${b.rows.map((r) => `<th class="${r.isTarget ? 'me' : ''}">${r.name}</th>`).join('')}</tr></thead>
+      <thead><tr><th>الموضوع</th>${b.rows.map((r) => `<th class="${r.isTarget ? 'me' : ''}">${esc(r.name)}</th>`).join('')}</tr></thead>
       <tbody>${topics}</tbody></table></div>` : '<p class="fine">لا محاور مشتركة بعدُ بين هذه المنشآت.</p>'}`;
 }
 
@@ -1214,7 +1228,7 @@ function renderGroups() {
   groupList = brands(compareJobs);
   const sel = $('#grp-brand');
   sel.innerHTML = groupList.length
-    ? groupList.map((b) => `<option value="${b.name}">${b.name} (${b.jobs.length} فروع)</option>`).join('')
+    ? groupList.map((b) => `<option value="${esc(b.name)}">${esc(b.name)} (${b.jobs.length} فروع)</option>`).join('')
     : '<option value="">— لا علامة لها فرعان فأكثر —</option>';
   renderGroup();
 }
@@ -1240,16 +1254,16 @@ function renderGroup() {
   const rank = (a.ranking.length ? a.ranking : a.branches.map((b, i) => ({ ...b, rank: i + 1 })));
   const rows = rank.map((b) => {
     const tone = b.trend === 'انحدار' ? 'down' : (b.trend === 'تحسّن' ? 'up' : '');
-    return `<tr><td>${b.rank}</td><td>${b.label}</td><td>${b.district}</td>
+    return `<tr><td>${b.rank}</td><td>${esc(b.label)}</td><td>${esc(b.district)}</td>
       <td>${b.googleAverage ?? '—'}</td><td>${b.googleCount ?? '—'}</td>
       <td>${b.negativeShare ?? '—'}%</td><td>${b.replyRate ?? '—'}%</td>
-      <td class="${tone}">${b.trend}</td></tr>`;
+      <td class="${tone}">${esc(b.trend)}</td></tr>`;
   }).join('');
 
   const shared = a.shared.map((t) =>
-    `<li><b>${t.name}</b> — ${t.branches.length} فروع: ${t.branches.map((x) => `${x.label} (${x.neg})`).join('، ')}</li>`).join('');
+    `<li><b>${esc(t.name)}</b> — ${t.branches.length} فروع: ${t.branches.map((x) => `${esc(x.label)} (${x.neg})`).join('، ')}</li>`).join('');
   const uniq = a.unique.map((t) =>
-    `<li><b>${t.name}</b> — ${t.branches[0].label} وحده (${t.branches[0].neg})</li>`).join('');
+    `<li><b>${esc(t.name)}</b> — ${esc(t.branches[0].label)} وحده (${t.branches[0].neg})</li>`).join('');
 
   box.innerHTML = `
     <div class="stat-grid">
@@ -1366,7 +1380,7 @@ async function renderSnapshots() {
   box.innerHTML = `<p class="fine">نسخ مُسلَّمة (لا تتغيّر بتغيّر الإعدادات):</p>` +
     snaps.map((s) => `<div class="snap" data-id="${s.id}">
       <span class="when">${String(s.at).slice(0, 10)}</span>
-      <span class="meta">${s.template || '—'}${s.note ? ` · ${s.note}` : ''} · ${Math.round((s.html || '').length / 1024)} ك.ب</span>
+      <span class="meta">${esc(s.template || '—')}${s.note ? ` · ${esc(s.note)}` : ''} · ${Math.round((s.html || '').length / 1024)} ك.ب</span>
       <span class="spacer"></span>
       <button type="button" class="btn ghost sm" data-act="open">فتح</button>
       <button type="button" class="btn ghost sm" data-act="dl">تنزيل</button>
@@ -1464,12 +1478,26 @@ function applyHistoryText(text) {
   $('#r-md').value = text;
   job.reportMd = text;
   scheduleSave();
-  renderReport(); renderCompleteness(); showTemplateNote(); renderHistory();
+  renderReport(); renderCompleteness(); renderConfidence(); showTemplateNote(); renderHistory();
 }
 
 function bindHistory() {
   $('#btn-undo').addEventListener('click', () => applyHistoryText(history.undo(job.id)));
   $('#btn-redo').addEventListener('click', () => applyHistoryText(history.redo(job.id)));
+}
+
+/** مقياس الثقة في صدر شاشة التقرير — يراه صاحبه قبل أن يُسلّم. */
+function renderConfidence() {
+  const box = $('#confidence-box');
+  if (!box) return;
+  const c = confidenceScore({ ...job, reportMd: $('#r-md').value });
+  const tone = c.level === 'قوية' ? 'ok' : (c.level === 'ضعيفة' ? 'err' : 'warn');
+  box.innerHTML = `<div class="msg ${tone}"><b>${esc(c.summary)}</b>
+    <div class="chips" style="margin-top:8px">${
+      c.parts.filter((p) => p.score !== null)
+        .map((p) => `<span class="chip">${esc(p.name)} <b>${Math.round(p.score * 100)}%</b></span>`).join('')
+    }</div>
+    ${c.caveats.length ? `<ul>${c.caveats.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}</div>`;
 }
 
 function renderCompleteness() {
@@ -1481,9 +1509,9 @@ function renderCompleteness() {
   const r = audit(text, job.place);
   const topics = r.missedTopics.length
     ? `<p class="fine">مواضيع رصدها القاموس وأهملها التقرير: ${
-        r.missedTopics.map((t) => `<b>${t.name}</b> (${t.total} مرات — ${t.ids.join('، ')})`).join(' · ')}</p>` : '';
+        r.missedTopics.map((t) => `<b>${esc(t.name)}</b> (${t.total} مرات — ${esc(t.ids.join('، '))})`).join(' · ')}</p>` : '';
   const alertsList = r.missedAlerts.length
-    ? `<ul class="fine">${r.missedAlerts.map((a) => `<li>إنذار لم يُذكر: ${a}</li>`).join('')}</ul>` : '';
+    ? `<ul class="fine">${r.missedAlerts.map((a) => `<li>إنذار لم يُذكر: ${esc(a)}</li>`).join('')}</ul>` : '';
 
   box.innerHTML = `<div class="msg ${r.level === 'err' ? 'err' : r.level === 'warn' ? 'warn' : 'ok'}">
       <b>مدقّق الاكتمال: ${r.summary}</b>${topics}${alertsList}
@@ -1507,7 +1535,7 @@ function bindReportView() {
     clearTimeout(histTimer);
     histTimer = setTimeout(() => { history.push(job.id, e.target.value); renderHistory(); }, 2000);
   });
-  $('#r-md').addEventListener('blur', () => { showTemplateNote(); renderCompleteness(); });
+  $('#r-md').addEventListener('blur', () => { showTemplateNote(); renderCompleteness(); renderConfidence(); });
   $('#btn-render').addEventListener('click', () => { renderReport(); toast('حُدّثت المعاينة'); });
 
   $('#btn-print').addEventListener('click', () => {
@@ -1589,7 +1617,7 @@ function jobRow(j) {
     : done ? `<span class="badge mid">${done}/8</span>`
     : '<span class="badge">بيانات فقط</span>';
   const row = el('div', 'job');
-  row.innerHTML = `<span class="n">${j.place?.identity?.name || 'بلا اسم'}</span>
+  row.innerHTML = `<span class="n">${esc(j.place?.identity?.name || 'بلا اسم')}</span>
     ${badge}
     <span class="d">${(j.place?.reviews?.length || 0)} تعليقًا · ${String(j.updatedAt || '').slice(0, 10)}</span>`;
 
@@ -1639,7 +1667,7 @@ async function renderSafety() {
   else lines.push(`<li class="ok-line">آخر نسخة احتياطية قبل ${st.days} يومًا.</li>`);
 
   const folder = safe.backupFolderName();
-  if (folder) lines.push(`<li class="ok-line">مجلد النسخ: <b>${folder}</b></li>`);
+  if (folder) lines.push(`<li class="ok-line">مجلد النسخ: <b>${esc(folder)}</b></li>`);
   else if (safe.canWriteToFolder()) lines.push('<li>لم يُختَر مجلد نسخ — اختره فتصير النسخة بضغطة واحدة.</li>');
 
   if (st.quota) lines.push(`<li>المستعمَل ${st.quota.used} م.ب من ${st.quota.available} م.ب (${st.quota.pct}%).</li>`);
@@ -1794,7 +1822,7 @@ function renderLexicon() {
     const top = [...freq.entries()].sort((a, b) => b[1] - a[1]).slice(0, 14);
     box.innerHTML = `<div class="msg warn"><b>${miss.length} تعليقًا في تقريرك الحالي لم يصنّفها القاموس</b>
       ${top.length ? `<p class="fine">كلمات متكررة فيها — اضغط الكلمة لتضعها في الحقل:</p>
-      <div class="chips">${top.map(([w, n]) => `<span class="chip lex-cand" data-w="${w}">${w} <b>${n}</b></span>`).join('')}</div>` : ''}</div>`;
+      <div class="chips">${top.map(([w, n]) => `<span class="chip lex-cand" data-w="${esc(w)}">${esc(w)} <b>${n}</b></span>`).join('')}</div>` : ''}</div>`;
     box.querySelectorAll('.lex-cand').forEach((c) => c.addEventListener('click', () => {
       $('#lex-word').value = c.dataset.w;
       $('#lex-word').focus();
@@ -1817,7 +1845,7 @@ function renderCustomKeywords() {
   box.innerHTML = `<p class="fine">إضافاتك:</p>` + rows.map(([id, list]) => {
     const name = TOPICS.find((t) => t.id === id)?.name || id;
     return `<div class="fine"><b>${name}:</b> <span class="chips">${
-      list.map((w) => `<span class="chip">${w} <button type="button" class="btn danger sm lex-del" data-t="${id}" data-w="${w}" style="padding:0 6px">×</button></span>`).join('')
+      list.map((w) => `<span class="chip">${esc(w)} <button type="button" class="btn danger sm lex-del" data-t="${esc(id)}" data-w="${esc(w)}" style="padding:0 6px">×</button></span>`).join('')
     }</span></div>`;
   }).join('');
 
@@ -1872,7 +1900,7 @@ function renderModels() {
       <th>النموذج</th><th>تجارب</th><th>مخرجات نظيفة</th><th>درجة السند</th><th>تغطية</th><th>اختراع</th><th>بلا سند</th><th>أرقام</th>
     </tr></thead><tbody>${
       rows.map((r, i) => `<tr class="${i === 0 && total >= 6 ? 'me' : ''}">
-        <td>${r.model}</td><td>${r.runs}</td><td>${r.cleanRate}%</td><td>${r.score}%</td>
+        <td>${esc(r.model)}</td><td>${r.runs}</td><td>${r.cleanRate}%</td><td>${r.score}%</td>
         <td>${r.coverage}%</td><td>${r.invented}</td><td>${r.unsupported}</td><td>${r.numbers}</td></tr>`).join('')
     }</tbody></table></div>
     <p class="fine">${total < 6 ? 'العيّنة صغيرة بعد؛ لا تحكم على نموذج بتجربتين.' : `مبنيّ على ${total} خطوة مسجّلة.`}</p>`;
@@ -1931,9 +1959,9 @@ async function renderQueue() {
   bar.hidden = false;
   bar.innerHTML = `
     <span class="qpos">الطابور ${at + 1}/${ids.length}</span>
-    <span class="qname">${cur?.place?.identity?.name || 'بلا اسم'}</span>
+    <span class="qname">${esc(cur?.place?.identity?.name || 'بلا اسم')}</span>
     <span class="qdots">${ids.map((id, i) =>
-      `<span class="qdot ${i === at ? 'on' : (byId.get(id)?.reportMd ? 'done' : '')}" data-i="${i}" title="${byId.get(id)?.place?.identity?.name || ''}"></span>`).join('')}</span>
+      `<span class="qdot ${i === at ? 'on' : (byId.get(id)?.reportMd ? 'done' : '')}" data-i="${i}" title="${esc(byId.get(id)?.place?.identity?.name || '')}"></span>`).join('')}</span>
     <span class="spacer"></span>
     <button type="button" class="btn ghost sm" id="q-prev">السابق</button>
     <button type="button" class="btn ghost sm" id="q-next">التالي</button>

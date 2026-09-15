@@ -39,11 +39,38 @@ function readUrl(raw) {
   return out;
 }
 
-/** الروابط المختصرة تُتبَع حتى الرابط الكامل. */
-async function expand(url) {
+// مضيفات قوقل وحدها: ما عداها لا يُطلَب.
+const ALLOWED = ['google.com', 'goo.gl', 'g.co', 'google.com.sa'];
+
+/** هل العنوان من قوقل؟ يُقارَن بالمضيف كاملًا أو كلاحقة نطاق، لا كتضمين نصّي. */
+function allowedHost(raw) {
   try {
-    const res = await fetch(url, { redirect: 'follow' });
-    return res.url || url;
+    const h = new URL(raw).hostname.toLowerCase();
+    return ALLOWED.some((d) => h === d || h.endsWith('.' + d));
+  } catch { return false; }
+}
+
+/**
+ * الروابط المختصرة تُتبَع حتى الرابط الكامل.
+ *
+ * والعنوان يأتي من المتصفح، فلولا القيد لصارت الدالّة أداةَ طلبٍ نيابةً عن غيرها:
+ * يُمرَّر عنوانٌ داخلي أو عنوان بيانات وصفية للسحابة، فتجلبه الدالّة من داخل شبكة
+ * Netlify وتُعيد ما فيه. ولذلك يُفحص المضيف قبل الطلب، وبعد كل تحويلة.
+ */
+async function expand(url) {
+  if (!allowedHost(url)) return url;
+  try {
+    // نتتبّع التحويلات بأنفسنا كي نفحص كل وجهة، لا أن نسلّمها للمتصفح الداخلي.
+    let current = url;
+    for (let i = 0; i < 5; i += 1) {
+      const res = await fetch(current, { redirect: 'manual' });
+      const next = res.headers.get('location');
+      if (!next) return res.url || current;
+      const abs = new URL(next, current).href;
+      if (!allowedHost(abs)) return current;
+      current = abs;
+    }
+    return current;
   } catch { return url; }
 }
 
@@ -148,6 +175,10 @@ export default async (request) => {
   const target = url.searchParams.get('url') || '';
   const wantPhotos = url.searchParams.get('photos') !== '0';
   if (!target) return json({ error: 'أرسل ?url=رابط قوقل مابز' }, 400);
+
+  if (!allowedHost(target)) {
+    return json({ error: 'الرابط ليس من قوقل مابز.' }, 400);
+  }
 
   let info = readUrl(target);
   if (!info) return json({ error: 'الرابط غير صالح.' }, 400);

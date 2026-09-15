@@ -15,8 +15,10 @@ const fails = [];
 const ok = (t) => console.log('  ✓', t);
 const bad = (t, e) => { fails.push(t + (e ? ' :: ' + e : '')); console.log('  ✗', t, e || ''); };
 
+const xssFired = [];
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || undefined, args: ['--no-sandbox'] });
 const page = await browser.newPage({ viewport: { width: 1200, height: 900 } });
+await page.exposeFunction('__xss', (where) => xssFired.push(where));
 const errors = [];
 page.on('console', m => { const t = m.text(); if (m.type() === 'error' && !t.includes('favicon')) errors.push(t); });
 page.on('pageerror', e => errors.push('PAGEERROR: ' + e.message));
@@ -203,6 +205,25 @@ try {
   ctxb.includes('لغة التعليقات') ? ok('توزيع اللغات محسوب') : bad('اللغات', ctxb.slice(0,70));
   ctxb.includes('شكوى تتعلق بالازدحام') ? ok('الشكوى مربوطة بنافذة الذروة') : bad('ربط الذروة');
 
+  console.log('٤-و) حقن الوسوم — لا يُنفَّذ شيء');
+  // تعليقٌ خبيث: نصٌّ خارجي يدخل DOM. نُفِّذ هذا فعلًا قبل الإصلاح، فالفحص يبقى.
+  await page.evaluate(() => {
+    const t = document.querySelector('#d-reviews');
+    t.value = '1 | ضار | قبل شهر\nنص <img src=x onerror="window.__xss(\'تعليق\')"> تكملة\n---\n1 | ب | قبل شهر\nالخدمة بطيئة\n---\n1 | ج | قبل شهر\nالمكان وسخ';
+    t.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await page.click('#btn-parse');
+  await page.waitForTimeout(900);
+  const anomalyRaw = await page.innerHTML('#anomaly-box').catch(() => '');
+  const entsRaw = await page.innerHTML('#entities-box').catch(() => '');
+  !/<img\s/i.test(anomalyRaw + entsRaw) ? ok('نصّ التعليق لا يدخل DOM وسمًا') : bad('حقن من التعليق');
+
+  // إعادة اللصق الأصلي كي تبقى الفحوص التالية على حالها
+  await page.fill('#d-reviews', paste);
+  await page.click('#btn-parse');
+  await page.waitForTimeout(700);
+  (await page.textContent('#parse-info')).includes('10') ? ok('استُعيدت العيّنة الأصلية') : bad('استعادة العيّنة');
+
   console.log('٥) خط النماذج');
   await page.click('#btn-to-pipeline');
   await page.waitForTimeout(400);
@@ -224,13 +245,15 @@ try {
 
   console.log('٥-ب) مدقّق السند');
   const ta0 = page.locator('#out-n1');
-  await ta0.fill('يشكو العملاء من بطء الخدمة (R002، R008).\nتكرر الثناء على الموقع (R047).\nنقطة ضعف: النظافة سيئة.\nمتوسط التقييم 4.9 من 5.');
+  await ta0.fill('يشكو العملاء من بطء الخدمة (R002، R008).\nتكرر الثناء على الموقع (R047).\nنقطة ضعف: النظافة سيئة <img src=y onerror="window.__xss(\'مدقّق\')">.\nمتوسط التقييم 4.9 من 5.');
   await ta0.blur();
   await page.waitForTimeout(300);
   const vb = await page.locator('.step').nth(0).locator('.verify-box').textContent();
   vb.includes('R047') ? ok('كشف المعرّف الوهمي R047') : bad('المعرّف الوهمي', vb.slice(0,80));
   vb.includes('4.9') ? ok('كشف الرقم المخالف 4.9') : bad('الرقم المخالف');
   vb.includes('بلا سند') ? ok('كشف الحكم بلا سند') : bad('الحكم بلا سند');
+  const verifyRaw = await page.locator('.step').nth(0).locator('.verify-box').innerHTML();
+  !/<img\s/i.test(verifyRaw) ? ok('مخرج النموذج لا يدخل DOM وسمًا') : bad('حقن من مخرج النموذج');
   const lvl = await page.locator('.step').nth(0).locator('.verify-box .msg').getAttribute('class');
   lvl.includes('err') ? ok('صُنِّف المخرج مُعتلًّا') : bad('تصنيف المخرج', lvl);
   await ta0.fill('يشكو العملاء من بطء الخدمة (R002، R008).');
@@ -295,6 +318,14 @@ try {
   const dir = await frame.locator('html').getAttribute('dir');
   dir === 'rtl' ? ok('اتجاه RTL') : bad('الاتجاه', dir);
   await page.evaluate(() => { window.__fullReport = document.querySelector('#r-md').value; });
+
+  console.log('٧-أ) مقياس الثقة');
+  const conf = await page.textContent('#confidence-box');
+  /ثقة (قوية|متوسطة|ضعيفة) \(\d+%\)/.test(conf) ? ok('المقياس محسوب: ' + (conf.match(/ثقة \S+ \(\d+%\)/) || [''])[0]) : bad('مقياس الثقة', conf.slice(0, 90));
+  const confChips = await page.$$eval('#confidence-box .chip', n => n.length);
+  confChips >= 5 ? ok(`مكوّناته معروضة (${confChips})`) : bad('مكوّنات المقياس', confChips);
+  const confInReport = await page.frameLocator('#r-frame').locator('.confidence').count();
+  confInReport === 1 ? ok('المقياس في صدر التقرير') : bad('المقياس في التقرير', confInReport);
 
   console.log('٧-ب) خطة العمل');
   await page.click('#btn-extract-plan');
@@ -686,6 +717,7 @@ try {
   bad('استثناء', e.message);
 }
 
+xssFired.length === 0 ? ok(`لم تُنفَّذ أي حمولة حقن (${xssFired.length})`) : bad('نُفِّذت حمولة حقن', xssFired.join('، '));
 if (errors.length) { console.log('\nأخطاء الطرفية:'); errors.forEach(e => console.log('  !', e)); }
 console.log('\n' + (fails.length ? `فشل ${fails.length}:\n` + fails.map(f => ' - ' + f).join('\n') : '✅ نجحت كل الاختبارات'));
 await browser.close();
