@@ -1,23 +1,24 @@
-# نشر تلقائي إلى Netlify عند كل دفع إلى main (المرحلة ٣٣).
+# مسار نشرٍ احتياطي إلى Netlify (المرحلة ٣٣).
 #
-# **لماذا هذا الملف أصلًا؟** ربط Netlify بالمستودع توقّف عن إطلاق البناء منذ ١٤ سبتمبر:
-# آخر نشرة مصدرها `api` لا `git`، أي أن لا خطّاف (webhook) يُطلق بناءً عند الدفع. وهذا
-# المسار لا يعتمد على ذلك الربط إطلاقًا — GitHub هو من ينشر، بمفتاحٍ تملكه أنت.
+# **النشر التلقائي من Netlify يعمل** منذ ١٥ سبتمبر ٢٠٢٦ (أول نشرة ناجحة: `c29ddfa`)،
+# فهذا الملف **شبكة أمان لا مسار أوّل**: يعمل متى انقطع ذلك الربط مرّة أخرى، بمفتاحٍ
+# تملكه أنت ولا يعتمد على خطّاف قد يسقط.
 #
-# **يحتاج سرَّين في المستودع** (Settings ← Secrets and variables ← Actions ← New secret):
+# **ولا يفشل حين لا يجد المفتاح** — يمرّ بملاحظة. فالفشل الأحمر عند كل دفعة وأنت لا تحتاجه
+# ضجيجٌ يُعلّمك تجاهل الإشارة، حتى إذا جاء فشلٌ حقيقي لم تنظر إليه.
+#
+# **لتشغيله:** أضف سرًّا واحدًا في Settings ← Secrets and variables ← Actions ← Secrets:
 #   NETLIFY_AUTH_TOKEN  من Netlify: User settings ← Applications ← Personal access tokens
 #
-# **سرٌّ واحد فقط.** ومعرّف المشروع مكتوب هنا صراحةً لأنه **ليس سرًّا**: يظهر في رابط لوحة
-# Netlify نفسها، ولا يفعل به أحدٌ شيئًا بلا التوكن. فإخفاؤه كان يضاعف فرص الخطأ بلا فائدة.
-#
-# وما لم يُضبط التوكن **لا يفشل الدفع بصمت**: الخطوة تقف وتشخّص الخطأ الشائع بعينه.
+# ومعرّف المشروع مكتوب هنا صراحةً لأنه **ليس سرًّا**: يظهر في رابط لوحة Netlify نفسها،
+# ولا يفعل به أحدٌ شيئًا بلا التوكن.
 
-name: نشر إلى Netlify
+name: نشر إلى Netlify (احتياطي)
 
 on:
   push:
     branches: [main]
-  workflow_dispatch: # زرّ يدوي في تبويب Actions لإعادة النشر بلا دفع جديد
+  workflow_dispatch: # زرّ يدوي في تبويب Actions للنشر عند الحاجة
 
 concurrency:
   group: netlify-deploy
@@ -33,36 +34,39 @@ jobs:
         with:
           node-version: '20'
 
-      # الفحص يشخّص الخطأ الشائع لا يكتفي بقول «ناقص»: أشيع سببٍ أن يوضع المفتاح في تبويب
-      # Variables أو Codespaces أو Dependabot بدل Secrets ← Actions، وحينها تبدو الإضافة
-      # ناجحة والنشر يفشل بلا سبب ظاهر. فنقرأ Variables أيضًا كي نسمّي الخطأ بعينه.
+      # يشخّص الخطأ الشائع ولا يكتفي بقول «ناقص»: أشيع سببٍ أن يوضع المفتاح في تبويب
+      # Variables أو Codespaces أو Dependabot بدل Secrets ← Actions، فتبدو الإضافة ناجحة
+      # ويبقى المتغيّر فارغًا. فنقرأ Variables أيضًا كي نسمّي الخطأ بعينه.
       - name: تحقّق من التوكن
+        id: guard
         env:
           TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           TOKEN_AS_VAR: ${{ vars.NETLIFY_AUTH_TOKEN }}
         run: |
           if [ -n "$TOKEN" ]; then
-            echo "التوكن موجود (${#TOKEN} حرفًا) — نُكمل."
+            echo "has_token=true" >> "$GITHUB_OUTPUT"
+            echo "التوكن موجود (${#TOKEN} حرفًا) — يُنشر من هنا."
             exit 0
           fi
+          echo "has_token=false" >> "$GITHUB_OUTPUT"
           if [ -n "$TOKEN_AS_VAR" ]; then
-            echo "::error::NETLIFY_AUTH_TOKEN موضوع في تبويب Variables لا Secrets. احذفه من Variables وأضفه في: Settings ← Secrets and variables ← Actions ← تبويب Secrets ← New repository secret."
-            exit 1
+            echo "::warning::NETLIFY_AUTH_TOKEN موضوع في تبويب Variables لا Secrets، فلا تراه الوظيفة. انقله إلى: Settings ← Secrets and variables ← Actions ← Secrets."
+          else
+            echo "::notice::لا توكن — يُتخطّى المسار الاحتياطي. والنشر يجري من ربط Netlify نفسه، وهذا هو المتوقَّع ما دام ذلك الربط يعمل."
           fi
-          echo "::error::NETLIFY_AUTH_TOKEN غير موجود. تأكّد من ثلاثة: (١) التبويب Secrets لا Variables ولا Codespaces ولا Dependabot. (٢) النوع Repository secret لا Environment secret. (٣) الاسم بحروف كبيرة تمامًا: NETLIFY_AUTH_TOKEN"
-          exit 1
 
-      # لا ملف قفل في المستودع (التطبيق بلا أداة بناء، والتبعيتان للدوال وحدها)،
-      # فـ`npm install` هو الصحيح هنا لا `npm ci`.
       - name: تثبيت تبعيات الدوال
+        if: steps.guard.outputs.has_token == 'true'
+        # لا ملف قفل في المستودع (التطبيق بلا أداة بناء، والتبعيتان للدوال وحدها)،
+        # فـ`npm install` هو الصحيح هنا لا `npm ci`.
         run: npm install --omit=dev
 
       # رسالة النشرة تُمرَّر **متغيّرَ بيئة لا استبدالًا نصّيًا**: نصّ الالتزام يكتبه بشر،
       # وحقنه في سطر الصدفة مباشرةً بابٌ لتنفيذ ما ليس منه.
       - name: نشر
+        if: steps.guard.outputs.has_token == 'true'
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-          # المعرّف ثابت ومعلن؛ ويبقى السرّ إن وُجد غالبًا عليه (لمن ينقل المشروع لاحقًا).
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID || '8fab1119-ac3c-4473-8fea-ea61abab8ab6' }}
           COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
