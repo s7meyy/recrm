@@ -27,6 +27,7 @@ import { renderTemplate, templateValues, whatsappLink } from '../util/templates.
 import { buildPriceIndex, comparePrice, priceTrend, priceSamples, estimatePrice } from '../util/price-stats.js';
 import { printProperty, printPropertyCatalog, printAgreement, printCma } from '../util/property-print.js';
 import { adCopy, adGaps } from '../util/ad-copy.js';
+import { adBlockers } from '../util/rega.js';
 import { propertyEvidence, priceDrops, MIN_SAMPLE } from '../util/property-evidence.js';
 import { historyBox } from '../util/history-view.js';
 import { capped, PAGE_SIZE } from '../util/render-cap.js';
@@ -921,6 +922,23 @@ async function openForm(ctx, existing, prefill = {}) {
     labeled('ماذا نتولّى؟', mgmtNotes, { full: true }));
   mgmtBox.querySelector('input').addEventListener('change', (e) => { mgmtFields.hidden = !e.target.checked; });
 
+  // العقد الموثَّق ونطاقه، وترخيص الإعلان (المرحلة ٤٠).
+  // النطاق ليس حقلًا وصفيًّا: **ترخيص الإعلان لا يُصدَر لعقدٍ لا يشمل نطاقُه التسويق**،
+  // فوجودُه هنا هو ما يجعل الصفحة تعرف أتستطيع الإعلان عن هذا العقار أم لا.
+  const agreementNumberInput = el('input', {
+    class: 'input ltr', type: 'text', value: draft.agreementNumber || '',
+    placeholder: 'رقم العقد في منصّة الوساطة',
+  });
+  const scopesBox = el('div', { class: 'chips' }, ENUMS.agreementScopes.map((sc) => checkbox(sc.label, {
+    name: 'agreementScopes', value: sc.key, checked: (draft.agreementScopes || []).includes(sc.key),
+  })));
+  const adNumberInput = el('input', {
+    class: 'input ltr', type: 'text', value: draft.adLicense?.number || '',
+    placeholder: 'رقم ترخيص الإعلان من منصّة الهيئة',
+  });
+  const adIssuedInput = el('input', { class: 'input', type: 'date', value: draft.adLicense?.issuedAt ? toInputDate(draft.adLicense.issuedAt) : '' });
+  const adExpiresInput = el('input', { class: 'input', type: 'date', value: draft.adLicense?.expiresAt ? toInputDate(draft.adLicense.expiresAt) : '' });
+
   const agreementInput = el('input', { class: 'input', type: 'date', value: draft.agreementSignedAt ? toInputDate(draft.agreementSignedAt) : '' });
   const agreementDaysInput = el('input', { class: 'input', type: 'number', min: '1', step: '1', value: draft.agreementDays ?? '', placeholder: 'من الإعدادات' });
   const newOwnerName = el('input', { class: 'input', type: 'text', placeholder: 'اسم المالك' });
@@ -1077,6 +1095,13 @@ async function openForm(ctx, existing, prefill = {}) {
         feeValue: mgmtFee.value === '' ? null : Number(mgmtFee.value),
         notes: mgmtNotes.value.trim(),
       } : null,
+      agreementNumber: agreementNumberInput.value.trim(),
+      agreementScopes: [...scopesBox.querySelectorAll('input:checked')].map((i) => i.value),
+      adLicense: adNumberInput.value.trim() ? {
+        number: adNumberInput.value.trim(),
+        issuedAt: fromInputDate(adIssuedInput.value),
+        expiresAt: fromInputDate(adExpiresInput.value),
+      } : null,
       agreementSignedAt: fromInputDate(agreementInput.value),
       agreementDays: agreementDaysInput.value === '' ? null : Number(agreementDaysInput.value),
       referralSource: source.input.value, // تاق المصدر — غير `source` أدناه (مسار الإدخال)
@@ -1170,8 +1195,21 @@ async function openForm(ctx, existing, prefill = {}) {
       labeled('المصدر (وسيط الإحالة)', source.node, { hint: 'اختياري — لا يظهر شيء ما لم يُعبَّأ' }),
       labeled('رقم الصك', deedInput, { hint: 'اختياري — يطلبه عقد الإيجار وكل توثيق، ويدخل حزمة العقد' }),
       labeled('توقيع اتفاقية الوساطة', agreementInput, { hint: 'يُنبّهك «يومي» قبل انتهائها — والعقار بلا اتفاقية قد تخسره' }),
-      labeled('مدّة الاتفاقية (يومًا)', agreementDaysInput, { hint: 'اتركه فارغًا لتُستعمل المدّة الافتراضية من الإعدادات' }),
+      labeled('مدّة الاتفاقية (يومًا)', agreementDaysInput, { hint: 'اتركه فارغًا لتُستعمل المدّة الافتراضية من الإعدادات — والنظام يجعلها ٩٠ يومًا حين لا تُذكر' }),
       newOwnerBox),
+    el('div', { class: 'form-section' },
+      el('h3', { text: 'التوثيق وترخيص الإعلان' }),
+      el('p', { class: 'muted small' },
+        'نظام الوساطة يوجب عقدًا مكتوبًا محدَّد المدّة تُودَع نسخته لدى الهيئة. ',
+        'و',
+        el('strong', { text: 'ترخيص الإعلان لا يُصدَر إلا لعقدٍ يشمل نطاقُه التسويق' }),
+        ' — وصفحة «عقود الوساطة وتراخيص الإعلانات» تقرأ هذه الحقول فتقول ما يمنع الإعلان.'),
+      el('div', { class: 'form-grid' },
+        labeled('رقم العقد الموثَّق', agreementNumberInput),
+        fieldGroup('نطاق العقد', scopesBox, { full: true }),
+        labeled('رقم ترخيص الإعلان', adNumberInput, { hint: 'يُكتب في كل إعلانٍ لهذا العقار على أي قناة' }),
+        labeled('تاريخ إصدار الترخيص', adIssuedInput),
+        labeled('انتهاء الترخيص', adExpiresInput, { hint: 'يُنبَّه عليك قبله' }))),
     el('div', { class: 'form-section' },
       el('h3', { text: 'إدارة الأملاك' }),
       el('p', { class: 'muted small', text: 'الوساطة تنتهي بالصفقة، والإدارة تبدأ بعدها: إيجارٌ يُحصَّل، وعقدٌ يُجدَّد، وأجرٌ يُستحقّ شهرًا بعد شهر.' }),
@@ -1292,6 +1330,7 @@ function openAdCopy(ctx, property, company) {
     company, ref,
   });
   const gaps = adGaps(property);
+  const blockers = adBlockers(property, { defaultDays: company.agreementDurationDays });
 
   const blocks = copy.channels.map((ch) => {
     const area = el('textarea', { class: 'input', rows: ch.key === 'portal' ? 10 : 6, value: ch.text });
@@ -1319,9 +1358,17 @@ function openAdCopy(ctx, property, company) {
     title: 'نصّ إعلان جاهز',
     size: 'wide',
     body: el('div', {},
+      // **المانع النظاميّ أوّلًا وعلى حدة** (المرحلة ٤٠): نقصُ الصور يُقلّل المشاهدات،
+      // وغيابُ الترخيص يجعل الإعلان مخالفةً تُزال ويُوقَف صاحبها. فلا يُخلطان في سطر.
+      blockers.length
+        ? el('div', { class: 'notice notice-danger' },
+          el('strong', { text: 'لا تنشر بعد — مانعٌ نظاميّ: ' }),
+          el('ul', { class: 'simple-list' }, blockers.map((b) => el('li', { text: b.text }))),
+          el('a', { class: 'btn btn-sm', href: '#/rega', text: 'افتح العقود والتراخيص' }))
+        : null,
       gaps.length
         ? el('div', { class: 'notice notice-warn' },
-            el('strong', { text: 'قبل أن تنشر: ' }),
+            el('strong', { text: 'وقبل أن تنشر — ما يُضعف الإعلان: ' }),
             gaps.join(' · '))
         : null,
       el('p', { class: 'muted small', text: 'النصّ مبنيّ من الحقول المسجَّلة وحدها — عدّله كما تشاء قبل النسخ، ولا يُكتب فيه ما ليس في السجل.' }),

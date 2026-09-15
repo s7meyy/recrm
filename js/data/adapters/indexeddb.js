@@ -12,7 +12,7 @@ const DB_NAME = 'motabiq';
 // الإصدار ٦ (المرحلة ٢٦): أضاف مخزن audio (الملاحظات الصوتية)
 // الإصدار ٧ (المرحلة ٢٧): أضاف مخزن showings (المعاينات) — بالمنطق نفسه: الناقص فقط
 // ولا يمسّ مخازن أو بيانات موجودة، فلا حاجة لأي ترحيل بيانات يدوي في أيٍّ منها.
-const DB_VERSION = 8; // ٨: مخزن الإيرادات (المرحلة ٣٨)
+const DB_VERSION = 9; // ٩: مخزن التفريغ (المرحلة ٤١)
 
 const STORE_DEFS = {
   clients: { keyPath: 'id', indexes: ['phone', 'stage', 'updatedAt'] },
@@ -30,6 +30,7 @@ const STORE_DEFS = {
   invoices: { keyPath: 'id', indexes: ['type', 'clientId', 'date'] },
   expenses: { keyPath: 'id', indexes: ['date', 'category', 'dealId'] },
   incomes: { keyPath: 'id', indexes: ['date', 'category', 'dealId'] },
+  extractions: { keyPath: 'id', indexes: ['status', 'source'] },
   trash: { keyPath: 'id', indexes: ['store', 'deletedAt'] },
   audio: { keyPath: 'id', indexes: ['entityId'] },
   showings: { keyPath: 'id', indexes: ['clientId', 'propertyId', 'at', 'status'] },

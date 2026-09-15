@@ -40,6 +40,8 @@ import * as integrationsPage from './pages/integrations.js';
 import * as managementPage from './pages/management.js';
 import * as stampPage from './pages/stamp.js';
 import * as whatsappPage from './pages/whatsapp.js';
+import * as regaPage from './pages/rega.js';
+import * as extractPage from './pages/extract.js';
 import { applyRole } from './util/role.js';
 
 // سجل الصفحات: الصفحات اللاحقة تُضاف هنا وفي القائمة الجانبية في index.html.
@@ -57,6 +59,8 @@ const ROUTES = {
   pricing: { title: 'تقدير السعر', render: pricingPage.render },
   calendar: { title: 'التقويم', render: calendarPage.render },
   management: { title: 'إدارة الأملاك', render: managementPage.render },
+  rega: { title: 'عقود الوساطة وتراخيص الإعلانات', render: regaPage.render },
+  extract: { title: 'تفريغ المستندات والوسائط', render: extractPage.render },
   stamp: { title: 'ختم الصور والمقاطع', render: stampPage.render },
   whatsapp: { title: 'واتساب', render: whatsappPage.render },
   invoices: { title: 'الفواتير وعروض الأسعار', render: invoicesPage.render },

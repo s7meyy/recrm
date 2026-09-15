@@ -18,6 +18,9 @@ export const EVENT_KINDS = {
   payment: { key: 'payment', label: 'دفعة إيجار', icon: '💰' },
   leaseEnd: { key: 'leaseEnd', label: 'نهاية عقد', icon: '🔑' },
   agreement: { key: 'agreement', label: 'نهاية اتفاقية', icon: '📝' },
+  // انتهاء ترخيص الإعلان (المرحلة ٤٠): نهايةُ الاتفاقية كانت في التقويم وحدها، وترخيصٌ
+  // ينتهي وإعلانُك قائم يجعله مخالفةً من يومه — فموعدُه أولى بالظهور لا أقلّ.
+  adLicense: { key: 'adLicense', label: 'نهاية ترخيص إعلان', icon: '📜' },
 };
 
 const iso = (v) => {
@@ -43,7 +46,7 @@ export function monthEvents(data = {}, { year, month } = {}) {
   const {
     showings = [], tasks = [], clients = [], deals = [], properties = [],
     propertyLabel = () => 'عقار', clientLabel = () => 'عميل', nextFollowUp = () => null,
-    agreementEnd = () => null,
+    agreementEnd = () => null, taskListLabel = () => '',
   } = data;
 
   const start = new Date(year, month, 1).getTime();
@@ -63,7 +66,11 @@ export function monthEvents(data = {}, { year, month } = {}) {
   }
   for (const t of tasks) {
     if (t.done || !t.dueAt) continue;
-    add('task', t.dueAt, t.title || 'مهمة', '', '#/tasks');
+    // **إلى المهمة نفسها لا إلى صفحتها** (المرحلة ٤٠): كان النقر يُلقيك في قائمةٍ من
+    // مئة مهمّة تبحث فيها عمّا نقرتَ عليه. و`#/tasks/<id>` مسارٌ تقرؤه الصفحة منذ
+    // المرحلة ٧ فتفتح المهمّة — لم يكن ينقص إلا استعماله.
+    // واسمُ قائمتها في السطر الثاني: «اتصل على سعد» في «اتصالات» غيرُها في «متأخرات».
+    add('task', t.dueAt, t.title || 'مهمة', taskListLabel(t.listId), `#/tasks/${t.id}`);
   }
   for (const c of clients) {
     const at = nextFollowUp(c);
@@ -83,6 +90,10 @@ export function monthEvents(data = {}, { year, month } = {}) {
   for (const p of properties) {
     const at = agreementEnd(p);
     if (at) add('agreement', at, `نهاية اتفاقية — ${propertyLabel(p.id)}`, '', `#/properties/${p.id}`);
+    const lic = p.adLicense;
+    if (lic?.number && lic.expiresAt) {
+      add('adLicense', lic.expiresAt, `نهاية ترخيص إعلان — ${propertyLabel(p.id)}`, `رقم ${lic.number}`, '#/rega');
+    }
   }
 
   events.sort((a, b) => a.at.localeCompare(b.at));

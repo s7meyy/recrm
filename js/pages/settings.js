@@ -36,7 +36,7 @@ import { audioSummary } from '../data/audio.js';
 import { seedExists, insertSeed, clearSeed } from '../data/seed.js';
 import { el, clear, labeled, selectEl, checkbox, badge, confirmDialog, openModal, toast, appendChildren } from '../util/dom.js';
 import { clientTagClass } from '../data/schema.js';
-import { formatDate, formatDateTime, relativeDays, setHijriMode } from '../util/format.js';
+import { formatDate, formatDateTime, relativeDays, setHijriMode, toInputDate, fromInputDate } from '../util/format.js';
 import { hijriSupported } from '../util/hijri.js';
 
 const dataChanged = () => window.dispatchEvent(new CustomEvent('kassab:data-changed'));
@@ -895,6 +895,10 @@ async function companyBody(redraw) {
   const addressInput = text(company.address);
   const crInput = text(company.crNumber, 'رقم السجل التجاري أو الترخيص');
   const licenseInput = text(company.licenseNumber, 'رقم الوسيط المعتمد لدى الهيئة العامة للعقار');
+  const licenseExpiresInput = el('input', {
+    class: 'input', type: 'date',
+    value: company.licenseExpiresAt ? toInputDate(company.licenseExpiresAt) : '',
+  });
   const vatNumberInput = el('input', { class: 'input', type: 'text', dir: 'ltr', value: company.vatNumber || '', placeholder: '١٥ رقمًا' });
   const vatRateInput = el('input', { class: 'input', type: 'number', min: '0', max: '100', step: '0.5', value: company.vatRate ?? 15 });
   const commissionInput = el('input', { class: 'input', type: 'number', min: '0', step: '0.25', value: company.commissionPercent ?? 2.5 });
@@ -955,7 +959,8 @@ async function companyBody(redraw) {
         labeled('البريد', emailInput),
         labeled('العنوان', addressInput),
         labeled('السجل التجاري', crInput),
-      labeled('رقم الوسيط المعتمد', licenseInput, { hint: 'يطلبه عقد إيجار ويُطبع في اتفاقية الوساطة' }),
+      labeled('رقم الوسيط المعتمد (رخصة فال)', licenseInput, { hint: 'يطلبه عقد إيجار ويُطبع في اتفاقية الوساطة وسطر الإعلان' }),
+      labeled('انتهاء رخصة فال', licenseExpiresInput, { hint: 'يُنبَّه عليك قبله — وبلا سريانها لا يُوثَّق عقد ولا يُصدَر ترخيص إعلان' }),
         labeled('الرقم الضريبي', vatNumberInput, { hint: 'اتركه فارغًا إن لم تكن مسجَّلًا في ضريبة القيمة المضافة — عندها لا ضريبة ولا رمز في مستنداتك' }),
         labeled('نسبة الضريبة (٪)', vatRateInput, { hint: 'تُقترح على الفواتير الجديدة، وتبقى محفوظة في كل مستند كما أصدرته' }),
         el('div', { class: 'field field-full' }, el('span', { class: 'field-label', text: 'الشعار' }), logoBox),
@@ -988,7 +993,9 @@ async function companyBody(redraw) {
           try {
             await setCompany({
               name: nameInput.value, phone: phoneInput.value, email: emailInput.value,
-              address: addressInput.value, crNumber: crInput.value, licenseNumber: licenseInput.value, footerNote: footerInput.value,
+              address: addressInput.value, crNumber: crInput.value, licenseNumber: licenseInput.value,
+              licenseExpiresAt: fromInputDate(licenseExpiresInput.value),
+              footerNote: footerInput.value,
               vatNumber: vatNumberInput.value.trim(), vatRate: Number(vatRateInput.value) || 0,
               invoicePrefix: invPrefix.value, quotePrefix: quotePrefix.value,
               nextInvoiceNo: invNext.value, nextQuoteNo: quoteNext.value,

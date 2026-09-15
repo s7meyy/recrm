@@ -12,8 +12,11 @@ import {
 } from '../util/dom.js';
 import { micButton } from '../util/voice.js';
 import { syncReminders } from '../util/push.js';
-import { formatDateTime, toInputDateTime, fromInputDateTime } from '../util/format.js';
+import { formatDateTime, formatDate, formatNumber, toInputDateTime, fromInputDateTime } from '../util/format.js';
 import { clientName } from './requests.js';
+import { proposeTasks } from '../util/task-intake.js';
+import { allChip, debounce } from '../util/dom.js';
+import { matchesQuery } from '../util/arabic.js';
 
 // يقرأ #/tasks/<id> (نفس نمط الروابط العميقة الموثّقة) — يستعمله البحث العام.
 function routeTaskId() {
@@ -22,8 +25,14 @@ function routeTaskId() {
 }
 
 export async function render(container) {
-  const ctx = { container, taskLists: [], tasks: [], clients: [], properties: [], requests: [], view: 'board' };
-  ctx.view = (await getUI()).tasksView === 'single' ? 'single' : 'board';
+  const ctx = {
+    container, taskLists: [], tasks: [], clients: [], properties: [], requests: [],
+    view: 'board',
+    // فلاتر عرض الجدول (المرحلة ٤٠) — كلٌّ منها سؤالٌ يُسأل في أدوات إدارة المهام
+    table: { status: 'open', priorities: new Set(), due: 'all', listId: '', query: '', sort: { key: 'due', dir: 'asc' } },
+  };
+  const savedView = (await getUI()).tasksView;
+  ctx.view = ['single', 'table'].includes(savedView) ? savedView : 'board';
   await loadData(ctx);
   buildLayout(ctx);
   const focusId = routeTaskId();
@@ -38,7 +47,8 @@ async function loadData(ctx) {
   const [taskLists, tasks, clients, properties, requests] = await Promise.all([
     repo.taskLists.list(), repo.tasks.list(), repo.clients.list(), repo.properties.list(), repo.requests.list(),
   ]);
-  ctx.taskLists = taskLists.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  // المثبَّتة أوّلًا مهما كان ترتيبها (المرحلة ٤٠) — ما تعمل فيه اليوم أمامك لا في آخر لوحة.
+  ctx.taskLists = taskLists.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || (a.order ?? 0) - (b.order ?? 0));
   ctx.tasks = tasks;
   ctx.clients = clients;
   ctx.properties = properties;
@@ -183,8 +193,15 @@ async function renameList(ctx, list) {
 function listColumn(ctx, list) {
   const tasks = tasksForList(ctx, list.id);
   const doneCount = tasks.filter((t) => t.done).length;
-  return el('div', { class: 'task-list-col' },
+  return el('div', { class: `task-list-col${list.pinned ? ' task-list-pinned' : ''}` },
     el('div', { class: 'task-list-head' },
+      el('button', {
+        type: 'button', class: `icon-btn pin-btn${list.pinned ? ' pinned' : ''}`,
+        title: list.pinned ? 'أزل التثبيت' : 'ثبّتها في الأعلى',
+        'aria-pressed': list.pinned ? 'true' : 'false',
+        text: list.pinned ? '📌' : '📍',
+        onClick: async () => { await repo.taskLists.update(list.id, { pinned: !list.pinned }); await refresh(ctx); },
+      }),
       el('button', { type: 'button', class: 'task-list-title', title: 'إعادة تسمية', onClick: () => renameList(ctx, list) }, list.title),
       el('span', { class: 'muted small num' }, `${doneCount}/${tasks.length}`),
       el('button', { type: 'button', class: 'icon-btn', title: 'حذف القائمة', text: '🗑️', onClick: () => removeList(ctx, list) })),
@@ -192,16 +209,14 @@ function listColumn(ctx, list) {
     quickAddRow(ctx, list));
 }
 
+const VIEWS = [['board', 'لوحة'], ['single', 'قائمة واحدة'], ['table', 'جدول']];
+
 function viewToggle(ctx) {
-  return el('div', { class: 'seg' },
-    el('button', {
-      type: 'button', class: `seg-btn${ctx.view === 'board' ? ' active' : ''}`, text: 'لوحة',
-      onClick: async () => { ctx.view = 'board'; await setUI({ tasksView: 'board' }); buildLayout(ctx); },
-    }),
-    el('button', {
-      type: 'button', class: `seg-btn${ctx.view === 'single' ? ' active' : ''}`, text: 'قائمة واحدة',
-      onClick: async () => { ctx.view = 'single'; await setUI({ tasksView: 'single' }); buildLayout(ctx); },
-    }));
+  return el('div', { class: 'seg' }, VIEWS.map(([key, label]) => el('button', {
+    type: 'button', class: `seg-btn${ctx.view === key ? ' active' : ''}`, text: label,
+    'data-view': key,
+    onClick: async () => { ctx.view = key; await setUI({ tasksView: key }); buildLayout(ctx); },
+  })));
 }
 
 function buildLayout(ctx) {
@@ -223,6 +238,12 @@ function buildLayout(ctx) {
 
   if (!ctx.taskLists.length) {
     ctx.container.append(emptyState('لا قوائم بعد. أنشئ أول قائمة («قيد التنفيذ» مثلًا) من الزر أعلاه.'));
+    return;
+  }
+  ctx.container.append(bulkAddBox(ctx));
+
+  if (ctx.view === 'table') {
+    ctx.container.append(tableView(ctx));
     return;
   }
   ctx.container.append(el('div', { class: `task-board${ctx.view === 'single' ? ' task-board-single' : ''}` },
@@ -247,6 +268,10 @@ async function openTaskForm(ctx, task) {
   const listSelect = selectEl({ options: ctx.taskLists.map((l) => ({ value: l.id, label: l.title })), value: task.listId });
   const dueInput = el('input', { class: 'input', type: 'datetime-local', value: task.dueAt ? toInputDateTime(task.dueAt) : '' });
   const clearDueBtn = el('button', { type: 'button', class: 'btn btn-ghost btn-sm', text: 'بلا تذكير', onClick: () => { dueInput.value = ''; } });
+  const prioritySelect = selectEl({
+    options: ENUMS.taskPriorities.map((x) => ({ value: x.key, label: x.label })),
+    value: task?.priority || 'normal',
+  });
   const repeatSelect = selectEl({
     options: ENUMS.taskRepeats.map((r) => ({ value: r.key, label: r.label })), value: task.repeat || 'none',
   });
@@ -286,7 +311,7 @@ async function openTaskForm(ctx, task) {
       const newDueAt = fromInputDateTime(dueInput.value);
       const patch = {
         title: titleInput.value, notes: notesInput.value, listId: listSelect.value,
-        dueAt: newDueAt, repeat: repeatSelect.value,
+        dueAt: newDueAt, repeat: repeatSelect.value, priority: prioritySelect.value,
         linkType: linkTypeSelect.value || null, linkId: linkTypeSelect.value ? currentLinkId : null,
       };
       if (newDueAt !== task.dueAt) patch.reminded = false; // موعد جديد يستحق تنبيهًا جديدًا
@@ -310,6 +335,7 @@ async function openTaskForm(ctx, task) {
       el('label', { class: 'field' }, el('span', { class: 'field-label', text: 'العنوان' }), titleInput),
       el('label', { class: 'field' }, el('span', { class: 'field-label', text: 'القائمة' }), listSelect),
       el('label', { class: 'field' }, el('span', { class: 'field-label', text: 'تذكير بتاريخ ووقت' }), el('div', { class: 'field-row' }, dueInput, clearDueBtn)),
+      el('label', { class: 'field' }, el('span', { class: 'field-label', text: 'الأولوية' }), prioritySelect),
       el('label', { class: 'field' }, el('span', { class: 'field-label', text: 'التكرار' }), repeatSelect),
       el('label', { class: 'field' }, el('span', { class: 'field-label', text: 'ربط بسجل آخر' }), linkTypeSelect),
       linkIdWrap,
@@ -319,4 +345,307 @@ async function openTaskForm(ctx, task) {
     title: 'تعديل المهمة', body,
     footer: [deleteBtn, el('span', { class: 'spacer' }), el('button', { type: 'button', class: 'btn btn-ghost', text: 'إلغاء', onClick: () => modal.close() }), saveBtn],
   });
+}
+
+/* ===== إضافة دفعة مهام بتوزيعٍ يُعتمد (المرحلة ٤٠) ===== */
+
+/**
+ * تكتب مهامك سطرًا سطرًا كما تخطر لك — ثم إنتر، فتُوزَّع على قوائمك بموضوعها ويُقرأ من كل
+ * سطرٍ موعدُه وأولويّتُه. **ولا يُحفظ شيء حتى تراجع وتعتمد**: توزيعٌ آليٌّ يُكتب بلا نظرة
+ * يخلط مهامك بدل أن يرتّبها، ويُشغلك بتصحيحه أكثر ممّا وفّر.
+ *
+ * و**سببُ كل اختيار مكتوبٌ بجانبه** — «ذُكر اسم القائمة»، «موضوعه اتصالات»، «لم يُعرف
+ * موضوعه» — فتراجعه بنظرة بدل أن تفتح كل سطرٍ لتفهم لماذا وقع هنا.
+ */
+function bulkAddBox(ctx) {
+  const area = el('textarea', {
+    class: 'input bulk-area', rows: 3,
+    placeholder: 'اكتب مهامك — مهمة في كل سطر، ثم إنتر:\n'
+      + 'اتصل على سعد بكرة الساعة ٤\n!! جدّد ترخيص إعلان الملقا\nمعاينة النرجس الخميس',
+    'aria-label': 'إضافة مهام دفعة واحدة',
+  });
+  const preview = el('div', { class: 'bulk-preview' });
+  let rows = [];
+
+  const propose = () => {
+    rows = proposeTasks(area.value, ctx.taskLists);
+    drawPreview();
+  };
+
+  // إنتر يقترح؛ وShift+إنتر سطرٌ جديد — وإلّا تعذّر كتابة أكثر من سطر أصلًا.
+  area.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' || e.shiftKey || e.isComposing) return;
+    e.preventDefault();
+    propose();
+  });
+
+  const drawPreview = () => {
+    clear(preview);
+    if (!rows.length) return;
+    if (!ctx.taskLists.length) {
+      preview.append(el('p', { class: 'field-hint', text: 'أنشئ قائمةً واحدة أولًا، ثم أعد المحاولة.' }));
+      return;
+    }
+
+    preview.append(el('div', { class: 'notice' },
+      el('strong', { text: `اقتراحٌ لـ${formatNumber(rows.length)} مهمة — ` }),
+      'راجعه وعدّل ما شئت، ثم اعتمده. ولا يُحفظ شيءٌ قبل ذلك.'));
+
+    const body = el('tbody');
+    rows.forEach((r, i) => {
+      const titleInput = el('input', { class: 'input', type: 'text', value: r.title });
+      titleInput.addEventListener('input', () => { rows[i].title = titleInput.value; });
+
+      const listSelect = selectEl({
+        options: ctx.taskLists.map((l) => ({ value: l.id, label: l.title })),
+        value: r.listId || ctx.taskLists[0].id,
+        onChange: (e) => { rows[i].listId = e.target.value; rows[i].why = 'اخترتَها بنفسك'; drawWhy(i); },
+      });
+      const prioritySelect = selectEl({
+        options: ENUMS.taskPriorities.map((p) => ({ value: p.key, label: p.label })),
+        value: r.priority,
+        onChange: (e) => { rows[i].priority = e.target.value; },
+      });
+      const dueInput = el('input', {
+        class: 'input', type: 'datetime-local', value: r.dueAt ? toInputDateTime(r.dueAt) : '',
+      });
+      dueInput.addEventListener('change', () => { rows[i].dueAt = fromInputDateTime(dueInput.value); });
+
+      const whyCell = el('td', { class: 'bulk-why' });
+      const drawWhy = (idx) => {
+        clear(whyCell);
+        const guessed = rows[idx].why.includes('لم يُعرف');
+        whyCell.append(
+          el('div', { class: `small${guessed ? ' warn-text' : ' muted'}`, text: rows[idx].why }),
+          el('div', { class: 'muted small bulk-source', title: rows[idx].source, text: rows[idx].source }));
+      };
+      drawWhy(i);
+
+      body.append(el('tr', {},
+        el('td', {}, titleInput),
+        el('td', {}, listSelect),
+        el('td', {}, prioritySelect),
+        el('td', {}, dueInput),
+        whyCell,
+        el('td', {}, el('button', {
+          type: 'button', class: 'icon-btn', title: 'استبعد هذا السطر', text: '✕',
+          onClick: () => { rows.splice(i, 1); drawPreview(); },
+        }))));
+    });
+
+    preview.append(el('div', { class: 'table-wrap' },
+      el('table', { class: 'table bulk-table' },
+        el('thead', {}, el('tr', {}, ['المهمة', 'القائمة', 'الأولوية', 'الموعد', 'لماذا هنا؟', ''].map((h) => el('th', { text: h })))),
+        body)));
+
+    preview.append(el('div', { class: 'row', style: { marginTop: '10px' } },
+      el('button', {
+        type: 'button', class: 'btn btn-primary',
+        text: `اعتمد وأضِف ${formatNumber(rows.length)}`,
+        onClick: async () => {
+          const chosen = rows.filter((r) => r.title.trim() && r.listId);
+          if (!chosen.length) { toast('لا سطر صالحًا للإضافة', 'error'); return; }
+          for (const r of chosen) {
+            const maxOrder = ctx.tasks.filter((t) => t.listId === r.listId).reduce((m, t) => Math.max(m, t.order ?? 0), -1);
+            // eslint-disable-next-line no-await-in-loop
+            await repo.tasks.create({
+              listId: r.listId, title: r.title.trim(), priority: r.priority,
+              dueAt: r.dueAt || null, order: maxOrder + 1,
+            });
+          }
+          area.value = '';
+          rows = [];
+          toast(`أُضيفت ${formatNumber(chosen.length)} مهمة`, 'success');
+          await refresh(ctx);
+        },
+      }),
+      el('button', {
+        type: 'button', class: 'btn btn-ghost', text: 'ألغِ الاقتراح',
+        onClick: () => { rows = []; drawPreview(); },
+      })));
+  };
+
+  return el('section', { class: 'panel bulk-add' },
+    el('h2', { text: 'أضِف مهامك دفعةً' }),
+    el('p', { class: 'panel-desc' },
+      'مهمة في كل سطر، ثم إنتر (وShift+إنتر لسطرٍ جديد). ',
+      'تُقرأ في جهازك: الموعد («بكرة الساعة ٤»)، والأولوية («!!» أو «عاجل»)، والقائمة بموضوعها. ',
+      el('strong', { text: 'وهي مطابقةُ كلماتٍ لا فهمُ كلام' }),
+      ' — ولذلك تُراجَع قبل أن تُحفظ.'),
+    el('div', { class: 'row' }, area, micButton(area)),
+    el('div', { class: 'row', style: { marginTop: '8px' } },
+      el('button', { type: 'button', class: 'btn', text: 'وزّعها', onClick: propose })),
+    preview);
+}
+
+/* ===== عرض الجدول (المرحلة ٤٠) ===== */
+
+/**
+ * ما تعرضه أدوات إدارة المهام في جدولها: **العنوان، والحالة، والأولوية، والموعد،
+ * والمشروع/القائمة، والوسم/الرابط** — وتفرز بالحالة والأولوية والموعد والمشروع، وتبحث
+ * بالنصّ، وترتّب بالضغط على العمود. وهذا هو المبنيّ هنا بأسمائه في هذا البرنامج.
+ *
+ * ولا «المسؤول» ولا «التقدير بالساعات»: هذا برنامج مكتبٍ يعمل فيه صاحبُه ومساعده، وعمودٌ
+ * لا يُملأ عمودٌ يُزاحم.
+ */
+const DUE_FILTERS = [
+  { key: 'all', label: 'كل المواعيد' },
+  { key: 'overdue', label: 'متأخّرة' },
+  { key: 'today', label: 'اليوم' },
+  { key: 'week', label: 'هذا الأسبوع' },
+  { key: 'none', label: 'بلا موعد' },
+];
+
+const COLUMNS = [
+  { key: 'done', label: '', sort: null },
+  { key: 'title', label: 'المهمة', sort: (t) => t.title || '' },
+  { key: 'priority', label: 'الأولوية', sort: (t) => ENUMS.taskPriorities.find((p) => p.key === t.priority)?.rank ?? 9, num: true },
+  { key: 'due', label: 'الموعد', sort: (t) => t.dueAt || '￿', num: false },
+  { key: 'list', label: 'القائمة', sort: (t, ctx) => ctx.taskLists.find((l) => l.id === t.listId)?.title || '' },
+  { key: 'repeat', label: 'التكرار', sort: (t) => t.repeat || '' },
+  { key: 'link', label: 'مرتبطة بـ', sort: (t, ctx) => linkedLabel(ctx, t) || '' },
+];
+
+function dueBucket(task, now = Date.now()) {
+  if (!task.dueAt) return 'none';
+  const t = new Date(task.dueAt).getTime();
+  if (!Number.isFinite(t)) return 'none';
+  if (t < now && !task.done) return 'overdue';
+  const end = new Date(now);
+  end.setHours(23, 59, 59, 999);
+  if (t <= end.getTime()) return 'today';
+  return t <= end.getTime() + 6 * 86400000 ? 'week' : 'later';
+}
+
+function tableRows(ctx) {
+  const f = ctx.table;
+  let rows = ctx.tasks.slice();
+  if (f.status === 'open') rows = rows.filter((t) => !t.done);
+  else if (f.status === 'done') rows = rows.filter((t) => t.done);
+  if (f.priorities.size) rows = rows.filter((t) => f.priorities.has(t.priority || 'normal'));
+  if (f.listId) rows = rows.filter((t) => t.listId === f.listId);
+  if (f.due !== 'all') {
+    const now = Date.now();
+    rows = rows.filter((t) => (f.due === 'week'
+      ? ['today', 'week', 'overdue'].includes(dueBucket(t, now))
+      : dueBucket(t, now) === f.due));
+  }
+  if (f.query.trim()) {
+    const q = f.query.trim();
+    rows = rows.filter((t) => matchesQuery(t.searchKey, q));
+  }
+  const col = COLUMNS.find((c) => c.key === f.sort.key);
+  if (col?.sort) {
+    const dir = f.sort.dir === 'asc' ? 1 : -1;
+    rows.sort((a, b) => {
+      const va = col.sort(a, ctx);
+      const vb = col.sort(b, ctx);
+      if (col.num) return (Number(va) - Number(vb)) * dir;
+      return String(va).localeCompare(String(vb), 'ar') * dir;
+    });
+  }
+  return rows;
+}
+
+function tableView(ctx) {
+  const wrap = el('section', { class: 'panel' });
+  const filters = el('div', { class: 'filters' });
+  const body = el('div');
+
+  const redraw = () => { clear(body); body.append(tableBody(ctx, redrawAll)); };
+  const redrawAll = () => { drawFilters(); redraw(); };
+
+  function drawFilters() {
+    clear(filters);
+    const f = ctx.table;
+
+    const search = el('input', {
+      class: 'input search', type: 'search', value: f.query, placeholder: 'ابحث في المهام…',
+    });
+    search.addEventListener('input', debounce(() => { f.query = search.value; redraw(); }, 200));
+
+    const statusSeg = el('div', { class: 'seg' }, [['open', 'المتبقية'], ['done', 'المنجزة'], ['all', 'الكل']]
+      .map(([key, label]) => el('button', {
+        type: 'button', class: `seg-btn${f.status === key ? ' active' : ''}`, text: label,
+        onClick: () => { f.status = key; redrawAll(); },
+      })));
+
+    const prChips = el('div', { class: 'chips' });
+    prChips.append(allChip(f.priorities, ENUMS.taskPriorities.map((p) => p.key), redrawAll));
+    for (const p of ENUMS.taskPriorities) {
+      const n = ctx.tasks.filter((t) => (t.priority || 'normal') === p.key && (f.status !== 'open' || !t.done)).length;
+      const active = f.priorities.has(p.key);
+      prChips.append(el('button', {
+        type: 'button', class: `chip${active ? ' active' : ''}${n === 0 && !active ? ' zero' : ''}`,
+        onClick: () => { if (active) f.priorities.delete(p.key); else f.priorities.add(p.key); redrawAll(); },
+      }, p.label, el('span', { class: 'chip-count', text: String(n) })));
+    }
+
+    const dueSelect = selectEl({
+      options: DUE_FILTERS.map((d) => ({ value: d.key, label: d.label })),
+      value: f.due,
+      onChange: (e) => { f.due = e.target.value; redrawAll(); },
+    });
+    const listSelect = selectEl({
+      options: ctx.taskLists.map((l) => ({ value: l.id, label: l.title })),
+      value: f.listId, placeholder: 'كل القوائم',
+      onChange: (e) => { f.listId = e.target.value; redrawAll(); },
+    });
+
+    filters.append(
+      el('div', { class: 'row', style: { flexWrap: 'wrap', gap: '8px', marginBottom: '8px' } },
+        search, statusSeg, dueSelect, listSelect),
+      el('div', { class: 'filter-row' }, el('span', { class: 'filter-label', text: 'الأولوية' }), prChips));
+  }
+
+  drawFilters();
+  redraw();
+  wrap.append(filters, body);
+  return wrap;
+}
+
+function tableBody(ctx, redrawAll) {
+  const rows = tableRows(ctx);
+  const f = ctx.table;
+  const head = el('tr', {}, COLUMNS.map((c) => {
+    if (!c.sort) return el('th', { text: c.label });
+    const active = f.sort.key === c.key;
+    return el('th', {}, el('button', {
+      type: 'button', class: `th-sort${active ? ' active' : ''}`,
+      onClick: () => {
+        if (active) f.sort.dir = f.sort.dir === 'asc' ? 'desc' : 'asc';
+        else { f.sort.key = c.key; f.sort.dir = 'asc'; }
+        redrawAll();
+      },
+    }, c.label, active ? (f.sort.dir === 'asc' ? ' ▲' : ' ▼') : ''));
+  }));
+
+  if (!rows.length) {
+    return el('div', {},
+      el('p', { class: 'muted small', text: 'لا مهمة تطابق الفرز المختار.' }));
+  }
+
+  return el('div', {},
+    el('p', { class: 'muted small', text: `${formatNumber(rows.length)} من ${formatNumber(ctx.tasks.length)} مهمة` }),
+    el('div', { class: 'table-wrap' },
+      el('table', { class: 'table tasks-table' },
+        el('thead', {}, head),
+        el('tbody', {}, rows.map((t) => tableRow(ctx, t))))));
+}
+
+function tableRow(ctx, task) {
+  const pr = ENUMS.taskPriorities.find((p) => p.key === (task.priority || 'normal'));
+  const bucket = dueBucket(task);
+  const link = linkedLabel(ctx, task);
+  const list = ctx.taskLists.find((l) => l.id === task.listId);
+  return el('tr', { class: task.done ? 'task-row-done' : '' },
+    el('td', {}, checkbox('', { checked: task.done, onChange: (e) => toggleDone(ctx, task, e.target.checked) })),
+    el('td', {}, el('button', { type: 'button', class: 'task-title-btn', onClick: () => openTaskForm(ctx, task) }, task.title)),
+    el('td', {}, badge(pr?.label || '—', pr?.cls || 'badge-outline')),
+    el('td', {}, task.dueAt
+      ? badge(formatDateTime(task.dueAt), bucket === 'overdue' ? 'badge-danger' : bucket === 'today' ? 'badge-warn' : 'badge-outline')
+      : el('span', { class: 'muted', text: '—' })),
+    el('td', { text: list?.title || '—' }),
+    el('td', { text: task.repeat && task.repeat !== 'none' ? labelFor(ENUMS.taskRepeats, task.repeat) : '—' }),
+    el('td', {}, link || el('span', { class: 'muted', text: '—' })));
 }

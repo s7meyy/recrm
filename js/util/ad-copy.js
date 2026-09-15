@@ -11,6 +11,7 @@
 // دوال خالصة: لا تخزين ولا شبكة.
 
 import { labelFor, ENUMS, TYPE_FIELD_GROUPS } from '../data/schema.js';
+import { adDisclosure } from './rega.js';
 
 export const AD_CHANNELS = [
   { key: 'portal', label: 'بوّابة إعلانية', hint: 'عنوان ووصف ومواصفات مرتّبة — لحراج وعقار ونظائرهما', limit: null },
@@ -65,6 +66,10 @@ export function adCopy(property, { typeLabel = 'عقار', group = null, company
 
   const contact = company.phone ? `للتواصل: ${company.phone}${company.name ? ` — ${company.name}` : ''}` : '';
   const notes = String(property.notes || '').trim();
+  // سطرُ الإفصاح النظاميّ (المرحلة ٤٠): رقمُ ترخيص الإعلان يُبيَّن في الإعلان نفسه.
+  // ويُكتب في النصّ الكامل والاجتماعيّ، ويُترك من السطر القصير — والقصيرُ لا يقوم
+  // إعلانًا وحده، فإلحاقُه به يبتره لا يُنظّمه.
+  const disclosure = adDisclosure(property, company);
 
   const portal = [
     title,
@@ -75,6 +80,7 @@ export function adCopy(property, { typeLabel = 'عقار', group = null, company
     '',
     contact || null,
     ref ? `رقم العرض: ${ref}` : null,
+    disclosure || null,
   ].filter((line) => line !== null).join('\n').trim();
 
   const social = [
@@ -83,6 +89,7 @@ export function adCopy(property, { typeLabel = 'عقار', group = null, company
     money(property.price) ? `السعر: ${money(property.price)}` : null,
     notes ? notes.split('\n')[0] : null,
     contact ? `📞 ${company.phone}` : null,
+    disclosure || null,
     '',
     hashtags(property, { typeLabel }).join(' '),
   ].filter((line) => line !== null).join('\n').trim();
@@ -110,6 +117,11 @@ export function adCopy(property, { typeLabel = 'عقار', group = null, company
 }
 
 /** ما ينقص الإعلانَ ليكون مقنعًا — يُعرض قبل النسخ لا بعد النشر. */
+/**
+ * ما يُضعف الإعلان — **لا ما يمنعه نظامًا**. والفرق مقصود (المرحلة ٤٠): نقصُ الصور يقلّل
+ * المشاهدات، وغيابُ الترخيص يجعل الإعلان مخالفة. فخلطُهما في قائمةٍ واحدة يجعل الأخطر
+ * سطرًا بين سطور. المانع النظاميّ في `adBlockers` ويُعرض على حدة وأوّلًا.
+ */
 export function adGaps(property) {
   const gaps = [];
   if (property.price == null) gaps.push('لا سعر — الإعلان بلا سعر يُتجاهَل غالبًا');

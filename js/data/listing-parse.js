@@ -326,11 +326,19 @@ const NAME_STOP = [
  * يعيد '' إن لم يُقرأ — ولا يُخمَّن: اسمٌ مخترَع في سجلّ عميل أسوأ من حقلٍ فارغ.
  */
 export function parseSenderName(text) {
-  const m = /(?:انا|اسمي|معك|معاك|معي)\s+([\u0600-\u06FF]{2,}(?:\s+[\u0600-\u06FF]{2,}){0,2})/.exec(prep(String(text ?? '')));
+  const raw = String(text ?? '');
+  // **الاسم يُؤخذ من النصّ الأصليّ لا من المطبَّع**: التطبيع يحوّل «نورة» إلى «نوره»
+  // و«إيمان» إلى «ايمان» — وهو صوابٌ للمطابقة، وخطأٌ للتخزين. فاسمٌ يُكتب في سجلّ عميل
+  // ثم يُطبع في عقد يجب أن يكون كما كتبه صاحبُه.
+  const TRIGGER = String.raw`(?:[أا]نا|اسمي|مع[كي]|معاك)`;
+  const WORD = String.raw`[\u0600-\u06FF]{2,}`;
+  const m = new RegExp(`${TRIGGER}\\s+(${WORD}(?:\\s+${WORD}){0,2})`).exec(raw)
+    // وإن لم يقع على الأصل (تشكيلٌ أو تطويل)، فالمطبَّعُ أولى من لا شيء.
+    || new RegExp(`(?:انا|اسمي|معك|معاك|معي)\\s+(${WORD}(?:\\s+${WORD}){0,2})`).exec(prep(raw));
   if (!m) return '';
   const words = [];
   for (const w of m[1].trim().split(/\s+/)) {
-    if (NAME_STOP.includes(w)) break;
+    if (NAME_STOP.includes(prep(w))) break; // الوقوف يُقارَن مطبَّعًا، والمحفوظ يبقى أصلًا
     words.push(w);
     if (words.length === 2) break; // اسم ثنائي يكفي
   }

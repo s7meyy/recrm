@@ -1,7 +1,7 @@
 // مخططات الكيانات: الحقول، القيم الافتراضية، القوائم الثابتة، والحقول التي تظهر بحسب نوع العقار.
 // الحقول المشتركة لكل سجل (تضيفها طبقة البيانات): id, createdAt, updatedAt, createdBy, updatedBy, searchKey.
 
-export const STORES = ['clients', 'properties', 'tours', 'requests', 'matches', 'externalListings', 'deals', 'images', 'settings', 'taskLists', 'tasks', 'notes', 'invoices', 'expenses', 'incomes', 'audio', 'showings'];
+export const STORES = ['clients', 'properties', 'tours', 'requests', 'matches', 'externalListings', 'deals', 'images', 'settings', 'taskLists', 'tasks', 'notes', 'invoices', 'expenses', 'incomes', 'audio', 'showings', 'extractions'];
 // ملاحظة: `trash` (سلة المحذوفات، المرحلة ٢١) ليست في STORES عمدًا — شبكة أمان محلّية
 // لا بيانات تُصدَّر: إدراجها في النسخة الاحتياطية يضخّمها بما حذفتَه قصدًا.
 
@@ -26,6 +26,15 @@ export const ENUMS = {
     { key: 'sale', label: 'بيع' },
     { key: 'rent', label: 'إيجار' },
     { key: 'investment', label: 'استثمار' },
+  ],
+  // نطاق عقد الوساطة (المرحلة ٤٠) — نظام الوساطة العقارية يشترط عقدًا مكتوبًا محدَّد
+  // النطاق، و**ترخيصُ الإعلان لا يُصدَر إلا لعقدٍ يشمل نطاقُه التسويق**. فالنطاق ليس
+  // حقلًا وصفيًّا: هو الذي يقول أتستطيع الإعلان عن هذا العقار أم لا.
+  agreementScopes: [
+    { key: 'sell', label: 'البيع' },
+    { key: 'rent', label: 'التأجير' },
+    { key: 'market', label: 'التسويق' },
+    { key: 'manage', label: 'إدارة الملك' },
   ],
   propertySources: [
     { key: 'tour', label: 'جولة ميدانية' },
@@ -116,6 +125,14 @@ export const ENUMS = {
     { key: 'liked', label: 'أعجبه' },
     { key: 'maybe', label: 'متردّد' },
     { key: 'disliked', label: 'لم يعجبه' },
+  ],
+  // أولوية المهمة (المرحلة ٤٠): عمودٌ يُرتَّب به ويُفرز، كما في كل أدوات إدارة المهام.
+  // وأربعُ درجاتٍ لا أكثر: خمسٌ فأكثر لا يفرّق بينها أحدٌ في الاستعمال اليومي.
+  taskPriorities: [
+    { key: 'urgent', label: 'عاجل', rank: 0, cls: 'badge-danger' },
+    { key: 'high', label: 'مرتفعة', rank: 1, cls: 'badge-warn' },
+    { key: 'normal', label: 'عادية', rank: 2, cls: 'badge-outline' },
+    { key: 'low', label: 'منخفضة', rank: 3, cls: 'badge-outline' },
   ],
   taskRepeats: [ // تكرار المهمة (المرحلة ١١): تُنشأ التالية عند إنجاز الحالية
     { key: 'none', label: 'بلا تكرار' },
@@ -259,6 +276,15 @@ export const SCHEMAS = {
       // اتفاقية الوساطة (المرحلة ٣١): متى وُقّعت وكم مدّتها — تُحفظ في العقار لا تُقرأ من
       // الإعدادات، فتعديل المدّة الافتراضية لا يغيّر اتفاقيةً وُقّعت بمدّةٍ أخرى.
       agreementSignedAt: null, agreementDays: null,
+      // توثيق العقد ونطاقه (المرحلة ٤٠): النظام يوجب إيداع نسخة العقد لدى الهيئة،
+      // ورقمُ العقد الموثَّق هو شاهدُ ذلك. والنطاق يحدّد ما تملك فعله — ومنه التسويق
+      // الذي بلا نصٍّ عليه لا يُصدَر ترخيصُ إعلان.
+      agreementNumber: '', // رقم العقد الموثَّق في منصّة الوساطة
+      agreementScopes: [], // مفاتيح من ENUMS.agreementScopes
+      // ترخيص الإعلان العقاري (المرحلة ٤٠): رقمٌ يصدر من منصّة الهيئة ويُكتب في كل
+      // إعلانٍ لهذا العقار على أي قناة. null = لا ترخيص، فالإعلان مخالفة.
+      // { number, issuedAt, expiresAt }
+      adLicense: null,
       notes: '',
       source: 'manual', // ENUMS.propertySources
       status: 'not_contacted', // مفتاح من قائمة الحالات
@@ -386,7 +412,9 @@ export const SCHEMAS = {
   taskLists: { // صفحة المهام (المرحلة ٧)
     required: ['title'],
     labels: { title: 'اسم القائمة' },
-    defaults: () => ({ title: '', order: 0 }),
+    // `pinned` (المرحلة ٤٠): قائمةٌ مثبَّتة تتقدّم غيرَها مهما كان ترتيبها — ما تعمل فيه
+    // اليوم أمامك، لا في آخر لوحةٍ تُمرَّر إليها.
+    defaults: () => ({ title: '', order: 0, pinned: false }),
   },
   tasks: { // صفحة المهام (المرحلة ٧)
     required: ['listId', 'title'],
@@ -397,6 +425,7 @@ export const SCHEMAS = {
       dueAt: null, // تاريخ ووقت التذكير (ISO) أو null
       reminded: false, // مانع تكرار تنبيه المتصفح لهذه المهمة — يُصفَّر تلقائيًا إن غُيِّر dueAt
       repeat: 'none', // ENUMS.taskRepeats — إنجاز المهمة المتكررة يُنشئ التالية بموعدها (المرحلة ١١)
+      priority: 'normal', // ENUMS.taskPriorities (المرحلة ٤٠)
       linkType: null, linkId: null, // ENUMS.linkTypes — ربط اختياري بعميل/عقار/طلب
     }),
   },
@@ -406,6 +435,23 @@ export const SCHEMAS = {
     defaults: () => ({
       text: '', color: null, pinned: false, archived: false, tags: [],
       linkType: null, linkId: null, // ENUMS.linkTypes
+    }),
+  },
+  extractions: { // تفريغ المستندات والوسائط (المرحلة ٤١)
+    required: [],
+    labels: {},
+    defaults: () => ({
+      // `source`: 'paste' | 'ocr' | 'transcribe' — من أين جاء النصّ، فيُعرف ما يُوثق به
+      source: 'paste',
+      kind: null, // نوع المستند كما خُمّن (ENUMS-حرّ: deed/id/permit/lease/voice)
+      fileName: '', mime: '', size: 0,
+      text: '', // النصّ المفرَّغ — قابلٌ للتعديل دائمًا
+      fields: {}, // الحقول المقروءة منه
+      status: 'new', // 'new' | 'approved' — المعتمَد هو ما راجعتَه بعينك
+      warnings: [],
+      // ما أُنشئ منه: يمنع الإنشاء مرّتين، ويجعل السجلّ يقول ماذا صار إليه
+      madePropertyId: null, madeRequestId: null, madeTaskId: null, madeClientId: null,
+      error: '', // سببُ فشل التفريغ إن فشل — يُقال ولا يُبتلع
     }),
   },
   incomes: { // الإيرادات (المرحلة ٣٨): دخلٌ خارج عمولات الصفقات

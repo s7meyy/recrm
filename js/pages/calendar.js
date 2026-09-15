@@ -23,10 +23,11 @@ export async function render(container) {
 }
 
 async function load(ctx) {
-  const [showings, tasks, clients, deals, properties, externals, lists, company] = await Promise.all([
-    repo.showings.list(), repo.tasks.list(), repo.clients.list(), repo.deals.list(),
+  const [showings, tasks, taskLists, clients, deals, properties, externals, lists, company] = await Promise.all([
+    repo.showings.list(), repo.tasks.list(), repo.taskLists.list(), repo.clients.list(), repo.deals.list(),
     repo.properties.list(), repo.externalListings.list(), getLists(), getCompany(),
   ]);
+  const taskListById = new Map(taskLists.map((l) => [l.id, l]));
   const byId = new Map([...properties, ...externals].map((p) => [p.id, p]));
   const clientById = new Map(clients.map((c) => [c.id, c]));
   ctx.data = {
@@ -40,6 +41,7 @@ async function load(ctx) {
       return c ? (c.name || c.phone || 'عميل') : '';
     },
     nextFollowUp: (c) => repo.clients.nextFollowUp(c),
+    taskListLabel: (id) => taskListById.get(id)?.title || '',
     agreementEnd: (p) => agreementState(p, { defaultDays: company.agreementDurationDays || 90 }).endsAt,
   };
 }

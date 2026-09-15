@@ -91,6 +91,9 @@ await page.waitForTimeout(900);
 const adModal = page.locator('.modal').last();
 const adText = await adModal.innerText();
 ok('القنوات الثلاث معروضة', adText.includes('بوّابة إعلانية') && adText.includes('انستقرام') && adText.includes('منشور قصير'));
+// المانع النظاميّ والنقص التسويقيّ يُعرضان منفصلَين (المرحلة ٤٠): الأوّل يمنع، والثاني يُضعف.
+ok('وتنبّه إلى المانع النظاميّ أوّلًا', adText.includes('مانعٌ نظاميّ') && adText.includes('ترخيص'),
+  adText.split('\n').find((l) => l.includes('نظاميّ')) || '—');
 ok('وتنبّه إلى النواقص قبل النشر', adText.includes('قبل أن تنشر') && adText.includes('صور'),
   adText.split('\n').find((l) => l.includes('قبل أن تنشر')) || '');
 const firstBox = await adModal.locator('textarea').first().inputValue();

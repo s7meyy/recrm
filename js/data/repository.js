@@ -73,6 +73,22 @@ function cleanManagement(m) {
   return empty && m.active !== true ? null : out;
 }
 
+/**
+ * ترخيص الإعلان العقاري (المرحلة ٤٠).
+ * null إن لم يُصدَر. ورقمُه هو جوهره: ترخيصٌ بلا رقمٍ لا يُكتب في إعلان ولا يُستعلَم عنه،
+ * فوجودُه بلا رقم ادّعاءٌ لا شاهد له — يُعامَل كأنّه ليس.
+ */
+function cleanAdLicense(v) {
+  if (!v || typeof v !== 'object') return null;
+  const number = trim(v.number);
+  if (!number) return null;
+  return {
+    number,
+    issuedAt: v.issuedAt || null,
+    expiresAt: v.expiresAt || null,
+  };
+}
+
 const inEnum = (list, key) => list.some((x) => x.key === key);
 
 /* تطبيع كل كيان قبل الحفظ */
@@ -125,12 +141,19 @@ const PREPARE = {
     rec.extra = obj(rec.extra);
     rec.referralSource = trim(rec.referralSource); // تاق المصدر — غير `source` (مسار الإدخال)
     rec.management = cleanManagement(rec.management); // إدارة الأملاك (المرحلة ٣٨)
+    // العقد الموثَّق ونطاقه، وترخيص الإعلان (المرحلة ٤٠)
+    rec.agreementNumber = trim(rec.agreementNumber);
+    rec.agreementScopes = uniq(rec.agreementScopes).filter((k) => inEnum(ENUMS.agreementScopes, k));
+    rec.adLicense = cleanAdLicense(rec.adLicense);
     rec.searchKey = buildSearchKey([
       rec.city, rec.district, rec.notes, ...Object.values(rec.typeFields), ...Object.values(rec.extra),
       rec.referralSource,
       // «إدارة أملاك» كلمةٌ يبحث بها من يبحث — فتدخل مفتاح البحث لا تبقى حقلًا صامتًا.
       rec.management ? 'إدارة أملاك' : '',
       rec.management?.notes || '',
+      // رقما العقد والترخيص يُبحث بهما: يأتيك سؤالٌ برقمٍ فتجد صاحبه (المرحلة ٤٠).
+      rec.agreementNumber,
+      rec.adLicense?.number || '',
     ]);
   },
   tours(rec) {
@@ -221,15 +244,28 @@ const PREPARE = {
     rec.size = toNumberOrNull(rec.size) ?? 0;
   },
   taskLists(rec) {
+    rec.pinned = !!rec.pinned; // تثبيت القائمة (المرحلة ٤٠)
     rec.title = trim(rec.title);
     rec.order = toNumberOrNull(rec.order) ?? 0;
     rec.searchKey = buildSearchKey([rec.title]);
+  },
+  extractions(rec) {
+    rec.text = String(rec.text ?? '');
+    rec.fileName = trim(rec.fileName);
+    rec.error = trim(rec.error);
+    rec.fields = obj(rec.fields);
+    rec.warnings = Array.isArray(rec.warnings) ? rec.warnings.map(trim).filter(Boolean) : [];
+    rec.status = rec.status === 'approved' ? 'approved' : 'new';
+    // النصّ المفرَّغ يُبحث فيه: رقمُ صكٍّ يأتيك سؤالٌ عنه فتجد مستنده (المرحلة ٤١).
+    rec.searchKey = buildSearchKey([rec.text.slice(0, 2000), rec.fileName, ...Object.values(rec.fields).filter((v) => typeof v !== 'object')]);
   },
   tasks(rec) {
     rec.title = trim(rec.title);
     rec.order = toNumberOrNull(rec.order) ?? 0;
     rec.done = !!rec.done;
     rec.repeat = trim(rec.repeat) || 'none';
+    // أولويةٌ غير معروفة تُردّ إلى «عادية» لا تُحفظ نصًّا لا يُفرز به (المرحلة ٤٠).
+    rec.priority = inEnum(ENUMS.taskPriorities, rec.priority) ? rec.priority : 'normal';
     rec.searchKey = buildSearchKey([rec.title, rec.notes]);
   },
   notes(rec) {
@@ -963,7 +999,8 @@ export const repo = {
   invoices: makeEntity('invoices'),
   trash,
   expenses: makeEntity('expenses'),
-  incomes: makeEntity('incomes'), // الإيرادات (المرحلة ٣٨)
+  incomes: makeEntity('incomes'),
+  extractions: makeEntity('extractions'), // الإيرادات (المرحلة ٣٨)
   audio: makeEntity('audio'), // الملاحظات الصوتية (المرحلة ٢٦)
   showings: makeEntity('showings'), // المعاينات (المرحلة ٢٧)
 

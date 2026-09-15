@@ -746,7 +746,7 @@ body.client-mode #client-mode-btn { background: var(--accent); color: #fff; }
 .cal-event:hover { background: var(--accent-soft); color: var(--accent-text); }
 .cal-event:active { background: var(--surface-2); }
 .cal-showing { border-inline-start: 3px solid var(--accent); }
-.cal-payment, .cal-agreement { border-inline-start: 3px solid var(--danger); }
+.cal-payment, .cal-agreement, .cal-adLicense { border-inline-start: 3px solid var(--danger); }
 .auto-lock-warn { display: flex; align-items: center; gap: 10px; }
 
 
@@ -918,3 +918,34 @@ body.modal-open .voice-dock { display: none; }
   display: block; padding: 8px; background: var(--surface-2);
   border-radius: var(--radius); overflow-wrap: anywhere;
 }
+
+/* المانع النظاميّ يُرى قبل غيره (المرحلة ٤٠). */
+.notice-danger { background: var(--danger-soft); border-color: var(--danger); }
+.rega-link { border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; background: var(--surface-2); }
+
+/* ===== المهام: التثبيت والدفعة والجدول (المرحلة ٤٠) ===== */
+.pin-btn { opacity: 0.45; }
+.pin-btn.pinned, .pin-btn:hover { opacity: 1; }
+.task-list-pinned { border-color: var(--accent); box-shadow: inset 0 3px 0 0 var(--accent); }
+.bulk-add { margin-bottom: 16px; }
+.bulk-area { flex: 1; min-height: 76px; font-family: var(--font); }
+.bulk-preview:empty { display: none; }
+.bulk-table td { vertical-align: top; }
+.bulk-why { max-width: 230px; }
+.bulk-source { overflow-wrap: anywhere; opacity: 0.75; }
+.warn-text { color: var(--warn); }
+.th-sort {
+  background: none; border: 0; padding: 0; font: inherit; color: inherit;
+  cursor: pointer; min-height: var(--dhad-size-touch);
+}
+.th-sort.active { color: var(--accent-text); font-weight: 700; }
+.tasks-table .task-title-btn { text-align: start; }
+.task-row-done .task-title-btn { text-decoration: line-through; opacity: 0.6; }
+
+/* ===== تفريغ المستندات (المرحلة ٤١) ===== */
+.extract-card { margin-bottom: 14px; }
+.extract-failed { border-color: var(--danger); }
+.extract-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.extract-fields { align-items: center; }
+.chip-copy { cursor: pointer; }
+.chip-copy:hover { border-color: var(--accent); }
