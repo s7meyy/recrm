@@ -149,7 +149,7 @@ try {
   for (const k of ['n1','n2','n3','nm','a1','a2','a3','am']) {
     await page.evaluate((key) => {
       const ta = document.querySelector('#out-' + key);
-      ta.value = '# الخلاصة التنفيذية\nالمنشأة قوية في جودة القهوة (R001، R005، R007) وتعاني من بطء الخدمة (R002، R008).\n\n## تفصيل القوة\nجودة الطعم متكررة.\n\n# نقاط الضعف\n- بطء الخدمة وقت الذروة (R002، R008)\n- ضعف الإنترنت (R009)\n\n| المحور | الحكم |\n|---|---|\n| الجودة | قوي |\n| الانتظار | ضعيف |\n\n> «انتظرت ٢٥ دقيقة على طلب بسيط» (R002)\n';
+      ta.value = '# الخلاصة التنفيذية\nالمنشأة قوية في جودة القهوة (R001، R005، R007) وتعاني من بطء الخدمة (R002، R008).\n\n## تفصيل القوة\nجودة الطعم متكررة.\n\n# نقاط الضعف\n- بطء الخدمة وقت الذروة (R002، R008)\n- ضعف الإنترنت (R009)\n\n| المحور | الحكم |\n|---|---|\n| الجودة | قوي |\n| الانتظار | ضعيف |\n\n# التوصيات التنفيذية\n| # | التوصية | السند | مؤشر القياس |\n|---|---|---|---|\n| 1 | إضافة باريستا ثانٍ من 6م إلى 10م | R002، R008 | متوسط زمن التحضير أقل من 7 دقائق |\n| 2 | ترقية نقطة الوصول اللاسلكية | R009 | سرعة أعلى من 30 ميغابت |\n| 3 | الرد على كل تعليق سلبي خلال 48 ساعة | R002، R004 | نسبة الرد 100% |\n\n> «انتظرت ٢٥ دقيقة على طلب بسيط» (R002)\n';
       ta.dispatchEvent(new Event('input', { bubbles: true }));
     }, k);
   }
@@ -179,6 +179,24 @@ try {
   const dir = await frame.locator('html').getAttribute('dir');
   dir === 'rtl' ? ok('اتجاه RTL') : bad('الاتجاه', dir);
 
+  console.log('٧-ب) خطة العمل');
+  await page.click('#btn-extract-plan');
+  await page.waitForTimeout(400);
+  const tasks = await page.$$eval('#plan-box tbody tr', n => n.length);
+  tasks === 3 ? ok(`استُخرجت ${tasks} مهام من جدول التوصيات`) : bad('استخراج المهام', tasks);
+  const metric = await page.textContent('#plan-box tbody tr:first-child');
+  metric.includes('دقائق') ? ok('مؤشر القياس التُقط') : bad('مؤشر القياس', metric.slice(0,60));
+  const sand = await page.$$eval('#plan-box .rid', n => n.length);
+  sand >= 2 ? ok(`سند التوصيات محفوظ (${sand})`) : bad('سند التوصيات', sand);
+  await page.selectOption('#plan-box tbody tr:first-child .task-status', 'done');
+  await page.waitForTimeout(250);
+  const prog2 = await page.textContent('#plan-progress');
+  prog2.includes('منجز 1') ? ok('تتبّع الإنجاز: ' + prog2) : bad('تتبّع الإنجاز', prog2);
+  await page.check('#plan-in-report');
+  await page.waitForTimeout(600);
+  const inRep = await page.frameLocator('#r-frame').locator('.body').textContent();
+  inRep.includes('خطة العمل') ? ok('الخطة تظهر في التقرير') : bad('الخطة في التقرير');
+
   console.log('٨) الأرشيف والاستعادة');
   await page.click('[data-go="archive"]');
   await page.waitForTimeout(500);
@@ -191,6 +209,69 @@ try {
   await page.waitForTimeout(800);
   const after = await page.frameLocator('#r-frame').locator('h1').first().textContent().catch(() => '');
   after.includes('مقهى الدرب') ? ok('استُعيدت الحالة بعد إعادة التحميل') : bad('الاستعادة', after);
+
+  console.log('٨-ب) المقارنة');
+  await page.click('[data-go="compare"]');
+  await page.waitForTimeout(600);
+  (await page.isVisible('#view-compare')) ? ok('شاشة المقارنة') : bad('شاشة المقارنة');
+  const tl = await page.textContent('#timeline-box');
+  tl.includes('تحتاج تقريرين') ? ok('المقارنة الزمنية تشرح شرطها بوضوح') : ok('المقارنة الزمنية: ' + tl.trim().slice(0,50));
+  const bench = await page.textContent('#bench-box');
+  bench.includes('لا منافس') ? ok('مقارنة المنافسين تشرح شرطها بوضوح') : bad('مقارنة المنافسين', bench.slice(0,80));
+
+  console.log('٨-ج) المقارنة بمعطيات حقيقية');
+  // استيراد تقرير أقدم للمنشأة نفسها + منافس، عبر مسار الاستيراد الحقيقي في الأرشيف.
+  const mkJob = (id, name, url, when, reviews, plan) => ({
+    id, mapsUrl: url, createdAt: when, updatedAt: when,
+    ctx: { regionId:'riyadh', regionName:'منطقة الرياض', cityId:'riyadh', cityName:'الرياض',
+           groupId:'food', categoryId:'cafe', categoryName:'مقهى / كوفي', districtName:'الملقا' },
+    place: { schema:1, source:'manual', mapsUrl:url, identity:{ name, category:'مقهى', hours:[], attributes:[] },
+             ratings:{ average: reviews.avg, count: reviews.count, distribution:{} },
+             reviews: reviews.list.map((r,i)=>({ id:'R'+String(i+1).padStart(3,'0'), ...r })),
+             photos:[], qna:[], popularTimes:[], notes:'' },
+    out:{}, reportMd:'', photos:[], plan: plan||[], planInReport:false,
+  });
+  const older = mkJob('Jold', 'مقهى الدرب', 'https://www.google.com/maps/place/%D9%85%D9%82%D9%87%D9%89+%D8%A7%D9%84%D8%AF%D8%B1%D8%A8/@24.7136,46.6753,17z', '2026-06-01T00:00:00.000Z',
+    { avg: 3.8, count: 180, list: [
+      { rating:1, text:'انتظرت طويلا جدا والخدمة بطيئة' }, { rating:2, text:'الانتظار طويل والزحمة شديدة' },
+      { rating:2, text:'زحمة ولا يوجد تنظيم' }, { rating:5, text:'القهوة لذيذة' }, { rating:4, text:'المكان نظيف' } ] },
+    [{ id:'T01', text:'إضافة باريستا ثانٍ', ids:['R001'], metric:'', status:'done', due:'', note:'' },
+     { id:'T02', text:'تنظيم الدخول', ids:['R003'], metric:'', status:'open', due:'', note:'' }]);
+  const rival = mkJob('Jrival', 'كوفي المنافس', 'https://www.google.com/maps/place/rival/@24.7,46.6,17z', '2026-09-10T00:00:00.000Z',
+    { avg: 4.7, count: 900, list: [
+      { rating:5, text:'الخدمة سريعة جدا والقهوة ممتازة' }, { rating:5, text:'المكان نظيف والموظفين محترمين' },
+      { rating:2, text:'الأسعار غالية جدا ومبالغ فيها' } ] });
+
+  await page.click('[data-go="archive"]');
+  await page.waitForTimeout(300);
+  await page.setInputFiles('#ar-import', { name:'seed.json', mimeType:'application/json',
+    buffer: Buffer.from(JSON.stringify([older, rival]), 'utf8') });
+  await page.waitForTimeout(700);
+  const tree2 = await page.textContent('#archive-tree');
+  tree2.includes('كوفي المنافس') ? ok('استيراد الأرشيف يعمل') : bad('استيراد الأرشيف');
+
+  await page.click('[data-go="compare"]');
+  await page.waitForTimeout(700);
+  const opts = await page.$$eval('#cmp-place option', o => o.map(x => x.textContent));
+  opts.some(o => o.includes('مقهى الدرب')) ? ok('المنشأة صارت قابلة للمقارنة الزمنية') : bad('المقارنة الزمنية', opts.join('|'));
+
+  const tl2 = await page.textContent('#timeline-box');
+  tl2.includes('تحسّنت') || tl2.includes('اختفت') ? ok('رصد التحسّن بين التقريرين') : bad('رصد التحسّن', tl2.slice(0,120));
+  tl2.includes('أُنجز 1 من 2') ? ok('قياس تنفيذ خطة التقرير السابق') : bad('قياس الخطة', tl2.slice(-160));
+  const deltas = await page.$$eval('#timeline-box .delta', n => n.length);
+  deltas >= 4 ? ok(`فروق المؤشرات محسوبة (${deltas})`) : bad('فروق المؤشرات', deltas);
+
+  await page.selectOption('#cmp-target', { label: /مقهى الدرب/ }).catch(async () => {
+    const ids = await page.$$eval('#cmp-target option', o => o.map(x => ({v:x.value,t:x.textContent})));
+    const hit = ids.find(x => x.t.includes('مقهى الدرب'));
+    if (hit) await page.selectOption('#cmp-target', hit.v);
+  });
+  await page.waitForTimeout(500);
+  const bench2 = await page.textContent('#bench-box');
+  bench2.includes('كوفي المنافس') ? ok('جدول المنافسين مبني') : bad('جدول المنافسين', bench2.slice(0,120));
+  bench2.includes('الترتيب') ? ok('الترتيب محسوب: ' + (bench2.match(/الترتيب \d+ من \d+/) || [''])[0]) : bad('الترتيب');
+  const meCells = await page.$$eval('#bench-box .me', n => n.length);
+  meCells >= 1 ? ok('صفّ المنشأة مميَّز') : bad('تمييز الصف', meCells);
 
   console.log('٩) الجوال (390px)');
   await page.setViewportSize({ width: 390, height: 844 });

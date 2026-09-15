@@ -15,6 +15,7 @@
     <div class="logo">رابــح<small>تقارير المنشآت من خرائط قوقل</small></div>
     <nav>
       <button type="button" data-go="new">تقرير جديد</button>
+      <button type="button" data-go="compare">المقارنة</button>
       <button type="button" data-go="archive">الأرشيف</button>
       <button type="button" data-go="about">كيف يعمل</button>
     </nav>
@@ -196,7 +197,22 @@
     </div>
 
     <div class="card">
-      <h2>٨. الإرسال</h2>
+      <h2>٨. خطة العمل</h2>
+      <p class="hint">تُستخرج من قسم التوصيات في التقرير، وتصير مهامًّ لها حالة ومهلة. ما يُنجَز منها يُقاس في التقرير القادم.</p>
+      <div class="row">
+        <button type="button" class="btn ghost sm" id="btn-extract-plan">استخراج التوصيات</button>
+        <button type="button" class="btn ghost sm" id="btn-add-task">+ مهمة يدوية</button>
+        <label style="display:flex;align-items:center;gap:6px;margin:0;font-weight:500">
+          <input type="checkbox" id="plan-in-report" style="width:auto"> إدراج الخطة في التقرير
+        </label>
+        <span class="spacer"></span>
+        <span class="badge" id="plan-progress"></span>
+      </div>
+      <div id="plan-box"></div>
+    </div>
+
+    <div class="card">
+      <h2>٩. الإرسال</h2>
       <p class="hint">احفظ الـPDF أولًا ثم أرفقه في القناة التي تختارها؛ النص التمهيدي يُجهَّز لك.</p>
       <div class="grid c2">
         <div class="field"><label for="s-phone">رقم الجوال (واتساب)</label><input id="s-phone" inputmode="tel" placeholder="9665xxxxxxxx"></div>
@@ -211,6 +227,27 @@
     </div>
 
     <div class="preview"><iframe id="r-frame" title="معاينة التقرير"></iframe></div>
+  </section>
+
+  <!-- المقارنة -->
+  <section class="view" id="view-compare" hidden>
+    <div class="card">
+      <h2>المقارنة الزمنية</h2>
+      <p class="hint">ماذا تغيّر في منشأة بين تقريرين. تحتاج تقريرين فأكثر للمنشأة نفسها.</p>
+      <div class="grid c3">
+        <div class="field"><label for="cmp-place">المنشأة</label><select id="cmp-place"></select></div>
+        <div class="field"><label for="cmp-from">التقرير الأقدم</label><select id="cmp-from"></select></div>
+        <div class="field"><label for="cmp-to">التقرير الأحدث</label><select id="cmp-to"></select></div>
+      </div>
+      <div id="timeline-box"></div>
+    </div>
+
+    <div class="card">
+      <h2>مقارنة المنافسين</h2>
+      <p class="hint">منشآت في أرشيفك بنفس المدينة والتصنيف. كلما زاد أرشيفك زادت دقّة الصورة.</p>
+      <div class="field"><label for="cmp-target">المنشأة محلّ المقارنة</label><select id="cmp-target"></select></div>
+      <div id="bench-box"></div>
+    </div>
   </section>
 
   <!-- الأرشيف -->

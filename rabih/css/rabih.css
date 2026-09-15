@@ -174,3 +174,24 @@ table.mini td.snip{color:var(--muted)}
 .verify-box details{margin-top:6px}
 .verify-box summary{cursor:pointer}
 .verify-box ul{margin:6px 0 0;padding-inline-start:18px}
+
+/* خطة العمل */
+table.mini.plan td[contenteditable]{min-width:140px;cursor:text}
+table.mini.plan td[contenteditable]:focus{outline:2px solid var(--gold-soft);outline-offset:-2px;background:#fdfaf1}
+table.mini.plan input[type="date"],table.mini.plan select{padding:3px 6px;font-size:12.5px;border-radius:6px}
+table.mini.plan .btn.sm{padding:1px 8px}
+
+/* المقارنة */
+.delta{font-weight:700;font-size:12px}
+.delta.up{color:var(--ok)}.delta.down{color:var(--err)}.delta.flat{color:var(--muted);font-weight:500}
+.stat .fine{margin:2px 0 0;font-size:11.5px}
+.changes{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-top:14px}
+.chg{border:1px solid var(--line);border-radius:10px;padding:10px 14px;background:#fbfcfd}
+.chg b{display:block;font-size:13px;margin-bottom:4px}
+.chg ul{margin:0;padding-inline-start:18px;font-size:13px}
+.chg.good{border-color:#bfe0cd;background:#f4fbf7}
+.chg.good b{color:var(--ok)}
+.chg.bad{border-color:#eccaca;background:#fdf6f6}
+.chg.bad b{color:var(--err)}
+table.mini tr.me td,table.mini th.me,table.mini td.me{background:#fdfaf1;font-weight:600}
+h3.sub{font-size:14px;color:var(--navy);margin:16px 0 6px}

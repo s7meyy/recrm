@@ -11,6 +11,8 @@ import { buildReportHtml } from './report.js';
 import { topicStats, topComplaints, uncovered } from './lexicon.js';
 import { verify } from './verify.js';
 import { scan, withoutFlagged, FLAGS } from './anomaly.js';
+import { comparablePlaces, timeline, competitors, benchmark } from './compare.js';
+import { extractTasks, mergeTasks, progress, planMarkdown, defaultDue, STATUS } from './plan.js';
 import { newId, saveJob, getJob, allJobs, deleteJob, buildTree, jobPath } from './store.js';
 
 const $  = (s, r = document) => r.querySelector(s);
@@ -18,7 +20,7 @@ const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const el = (tag, cls, html) => { const n = document.createElement(tag); if (cls) n.className = cls; if (html !== undefined) n.innerHTML = html; return n; };
 
 const LAST_JOB = 'rabih:last-job';
-const VIEWS = ['new', 'data', 'pipeline', 'report', 'archive', 'about'];
+const VIEWS = ['new', 'data', 'pipeline', 'report', 'compare', 'archive', 'about'];
 
 let job = null;
 let dirty = false;
@@ -79,6 +81,8 @@ function blankJob() {
     out: {},
     reportMd: '',
     photos: [],
+    plan: [],
+    planInReport: false,
   };
 }
 
@@ -601,6 +605,8 @@ function bindPipelineView() {
 
 function loadReportView() {
   $('#r-md').value = job.reportMd || job.out.am || '';
+  $('#plan-in-report').checked = !!job.planInReport;
+  renderPlan();
   renderReport();
   renderStepsBar('report');
 }
@@ -609,7 +615,7 @@ function currentHtml() {
   return buildReportHtml({
     place: job.place,
     ctx: job.ctx,
-    markdown: $('#r-md').value,
+    markdown: reportMarkdown(),
     photos: job.photos,
   });
 }
@@ -636,6 +642,211 @@ function shareText() {
     'التقرير الكامل مرفق بصيغة PDF.',
     '— أُعدّ عبر منصة رابح',
   ].join('\n');
+}
+
+/* ───────────────────────── خطة العمل ───────────────────────── */
+
+function renderPlan() {
+  const box = $('#plan-box');
+  if (!box) return;
+  job.plan ??= [];
+  const p = progress(job.plan);
+  const badge = $('#plan-progress');
+  badge.textContent = job.plan.length ? `منجز ${p.done} من ${p.total} (${p.pct}%)` : 'لا مهام بعد';
+  badge.className = 'badge ' + (p.total && p.done === p.total ? 'ok' : (p.done ? 'mid' : ''));
+
+  if (!job.plan.length) {
+    box.innerHTML = '<div class="empty">لا مهام. اضغط «استخراج التوصيات» بعد أن يكتمل التقرير.</div>';
+    return;
+  }
+
+  const rows = job.plan.map((t, i) => `<tr data-i="${i}">
+    <td>${i + 1}</td>
+    <td class="task-text" contenteditable="true">${t.text}</td>
+    <td class="task-metric" contenteditable="true">${t.metric || ''}</td>
+    <td>${t.ids.map((x) => `<span class="rid">${x}</span>`).join(' ') || '—'}</td>
+    <td><input type="date" class="task-due" value="${t.due || ''}"></td>
+    <td><select class="task-status">${
+      Object.entries(STATUS).map(([k, v]) => `<option value="${k}"${t.status === k ? ' selected' : ''}>${v.label}</option>`).join('')
+    }</select></td>
+    <td><button type="button" class="btn danger sm task-del">×</button></td>
+  </tr>`).join('');
+
+  box.innerHTML = `<div class="table-wrap"><table class="mini plan">
+    <thead><tr><th>#</th><th>المهمة</th><th>مؤشر القياس</th><th>السند</th><th>الاستحقاق</th><th>الحالة</th><th></th></tr></thead>
+    <tbody>${rows}</tbody></table></div>`;
+
+  const idx = (e) => Number(e.target.closest('tr').dataset.i);
+  box.querySelectorAll('.task-status').forEach((el2) => el2.addEventListener('change', (e) => {
+    job.plan[idx(e)].status = e.target.value; renderPlan(); scheduleSave(); syncPlanIntoReport();
+  }));
+  box.querySelectorAll('.task-due').forEach((el2) => el2.addEventListener('change', (e) => {
+    job.plan[idx(e)].due = e.target.value; scheduleSave(); syncPlanIntoReport();
+  }));
+  box.querySelectorAll('.task-text').forEach((el2) => el2.addEventListener('blur', (e) => {
+    job.plan[idx(e)].text = e.target.textContent.trim(); scheduleSave(); syncPlanIntoReport();
+  }));
+  box.querySelectorAll('.task-metric').forEach((el2) => el2.addEventListener('blur', (e) => {
+    job.plan[idx(e)].metric = e.target.textContent.trim(); scheduleSave(); syncPlanIntoReport();
+  }));
+  box.querySelectorAll('.task-del').forEach((el2) => el2.addEventListener('click', (e) => {
+    job.plan.splice(idx(e), 1); renderPlan(); scheduleSave(); syncPlanIntoReport();
+  }));
+}
+
+/** الخطة تظهر في الـPDF حين يطلبها المستخدم، فتُبنى المعاينة من النص + قسم الخطة. */
+function reportMarkdown() {
+  const base = $('#r-md').value;
+  return job.planInReport && job.plan?.length ? base + planMarkdown(job.plan) : base;
+}
+
+function syncPlanIntoReport() {
+  if (job.planInReport) renderReport();
+}
+
+function bindPlanView() {
+  $('#btn-extract-plan').addEventListener('click', () => {
+    const fresh = extractTasks($('#r-md').value);
+    if (!fresh.length) {
+      toast('لم يُعثر على قسم توصيات في التقرير');
+      return;
+    }
+    fresh.forEach((t) => { t.due ||= defaultDue(30); });
+    job.plan = mergeTasks(job.plan || [], fresh);
+    renderPlan(); scheduleSave(); syncPlanIntoReport();
+    toast(`استُخرجت ${fresh.length} توصية`);
+  });
+
+  $('#btn-add-task').addEventListener('click', () => {
+    const text = prompt('نص المهمة:');
+    if (!text?.trim()) return;
+    job.plan ??= [];
+    job.plan.push({
+      id: 'T' + String(job.plan.length + 1).padStart(2, '0'),
+      text: text.trim(), ids: [], metric: '', status: 'open', due: defaultDue(30), note: '', manual: true,
+    });
+    renderPlan(); scheduleSave(); syncPlanIntoReport();
+  });
+
+  $('#plan-in-report').addEventListener('change', (e) => {
+    job.planInReport = e.target.checked;
+    scheduleSave();
+    renderReport();
+  });
+}
+
+/* ───────────────────────── المقارنة ───────────────────────── */
+
+const arrow = (d, goodIsUp = true) => {
+  if (d === null || d === undefined || d === 0) return '<span class="delta flat">بلا تغيّر</span>';
+  const good = goodIsUp ? d > 0 : d < 0;
+  return `<span class="delta ${good ? 'up' : 'down'}">${d > 0 ? '▲' : '▼'} ${Math.abs(d)}</span>`;
+};
+
+let compareJobs = [];
+
+async function renderCompare() {
+  compareJobs = await allJobs();
+
+  const places = comparablePlaces(compareJobs);
+  const sel = $('#cmp-place');
+  sel.innerHTML = places.length
+    ? places.map((p) => `<option value="${p.key}">${p.name} (${p.count} تقارير)</option>`).join('')
+    : '<option value="">— لا منشأة لها تقريران بعد —</option>';
+  fillTimelineSelects();
+
+  const tgt = $('#cmp-target');
+  tgt.innerHTML = compareJobs.length
+    ? compareJobs.map((j) => `<option value="${j.id}">${j.place?.identity?.name || 'بلا اسم'} — ${j.ctx?.cityName || ''} ${j.ctx?.districtName || ''}</option>`).join('')
+    : '<option value="">— الأرشيف فارغ —</option>';
+  renderBenchmark();
+}
+
+function fillTimelineSelects() {
+  const key = $('#cmp-place').value;
+  const group = comparablePlaces(compareJobs).find((p) => p.key === key);
+  const opts = (list) => list.map((j) => `<option value="${j.id}">${String(j.createdAt || '').slice(0, 10)} — ${j.place?.reviews?.length || 0} تعليقًا</option>`).join('');
+  if (!group) {
+    $('#cmp-from').innerHTML = $('#cmp-to').innerHTML = '';
+    $('#timeline-box').innerHTML = '<div class="empty">تحتاج تقريرين لمنشأة واحدة. أنشئ تقريرًا ثانيًا لاحقًا لنفس الرابط.</div>';
+    return;
+  }
+  $('#cmp-from').innerHTML = opts(group.jobs);
+  $('#cmp-to').innerHTML = opts(group.jobs);
+  $('#cmp-from').value = group.jobs[0].id;
+  $('#cmp-to').value = group.jobs[group.jobs.length - 1].id;
+  renderTimeline();
+}
+
+function renderTimeline() {
+  const box = $('#timeline-box');
+  const a = compareJobs.find((j) => j.id === $('#cmp-from').value);
+  const b = compareJobs.find((j) => j.id === $('#cmp-to').value);
+  if (!a || !b || a.id === b.id) { box.innerHTML = '<div class="empty">اختر تقريرين مختلفين.</div>'; return; }
+
+  const t = timeline(a, b);
+  const r = t.ratings;
+  const cell = (label, o, goodIsUp = true, suffix = '') =>
+    `<div class="stat"><b>${label}</b><span>${o.now ?? '—'}${suffix}</span>
+      <div class="fine">${o.before ?? '—'}${suffix} ← ${arrow(o.diff, goodIsUp)}</div></div>`;
+
+  const list = (title, items, cls) => items.length
+    ? `<div class="chg ${cls}"><b>${title}</b><ul>${items.map((x) => `<li>${x}</li>`).join('')}</ul></div>` : '';
+
+  box.innerHTML = `
+    <p class="fine">بين ${String(a.createdAt || '').slice(0, 10)} و${String(b.createdAt || '').slice(0, 10)}${t.days !== null ? ` — ${t.days} يومًا` : ''}.</p>
+    <div class="stat-grid">
+      ${cell('متوسط قوقل', r.googleAverage)}
+      ${cell('عدد التقييمات', r.googleCount)}
+      ${cell('متوسط العيّنة', r.sampleAverage)}
+      ${cell('نسبة السلبي', r.negativeShare, false, '%')}
+      ${cell('ردود المالك', r.replyRate, true, '%')}
+    </div>
+    <div class="changes">
+      ${list('تحسّنت', t.topics.better.map((x) => `${x.name}: ${x.from} ← ${x.to} شكوى`), 'good')}
+      ${list('اختفت', t.topics.gone.map((x) => `${x.name} (كانت ${x.was})`), 'good')}
+      ${list('تفاقمت', t.topics.worse.map((x) => `${x.name}: ${x.from} ← ${x.to} شكوى`), 'bad')}
+      ${list('شكاوى جديدة', t.topics.new.map((x) => `${x.name} (${x.neg}) — ${x.ids.join('، ')}`), 'bad')}
+    </div>
+    ${t.plan.total ? `<p class="fine">خطة التقرير الأقدم: أُنجز ${t.plan.done} من ${t.plan.total} مهمة${
+      t.plan.tasks.length ? ` — ${t.plan.tasks.map((x) => x.text).join('؛ ')}` : ''}.</p>` : ''}`;
+}
+
+function renderBenchmark() {
+  const box = $('#bench-box');
+  const target = compareJobs.find((j) => j.id === $('#cmp-target').value);
+  if (!target) { box.innerHTML = '<div class="empty">الأرشيف فارغ.</div>'; return; }
+
+  const rivals = competitors(compareJobs, target);
+  if (!rivals.length) {
+    box.innerHTML = `<div class="empty">لا منافس في الأرشيف بنفس المدينة والتصنيف (${target.ctx?.cityName || ''} — ${target.ctx?.categoryName || ''}).<br>أضف تقريرًا لمنشأة منافسة لتظهر المقارنة.</div>`;
+    return;
+  }
+
+  const b = benchmark(target, rivals);
+  const head = `<tr><th>المنشأة</th><th>الحي</th><th>متوسط قوقل</th><th>التقييمات</th><th>نسبة السلبي</th><th>ردود المالك</th><th>العيّنة</th></tr>`;
+  const rows = b.rows.map((r) => `<tr class="${r.isTarget ? 'me' : ''}">
+    <td>${r.name}${r.isTarget ? ' <span class="badge">أنت</span>' : ''}</td>
+    <td>${r.district}</td><td>${r.googleAverage ?? '—'}</td><td>${r.googleCount ?? '—'}</td>
+    <td>${r.negativeShare ?? '—'}%</td><td>${r.replyRate ?? '—'}%</td><td>${r.total}</td></tr>`).join('');
+
+  const topics = b.topics.slice(0, 8).map((t) => `<tr>
+    <td>${t.name}</td>${t.cells.map((c) => `<td class="${c.isTarget ? 'me' : ''}">${c.total ? `${c.total} <small>(سلبي ${c.neg})</small>` : '—'}</td>`).join('')}
+  </tr>`).join('');
+
+  box.innerHTML = `
+    ${b.rank ? `<div class="msg ${b.rank.position === 1 ? 'ok' : 'warn'}"><b>الترتيب ${b.rank.position} من ${b.rank.of} بـ${b.rank.by}.</b></div>` : ''}
+    <div class="table-wrap"><table class="mini"><thead>${head}</thead><tbody>${rows}</tbody></table></div>
+    ${topics ? `<h3 class="sub">المحاور المشتركة</h3><div class="table-wrap"><table class="mini">
+      <thead><tr><th>الموضوع</th>${b.rows.map((r) => `<th class="${r.isTarget ? 'me' : ''}">${r.name}</th>`).join('')}</tr></thead>
+      <tbody>${topics}</tbody></table></div>` : '<p class="fine">لا محاور مشتركة بعدُ بين هذه المنشآت.</p>'}`;
+}
+
+function bindCompareView() {
+  $('#cmp-place').addEventListener('change', fillTimelineSelects);
+  $('#cmp-from').addEventListener('change', renderTimeline);
+  $('#cmp-to').addEventListener('change', renderTimeline);
+  $('#cmp-target').addEventListener('change', renderBenchmark);
 }
 
 function bindReportView() {
@@ -785,11 +996,14 @@ async function boot() {
   bindDataView();
   bindPipelineView();
   bindReportView();
+  bindPlanView();
+  bindCompareView();
   bindArchiveView();
 
   $$('[data-go]').forEach((b) => b.addEventListener('click', () => {
     const v = b.dataset.go;
     if (v === 'archive') renderArchive($('#ar-search').value);
+    if (v === 'compare') renderCompare();
     if (v === 'data' && job) loadDataView();
     show(v);
   }));
