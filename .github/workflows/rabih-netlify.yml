@@ -67,10 +67,19 @@ jobs:
             echo "::notice::لا توكن — يُتخطّى النشر. أضف NETLIFY_AUTH_TOKEN في Secrets ثم أعد التشغيل."
           fi
 
-      # الاختبارات ليست جزءًا من الموقع المنشور.
-      - name: تنظيف
+      # **يُنسخ المجلد خارج المستودع قبل النشر.** أداة Netlify تصعد إلى جذر المستودع
+      # بحثًا عن netlify.toml فتجد ملفّ كسّاب، فتنشر كسّاب ودوالّه وتترك بوابة رابح.
+      # وقد وقع هذا فعلًا في أول نشرة: اثنتا عشرة دالة من كسّاب، وصفر دوالّ حافة.
+      # ومجلدٌ خارج شجرة git يجعل رابح هو جذر المشروع، فيُقرأ ملفُّه هو.
+      - name: تجهيز مجلد النشر
         if: steps.guard.outputs.has_token == 'true'
-        run: rm -rf rabih/tests rabih/tools rabih/node_modules
+        run: |
+          rm -rf "$RUNNER_TEMP/site"
+          mkdir -p "$RUNNER_TEMP/site"
+          cp -a rabih/. "$RUNNER_TEMP/site"/
+          rm -rf "$RUNNER_TEMP/site/tests" "$RUNNER_TEMP/site/tools" "$RUNNER_TEMP/site/node_modules"
+          test -f "$RUNNER_TEMP/site/netlify/edge-functions/gate.js"
+          test ! -e "$RUNNER_TEMP/site/.git"
 
       # الأداة تُثبَّت بإصدارٍ مثبَّت لا بـ@latest، ومعها تجاوزٌ لتبعية مكسورة:
       # @types/node@26.6.0 مُدرَج في سجلّ npm وملفُّه مفقود (404)، فتسقط كل نشرة
@@ -92,11 +101,37 @@ jobs:
           echo "$RUNNER_TEMP/nl/node_modules/.bin" >> "$GITHUB_PATH"
 
       - name: نشر
+        id: deploy
         if: steps.guard.outputs.has_token == 'true'
-        working-directory: rabih
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: dc23aef2-a68a-435b-9432-18b2aac80345
           COMMIT_MESSAGE: ${{ github.event.head_commit.message || 'نشر يدوي' }}
         run: |
-          netlify deploy --prod --no-build --message "${COMMIT_MESSAGE}"
+          cd "$RUNNER_TEMP/site"
+          netlify deploy --prod --no-build --message "${COMMIT_MESSAGE}" --json > deploy.json
+          python3 -c "import json;print('deploy_id='+json.load(open('deploy.json'))['deploy_id'])" >> "$GITHUB_OUTPUT"
+          python3 -c "import json;d=json.load(open('deploy.json'));print('الرابط:',d.get('url') or d.get('deploy_url'))"
+
+      # **تحقّقٌ لا يُستغنى عنه:** موقعٌ بلا بوابة موقعٌ مكشوف، والأداة لا تفشل
+      # حين لا تجد دوالّ الحافة — تمرّ بسطرٍ في السجل يسهل ألا يُقرأ. فنسأل واجهة
+      # Netlify نفسها عن النشرة، ونُسقطها إن لم تحمل بوابة.
+      - name: تحقّق من رفع البوابة
+        if: steps.guard.outputs.has_token == 'true'
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          DEPLOY_ID: ${{ steps.deploy.outputs.deploy_id }}
+        run: |
+          curl -sS -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+            "https://api.netlify.com/api/v1/deploys/$DEPLOY_ID" > d.json
+          python3 - <<'PY'
+          import json, sys
+          d = json.load(open('d.json'))
+          msgs = [m.get('title', '') + ' ' + (m.get('description') or '') for m in d.get('summary', {}).get('messages', [])]
+          blob = ' | '.join(msgs)
+          print(blob)
+          if 'No edge functions deployed' in blob:
+              print('::error::نُشر الموقع بلا بوابة — مكشوف. راجع مجلد netlify/edge-functions.')
+              sys.exit(1)
+          print('✓ البوابة مرفوعة.')
+          PY
