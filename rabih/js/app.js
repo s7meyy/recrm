@@ -552,7 +552,8 @@ function doParse() {
   const { reviews, format } = parseReviews(raw);
   if (!reviews.length) {
     message('#parse-msg', 'err', 'لم يُتعرَّف على أي تعليق.', [
-      'تأكد أن اللصق يتضمّن النجوم أو التقييم الرقمي.',
+      'يُرسى كل تعليق على تاريخه («قبل شهر») أو على تقييمه — فتأكد أن أحدهما في اللصق.',
+      'واللصق من صفحة قوقل يأتي بلا نجوم عادةً، وهذا مقبول: النصوص تُحلَّل والتقييم يبقى فارغًا.',
       'أو استعمل الصيغة الصريحة: 5 | الاسم | قبل شهر ثم النص ثم سطر ---',
     ]);
     return;
@@ -571,7 +572,19 @@ function doParse() {
   $('#parse-info').className = 'badge ok';
 
   const v = validate(job.place);
-  if (v.warnings.length) message('#parse-msg', 'warn', `استُخرج ${reviews.length} تعليقًا. تنبيهات:`, v.warnings);
+
+  /* نجوم قوقل صورةٌ لا نصّ، فالنسخ من الصفحة يأتي بلا تقييمات غالبًا. ولا يُخمَّن
+     رقمٌ ولا يُسكَت عن غيابه: يُقال كم تعليقًا بلا تقييم وما الذي يسقط بسببه. */
+  const unrated = reviews.filter((r) => r.rating === null).length;
+  const notes = [...v.warnings];
+  if (unrated) {
+    notes.unshift(unrated === reviews.length
+      ? `<b>لا تقييم في أيٍّ منها.</b> هذا متوقَّع: قوقل يرسم النجوم صورةً فلا تُنسَخ مع النص. النصوص تُحلَّل كاملةً، ويسقط ما يقوم على النجوم: متوسط العيّنة وتوزيعها وفرز الإيجابي من السلبي.`
+      : `<b>${unrated} من ${reviews.length} بلا تقييم</b> — تُحلَّل نصوصها، ولا تدخل في متوسط العيّنة ولا توزيعها.`);
+    notes.push('لإضافة النجوم: اكتب قبل كل تعليق سطرًا بصيغة <code>4 | الاسم | قبل شهر</code>، أو اجلبها كاملةً بزرّ «جلب كل التعليقات تلقائيًّا».');
+  }
+
+  if (notes.length) message('#parse-msg', unrated === reviews.length ? 'warn' : (v.warnings.length ? 'warn' : 'ok'), `استُخرج ${reviews.length} تعليقًا. تنبيهات:`, notes);
   else message('#parse-msg', 'ok', `استُخرج ${reviews.length} تعليقًا بنجاح.`);
 
   renderParseStats();

@@ -1,0 +1,104 @@
+// اختبار المحلّل على اللصق كما يقع فعلًا، لا كما نتمنّاه.
+//
+//   node tests/parse.mjs
+//
+// وُضع بعد جولةٍ في المنصّة كشفت أن أوّل خطوة يفعلها المستخدم — النسخ من صفحة
+// قوقل — تُخرج «صفر تعليق»، وأن ردّ المالك يُبتلَع داخل كلام العميل.
+
+import { parseReviews } from '../js/parse.js';
+
+const fails = [];
+const ok = (t) => console.log('  ✓', t);
+const bad = (t, e) => { fails.push(t + (e ? ' :: ' + e : '')); console.log('  ✗', t, e || ''); };
+const one = (raw) => parseReviews(raw).reviews[0] || {};
+
+console.log('١) اللصق الواقعي من صفحة قوقل — بلا نجوم');
+// نجوم قوقل صورةٌ لا نصّ، فهذا هو شكل ما يُنسَخ فعلًا.
+const REAL = `أحمد الزهراني
+Local Guide · ٢٤ مراجعة · ١٢ صورة
+قبل أسبوع
+جديد
+المكان حلو والقهوة ممتازة بس الانتظار طويل مره.
+المزيد
+أعجبني
+مشاركة
+الرد من المالك قبل ٥ أيام
+نعتذر عن التأخير ونعمل على تحسين الخدمة.
+
+نورة ا.
+٣ مراجعات
+قبل شهر
+الموظفين ذوقهم عالي والجلسات مريحة.
+أعجبني
+مشاركة
+
+Mohammed S
+Local Guide · ١٢٠ مراجعة
+قبل شهرين
+اسوأ تجربة. الطلب وصل بارد والعامل ما رد علي.
+المزيد
+أعجبني`;
+
+const real = parseReviews(REAL).reviews;
+real.length === 3 ? ok('ثلاثة تعليقات من لصقٍ بلا نجوم (كانت صفرًا)') : bad('عدد التعليقات', real.length);
+real.every((r) => r.rating === null) ? ok('التقييم يبقى فارغًا ولا يُخمَّن') : bad('تخمين تقييم', JSON.stringify(real.map((r) => r.rating)));
+real.map((r) => r.author).join('|') === 'أحمد الزهراني|نورة ا.|Mohammed S'
+  ? ok('أسماء الكتّاب الثلاثة صحيحة') : bad('الأسماء', real.map((r) => r.author).join('|'));
+real.map((r) => r.date).join('|') === 'قبل أسبوع|قبل شهر|قبل شهرين'
+  ? ok('التواريخ الثلاثة صحيحة') : bad('التواريخ', real.map((r) => r.date).join('|'));
+
+console.log('٢) ردّ المالك لا يلتصق بكلام العميل');
+real[0].ownerReply === 'نعتذر عن التأخير ونعمل على تحسين الخدمة.'
+  ? ok('الردّ في حقله كاملًا وبلا تاريخه') : bad('حقل الردّ', JSON.stringify(real[0].ownerReply));
+!/نعتذر|الرد من المالك/.test(real[0].text)
+  ? ok('نصّ العميل نظيف من اعتذار المالك') : bad('تلوّث نصّ العميل', real[0].text);
+!/أعجبني|المزيد|مشاركة|جديد/.test(real.map((r) => r.text).join(' '))
+  ? ok('أسطر قوقل («أعجبني»، «المزيد») لا تدخل النصوص') : bad('ضجيج في النص', real.map((r) => r.text).join(' | '));
+real[1].author !== '٣ مراجعات'
+  ? ok('«٣ مراجعات» بأرقام عربية تُعَدّ ضجيجًا لا اسمًا') : bad('أرقام عربية في الضجيج', real[1].author);
+
+for (const [what, raw, want] of [
+  ['الصيغة القديمة', 'خالد\nقبل يوم\nنصّ.\nرد المالك: شكرًا لك.', 'شكرًا لك.'],
+  ['صاحب النشاط التجاري', 'خالد\nقبل يوم\nنصّ.\nالرد من صاحب النشاط التجاري قبل شهر\nنعمل على ذلك.', 'نعمل على ذلك.'],
+  ['الإنجليزية', 'Khalid\nقبل يوم\nنصّ.\nResponse from the owner a week ago\nThank you.', 'Thank you.'],
+]) {
+  one(raw).ownerReply === want ? ok(`ردّ المالك — ${what}`) : bad(`ردّ المالك — ${what}`, JSON.stringify(one(raw).ownerReply));
+}
+
+console.log('٣) التقييم بالكلمات — وهو لغة قوقل للواحدة والاثنتين');
+for (const [word, want] of [['نجمة واحدة', 1], ['نجمتان', 2], ['نجمتين', 2], ['ثلاث نجوم', 3], ['أربع نجوم', 4], ['خمس نجوم', 5], ['one star', 1]]) {
+  const r = one(`سعود\n${word}\nقبل يوم\nنصّ التعليق.`);
+  r.rating === want ? ok(`«${word}» → ${want}`) : bad(`«${word}»`, r.rating);
+}
+// ولا تُقرأ عبارةٌ داخل تعليق تقييمًا
+const inline = one('سعود\n4 من 5\nقبل يوم\nالمكان يستحق خمس نجوم بصراحة وأنصح به كل من يحب القهوة المختصة.');
+inline.rating === 4 ? ok('عبارة «خمس نجوم» داخل نصٍّ طويل لا تُغيّر التقييم') : bad('تقييم من داخل النص', inline.rating);
+
+console.log('٤) التواريخ');
+for (const [what, line, want] of [
+  ['نسبي', 'قبل شهرين', 'قبل شهرين'],
+  ['مطلق عربي', '١٥ سبتمبر ٢٠٢٦', '15 سبتمبر 2026'],
+  ['شهر وسنة', 'سبتمبر ٢٠٢٦', 'سبتمبر 2026'],
+  ['ISO', '2026-03-01', '2026-03-01'],
+]) {
+  const r = one(`فهد\n4 من 5\n${line}\nنصّ التعليق.`);
+  r.date === want ? ok(`تاريخ ${what}: ${r.date}`) : bad(`تاريخ ${what}`, JSON.stringify(r.date));
+}
+
+console.log('٥) ما كان يعمل لا ينكسر');
+const explicit = parseReviews('4 | أحمد | قبل أسبوع\nنصّ أول.\n---\n2 | نورة | قبل شهر\nنصّ ثانٍ.');
+(explicit.format === 'structured' && explicit.reviews.length === 2 && explicit.reviews[0].rating === 4)
+  ? ok('الصيغة الصريحة كما كانت') : bad('الصيغة الصريحة', JSON.stringify(explicit).slice(0, 90));
+const js = parseReviews(JSON.stringify([{ rating: 5, author: 'خالد', date: 'قبل شهر', text: 'ممتاز' }]));
+(js.format === 'json' && js.reviews[0].rating === 5) ? ok('JSON كما كان') : bad('JSON', JSON.stringify(js).slice(0, 80));
+const stars = parseReviews('★★★★☆\nقبل أسبوع\nنصّ التعليق هنا.');
+stars.reviews[0]?.rating === 4 ? ok('النجوم النصية كما كانت') : bad('النجوم النصية', JSON.stringify(stars.reviews[0]));
+
+console.log('٦) لا يُشطر تعليقٌ واحد إلى تعليقين');
+// تاريخٌ داخل جملة لا يصلح مرساةً.
+const inside = parseReviews('سعود\nقبل يوم\nزرته قبل شهر تقريبًا وكانت التجربة ممتازة، ثم عدت أمس فوجدته أفضل.');
+inside.reviews.length === 1 ? ok('تاريخ داخل الجملة لا يشطر التعليق') : bad('شطر خاطئ', inside.reviews.length);
+inside.reviews[0].text.includes('عدت أمس') ? ok('النصّ كامل بلا بتر') : bad('بتر النص', inside.reviews[0].text);
+
+console.log('\n' + (fails.length ? `فشل ${fails.length}:\n` + fails.map((f) => ' - ' + f).join('\n') : '✅ نجحت كل الاختبارات'));
+process.exit(fails.length ? 1 : 0);

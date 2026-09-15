@@ -1,7 +1,12 @@
 // تحويل نصٍّ ملصوق من صفحة قوقل مابز إلى تعليقات مطابقة للعقد.
 // ثلاث صيغ مدعومة، والكشف تلقائي:
 //   1) مُرقَّمة صريحة:  5 | أحمد | قبل شهر  ثم سطر/أسطر النص  ثم فاصل ---
-//   2) لصق خام من صفحة قوقل مابز (تُستنتَج النجوم والتاريخ من الأنماط المعروفة).
+//   2) لصق خام من صفحة قوقل مابز.
+//
+//      ونجومُ قوقل صورةٌ لا نصّ، فالنسخ من الصفحة يخرج **بلا تقييمات** غالبًا.
+//      ولذلك يُرسى التعليق على **تاريخه** حين تغيب نجومه، ويبقى `rating` فارغًا
+//      ولا يُخمَّن: العقد يحتمل التعليق بلا تقييم (`sampleAverage` يصير null)،
+//      والواجهة تقول لك كم تعليقًا بلا تقييم. ورقمٌ مخترَع أسوأ من رقمٍ غائب.
 //   3) JSON جاهز (من مزوّد أو تصدير سابق).
 
 import { emptyReview } from './schema.js';
@@ -20,6 +25,21 @@ const RATING_PATTERNS = [
   /(\d)\s*(?:نجوم|نجمة|نجمتان|نجمتين|star|stars)/i,      // 3 نجوم
 ];
 
+/**
+ * العدد بالكلمات — وقوقل العربي يكتب الواحدة والاثنتين هكذا لا بالأرقام.
+ * وهذه تحديدًا تعليقات الغضب التي يقوم عليها التقرير، فسقوطها يُفقده أثمن ما فيه.
+ */
+const WORD_RATINGS = [
+  [/(?:نجمة|نجمه)\s*(?:واحدة|واحده)?\s*$/i, 1],
+  [/^\s*(?:نجمة|نجمه)\s*(?:واحدة|واحده)/i, 1],
+  [/(?:نجمتان|نجمتين|نجمتا)/i, 2],
+  [/(?:ثلاث|ثلاثة)\s*نجوم/i, 3],
+  [/(?:أربع|اربع|أربعة|اربعة)\s*نجوم/i, 4],
+  [/(?:خمس|خمسة)\s*نجوم/i, 5],
+  [/\bone\s*star\b/i, 1],
+  [/\btwo\s*stars?\b/i, 2],
+];
+
 const STAR_CHARS = /[★☆⭐✩✪✭✮]/g;
 
 /** يستخرج عدد النجوم من سطر، أو null. */
@@ -34,11 +54,22 @@ export function extractRating(line) {
   }
   const filled = (s.match(/[★⭐✪✭]/g) || []).length;
   if (filled >= 1 && filled <= 5 && s.replace(STAR_CHARS, '').trim().length < 30) return filled;
+
+  // الكلمات لا تُقبَل إلا في سطرٍ قصير، لئلا تُقرأ عبارةٌ داخل تعليق تقييمًا.
+  if (s.trim().length <= 30) {
+    for (const [re, n] of WORD_RATINGS) if (re.test(s)) return n;
+  }
   return null;
 }
 
+// أسماء الأشهر كما تكتبها واجهة قوقل العربية بصيغتيها.
+const AR_MONTHS = 'يناير|فبراير|مارس|أبريل|ابريل|مايو|يونيو|يوليو|أغسطس|اغسطس|سبتمبر|أكتوبر|اكتوبر|نوفمبر|ديسمبر'
+  + '|كانون\\s*الثاني|شباط|آذار|اذار|نيسان|أيار|ايار|حزيران|تموز|آب|اب|أيلول|ايلول|تشرين\\s*الأول|تشرين\\s*الثاني|كانون\\s*الأول';
+
 const DATE_PATTERNS = [
   /(?:قبل|منذ)\s+[^\n،.]{1,20}/,                          // قبل شهرين
+  new RegExp(`\\d{1,2}\\s+(?:${AR_MONTHS})\\s+\\d{4}`),         // ١٥ سبتمبر ٢٠٢٦
+  new RegExp(`(?:${AR_MONTHS})\\s+\\d{4}`),                      // سبتمبر ٢٠٢٦
   /\b(?:a|an|\d+)\s+(?:minute|hour|day|week|month|year)s?\s+ago\b/i,
   /\b\d{4}-\d{2}-\d{2}\b/,
   /\b\d{1,2}\/\d{1,2}\/\d{4}\b/,
@@ -53,18 +84,41 @@ export function extractDate(line) {
   return '';
 }
 
-const OWNER_REPLY = /^\s*(?:رد\s*(?:المالك|صاحب\s*العمل|المنشأة)|Response\s*from\s*the\s*owner|ردّ\s*المالك)\s*[:：-]?\s*/i;
+/**
+ * ردّ المالك — وصيغة قوقل الفعلية «الرد من المالك»، وكانت تفوت النمط القديم.
+ *
+ * وفوتُها ليس تجميلًا: الردّ يلتصق بنصّ العميل فيصير اعتذار المالك من كلامه،
+ * ويُحلَّل على أنه رأيه، ويُقتبس منسوبًا إليه. وهو تلويثٌ لا يراه مدقّق السند
+ * لأنه يقع قبله. ويُقبَل بعده تاريخٌ في السطر نفسه («الرد من المالك قبل ٥ أيام»).
+ */
+/** تاريخٌ يتصدّر سطرًا: يُنزع من نصّ الردّ ولا يُعدّ من كلام المالك. */
+const LEADING_DATE = /^\s*(?:(?:قبل|منذ)\s+[^\n،.]{1,20}|(?:a|an|\d+)\s+(?:minute|hour|day|week|month|year)s?\s+ago)\s*[:：-]?\s*/i;
+
+const OWNER_REPLY = new RegExp(
+  '^\\s*(?:'
+  + 'ال?رد{1,2}\\s*(?:من\\s*)?(?:المالك|صاحب\\s*(?:العمل|النشاط)(?:\\s*التجاري)?|المنشأة|الشركة)'
+  + '|ردّ?\\s*(?:من\\s*)?(?:المالك|صاحب\\s*العمل)'
+  + '|Response\\s*from\\s*(?:the\\s*)?owner'
+  + ')\\s*(?:\\(.*?\\))?\\s*[:：-]?\\s*', 'i');   // والتاريخ بعده يتولّاه LEADING_DATE
 
 // أسطر ضجيج شائعة في لصق قوقل مابز.
 const NOISE = [
   /^Local\s*Guide/i, /^مرشد\s*محلي/, /^\d+\s*(?:مراجع|تقييم|review)/i,
-  /^(?:مفيد|Helpful|Share|مشاركة|Like|إعجاب|More|المزيد|إبلاغ|Report)\s*$/i,
+  /^(?:مفيد|Helpful|Share|مشاركة|شارك|Like|إعجاب|أعجبني|اعجبني|تم\s*الإعجاب|More|المزيد|إبلاغ|Report)\s*$/i,
+  /^(?:ترجمة|الترجمة|عرض\s*الترجمة|ترجمة\s*إلى\s*العربية|Translate|See\s*translation|Translated\s*by\s*Google)\s*$/i,
+  /^\(?(?:تمت\s*الترجمة\s*بواسطة\s*Google|النص\s*الأصلي)\)?\s*$/i,
+  /^(?:رد|الرد|Reply)\s*$/i,
   /^\s*·\s*$/, /^صور?\s*$/, /^\d+\s*صور?\s*$/i, /^Photos?$/i,
   /^See\s*(?:more|less)$/i, /^عرض\s*(?:المزيد|أقل)$/,
   /^New$/i, /^جديد$/,
 ];
 
-const isNoise = (l) => NOISE.some((re) => re.test(l.trim()));
+// الأرقام تُطبَّع قبل الفحص: «٣ مراجعات» بأرقام قوقل العربية كانت تفوت النمط،
+// فتُعامَل سطرًا ذا معنًى، فتصير اسمَ كاتب التعليق التالي.
+const isNoise = (l) => {
+  const t = normalizeDigits(l.trim());
+  return NOISE.some((re) => re.test(t));
+};
 
 /** الصيغة 1: أسطر رأس مفصولة بـ | ثم نص ثم فاصل. */
 function parseStructured(raw) {
@@ -106,6 +160,7 @@ function parseLoose(raw) {
   const out = [];
   let current = null;
   let prevLine = '';
+  let replyOpen = false;   // هل نحن داخل ردّ المالك؟
 
   const flush = () => {
     if (current) {
@@ -117,21 +172,33 @@ function parseLoose(raw) {
 
   for (const line of lines) {
     const t = line.trim();
-    if (!t) { prevLine = ''; continue; }
+    if (!t) { prevLine = ''; replyOpen = false; continue; }   // الفراغ يفصل بين تعليقين
     if (isNoise(t)) continue;  // لا يُحدَّث prevLine: اسم الكاتب قد يسبق سطر الضجيج.
 
     const rating = extractRating(t);
-    const looksLikeHeader = rating !== null && t.replace(STAR_CHARS, '').replace(/[\d\s\/.,]/g, '').length < 40;
+    const ratingHeader = rating !== null && t.replace(STAR_CHARS, '').replace(/[\d\s\/.,]/g, '').length < 40;
 
-    if (looksLikeHeader) {
+    // سطرُ تاريخٍ قائم بذاته: مرساة التعليق حين لا نجوم — وهي الحال الغالبة.
+    const dateOnly = (() => {
+      if (ratingHeader || t.length > 30) return false;
+      const d = extractDate(t);
+      if (!d) return false;
+      return t.replace(d, '').replace(/[|·•\-—,،\s]/g, '').length === 0;
+    })();
+
+    // ويبدأ تعليقًا جديدًا إن لم يكن تاريخَ التعليق المفتوح نفسه.
+    const dateHeader = dateOnly && (!current || (current.date && current.text));
+
+    if (ratingHeader || dateHeader) {
       // اسم الكاتب غالبًا السطر السابق مباشرةً، وقد يكون التُقط خطأً في نصّ التعليق السابق.
       const author = (prevLine && prevLine.length <= 40 && extractRating(prevLine) === null) ? prevLine : '';
       if (author && current && current.text.trimEnd().endsWith(author)) {
         current.text = current.text.trimEnd().slice(0, -author.length).trimEnd();
       }
       flush();
+      replyOpen = false;
       current = emptyReview();
-      current.rating = rating;
+      current.rating = rating;          // يبقى null إن لم يرد — ولا يُخمَّن
       current.date = extractDate(t);
       current.author = author;
       prevLine = t;
@@ -140,8 +207,14 @@ function parseLoose(raw) {
 
     if (!current) { prevLine = t; continue; }
 
-    if (OWNER_REPLY.test(t)) { current.ownerReply = t.replace(OWNER_REPLY, '').trim(); prevLine = t; continue; }
-    if (current.ownerReply) { current.ownerReply += '\n' + t; prevLine = t; continue; }
+    if (OWNER_REPLY.test(t)) {
+      // «الرد من المالك قبل ٥ أيام» — التاريخ من بيانات الردّ لا من كلامه.
+      current.ownerReply = t.replace(OWNER_REPLY, '').replace(LEADING_DATE, '').trim();
+      replyOpen = true;
+      prevLine = t;
+      continue;
+    }
+    if (replyOpen) { current.ownerReply += (current.ownerReply ? '\n' : '') + t; prevLine = t; continue; }
 
     if (!current.date) {
       const d = extractDate(t);

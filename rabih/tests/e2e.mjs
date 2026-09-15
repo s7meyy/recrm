@@ -266,6 +266,33 @@ try {
   await page.waitForTimeout(700);
   (await page.textContent('#parse-info')).includes('10') ? ok('استُعيدت العيّنة الأصلية') : bad('استعادة العيّنة');
 
+  console.log('٤-أ) اللصق الواقعي من صفحة قوقل (بلا نجوم)');
+  // ما يُنسَخ فعلًا من الصفحة: بلا نجوم، وفيه ضجيج قوقل وردّ المالك.
+  const RAW_GOOGLE = ['سلطان القحطاني', 'Local Guide · ٣١ مراجعة', 'قبل أسبوعين', 'جديد',
+    'المكان ممتاز والقهوة على مستوى عالٍ، لكن المواقف قليلة.', 'المزيد', 'أعجبني', 'مشاركة',
+    'الرد من المالك قبل ٣ أيام', 'شكرًا لك، نعمل على ترتيب مواقف إضافية.', '',
+    'هند العتيبي', '٧ مراجعات', 'قبل شهر', 'الخدمة بطيئة والطلب تأخر كثيرًا.', 'أعجبني'].join('\n');
+  await page.fill('#d-reviews', RAW_GOOGLE);
+  await page.click('#btn-parse');
+  await page.waitForTimeout(900);
+  const rawInfo = await page.textContent('#parse-info');
+  /2 تعليقًا/.test(rawInfo) ? ok('لصقٌ بلا نجوم يُعطي تعليقين: ' + rawInfo.trim()) : bad('اللصق الواقعي', rawInfo);
+  const rawMsg = await page.textContent('#parse-msg');
+  rawMsg.includes('لا تقييم في أيٍّ منها') ? ok('غياب التقييم يُعلَن ولا يُخمَّن') : bad('إعلان غياب التقييم', rawMsg.replace(/\s+/g, ' ').slice(0, 120));
+  const clean = await page.evaluate(() => {
+    const t = document.querySelector('#topics-box')?.innerText || '';
+    return { topics: t.length, park: /مواقف/.test(t) };
+  });
+  clean.park ? ok('المواضيع تُستخرج من نصوص بلا تقييم (المواقف رُصدت)') : bad('مواضيع بلا تقييم', JSON.stringify(clean));
+  const replies = await page.textContent('#replies-box');
+  /1|واحد/.test(replies) ? ok('ردّ المالك أُحصي في تحليل الردود') : bad('إحصاء الردود', replies.replace(/\s+/g, ' ').slice(0, 90));
+
+  // تُعاد العيّنة الأصلية: ما بعدها يقوم عليها.
+  await page.fill('#d-reviews', paste);
+  await page.click('#btn-parse');
+  await page.waitForTimeout(900);
+  /10 تعليقًا/.test(await page.textContent('#parse-info')) ? ok('عادت العيّنة الأصلية كاملة') : bad('استعادة العيّنة', await page.textContent('#parse-info'));
+
   console.log('٥) خط النماذج');
   await page.click('#btn-to-pipeline');
   await page.waitForTimeout(400);
