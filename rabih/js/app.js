@@ -15,6 +15,8 @@ import { comparablePlaces, timeline, competitors, benchmark } from './compare.js
 import { extractTasks, mergeTasks, progress, planMarkdown, defaultDue, STATUS } from './plan.js';
 import { TEMPLATES, DEFAULT_TEMPLATE, applyTemplate, droppedSections } from './templates.js';
 import { buildXlsx, jobSheets, archiveSheet } from './export.js';
+import { recentVsOlder, monthly, alerts as recencyAlerts, topicAges } from './recency.js';
+import * as safe from './persist.js';
 import { newId, saveJob, getJob, allJobs, deleteJob, buildTree, jobPath } from './store.js';
 
 const $  = (s, r = document) => r.querySelector(s);
@@ -286,6 +288,7 @@ function loadDataView() {
   $('#d-notes').value = p.notes || '';
   $('#d-reviews').value = job.rawPaste || '';
   renderParseStats();
+  renderRecency();
   renderTopics();
   renderAnomaly();
   renderPhotoChips();
@@ -350,6 +353,7 @@ function doParse() {
   else message('#parse-msg', 'ok', `استُخرج ${reviews.length} تعليقًا بنجاح.`);
 
   renderParseStats();
+  renderRecency();
   renderTopics();
   renderAnomaly();
   scheduleSave();
@@ -379,6 +383,44 @@ function renderTopics() {
     <div class="topics-chart">${bars}</div>
     ${worst.length ? `<p class="fine">أبرز الشكاوى: ${worst.map((t) => `<b>${t.name}</b> (${t.neg})`).join(' · ')}</p>` : ''}
     ${miss.length ? `<p class="fine">لم يصنّف القاموس ${miss.length} تعليقًا (${miss.join('، ')}) — اقرأها بنفسك، فقد ينقص القاموس لا التعليق.</p>` : ''}`;
+}
+
+/** القراءة الزمنية — متوسطٌ عامٌّ قد يخفي انحدارًا حديثًا. */
+function renderRecency() {
+  const box = $('#recency-box');
+  if (!box) return;
+  if (!job.place.reviews.length) { box.innerHTML = ''; return; }
+
+  const r = recentVsOlder(job.place);
+  if (!r.recent.n && !r.older.n) {
+    box.innerHTML = '<p class="fine">لا تواريخ مفهومة في التعليقات — القراءة الزمنية متعذّرة.</p>';
+    return;
+  }
+
+  const warn = recencyAlerts(job.place);
+  const months = monthly(job.place);
+  const max = Math.max(...months.map((m) => m.n), 1);
+  const cls = r.verdict === 'انحدار' ? 'down' : (r.verdict === 'تحسّن' ? 'up' : '');
+
+  const chart = months.length >= 3 ? `<div class="months">${
+    months.map((m) => {
+      const h = Math.max(8, Math.round((m.n / max) * 100));
+      const tone = m.avg === null ? '' : (m.avg >= 4 ? 'up' : (m.avg <= 2.5 ? 'down' : 'mid'));
+      return `<div class="month" title="${m.label}: ${m.n} تعليقًا، متوسط ${m.avg ?? '—'}">
+        <span class="mv">${m.avg ?? '—'}</span><span class="bar ${tone}" style="height:${h}%"></span><span class="ml">${m.label}</span></div>`;
+    }).join('')}</div>` : '';
+
+  const ages = topicAges(job.place).filter((t) => t.state === 'ناشئة' || t.state === 'متفاقمة');
+
+  box.innerHTML = `
+    <div class="stat-grid">
+      <div class="stat"><b>آخر ${r.window} يومًا</b><span>${r.recent.avg ?? '—'}</span><div class="fine">${r.recent.n} تعليقًا${r.recent.neg !== null ? ` · سلبي ${r.recent.neg}%` : ''}</div></div>
+      <div class="stat"><b>ما قبلها</b><span>${r.older.avg ?? '—'}</span><div class="fine">${r.older.n} تعليقًا${r.older.neg !== null ? ` · سلبي ${r.older.neg}%` : ''}</div></div>
+      <div class="stat ${cls}"><b>الحكم</b><span>${r.verdict}</span><div class="fine">${r.diff !== null ? `فرق ${r.diff}` : 'العيّنة الزمنية غير كافية'}</div></div>
+    </div>
+    ${chart}
+    ${warn.length ? `<div class="msg ${r.verdict === 'انحدار' ? 'err' : 'warn'}"><b>إنذارات زمنية</b><ul>${warn.map((a) => `<li>${a}</li>`).join('')}</ul></div>` : ''}
+    ${ages.length ? `<p class="fine">شكاوى نشطة: ${ages.map((t) => `<b>${t.name}</b> (${t.state})`).join(' · ')}</p>` : ''}`;
 }
 
 /** كاشف التعليقات المشبوهة — يرفع إشارة ولا يحذف شيئًا من تلقاء نفسه. */
@@ -412,7 +454,7 @@ function renderAnomaly() {
     if (!removed) { toast('لا تعليق يبلغ هذه الدرجة'); return; }
     if (!confirm(`استبعاد ${removed} تعليقًا من التحليل؟ يبقى اللصق الأصلي كما هو.`)) return;
     job.place.reviews = cleaned.reviews;
-    renderParseStats(); renderTopics(); renderAnomaly();
+    renderParseStats(); renderRecency(); renderTopics(); renderAnomaly();
     scheduleSave();
     toast(`استُبعد ${removed} تعليقًا`);
   });
@@ -1038,6 +1080,60 @@ function jobRow(j) {
   return row;
 }
 
+/* ───────────────────────── حماية الأرشيف ───────────────────────── */
+
+async function renderSafety() {
+  const box = $('#safety-box');
+  if (!box) return;
+  const jobs = await allJobs();
+  const st = await safe.status(jobs.length);
+
+  const lines = [];
+  lines.push(st.persisted
+    ? '<li class="ok-line">التخزين مثبَّت — لن يمسحه المتصفح تلقائيًّا عند ضيق المساحة.</li>'
+    : '<li class="warn-line">التخزين غير مثبَّت — قد يمسحه المتصفح عند ضيق المساحة. اضغط «تثبيت التخزين».</li>');
+
+  if (st.days === null) lines.push(`<li class="warn-line">لم تأخذ نسخة احتياطية قطّ${jobs.length ? ` — وعندك ${jobs.length} تقريرًا.` : '.'}</li>`);
+  else if (st.due) lines.push(`<li class="warn-line">آخر نسخة احتياطية قبل ${st.days} يومًا. خُذ نسخة.</li>`);
+  else lines.push(`<li class="ok-line">آخر نسخة احتياطية قبل ${st.days} يومًا.</li>`);
+
+  const folder = safe.backupFolderName();
+  if (folder) lines.push(`<li class="ok-line">مجلد النسخ: <b>${folder}</b></li>`);
+  else if (safe.canWriteToFolder()) lines.push('<li>لم يُختَر مجلد نسخ — اختره فتصير النسخة بضغطة واحدة.</li>');
+
+  if (st.quota) lines.push(`<li>المستعمَل ${st.quota.used} م.ب من ${st.quota.available} م.ب (${st.quota.pct}%).</li>`);
+
+  const level = st.persisted && !st.due ? 'ok' : 'warn';
+  box.innerHTML = `<div class="msg ${level}"><b>${level === 'ok' ? 'الأرشيف محميّ' : 'الأرشيف غير محميّ بالكامل'}</b><ul>${lines.join('')}</ul></div>`;
+}
+
+function bindSafety() {
+  $('#btn-persist').addEventListener('click', async () => {
+    const ok = await safe.requestPersist();
+    toast(ok ? 'ثُبِّت التخزين' : 'رفض المتصفح التثبيت — خُذ نسخة احتياطية بدلًا منه');
+    renderSafety();
+  });
+
+  $('#btn-backup-folder').addEventListener('click', async () => {
+    const r = await safe.chooseBackupFolder();
+    toast(r.ok ? `مجلد النسخ: ${r.name}` : r.reason);
+    renderSafety();
+  });
+
+  $('#btn-backup-now').addEventListener('click', async () => {
+    const jobs = await allJobs();
+    if (!jobs.length) { toast('الأرشيف فارغ'); return; }
+    if (safe.backupFolderName()) {
+      const r = await safe.writeBackup(jobs);
+      if (r.ok) { toast(`حُفظت النسخة: ${r.file}`); renderSafety(); return; }
+      toast(r.reason + ' — سيُنزَّل الملف بدلًا منه');
+    }
+    download(`rabih-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(jobs, null, 2), 'application/json');
+    safe.markBackup();
+    renderSafety();
+  });
+}
+
 function bindArchiveView() {
   let t = null;
   $('#ar-search').addEventListener('input', (e) => {
@@ -1046,6 +1142,7 @@ function bindArchiveView() {
   });
   $('#btn-export-all').addEventListener('click', async () => {
     const jobs = await allJobs();
+    safe.markBackup();
     download(`rabih-archive-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(jobs, null, 2), 'application/json');
   });
   $('#ar-import').addEventListener('change', async (e) => {
@@ -1077,10 +1174,11 @@ async function boot() {
   bindOutputView();
   bindCompareView();
   bindArchiveView();
+  bindSafety();
 
   $$('[data-go]').forEach((b) => b.addEventListener('click', () => {
     const v = b.dataset.go;
-    if (v === 'archive') renderArchive($('#ar-search').value);
+    if (v === 'archive') { renderArchive($('#ar-search').value); renderSafety(); }
     if (v === 'compare') renderCompare();
     if (v === 'data' && job) loadDataView();
     show(v);

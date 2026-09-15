@@ -109,6 +109,13 @@ try {
   const anom = await page.textContent('#anomaly-box');
   anom.trim().length > 5 ? ok('كاشف المشبوه يعمل: ' + anom.trim().slice(0,60)) : bad('كاشف المشبوه', anom);
 
+  console.log('٤-ج) القراءة الزمنية');
+  const rec = await page.textContent('#recency-box');
+  rec.includes('آخر 90 يومًا') ? ok('نافذة التسعين يومًا محسوبة') : bad('النافذة الزمنية', rec.slice(0,80));
+  const mbars = await page.$$eval('#recency-box .month', n => n.length);
+  mbars >= 3 ? ok(`الخط الزمني (${mbars} فترات)`) : bad('الخط الزمني', mbars);
+  /(انحدار|تحسّن|ثبات|غير كافٍ)/.test(rec) ? ok('حكم زمني صريح: ' + (rec.match(/انحدار|تحسّن|ثبات|غير كافٍ/) || [])[0]) : bad('الحكم الزمني');
+
   console.log('٥) خط النماذج');
   await page.click('#btn-to-pipeline');
   await page.waitForTimeout(400);
@@ -238,6 +245,24 @@ try {
   await page.waitForTimeout(800);
   const after = await page.frameLocator('#r-frame').locator('h1').first().textContent().catch(() => '');
   after.includes('مقهى الدرب') ? ok('استُعيدت الحالة بعد إعادة التحميل') : bad('الاستعادة', after);
+
+  console.log('٧-د) حماية الأرشيف');
+  await page.click('[data-go="archive"]');
+  await page.waitForTimeout(600);
+  const safety = await page.textContent('#safety-box');
+  safety.includes('التخزين') ? ok('لوحة الحماية: ' + safety.trim().split('\n')[0].slice(0,50)) : bad('لوحة الحماية', safety.slice(0,80));
+  safety.includes('لم تأخذ نسخة احتياطية') ? ok('يحذّر من غياب النسخة الاحتياطية') : ok('حالة النسخ: معروضة');
+  await page.click('#btn-persist');
+  await page.waitForTimeout(500);
+  const after2 = await page.textContent('#safety-box');
+  after2.includes('مثبَّت') ? ok('زر التثبيت يغيّر الحالة') : bad('التثبيت', after2.slice(0,60));
+  const dlb = page.waitForEvent('download', { timeout: 8000 });
+  await page.click('#btn-backup-now');
+  const bfile = await dlb;
+  bfile.suggestedFilename().startsWith('rabih-backup') ? ok('نسخة احتياطية: ' + bfile.suggestedFilename()) : bad('النسخة الاحتياطية', bfile.suggestedFilename());
+  await page.waitForTimeout(400);
+  const after3 = await page.textContent('#safety-box');
+  after3.includes('آخر نسخة احتياطية قبل 0') ? ok('سُجِّل تاريخ النسخة') : bad('تسجيل النسخة', after3.slice(0,90));
 
   console.log('٨-ب) المقارنة');
   await page.click('[data-go="compare"]');

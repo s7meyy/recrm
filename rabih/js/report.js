@@ -4,6 +4,7 @@
 
 import { stats } from './schema.js';
 import { topicStats } from './lexicon.js';
+import { recentVsOlder, monthly, alerts, topicAges } from './recency.js';
 
 const esc = (s) => String(s ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -158,6 +159,43 @@ function topicsBlock(place) {
   </section>`;
 }
 
+function recencyBlock(place) {
+  const r = recentVsOlder(place);
+  const months = monthly(place);
+  const warn = alerts(place);
+  if (!r.recent.n && !r.older.n) return '';
+
+  const cls = r.verdict === 'انحدار' ? 'down' : (r.verdict === 'تحسّن' ? 'up' : 'flat');
+  const max = Math.max(...months.map((m) => m.n), 1);
+
+  const chart = months.length >= 3 ? `<div class="months">${
+    months.map((m) => {
+      const h = Math.max(6, Math.round((m.n / max) * 100));
+      const tone = m.avg === null ? 'flat' : (m.avg >= 4 ? 'up' : (m.avg <= 2.5 ? 'down' : 'mid'));
+      return `<div class="month"><span class="bar ${tone}" style="height:${h}%"></span>
+        <span class="mv">${m.avg ?? '—'}</span><span class="ml">${esc(m.label)}</span></div>`;
+    }).join('')
+  }</div>` : '';
+
+  const ages = topicAges(place).filter((t) => t.state !== 'قديمة');
+  const ageRows = ages.length ? `<table><thead><tr><th>الشكوى</th><th>الحال</th><th>حديثة</th><th>قديمة</th></tr></thead><tbody>${
+    ages.map((t) => `<tr><td>${esc(t.name)}</td><td>${esc(t.state)}</td><td>${t.recentNeg}</td><td>${t.olderNeg}</td></tr>`).join('')
+  }</tbody></table>` : '';
+
+  return `<section class="recency">
+    <h2 class="no-count">القراءة الزمنية</h2>
+    <div class="rec-grid">
+      <div class="rec-cell"><b>آخر ${r.window} يومًا</b><span>${r.recent.avg ?? '—'}</span><small>${r.recent.n} تعليقًا${r.recent.neg !== null ? ` · سلبي ${r.recent.neg}%` : ''}</small></div>
+      <div class="rec-cell"><b>ما قبلها</b><span>${r.older.avg ?? '—'}</span><small>${r.older.n} تعليقًا${r.older.neg !== null ? ` · سلبي ${r.older.neg}%` : ''}</small></div>
+      <div class="rec-cell ${cls}"><b>الحكم</b><span>${esc(r.verdict)}</span><small>${r.diff !== null ? `فرق ${r.diff}` : 'العيّنة الزمنية غير كافية'}</small></div>
+    </div>
+    ${chart}
+    ${warn.length ? `<div class="alerts"><b>إنذارات</b><ul>${warn.map((a) => `<li>${esc(a)}</li>`).join('')}</ul></div>` : ''}
+    ${ageRows}
+    ${r.undated ? `<p class="fine">${r.undated} تعليقًا بلا تاريخ مفهوم لم يدخل هذه القراءة.</p>` : ''}
+  </section>`;
+}
+
 function photosBlock(photos = []) {
   const valid = photos.filter((p) => p?.url);
   if (!valid.length) return '';
@@ -223,6 +261,23 @@ code{background:#f3f5f8;padding:0 1mm;border-radius:3px;font-size:10pt}
 .bar-track{background:#eef1f5;border-radius:3px;height:5mm;overflow:hidden}
 .bar-fill{display:block;height:100%;background:linear-gradient(90deg,var(--navy),#3a6ea5)}
 .bar-value{font-size:10pt;color:var(--muted);text-align:left}
+.recency{break-inside:avoid;margin:8mm 0}
+.rec-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:4mm;margin:4mm 0}
+.rec-cell{border:1px solid var(--line);border-radius:6px;padding:3mm 4mm;text-align:center}
+.rec-cell b{display:block;font-size:9pt;color:var(--muted);font-weight:600}
+.rec-cell span{display:block;font-size:16pt;font-weight:700;color:var(--navy);line-height:1.5}
+.rec-cell small{font-size:8.5pt;color:var(--muted)}
+.rec-cell.down{border-color:#e2b7ab;background:#fdf6f4}.rec-cell.down span{color:#b5462f}
+.rec-cell.up{border-color:#b7d9c4;background:#f4fbf7}.rec-cell.up span{color:#2f7d55}
+.months{display:flex;align-items:flex-end;gap:2mm;height:34mm;margin:5mm 0 2mm;padding-bottom:12mm;position:relative}
+.month{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;position:relative}
+.month .bar{width:100%;border-radius:2px 2px 0 0;background:#8fa3b8}
+.month .bar.up{background:#2f7d55}.month .bar.down{background:#b5462f}.month .bar.mid{background:#b98b2a}
+.month .mv{font-size:8.5pt;color:var(--navy);margin-top:1mm}
+.month .ml{position:absolute;bottom:-11mm;font-size:7.5pt;color:var(--muted);white-space:nowrap;transform:rotate(-45deg);transform-origin:top right}
+.alerts{border-inline-start:3px solid #b5462f;background:#fdf6f4;padding:3mm 5mm;border-radius:0 6px 6px 0;margin:4mm 0}
+.alerts b{color:#b5462f;font-size:10.5pt}
+.alerts ul{margin:2mm 0 0;padding-inline-start:6mm;font-size:10pt}
 .topics{break-inside:avoid;margin:8mm 0}
 .topics-chart{display:flex;flex-direction:column;gap:2mm;margin:4mm 0}
 .topic-row{display:grid;grid-template-columns:52mm 1fr 10mm;align-items:center;gap:3mm}
@@ -261,7 +316,7 @@ figcaption{font-size:9pt;color:var(--muted);margin-top:1mm;text-align:center}
  * @returns {string} HTML كامل مكتفٍ بذاته
  */
 export function buildReportHtml({ place, ctx = {}, markdown = '', photos = [], show = {}, font = null }) {
-  const opt = { toc: true, stars: true, topics: true, photos: true, ...show };
+  const opt = { toc: true, stars: true, topics: true, photos: true, recency: true, ...show };
   const s = stats(place);
   const body = tocFrom(mdToHtml(markdown));
   const date = new Date().toLocaleDateString('ar-SA-u-ca-gregory');
@@ -300,6 +355,7 @@ ${cover}
 <main class="body">
 ${opt.toc ? body.toc : ''}
 ${opt.stars ? starBars(place) : ''}
+${opt.recency ? recencyBlock(place) : ''}
 ${opt.topics ? topicsBlock(place) : ''}
 ${body.html}
 ${opt.photos ? photosBlock(photos) : ''}

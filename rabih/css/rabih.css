@@ -195,3 +195,19 @@ table.mini.plan .btn.sm{padding:1px 8px}
 .chg.bad b{color:var(--err)}
 table.mini tr.me td,table.mini th.me,table.mini td.me{background:#fdfaf1;font-weight:600}
 h3.sub{font-size:14px;color:var(--navy);margin:16px 0 6px}
+
+/* القراءة الزمنية */
+.months{display:flex;align-items:flex-end;gap:4px;height:120px;margin:14px 0 34px;padding-bottom:0}
+.month{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;position:relative;min-width:0}
+.month .bar{width:100%;max-width:38px;border-radius:3px 3px 0 0;background:#8fa3b8}
+.month .bar.up{background:#2f7d55}.month .bar.down{background:#b5462f}.month .bar.mid{background:#b98b2a}
+.month .mv{font-size:11px;color:var(--navy);margin-bottom:3px}
+.month .ml{position:absolute;bottom:-30px;font-size:10.5px;color:var(--muted);white-space:nowrap;transform:rotate(-40deg);transform-origin:top right}
+.stat.down{border-color:#eccaca;background:#fdf6f6}.stat.down span{color:var(--err)}
+.stat.up{border-color:#bfe0cd;background:#f4fbf7}.stat.up span{color:var(--ok)}
+
+/* حماية الأرشيف */
+#safety-box ul{margin:6px 0 0;padding-inline-start:18px}
+#safety-box li{margin-bottom:3px}
+.ok-line{color:var(--ok)}
+.warn-line{color:var(--warn);font-weight:600}

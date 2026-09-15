@@ -5,17 +5,17 @@ export const TEMPLATES = {
   full: {
     id: 'full', name: 'كامل', note: 'كل الأقسام، مع المواضيع وتوزيع النجوم والصور — للأرشفة والعرض الرسمي.',
     sections: null,            // null = كل شيء
-    show: { toc: true, stars: true, topics: true, photos: true, quotes: true },
+    show: { toc: true, stars: true, topics: true, photos: true, recency: true, quotes: true },
   },
   exec: {
     id: 'exec', name: 'تنفيذي', note: 'الخلاصة والأرقام والشكاوى والتوصيات فقط — صفحتان لصاحب القرار.',
-    sections: [/خلاص|تنفيذي/, /أرقام|قراءة/, /ضعف|شكاو/, /توصي|خطة/],
-    show: { toc: false, stars: true, topics: true, photos: false, quotes: false },
+    sections: [/خلاص|تنفيذي/, /أرقام|قراءة/, /ضعف|شكاو/, /زمن|اتجاه/, /توصي|خطة/],
+    show: { toc: false, stars: true, topics: true, photos: false, recency: true, quotes: false },
   },
   brief: {
     id: 'brief', name: 'صفحة واحدة', note: 'الخلاصة وأبرز الشكاوى والتوصيات — صالح للإرسال في محادثة.',
     sections: [/خلاص|تنفيذي/, /توصي|خطة/],
-    show: { toc: false, stars: true, topics: false, photos: false, quotes: false },
+    show: { toc: false, stars: true, topics: false, photos: false, recency: true, quotes: false },
   },
 };
 

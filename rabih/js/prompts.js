@@ -4,6 +4,7 @@
 
 import { stats } from './schema.js';
 import { topicStats, uncovered } from './lexicon.js';
+import { recentVsOlder, topicAges, alerts, monthly } from './recency.js';
 import { categoryById } from './data/categories.js';
 
 /** ميثاق ثابت يتصدّر كل رسالة — هو خط الدفاع الأول ضد الاختراع والهلوسة. */
@@ -59,6 +60,35 @@ export function buildDataBlock(place, ctx = {}) {
     }
     const miss = uncovered(place);
     if (miss.length) lines.push(`\nتعليقات لم يصنّفها القاموس، اقرأها بنفسك ولا تُهملها: ${miss.join('، ')}`);
+  }
+
+  // الحداثة: متوسطٌ عامٌّ قد يخفي انحدارًا حديثًا، فيُسلَّم الفرق محسوبًا.
+  const rec = recentVsOlder(place);
+  if (rec.recent.n || rec.older.n) {
+    lines.push('\n## القراءة الزمنية (نهائية — محسوبة من تواريخ التعليقات)');
+    lines.push(`- آخر ${rec.window} يومًا: ${rec.recent.n} تعليقًا، متوسط ${rec.recent.avg ?? 'غير متوفّر'}${rec.recent.neg !== null ? `، نسبة السلبي ${rec.recent.neg}%` : ''}`);
+    lines.push(`- ما قبلها: ${rec.older.n} تعليقًا، متوسط ${rec.older.avg ?? 'غير متوفّر'}${rec.older.neg !== null ? `، نسبة السلبي ${rec.older.neg}%` : ''}`);
+    lines.push(`- الحكم: ${rec.verdict}${rec.diff !== null ? ` (فرق ${rec.diff})` : ''}`);
+    if (rec.undated) lines.push(`- ${rec.undated} تعليقًا بلا تاريخ مفهوم، فلم يدخل هذه القراءة.`);
+
+    const months = monthly(place);
+    if (months.length >= 3) {
+      lines.push('\n| الفترة | عدد التعليقات | المتوسط | السلبي |');
+      lines.push('|---|---|---|---|');
+      for (const m of months) lines.push(`| ${m.label} | ${m.n} | ${m.avg ?? '—'} | ${m.neg} |`);
+    }
+
+    const ages = topicAges(place).filter((t) => t.state !== 'قديمة');
+    if (ages.length) {
+      lines.push('\n### حال الشكاوى اليوم');
+      for (const t of ages) lines.push(`- ${t.name}: ${t.state} — ${t.recentNeg} حديثة، ${t.olderNeg} قديمة`);
+    }
+  }
+
+  const warn = alerts(place);
+  if (warn.length) {
+    lines.push('\n## إنذارات زمنية مرصودة آليًّا (اذكرها في التقرير ولا تتجاهلها)');
+    warn.forEach((a) => lines.push(`- ${a}`));
   }
 
   if (place.qna?.length) {
@@ -185,7 +215,7 @@ ${hints}
 3. **نقاط القوة** — مرتّبة حسب تكرارها في التعليقات، مع عدد مرات الورود ومعرّفاتها.
 4. **نقاط الضعف والشكاوى** — مرتّبة من الأكثر تكرارًا إلى الأقل، ولكل شكوى: عدد مرات ورودها، ومعرّفاتها، وهل هي متكررة أم حالة فردية.
 5. **تحليل بحسب المحاور** أعلاه — محورًا محورًا، بحكم مسنود لكل واحد، و«غير متوفّر في البيانات» لما لم يُذكر.
-6. **الاتجاه الزمني** — هل تتحسن الشكاوى أم تتفاقم بحسب تواريخ التعليقات؟ وإن كانت التواريخ غير كافية للحكم فقل ذلك صراحةً.
+6. **الاتجاه الزمني** — ابنِ هذا القسم على «القراءة الزمنية» و«الإنذارات الزمنية» المرفقة: قارن آخر ٩٠ يومًا بما قبلها، وميّز الشكوى الناشئة من المتفاقمة من القديمة المنتهية. وإن كانت التواريخ غير كافية فقل ذلك صراحةً ولا تخمّن.
 7. **تعامل المنشأة مع التعليقات** — تحليل ردود المالك: نسبتها، ونبرتها، وهل تعالج الشكوى أم تكتفي بالاعتذار.
 8. **أثر ذلك على العميل الجديد** — ما الانطباع الذي يخرج به من يقرأ هذه الصفحة على قوقل قبل الزيارة.
 9. **توصيات تنفيذية** — من ٦ إلى ١٠ توصيات، كل واحدة: (أ) مرتبطة بشكوى محددة بمعرّفها، (ب) قابلة للتنفيذ خلال ٣٠ يومًا، (ج) مصحوبة بمؤشر قياس يُعرَف به نجاحها.

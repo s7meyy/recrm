@@ -130,6 +130,7 @@
       </div>
       <div id="parse-msg"></div>
       <div class="stat-grid" id="parse-stats" hidden></div>
+      <div id="recency-box"></div>
       <div id="topics-box"></div>
     </div>
 
@@ -267,6 +268,17 @@
 
   <!-- الأرشيف -->
   <section class="view" id="view-archive" hidden>
+    <div class="card" id="safety-card">
+      <h2>حماية الأرشيف</h2>
+      <p class="hint">تقاريرك محفوظة داخل متصفحك وحده. المتصفح قد يمسحها عند ضيق المساحة، و«مسح بيانات التصفح» يمحوها.</p>
+      <div id="safety-box"></div>
+      <div class="row">
+        <button type="button" class="btn ghost sm" id="btn-persist">تثبيت التخزين</button>
+        <button type="button" class="btn ghost sm" id="btn-backup-folder">اختيار مجلد نسخ احتياطي</button>
+        <button type="button" class="btn ghost sm" id="btn-backup-now">نسخة احتياطية الآن</button>
+      </div>
+    </div>
+
     <div class="card">
       <h2>الأرشيف</h2>
       <p class="hint">كل التقارير محفوظة في متصفحك، مرتّبة: المنطقة ← المدينة ← التصنيف ← الحي.</p>
