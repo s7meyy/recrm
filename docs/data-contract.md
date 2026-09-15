@@ -2612,13 +2612,20 @@ GitHub هو من ينشر، بمفتاحٍ تملكه أنت، **فلا يبقى
 | `concurrency` يلغي النشرة السابقة | دفعتان متلاحقتان: الأحدث تكفي |
 | `workflow_dispatch` | زرّ يدوي يعيد النشر بلا دفع جديد |
 
-### ما عليك فعله مرّة واحدة
+### ما عليك فعله مرّة واحدة — **سرٌّ واحد**
 
 1. **Netlify** ← صورتك ← User settings ← Applications ← Personal access tokens ← New token، وانسخه.
-2. **GitHub** ← المستودع ← Settings ← Secrets and variables ← Actions ← New repository secret:
-   - `NETLIFY_AUTH_TOKEN` = التوكن.
-   - `NETLIFY_SITE_ID` = `8fab1119-ac3c-4473-8fea-ea61abab8ab6`
+2. **GitHub** ← المستودع ← Settings ← Secrets and variables ← **Actions** ← تبويب **Secrets**
+   ← **New repository secret**: الاسم `NETLIFY_AUTH_TOKEN` والقيمة التوكن.
 3. تبويب **Actions** ← «نشر إلى Netlify» ← Run workflow (أو ادفع أي تعديل).
+
+**ومعرّف المشروع مكتوب في الملف صراحةً لأنه ليس سرًّا** — يظهر في رابط لوحة Netlify نفسها،
+ولا يفعل به أحدٌ شيئًا بلا التوكن. وإخفاؤه كان يضاعف مواضع الخطأ بلا فائدة.
+
+> **أشيع ثلاثة أخطاء** (والفحص صار يسمّيها في السجل بدل «ناقص»):
+> ١) التبويب **Variables** بدل **Secrets** — وهما في الصفحة نفسها.
+> ٢) تبويب **Codespaces** أو **Dependabot** بدل **Actions**.
+> ٣) **Environment secret** بدل **Repository secret** — الأول لا تراه الوظيفة ما لم تُعلن بيئتها.
 
 **وبديلٌ أبسط إن فضّلته:** Netlify ← المشروع ← Build & deploy ← Continuous deployment ←
 أعد ربط المستودع؛ فيُعاد تركيب الخطّاف ويعود البناء التلقائي. والمساران لا يتعارضان،

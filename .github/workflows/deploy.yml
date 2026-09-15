@@ -6,9 +6,11 @@
 #
 # **يحتاج سرَّين في المستودع** (Settings ← Secrets and variables ← Actions ← New secret):
 #   NETLIFY_AUTH_TOKEN  من Netlify: User settings ← Applications ← Personal access tokens
-#   NETLIFY_SITE_ID     8fab1119-ac3c-4473-8fea-ea61abab8ab6
 #
-# وما لم يُضبطا **لا يفشل الدفع بصمت**: الخطوة تتوقف برسالة تقول أيّهما ناقص.
+# **سرٌّ واحد فقط.** ومعرّف المشروع مكتوب هنا صراحةً لأنه **ليس سرًّا**: يظهر في رابط لوحة
+# Netlify نفسها، ولا يفعل به أحدٌ شيئًا بلا التوكن. فإخفاؤه كان يضاعف فرص الخطأ بلا فائدة.
+#
+# وما لم يُضبط التوكن **لا يفشل الدفع بصمت**: الخطوة تقف وتشخّص الخطأ الشائع بعينه.
 
 name: نشر إلى Netlify
 
@@ -31,18 +33,24 @@ jobs:
         with:
           node-version: '20'
 
-      - name: تحقّق من المفاتيح
+      # الفحص يشخّص الخطأ الشائع لا يكتفي بقول «ناقص»: أشيع سببٍ أن يوضع المفتاح في تبويب
+      # Variables أو Codespaces أو Dependabot بدل Secrets ← Actions، وحينها تبدو الإضافة
+      # ناجحة والنشر يفشل بلا سبب ظاهر. فنقرأ Variables أيضًا كي نسمّي الخطأ بعينه.
+      - name: تحقّق من التوكن
         env:
           TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-          SITE: ${{ secrets.NETLIFY_SITE_ID }}
+          TOKEN_AS_VAR: ${{ vars.NETLIFY_AUTH_TOKEN }}
         run: |
-          missing=""
-          [ -z "$TOKEN" ] && missing="$missing NETLIFY_AUTH_TOKEN"
-          [ -z "$SITE" ] && missing="$missing NETLIFY_SITE_ID"
-          if [ -n "$missing" ]; then
-            echo "::error::ينقص سرّ المستودع:$missing — أضفه في Settings ← Secrets and variables ← Actions"
+          if [ -n "$TOKEN" ]; then
+            echo "التوكن موجود (${#TOKEN} حرفًا) — نُكمل."
+            exit 0
+          fi
+          if [ -n "$TOKEN_AS_VAR" ]; then
+            echo "::error::NETLIFY_AUTH_TOKEN موضوع في تبويب Variables لا Secrets. احذفه من Variables وأضفه في: Settings ← Secrets and variables ← Actions ← تبويب Secrets ← New repository secret."
             exit 1
           fi
+          echo "::error::NETLIFY_AUTH_TOKEN غير موجود. تأكّد من ثلاثة: (١) التبويب Secrets لا Variables ولا Codespaces ولا Dependabot. (٢) النوع Repository secret لا Environment secret. (٣) الاسم بحروف كبيرة تمامًا: NETLIFY_AUTH_TOKEN"
+          exit 1
 
       # لا ملف قفل في المستودع (التطبيق بلا أداة بناء، والتبعيتان للدوال وحدها)،
       # فـ`npm install` هو الصحيح هنا لا `npm ci`.
@@ -54,7 +62,8 @@ jobs:
       - name: نشر
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+          # المعرّف ثابت ومعلن؛ ويبقى السرّ إن وُجد غالبًا عليه (لمن ينقل المشروع لاحقًا).
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID || '8fab1119-ac3c-4473-8fea-ea61abab8ab6' }}
           COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
           npx -y netlify-cli@latest deploy --prod --no-build \
