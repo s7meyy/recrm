@@ -151,6 +151,14 @@ const PREPARE = {
       ...phoneSearchForms(rec.advertiserPhone),
     ]);
   },
+  showings(rec) {
+    rec.notes = trim(rec.notes);
+    // «تمّت» بلا انطباع حالةٌ مشروعة (تُسأل لاحقًا)، لكن الانطباع بلا «تمّت» تناقض:
+    // لا رأي لمن لم يعاين. فتسجيل الانطباع يرفع الحالة إلى «تمّت» بدل أن يُردّ بخطأ.
+    if (rec.impression && rec.status === 'scheduled') rec.status = 'done';
+    if (rec.impression !== 'disliked') rec.reason = rec.reason || null;
+    rec.searchKey = buildSearchKey([rec.notes]);
+  },
   deals(rec) {
     rec.finalPrice = toNumberOrNull(rec.finalPrice);
     rec.commission = toNumberOrNull(rec.commission);
@@ -266,6 +274,12 @@ const VALIDATE = {
   },
   externalListings(rec, errors) {
     if (!inEnum(ENUMS.externalStatuses, rec.status)) errors.push('حالة العرض الخارجي غير معروفة');
+  },
+  showings(rec, errors) {
+    if (!rec.clientId) errors.push('المعاينة بلا عميل');
+    if (!rec.propertyId && !rec.externalId) errors.push('المعاينة بلا عقار');
+    if (!inEnum(ENUMS.showingStatuses, rec.status)) errors.push('حالة المعاينة غير معروفة');
+    if (rec.impression && !inEnum(ENUMS.showingImpressions, rec.impression)) errors.push('الانطباع غير معروف');
   },
   deals(rec, errors) {
     // نصيب الشريك أكبر من العمولة يجعل صافيك سالبًا — خطأ إدخال غالبًا (المرحلة ٢٤).
@@ -852,6 +866,7 @@ export const repo = {
   trash,
   expenses: makeEntity('expenses'),
   audio: makeEntity('audio'), // الملاحظات الصوتية (المرحلة ٢٦)
+  showings: makeEntity('showings'), // المعاينات (المرحلة ٢٧)
 
   /** وصول خام للمخازن (النسخ الاحتياطي والبيانات التجريبية). */
   raw: {

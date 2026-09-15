@@ -11,6 +11,7 @@ import { tourStats } from './tours.js';
 import { buildPriceIndex } from '../util/price-stats.js';
 import { conversionFunnel } from '../util/funnel.js';
 import { sourceReport, propertyProfit } from '../util/sources.js';
+import { showingStats } from '../util/showings.js';
 import { el, clear, badge } from '../util/dom.js';
 import { formatNumber, formatSAR, daysBetween, relativeDays, countWord } from '../util/format.js';
 import { formatPhone, toInternational } from '../util/phone.js';
@@ -28,10 +29,11 @@ async function loadData() {
     repo.externalListings.list(), repo.deals.list(), getLists(), getCompleteness(), getFollowUpSettings(), repo.tasks.list(),
     repo.invoices.list(), repo.expenses.list(), repo.requests.list(),
   ]);
+  const showings = await repo.showings.list(); // المعاينات (المرحلة ٢٧)
   const approved = properties.filter((p) => p.captureStatus === 'approved');
   const clientMap = new Map(clients.map((c) => [c.id, c]));
   const dealPropertyIds = new Set(deals.map((d) => d.propertyId).filter(Boolean));
-  return { clients, properties, approved, tours, matches, externals, deals, lists, completeness, followUp, tasks, invoices, expenses, requests, clientMap, dealPropertyIds };
+  return { clients, properties, approved, tours, matches, externals, deals, lists, completeness, followUp, tasks, invoices, expenses, requests, showings, clientMap, dealPropertyIds };
 }
 
 /* ===== أدوات تجميع عامة ===== */
@@ -131,7 +133,7 @@ function statChip(value, label) {
 }
 
 function buildLayout(container, data) {
-  const { clients, properties, approved, tours, matches, externals, deals, lists, completeness, followUp, tasks, invoices, expenses, requests, clientMap, dealPropertyIds } = data;
+  const { clients, properties, approved, tours, matches, externals, deals, lists, completeness, followUp, tasks, invoices, expenses, requests, showings, clientMap, dealPropertyIds } = data;
   clear(container);
 
   const pending = properties.filter((p) => p.captureStatus !== 'approved').length;
@@ -225,6 +227,9 @@ function buildLayout(container, data) {
   grid.append(panel('أين تضيع: قمع التحويل', null, ...funnelSection({ requests, matches })));
   grid.append(panel('لماذا تضيع الصفقات', null, ...rejectSection(matches)));
 
+  /* المعاينات ونسبتها إلى الصفقات (المرحلة ٢٧) */
+  grid.append(panel('المعاينات', 'الموعد الذي يصير صفقة — والذي لا يصير.', ...showingSection({ showings, deals })));
+
   /* من أين يأتي المال، وأي عقار يستحق جهدك (المرحلة ٢٤) */
   grid.append(panel('مصادر العملاء', 'أي مصدرٍ أعطاك صفقات لا مجرد أسماء.', ...sourceSection({ clients, requests, deals })));
   grid.append(panel('ربحية العقارات', 'العمولة الصافية ناقص ما صُرف على العقار.', ...propertySection({ properties, deals, expenses, lists })));
@@ -246,6 +251,37 @@ function buildLayout(container, data) {
  * مؤشرات المستندات المالية: الفواتير وعروض الأسعار منفصلان (عرض السعر ليس إيرادًا).
  * الإجمالي يُحسب من البنود لحظة العرض بـinvoiceTotal — لا مجموع مخزَّن (القسم ١٦).
  */
+/**
+ * المعاينات (المرحلة ٢٧): وحدتها **المعاينة** لا الطلب، ولذلك هي لوحة مستقلة لا مرحلة في
+ * القمع — القمع كل مراحله بالطلب وكل مرحلة مجموعة جزئية مما قبلها، والمعاينة تكسر الشرطين.
+ */
+function showingSection({ showings, deals }) {
+  const s = showingStats({ showings, deals });
+  if (!s.total) {
+    return [el('div', { class: 'muted small', text: 'لا معاينات مسجَّلة بعد — حدّدها من زرّ «معاينة» في صفحة المطابقات.' })];
+  }
+  const pct = (v) => (v == null ? '—' : `${formatNumber(Math.round(v * 100))}٪`);
+  return [
+    el('div', { class: 'stat-strip' },
+      statChip(s.scheduled, 'موعد قادم'),
+      statChip(s.done, 'معاينة تمّت'),
+      statChip(s.converted, 'صارت صفقة')),
+    el('dl', { class: 'kv' },
+      el('dt', { text: 'نسبة الحضور' }), el('dd', { text: pct(s.showRate) }),
+      el('dt', { text: 'معاينة ← صفقة' }), el('dd', {}, badge(pct(s.closeRate), s.closeRate >= 0.2 ? 'badge-ok' : '')),
+      el('dt', { text: 'معاينات لكل صفقة' }), el('dd', { text: s.perDeal == null ? '—' : formatNumber(Math.round(s.perDeal * 10) / 10) }),
+      el('dt', { text: 'أعجبه / متردّد / لم يعجبه' }),
+      el('dd', { text: `${formatNumber(s.liked)} / ${formatNumber(s.maybe)} / ${formatNumber(s.disliked)}` })),
+    s.reasons.length
+      ? breakdownColumn('لماذا لم يعجبهم', s.reasons.map(([key, n]) => [labelFor(ENUMS.matchRejectReasons, key), n]))
+      : null,
+    s.done < 5
+      ? el('div', { class: 'muted small', text: 'العيّنة صغيرة: النسبة تستقرّ بعد خمس معاينات فأكثر.' })
+      : null,
+    el('div', { class: 'muted small', text: 'الصفقة تُنسب إلى معاينتها بشرط العميل نفسه والعقار نفسه وتاريخٍ بعدها — فلا يتملّق الرقم نفسه.' }),
+  ].filter(Boolean);
+}
+
 /**
  * أداء مصادر العملاء (المرحلة ٢٤): تاق «المصدر» يُكتب منذ المرحلة ٨ ولم يكن يُقرأ.
  * العمود الحاسم هو **العمولة**، لأن مصدرًا يعطيك خمسين اسمًا بلا صفقة تكلفةٌ لا مورد.

@@ -9,9 +9,10 @@ const DB_NAME = 'motabiq';
 // الإصدار ٣ (المرحلة ٨): أضاف مخزن invoices.
 // الإصدار ٤ (المرحلة ١٣): أضاف مخزن expenses — upgrade() أدناه يُنشئ الناقص فقط
 // الإصدار ٥ (المرحلة ٢١): أضاف مخزن trash (سلة المحذوفات) — بالمنطق نفسه: الناقص فقط
-// الإصدار ٦ (المرحلة ٢٦): أضاف مخزن audio (الملاحظات الصوتية) — بالمنطق نفسه: الناقص فقط
-// ولا يمسّ مخازن أو بيانات موجودة، فلا حاجة لأي ترحيل بيانات يدوي في الحالات الثلاث.
-const DB_VERSION = 6;
+// الإصدار ٦ (المرحلة ٢٦): أضاف مخزن audio (الملاحظات الصوتية)
+// الإصدار ٧ (المرحلة ٢٧): أضاف مخزن showings (المعاينات) — بالمنطق نفسه: الناقص فقط
+// ولا يمسّ مخازن أو بيانات موجودة، فلا حاجة لأي ترحيل بيانات يدوي في أيٍّ منها.
+const DB_VERSION = 7;
 
 const STORE_DEFS = {
   clients: { keyPath: 'id', indexes: ['phone', 'stage', 'updatedAt'] },
@@ -30,6 +31,7 @@ const STORE_DEFS = {
   expenses: { keyPath: 'id', indexes: ['date', 'category', 'dealId'] },
   trash: { keyPath: 'id', indexes: ['store', 'deletedAt'] },
   audio: { keyPath: 'id', indexes: ['entityId'] },
+  showings: { keyPath: 'id', indexes: ['clientId', 'propertyId', 'at', 'status'] },
 };
 
 let dbPromise = null;

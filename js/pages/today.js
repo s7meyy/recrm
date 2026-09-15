@@ -11,7 +11,9 @@ import { loadMatchingContext, candidatesFor, matchReadiness } from '../data/matc
 import { buildOpportunityIndex, topOpportunities } from '../util/opportunity.js';
 import { receivables } from '../util/receivables.js';
 import { awaitingReply } from '../util/lead-score.js';
-import { el, clear, badge, emptyState, confirmDialog, toast, openModal, labeled } from '../util/dom.js';
+import { upcomingShowings, needFeedback } from '../util/showings.js';
+import { runPlans } from '../util/plans.js';
+import { el, clear, badge, emptyState, confirmDialog, toast, openModal, labeled, selectEl } from '../util/dom.js';
 import { formatSAR, formatDate, formatDateTime, relativeDays, daysBetween, daysWord } from '../util/format.js';
 import { formatPhone, toInternational } from '../util/phone.js';
 import { clientName } from './requests.js';
@@ -30,6 +32,7 @@ async function loadData() {
     loadMatchingContext({ withMatches: true }), repo.tasks.list(), repo.externalListings.list(), repo.invoices.list(),
     getGoals(), repo.deals.list(), repo.expenses.list(), getCompany(),
   ]);
+  const showings = await repo.showings.list(); // المعاينات (المرحلة ٢٧)
   const since = ui.lastVisitAt || null;
   const due = receivables({ invoices, deals }); // المستحقات (المرحلة ١٧)
   // عملاء جدد بلا ردّ (المرحلة ٢٣): «سرعة الردّ» أقوى ما تبيعه الأنظمة الكبرى، وحسابه بسيط.
@@ -115,6 +118,11 @@ async function loadData() {
     reviews: company.reviewUrl ? reviewCandidates(deals) : [],
     reviewUrl: company.reviewUrl || '',
     company,
+    // المعاينات (المرحلة ٢٧): القادمة خلال ٤٨ ساعة، والتي مضت بلا انطباع.
+    upcoming: upcomingShowings(showings),
+    pendingFeedback: needFeedback(showings),
+    propertiesById: new Map(ctx.properties.map((p) => [p.id, p])),
+    externalsById: new Map(externals.map((x) => [x.id, x])),
   };
 }
 
@@ -125,6 +133,80 @@ function dueWhen(r) {
   if (r.days > 0) return `تأخّر ${daysWord(r.days)}${r.dated ? '' : ' عن تاريخه'}`;
   if (r.days === 0) return 'يستحق اليوم';
   return `يستحق بعد ${daysWord(-r.days)}`;
+}
+
+/** عنوان المعاينة: العقار الذي ستعاينه، من مخزونك أو من العروض الخارجية. */
+function showingTitle(d, showing) {
+  const p = showing.propertyId ? d.propertiesById.get(showing.propertyId) : d.externalsById.get(showing.externalId);
+  if (!p) return 'عقار محذوف';
+  return `${typeLabel(d.lists, p.type)} — ${[p.district, p.city].filter(Boolean).join('، ') || 'بلا حي'}`;
+}
+
+/** زرّ اتصال سريع بصاحب الموعد — الرقم في متناولك وأنت في الطريق. */
+function clientPhoneButton(client) {
+  if (!client?.phone) return null;
+  return el('a', { class: 'btn btn-ghost btn-sm', href: `tel:${client.phone}`, text: '📞', title: 'اتصال' });
+}
+
+/**
+ * انطباع العميل بعد المعاينة (المرحلة ٢٧).
+ *
+ * سؤالٌ واحد بثلاثة أجوبة، والسبب يُسأل عند «لم يعجبه» فقط — من أعجبه العقار لا سبب لرفضه.
+ * و**«لم يعجبه» يغلق المطابقة بالسبب نفسه**: تسجيلان لحقيقة واحدة يتناقضان بعد أسبوع.
+ */
+function askShowingFeedback(showing) {
+  const impressionSel = selectEl({
+    options: ENUMS.showingImpressions.map((x) => ({ value: x.key, label: x.label })),
+    value: 'liked',
+  });
+  const reasonSel = selectEl({
+    options: ENUMS.matchRejectReasons.map((x) => ({ value: x.key, label: x.label })),
+    placeholder: 'بلا سبب محدد', value: '',
+  });
+  const reasonField = el('div', { class: 'field field-full', hidden: true },
+    el('span', { class: 'field-label', text: 'لماذا؟' }), reasonSel);
+  const noteInput = el('textarea', { class: 'input', rows: 2, placeholder: 'ما قاله بالضبط — بعد شهر لن تتذكّره' });
+  impressionSel.addEventListener('change', () => { reasonField.hidden = impressionSel.value !== 'disliked'; });
+
+  const save = async () => {
+    try {
+      const impression = impressionSel.value;
+      await repo.showings.update(showing.id, {
+        status: 'done', impression,
+        reason: impression === 'disliked' ? (reasonSel.value || null) : null,
+        notes: [showing.notes, noteInput.value.trim()].filter(Boolean).join(' · '),
+      });
+      // إغلاق الحلقة: رأيٌ سلبي في المعاينة هو رفضٌ للمطابقة، بالسبب نفسه.
+      if (impression === 'disliked' && showing.requestId) {
+        const matches = await repo.matches.list();
+        const match = matches.find((m) => m.requestId === showing.requestId
+          && (m.propertyId === showing.propertyId || m.externalId === showing.externalId));
+        if (match) await repo.matches.update(match.id, { status: 'not_interested', rejectReason: reasonSel.value || null });
+      }
+      // «بعد المعاينة» تُطلق الآن فعلًا — وحارس التكرار يمنع ازدواجها إن أُطلقت سابقًا.
+      if (showing.requestId) {
+        await runPlans('after_showing', { title: '', linkType: 'request', linkId: showing.requestId }).catch(() => {});
+      }
+      modal.close();
+      toast('سُجّل رأي العميل', 'success');
+      window.dispatchEvent(new CustomEvent('kassab:data-changed'));
+      build(document.getElementById('page'), await loadData());
+    } catch (err) { toast(err.message || 'تعذّر الحفظ', 'error'); }
+  };
+
+  const modal = openModal({
+    title: 'ما رأيه في العقار؟',
+    body: el('div', {},
+      el('div', { class: 'form-grid' },
+        labeled('الانطباع', impressionSel),
+        reasonField,
+        labeled('ما قاله', noteInput, { full: true })),
+      el('p', { class: 'field-hint', text: '«لم يعجبه» يسجّل المطابقة مرفوضة بالسبب نفسه، فلا تسجّل الحقيقة مرّتين.' })),
+    footer: [
+      el('button', { type: 'button', class: 'btn btn-primary', text: 'احفظ', onClick: save }),
+      el('button', { type: 'button', class: 'btn btn-ghost', text: 'لاحقًا', onClick: () => modal.close() }),
+    ],
+  });
 }
 
 /**
@@ -331,6 +413,44 @@ function build(container, d) {
               })
               : el('a', { class: 'btn btn-ghost btn-sm', href: `#/invoices/${r.id}`, text: 'فتح' })))),
       { href: '#/invoices', hrefText: 'الفواتير →', tone: d.due.overdueCount ? 'today-warn' : '' }));
+  }
+
+  /* المعاينات (المرحلة ٢٧): القادمة أولًا — موعدٌ يفوتك أغلى من متابعة تتأخر */
+  if (d.upcoming.length) {
+    grid.append(section('معاينات قادمة', d.upcoming.length,
+      el('div', {}, d.upcoming.slice(0, 6).map(({ showing, at }) => row(
+        showingTitle(d, showing),
+        `${formatDateTime(showing.at)} — ${at < Date.now() ? 'حان موعدها' : relativeDays(showing.at)}`
+          + (showing.notes ? ` · ${showing.notes}` : ''),
+        el('div', { class: 'row' },
+          clientPhoneButton(d.clientsById.get(showing.clientId)),
+          el('button', {
+            type: 'button', class: 'btn btn-sm', text: 'تمّت',
+            onClick: () => askShowingFeedback(showing),
+          }),
+          el('button', {
+            type: 'button', class: 'btn btn-ghost btn-sm', text: 'لم يحضر',
+            onClick: async () => {
+              await repo.showings.update(showing.id, { status: 'no_show' });
+              toast('سُجّل عدم الحضور', 'success');
+              build(document.getElementById('page'), await loadData());
+            },
+          }))))),
+      { tone: 'today-warn' }));
+  }
+
+  /* معاينات تمّت ولم تسجّل رأي العميل — أغنى لحظة في العملية، وتضيع بلا سؤال واحد */
+  if (d.pendingFeedback.length) {
+    grid.append(section('ما رأيه؟ معاينات تنتظر انطباعك', d.pendingFeedback.length,
+      el('div', {},
+        el('p', { class: 'muted small', text: 'ما قاله العميل وهو واقف في العقار لا يُقال في الهاتف — وهو ما يشرح لك لماذا تضيع الصفقات.' }),
+        ...d.pendingFeedback.slice(0, 6).map(({ showing }) => row(
+          showingTitle(d, showing),
+          `${formatDateTime(showing.at)} · ${clientName(d.clientsById.get(showing.clientId))}`,
+          el('button', {
+            type: 'button', class: 'btn btn-sm', text: 'سجّل رأيه',
+            onClick: () => askShowingFeedback(showing),
+          }))))));
   }
 
   /* طلب التقييم بعد الصفقة (المرحلة ٢٥) */

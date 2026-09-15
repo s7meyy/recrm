@@ -18,7 +18,7 @@ import { runPlans } from '../util/plans.js';
 import {
   el, clear, labeled, selectEl, checkbox, badge, openModal, toast, emptyState,
 } from '../util/dom.js';
-import { formatSAR, formatArea, formatNumber, toInputDate, fromInputDate } from '../util/format.js';
+import { formatSAR, formatArea, formatNumber, toInputDate, fromInputDate, toInputDateTime, fromInputDateTime } from '../util/format.js';
 import { formatPhone } from '../util/phone.js';
 
 const STATUS_STYLE = { new: 'badge-outline', presented: 'badge-accent', interested: 'badge-ok', not_interested: '', won: 'badge-ok' };
@@ -297,7 +297,68 @@ function matchRow(ctx, request, row) {
       partsNode(row)),
     el('div', { class: 'match-actions' },
       badge(labelFor(ENUMS.matchStatuses, status), STATUS_STYLE[status] || ''),
-      statusSelect));
+      statusSelect,
+      el('button', {
+        type: 'button', class: 'btn btn-ghost btn-sm', text: '📅 معاينة',
+        title: 'حدّد موعد معاينة لهذا العقار',
+        onClick: () => openShowingForm(ctx, request, row),
+      })));
+}
+
+/**
+ * جدولة معاينة من المطابقة (المرحلة ٢٧).
+ *
+ * وجدولتها ترفع المطابقة إلى «عُرض على العميل» إن كانت «جديدة»: من يواعد عميله على عقار
+ * فقد عرضه عليه — وترك الحالتين تتناقضان يُفسد القمع وأنت لم تخطئ.
+ */
+function openShowingForm(ctx, request, row) {
+  const p = row.listing;
+  const isExternal = row.kind === 'external';
+  const at = new Date(Date.now() + 86400000);
+  at.setHours(17, 0, 0, 0); // الخامسة عصرًا: أشيع وقت معاينة، ويبقى قابلًا للتغيير
+  const atInput = el('input', { class: 'input', type: 'datetime-local', value: toInputDateTime(at.toISOString()) });
+  const notesInput = el('textarea', { class: 'input', rows: 2, placeholder: 'نقطة لقاء، أو ما يجب أن تنتبه له' });
+  const errorsBox = el('div', { class: 'form-errors', hidden: true });
+
+  const save = async () => {
+    const when = fromInputDateTime(atInput.value);
+    if (!when) {
+      clear(errorsBox);
+      errorsBox.append(el('div', { text: 'حدّد موعد المعاينة' }));
+      errorsBox.hidden = false;
+      return;
+    }
+    try {
+      await repo.showings.create({
+        at: when, clientId: request.clientId, requestId: request.id,
+        propertyId: isExternal ? null : p.id, externalId: isExternal ? p.id : null,
+        notes: notesInput.value,
+      });
+      if (rowStatus(row) === 'new') await setStatus(ctx, request, row, 'presented', { silent: true });
+      modal.close();
+      toast('سُجّلت المعاينة — تظهر في «يومي» قبل موعدها', 'success', 4000);
+      window.dispatchEvent(new CustomEvent('kassab:data-changed'));
+      await refresh(ctx);
+    } catch (err) {
+      clear(errorsBox);
+      errorsBox.append(el('ul', {}, (err.errors || [err.message]).map((m) => el('li', { text: m }))));
+      errorsBox.hidden = false;
+    }
+  };
+
+  const modal = openModal({
+    title: 'موعد معاينة',
+    body: el('div', {}, errorsBox,
+      el('p', { class: 'muted small', text: `${typeLabel(ctx.lists, p.type)} — ${[p.district, p.city].filter(Boolean).join('، ')} · ${clientName(ctx.clientsById.get(request.clientId))}` }),
+      el('div', { class: 'form-grid' },
+        labeled('الموعد', atInput, { required: true }),
+        labeled('ملاحظة', notesInput, { full: true })),
+      el('p', { class: 'field-hint', text: 'بعد الموعد بساعتين يسألك «يومي» عن رأي العميل — وهو ما يغذّي نسبة المعاينة إلى الصفقة.' })),
+    footer: [
+      el('button', { type: 'button', class: 'btn btn-primary', text: 'احفظ الموعد', onClick: save }),
+      el('button', { type: 'button', class: 'btn btn-ghost', text: 'إلغاء', onClick: () => modal.close() }),
+    ],
+  });
 }
 
 /* ===== تغيير الحالة ===== */
@@ -324,12 +385,12 @@ function askRejectReason() {
   });
 }
 
-async function setStatus(ctx, request, row, status) {
+async function setStatus(ctx, request, row, status, { silent = false } = {}) {
   try {
     const rejectReason = status === 'not_interested' ? await askRejectReason() : null;
     if (status === 'new') {
       if (row.record) await repo.matches.remove(row.record.id);
-      toast('أُعيدت إلى «جديدة»', 'success');
+      if (!silent) toast('أُعيدت إلى «جديدة»', 'success');
     } else if (row.record) {
       await repo.matches.update(row.record.id, { status, score: row.score, priceUnknown: row.priceUnknown, rejectReason });
     } else {
@@ -340,7 +401,9 @@ async function setStatus(ctx, request, row, status) {
         score: row.score, priceUnknown: row.priceUnknown, status, rejectReason,
       });
     }
-    if (status === 'presented' && row.record?.status !== 'presented') await scheduleAfterShowing(ctx, request, row);
+    // جدولة المعاينة ترفع الحالة إلى «عُرض» بصمت: خطة «بعد المعاينة» تُطلق بعد المعاينة
+    // فعلًا (عند تسجيل الانطباع) لا عند حجز موعدها. وحارس التكرار في runPlans يمنع ازدواجها.
+    if (!silent && status === 'presented' && row.record?.status !== 'presented') await scheduleAfterShowing(ctx, request, row);
     if (status === 'won') await openDealForm(ctx, request, row);
     window.dispatchEvent(new CustomEvent('kassab:data-changed'));
     await refresh(ctx);

@@ -1,7 +1,7 @@
 // مخططات الكيانات: الحقول، القيم الافتراضية، القوائم الثابتة، والحقول التي تظهر بحسب نوع العقار.
 // الحقول المشتركة لكل سجل (تضيفها طبقة البيانات): id, createdAt, updatedAt, createdBy, updatedBy, searchKey.
 
-export const STORES = ['clients', 'properties', 'tours', 'requests', 'matches', 'externalListings', 'deals', 'images', 'settings', 'taskLists', 'tasks', 'notes', 'invoices', 'expenses', 'audio'];
+export const STORES = ['clients', 'properties', 'tours', 'requests', 'matches', 'externalListings', 'deals', 'images', 'settings', 'taskLists', 'tasks', 'notes', 'invoices', 'expenses', 'audio', 'showings'];
 // ملاحظة: `trash` (سلة المحذوفات، المرحلة ٢١) ليست في STORES عمدًا — شبكة أمان محلّية
 // لا بيانات تُصدَّر: إدراجها في النسخة الاحتياطية يضخّمها بما حذفتَه قصدًا.
 
@@ -90,6 +90,17 @@ export const ENUMS = {
     { key: 'bought_elsewhere', label: 'اشترى من مكان آخر' },
     { key: 'changed_mind', label: 'غيّر رأيه أو أجّل' },
     { key: 'other', label: 'سبب آخر' },
+  ],
+  showingStatuses: [ // المعاينة (المرحلة ٢٧)
+    { key: 'scheduled', label: 'مجدولة' },
+    { key: 'done', label: 'تمّت' },
+    { key: 'no_show', label: 'لم يحضر' },
+    { key: 'cancelled', label: 'أُلغيت' },
+  ],
+  showingImpressions: [ // انطباع العميل بعد المعاينة (المرحلة ٢٧)
+    { key: 'liked', label: 'أعجبه' },
+    { key: 'maybe', label: 'متردّد' },
+    { key: 'disliked', label: 'لم يعجبه' },
   ],
   taskRepeats: [ // تكرار المهمة (المرحلة ١١): تُنشأ التالية عند إنجاز الحالية
     { key: 'none', label: 'بلا تكرار' },
@@ -297,6 +308,20 @@ export const SCHEMAS = {
       partnerName: '', partnerShare: null, partnerPaidAt: null,
       // طلب التقييم بعد الصفقة (المرحلة ٢٥): متى طلبتَه — null = لم يُطلب بعد.
       reviewRequestedAt: null,
+    }),
+  },
+  showings: { // المعاينات (المرحلة ٢٧): الموعد وما قاله العميل بعده
+    required: ['at'],
+    labels: { at: 'موعد المعاينة' },
+    defaults: () => ({
+      at: '', // ISO — التاريخ والوقت معًا
+      clientId: null,
+      propertyId: null, externalId: null, // من مخزونك أو عرض خارجي — أحدهما
+      requestId: null, // الطلب الذي جاءت منه، إن جاءت من المطابقات
+      status: 'scheduled', // ENUMS.showingStatuses
+      impression: null, // ENUMS.showingImpressions — يُسأل بعد المعاينة
+      reason: null, // ENUMS.matchRejectReasons — عند «لم يعجبه»
+      notes: '',
     }),
   },
   images: {

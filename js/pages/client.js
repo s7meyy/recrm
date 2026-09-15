@@ -29,9 +29,9 @@ export async function render(container) {
     return;
   }
 
-  const [client, lists, match, deals, invoices] = await Promise.all([
+  const [client, lists, match, deals, invoices, allShowings] = await Promise.all([
     repo.clients.get(id), getLists(), loadMatchingContext({ withMatches: true }),
-    repo.deals.list(), repo.invoices.list(),
+    repo.deals.list(), repo.invoices.list(), repo.showings.list(),
   ]);
   if (!client) {
     container.append(emptyState('العميل غير موجود، أو حُذف.', el('a', { class: 'btn', href: '#/clients', text: 'العملاء' })));
@@ -100,6 +100,25 @@ export async function render(container) {
       `${formatDateTime(c.date)}${c.note ? ` — ${c.note}` : ''}`,
       c.audioId ? audioPlayer(c.audioId, c.audioSeconds) : null)))
     : el('p', { class: 'muted small', text: 'لم يُسجَّل تواصل بعد — سجّله من «يومي» بعد كل مكالمة.' })));
+
+  /* ===== معاينـاته (المرحلة ٢٧) ===== */
+  const myShowings = allShowings
+    .filter((x) => x.clientId === client.id)
+    .sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
+  if (myShowings.length) {
+    const propsById = new Map(match.properties.map((p) => [p.id, p]));
+    const extById = new Map((match.externals || []).map((p) => [p.id, p]));
+    grid.append(panel('معايناته', myShowings.length,
+      el('div', {}, myShowings.slice(0, 10).map((x) => {
+        const p = x.propertyId ? propsById.get(x.propertyId) : extById.get(x.externalId);
+        return row(
+          p ? `${typeLabel(lists, p.type)} — ${[p.district, p.city].filter(Boolean).join('، ')}` : 'عقار محذوف',
+          `${formatDateTime(x.at)} · ${labelFor(ENUMS.showingStatuses, x.status)}`
+            + (x.impression ? ` · ${labelFor(ENUMS.showingImpressions, x.impression)}` : '')
+            + (x.notes ? ` — ${x.notes}` : ''),
+          null);
+      }))));
+  }
 
   /* ===== ما عُرض عليه ===== */
   const shown = matches.filter((m) => m.status !== 'new');

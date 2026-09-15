@@ -24,7 +24,8 @@ const dbVersion = await page.evaluate(() => new Promise((resolve) => {
   req.onsuccess = () => { const v = req.result.version; const has = req.result.objectStoreNames.contains('audio'); req.result.close(); resolve({ v, has }); };
   req.onerror = () => resolve({ v: 0, has: false });
 }));
-ok('نسخة قاعدة البيانات ٦ ومخزن audio موجود', dbVersion.v === 6 && dbVersion.has, JSON.stringify(dbVersion));
+// الرقم يتقدّم مع كل مخزن جديد؛ المهم أن الترقية جرت وأن المخزن موجود.
+ok('القاعدة مُرقّاة ومخزن audio موجود', dbVersion.v >= 6 && dbVersion.has, JSON.stringify(dbVersion));
 
 /* ===== ١. دمج العملاء المكرّرين ===== */
 console.log('\n--- ١. الدمج ---');
