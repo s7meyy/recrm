@@ -21,8 +21,10 @@ on:
         description: الفرع الذي يُقرأ منه مجلد rabih
         required: false
         default: claude/sleepy-tesla-ikhvof
+  # الملف موجود على الفرعين: الدفعُ إلى فرعٍ لا يحمل الوظيفة لا يُطلقها.
+  # ومجلد رابح على فرع التطوير اليوم، فهناك يقع التغيير وهناك ينبغي أن ينطلق النشر.
   push:
-    branches: [main]
+    branches: [main, claude/sleepy-tesla-ikhvof]
     paths:
       - 'rabih/**'
 
