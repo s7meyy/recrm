@@ -1,79 +1,46 @@
-/* ===== الرموز الأساسية ===== */
+/* ===== الأساس: الهيكل والصفحة والنوافذ (هوية ضاد — المرحلة ٣٤) =====
+ *
+ * الألوان والمقاييس كلّها في `css/dhad.css`. وما هنا **أسماءٌ قديمة تشير إليها**: عشرات
+ * القواعد في `components.css` تكتب `var(--accent)` منذ المرحلة الأولى، فلو غيّرنا الأسماء
+ * لصار التصميم إعادةَ كتابةٍ للمشروع كلّه لا تصميمًا. فالأسماء تبقى، والقيم تأتي من ضاد.
+ */
 :root {
-  --bg: #f2f4f1;
-  --surface: #ffffff;
-  --surface-2: #e9ede8;
-  --line: #d9e0d9;
-  --line-strong: #b9c4bb;
-  --text: #1a1f1c;
-  --muted: #5f6b64;
-  --accent: #0f6e56;
-  --accent-hover: #0b5a46;
-  --accent-soft: #dff0ea;
-  --accent-text: #0a4d3c;
-  --warn: #8a5a00;
-  --warn-soft: #fbefd3;
-  --danger: #b4432f;
-  --danger-soft: #f9e2dd;
-  --ok: #1f7a3f;
-  --ok-soft: #e0f2e5;
-  --radius: 8px;
-  --radius-lg: 12px;
-  --shadow-modal: 0 20px 60px rgba(16, 24, 20, 0.28);
-  --font: system-ui, -apple-system, "Segoe UI", Tahoma, "Noto Naskh Arabic", "Noto Sans Arabic", Arial, sans-serif;
-  --fs-sm: 13px;
-  --fs: 15px;
-  --fs-lg: 17px;
-  --fs-h1: 24px;
-  --fs-price: 19px;
-}
+  --bg: var(--dhad-color-bg);
+  --surface: var(--dhad-color-surface-1);
+  --surface-2: var(--dhad-color-surface-2);
+  --line: var(--dhad-color-border);
+  --line-strong: var(--dhad-color-border-strong);
+  --text: var(--dhad-color-text-1);
+  --muted: var(--dhad-color-text-2);
+  --accent: var(--dhad-color-action);
+  --accent-hover: var(--dhad-color-action-hover);
+  --accent-active: var(--dhad-color-action-active);
+  --accent-soft: var(--dhad-color-action-soft);
+  --accent-text: var(--dhad-color-action-text);
+  --warn: var(--dhad-color-warning);
+  --warn-soft: var(--dhad-color-warning-soft);
+  --danger: var(--dhad-color-danger);
+  --danger-hover: var(--dhad-color-danger-hover);
+  --danger-soft: var(--dhad-color-danger-soft);
+  --ok: var(--dhad-color-success);
+  --ok-soft: var(--dhad-color-success-soft);
+  --help: var(--dhad-color-help);
+  --help-soft: var(--dhad-color-help-soft);
+  --on-fill: var(--dhad-color-on-fill);
+  --hover: var(--dhad-color-hover);
 
-/* الوضع الليلي (المرحلة ١١): إعادة تعريف الرموز وحدها — لا قاعدة تخطيط تتكرر.
-   يُفعَّل بسمة data-theme على <html>: 'dark' أو 'light'، وبلا سمة يتبع تفضيل النظام. */
-:root[data-theme="dark"] {
-  --bg: #121714;
-  --surface: #1a211d;
-  --surface-2: #232b27;
-  --line: #2e3833;
-  --line-strong: #46534c;
-  --text: #e8eeea;
-  --muted: #9fb0a7;
-  --accent: #3fa88a;
-  --accent-hover: #4dbd9c;
-  --accent-soft: #17342c;
-  --accent-text: #8fe0c6;
-  --warn: #e0b062;
-  --warn-soft: #3a2f18;
-  --danger: #e58272;
-  --danger-soft: #3d211c;
-  --ok: #63c98a;
-  --ok-soft: #17331f;
-  --shadow-modal: 0 20px 60px rgba(0, 0, 0, 0.6);
-  color-scheme: dark;
-}
+  --radius: var(--dhad-radius-sm);
+  --radius-lg: var(--dhad-radius-md);
+  --shadow-modal: var(--dhad-shadow-modal);
+  --font: var(--dhad-font-body);
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #121714;
-    --surface: #1a211d;
-    --surface-2: #232b27;
-    --line: #2e3833;
-    --line-strong: #46534c;
-    --text: #e8eeea;
-    --muted: #9fb0a7;
-    --accent: #3fa88a;
-    --accent-hover: #4dbd9c;
-    --accent-soft: #17342c;
-    --accent-text: #8fe0c6;
-    --warn: #e0b062;
-    --warn-soft: #3a2f18;
-    --danger: #e58272;
-    --danger-soft: #3d211c;
-    --ok: #63c98a;
-    --ok-soft: #17331f;
-    --shadow-modal: 0 20px 60px rgba(0, 0, 0, 0.6);
-    color-scheme: dark;
-  }
+  --fs-sm: var(--dhad-font-size-300);
+  --fs: var(--dhad-font-size-500);
+  --fs-lg: var(--dhad-font-size-600);
+  --fs-h1: var(--dhad-font-size-900);
+  --fs-price: var(--dhad-font-size-700);
+
+  --control: var(--dhad-size-control);
 }
 
 * { box-sizing: border-box; }
@@ -85,29 +52,49 @@
 html {
   font-family: var(--font);
   font-size: var(--fs);
-  line-height: 1.6;
+  /* ١٫٧ لا ١٫٦: العربية تحمل فوق الحرف همزةً وتشكيلًا ومدّة، وسطرٌ ضيّق يقصّها على
+     المتصفحات التي لا توسّع الصندوق. وهذا أوّل ما تفحصه ضاد في أي واجهة عربية. */
+  line-height: var(--dhad-line-reading);
   color: var(--text);
   background: var(--bg);
   -webkit-text-size-adjust: 100%;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 body { margin: 0; min-height: 100vh; }
 body.modal-open { overflow: hidden; }
 
-h1, h2, h3 { margin: 0; line-height: 1.35; font-weight: 700; }
+/* العناوين والأزرار والجداول واجهةٌ كثيفة لا متن، فتأخذ سطرًا أضيق — والتشكيل فيها نادر. */
+h1, h2, h3 { margin: 0; line-height: var(--dhad-line-heading); font-weight: 700; }
 h1 { font-size: var(--fs-h1); }
 h2 { font-size: var(--fs-lg); }
 h3 { font-size: var(--fs); }
-p { margin: 0 0 10px; }
-a { color: var(--accent); }
+p { margin: 0 0 var(--dhad-space-3); }
+a { color: var(--accent-text); }
 
 button, input, select, textarea { font: inherit; color: inherit; }
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* التركيز يُرى: ثلاثة بكسلات بلون الفعل وفجوةٌ تفصله عن حدّ العنصر، فلا يذوب في الإطار.
+   وهذا شرط ضاد لمن يتنقّل بالمفاتيح — ولمن يستعمل الفأرة ثم ينساها. */
+:focus-visible {
+  outline: var(--dhad-focus-width) solid var(--accent);
+  outline-offset: var(--dhad-focus-offset);
+  border-radius: var(--dhad-radius-xs);
+}
 
 .muted { color: var(--muted); }
 .small { font-size: var(--fs-sm); }
 .strong { font-weight: 700; }
-.num { font-variant-numeric: tabular-nums; }
+
+/* الأرقام: خاناتٌ متساوية العرض كي تصطفّ في الأعمدة، و`isolate` كي لا يقلب الاتجاهُ
+   الثنائي ترتيبَ رقمٍ لاتيني وقع بين كلمتين عربيتين. */
+.num { font-variant-numeric: tabular-nums; unicode-bidi: isolate; }
+
+/* جزيرة لاتينية: الرابط والبريد والجوال والآيبان والمعرّف تبقى في اتجاهها مهما حاصرها
+   نصٌّ عربي. و`isolate` أقوى من `embed`: تعزل ما بداخلها عن جوارها في الاتجاهين. */
+.ltr { direction: ltr; unicode-bidi: isolate; text-align: start; }
+
 .visually-hidden {
   position: absolute !important; width: 1px; height: 1px; overflow: hidden;
   clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
@@ -115,7 +102,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 /* ===== هيكل التطبيق: قائمة جانبية (رفّ أيقونات يتوسّع) + منطقة المحتوى (المرحلة ٧) ===== */
 .app-shell { min-height: 100vh; }
-.sidebar-toggle-checkbox { display: none; }
+.sidebar-toggle-checkbox { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 
 /* القائمة على يمين الشاشة: `inset-inline-start` في صفحة RTL هو اليمين — وكان `inset-inline-end`
    فتظهر على اليسار مخالفةً لاتجاه الصفحة (ومخالفةً لمنطق `translateX` في درج الجوال أدناه). */
@@ -123,36 +110,66 @@ button, input, select, textarea { font: inherit; color: inherit; }
   position: fixed; top: 0; inset-inline-start: 0; height: 100vh; width: 60px;
   background: var(--surface); border-inline-end: 1px solid var(--line);
   display: flex; flex-direction: column; overflow-y: auto; overflow-x: hidden;
-  z-index: 35; transition: width 0.15s ease;
+  z-index: var(--dhad-z-sidebar); transition: width var(--dhad-duration-base) var(--dhad-ease);
+  padding-block-end: env(safe-area-inset-bottom, 0px);
 }
 .sidebar-toggle-checkbox:checked ~ .sidebar { width: 240px; }
 .sidebar-toggle-checkbox:checked ~ .sidebar .sidebar-label { display: inline; }
 .sidebar-toggle-checkbox:checked ~ .app-main { margin-inline-start: 240px; }
 
-.sidebar-head { display: flex; align-items: center; justify-content: center; padding: 10px 8px; border-bottom: 1px solid var(--line); min-height: 56px; flex-shrink: 0; }
-.sidebar-brand { font-size: 20px; font-weight: 800; color: var(--accent); text-decoration: none; width: 32px; text-align: center; flex-shrink: 0; display: none; }
+.sidebar-head {
+  display: flex; align-items: center; justify-content: center;
+  padding: var(--dhad-space-2); border-bottom: 1px solid var(--line);
+  min-height: var(--dhad-size-topbar); flex-shrink: 0;
+}
+.sidebar-brand {
+  font-size: var(--dhad-font-size-800); font-weight: 800; color: var(--accent-text); text-decoration: none;
+  width: 32px; text-align: center; flex-shrink: 0; display: none; line-height: var(--dhad-line-tight);
+}
 /* في حال الطيّ يبقى زر الطيّ وحده: الرفّ ٦٠ بكسل لا يتسع للشعار والزر معًا فكان الزر يُقصّ. */
 .sidebar-toggle-checkbox:checked ~ .sidebar .sidebar-head { justify-content: space-between; }
 .sidebar-toggle-checkbox:checked ~ .sidebar .sidebar-brand { display: block; }
-.sidebar-expand-btn { font-size: 18px; flex-shrink: 0; cursor: pointer; }
-
-.sidebar-nav { display: flex; flex-direction: column; padding: 8px 6px; gap: 2px; }
-.sidebar-nav a {
-  display: flex; align-items: center; gap: 12px; padding: 9px 10px; border-radius: var(--radius);
-  text-decoration: none; color: var(--muted); font-weight: 600; white-space: nowrap; overflow: hidden;
+.sidebar-expand-btn { font-size: var(--dhad-font-size-700); flex-shrink: 0; cursor: pointer; }
+/* الزرّ تسمية لا زرّ، فلا يصله التركيز إلا عبر مربّع الاختيار المخفي — نُظهره عليه. */
+.sidebar-toggle-checkbox:focus-visible ~ .sidebar .sidebar-expand-btn,
+.sidebar-toggle-checkbox:focus-visible ~ .app-main .sidebar-open-btn {
+  outline: var(--dhad-focus-width) solid var(--accent); outline-offset: var(--dhad-focus-offset);
 }
-.sidebar-nav a:hover { background: var(--surface-2); color: var(--text); }
-.sidebar-nav a.active { color: var(--accent-text); background: var(--accent-soft); }
-.sidebar-icon { font-size: 19px; flex-shrink: 0; width: 22px; text-align: center; }
+
+.sidebar-nav { display: flex; flex-direction: column; padding: var(--dhad-space-2) 6px; gap: 2px; }
+.sidebar-nav a {
+  display: flex; align-items: center; gap: var(--dhad-space-3);
+  min-height: var(--control); padding: var(--dhad-space-2) var(--dhad-space-2);
+  border-radius: var(--radius); text-decoration: none; color: var(--muted); font-weight: 600;
+  white-space: nowrap; overflow: hidden; line-height: var(--dhad-line-body);
+  transition: background var(--dhad-duration-fast) var(--dhad-ease), color var(--dhad-duration-fast) var(--dhad-ease);
+}
+.sidebar-nav a:hover { background: var(--hover); color: var(--text); }
+.sidebar-nav a:active { background: var(--surface-2); }
+/* الصفحة المفتوحة: لونٌ **وشريطٌ** على حافّة القائمة — اللون وحده لا يكفي لمن لا يميّزه. */
+.sidebar-nav a.active {
+  color: var(--accent-text); background: var(--accent-soft);
+  box-shadow: inset -3px 0 0 var(--accent);
+}
+.sidebar-icon { font-size: var(--dhad-font-size-700); flex-shrink: 0; width: 22px; text-align: center; }
 .sidebar-label { display: none; font-size: var(--fs-sm); }
 .sidebar-scrim { display: none; }
 .sidebar-open-btn { display: none; cursor: pointer; }
 
-.app-main { margin-inline-start: 60px; min-height: 100vh; transition: margin-inline-start 0.15s ease; }
+.app-main {
+  margin-inline-start: 60px; min-height: 100vh;
+  transition: margin-inline-start var(--dhad-duration-base) var(--dhad-ease);
+}
 
-.topbar { position: sticky; top: 0; z-index: 20; background: var(--surface); border-bottom: 1px solid var(--line); }
-.topbar-inner { padding: 0 16px; height: 56px; display: flex; align-items: center; gap: 10px; }
-.topbar-search-btn { margin-inline-start: auto; font-size: 18px; }
+.topbar {
+  position: sticky; top: 0; z-index: var(--dhad-z-topbar);
+  background: var(--surface); border-bottom: 1px solid var(--line);
+}
+.topbar-inner {
+  padding: 0 var(--dhad-space-4); min-height: var(--dhad-size-topbar);
+  display: flex; align-items: center; gap: var(--dhad-space-2);
+}
+.topbar-search-btn { margin-inline-start: auto; }
 
 @media (max-width: 640px) {
   /* الدرج مطويٌّ بعرض صفر لا بـ`translateX` خارج الشاشة: المزاح خارجها يُطيل عرض الصفحة
@@ -166,60 +183,70 @@ button, input, select, textarea { font: inherit; color: inherit; }
   .sidebar .sidebar-head { justify-content: space-between; }
   .sidebar-expand-btn { display: none; }
   .sidebar-toggle-checkbox:checked ~ .sidebar-scrim {
-    display: block; position: fixed; inset: 0; background: rgba(10, 15, 12, 0.4); z-index: 34; cursor: pointer;
+    display: block; position: fixed; inset: 0; background: var(--dhad-color-scrim);
+    z-index: var(--dhad-z-scrim); cursor: pointer;
   }
   .app-main, .sidebar-toggle-checkbox:checked ~ .app-main { margin-inline-start: 0; }
   .sidebar-open-btn { display: inline-flex; align-items: center; justify-content: center; }
 }
 
 /* ===== الصفحة ===== */
-.page { max-width: 1240px; margin: 0 auto; padding: 20px 16px 72px; }
+.page {
+  max-width: var(--dhad-size-content); margin: 0 auto;
+  padding: var(--dhad-space-5) var(--dhad-space-4) var(--dhad-space-8);
+  padding-inline: max(var(--dhad-space-4), env(safe-area-inset-right, 0px)) max(var(--dhad-space-4), env(safe-area-inset-left, 0px));
+}
 .page-head {
   display: flex; align-items: center; justify-content: space-between;
-  gap: 16px; flex-wrap: wrap; margin-bottom: 16px;
+  gap: var(--dhad-space-4); flex-wrap: wrap; margin-bottom: var(--dhad-space-4);
 }
+.page-head h1 { line-height: var(--dhad-line-heading); }
 .page-head h1 .count { color: var(--muted); font-weight: 500; font-size: var(--fs-lg); }
-.head-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.head-actions { display: flex; align-items: center; gap: var(--dhad-space-2); flex-wrap: wrap; }
 
 /* ===== شريط تذكير النسخ الاحتياطي ===== */
-.banner {
-  max-width: 1240px; margin: 14px auto 0; padding: 0 16px;
-}
+.banner { max-width: var(--dhad-size-content); margin: var(--dhad-space-3) auto 0; padding: 0 var(--dhad-space-4); }
 .banner-inner {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--dhad-space-3); flex-wrap: wrap;
   background: var(--warn-soft); color: var(--warn);
-  border: 1px solid #ead9a8; border-radius: var(--radius); padding: 10px 14px;
+  border: 1px solid var(--dhad-color-warning-border); border-radius: var(--radius);
+  padding: var(--dhad-space-3) var(--dhad-space-4); line-height: var(--dhad-line-body);
 }
-.banner-actions { display: flex; gap: 8px; }
+.banner-actions { display: flex; gap: var(--dhad-space-2); flex-wrap: wrap; }
 
 /* ===== رسائل الخطأ الكبيرة ===== */
 .error-box {
   background: var(--danger-soft); color: var(--danger);
-  border: 1px solid #efc5bd; border-radius: var(--radius); padding: 14px 16px;
+  border: 1px solid var(--dhad-color-danger-border); border-radius: var(--radius);
+  padding: var(--dhad-space-4); line-height: var(--dhad-line-body);
 }
-.error-box strong { display: block; margin-bottom: 4px; }
+.error-box strong { display: block; margin-bottom: var(--dhad-space-1); }
 
 /* ===== النوافذ ===== */
-#modal-root { position: relative; z-index: 50; }
+#modal-root { position: relative; z-index: var(--dhad-z-modal); }
 .modal-overlay {
-  position: fixed; inset: 0; background: rgba(16, 24, 20, 0.45);
+  position: fixed; inset: 0; background: var(--dhad-color-scrim);
   display: flex; align-items: flex-start; justify-content: center;
-  padding: 32px 12px; overflow-y: auto;
+  padding: var(--dhad-space-6) var(--dhad-space-3); overflow-y: auto;
 }
 .modal {
   background: var(--surface); border-radius: var(--radius-lg);
   box-shadow: var(--shadow-modal); width: 100%; max-width: 640px;
   display: flex; flex-direction: column; max-height: calc(100vh - 64px);
+  border: 1px solid var(--line);
 }
 .modal-wide { max-width: 860px; }
 .modal-head {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 14px 18px; border-bottom: 1px solid var(--line);
+  gap: var(--dhad-space-2);
+  padding: var(--dhad-space-3) var(--dhad-space-5); border-bottom: 1px solid var(--line);
 }
-.modal-body { padding: 18px; overflow-y: auto; }
+.modal-body { padding: var(--dhad-space-5); overflow-y: auto; }
 .modal-foot {
-  display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap;
-  padding: 12px 18px; border-top: 1px solid var(--line);
+  display: flex; align-items: center; justify-content: flex-end;
+  gap: var(--dhad-space-2); flex-wrap: wrap;
+  padding: var(--dhad-space-3) var(--dhad-space-5); border-top: 1px solid var(--line);
 }
 .modal-foot .spacer { flex: 1; }
 @media (prefers-reduced-motion: no-preference) {
@@ -229,20 +256,30 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 /* ===== التنبيهات ===== */
 .toast-root {
-  position: fixed; bottom: 16px; left: 16px; right: 16px; z-index: 60;
-  display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none;
+  position: fixed; bottom: max(var(--dhad-space-4), env(safe-area-inset-bottom, 0px));
+  left: var(--dhad-space-4); right: var(--dhad-space-4); z-index: var(--dhad-z-toast);
+  display: flex; flex-direction: column; align-items: center; gap: var(--dhad-space-2); pointer-events: none;
 }
 .toast {
-  background: var(--text); color: #fff; padding: 10px 16px; border-radius: var(--radius);
-  max-width: 560px; box-shadow: 0 6px 20px rgba(0,0,0,0.2); pointer-events: auto;
+  background: var(--text); color: var(--bg); padding: var(--dhad-space-3) var(--dhad-space-4);
+  border-radius: var(--radius); max-width: 560px; box-shadow: var(--dhad-shadow-toast);
+  pointer-events: auto; line-height: var(--dhad-line-body);
 }
-.toast.success { background: var(--ok); }
-.toast.error { background: var(--danger); }
+.toast.success { background: var(--ok); color: var(--on-fill); }
+.toast.error { background: var(--danger); color: var(--on-fill); }
+
+/* ===== الآيباد: عمودان لا واحد، وحشوٌ أوسع قليلًا ===== */
+@media (min-width: 641px) and (max-width: 1040px) {
+  .page { padding-inline: var(--dhad-space-5); }
+  .banner { padding-inline: var(--dhad-space-5); }
+}
 
 @media (max-width: 640px) {
-  :root { --fs-h1: 21px; }
-  .topbar-inner { gap: 12px; height: 52px; }
-  .nav a { padding: 6px 9px; }
-  .modal-overlay { padding: 12px 8px; }
+  :root { --fs-h1: var(--dhad-font-size-800); }
+  .topbar-inner { gap: var(--dhad-space-3); }
+  .page { padding-block: var(--dhad-space-4) var(--dhad-space-8); }
+  .modal-overlay { padding: var(--dhad-space-3) var(--dhad-space-2); }
   .modal { max-height: calc(100vh - 24px); }
+  .modal-head, .modal-foot { padding-inline: var(--dhad-space-4); }
+  .modal-body { padding: var(--dhad-space-4); }
 }

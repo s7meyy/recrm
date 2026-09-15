@@ -50,7 +50,7 @@ export default async (request) => {
   if (!listing) {
     return new Response(`<!DOCTYPE html><html lang="${t.lang}" dir="${t.dir}"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>${esc(t.gone)}</title>
-<link rel="stylesheet" href="/offers/style.css"></head><body><main class="wrap" style="padding-block:40px">
+<link rel="stylesheet" href="/css/dhad.css"><link rel="stylesheet" href="/offers/style.css"></head><body><main class="wrap" style="padding-block:40px">
 <h1>${esc(t.gone)}</h1><p class="muted">${esc(t.goneNote)}</p>
 <p><a class="btn btn-primary" href="/offers/?lang=${t.lang}">${esc(t.browse)}</a></p></main></body></html>`, {
       status: 404, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' },
@@ -95,7 +95,7 @@ export default async (request) => {
 ${image ? `<meta property="og:image" content="${esc(image)}">` : ''}
 <meta property="og:url" content="${esc(url.href)}">
 <meta name="twitter:card" content="${image ? 'summary_large_image' : 'summary'}">
-<link rel="stylesheet" href="/offers/style.css">
+<link rel="stylesheet" href="/css/dhad.css"><link rel="stylesheet" href="/offers/style.css">
 </head><body>
 <header class="hero"><div class="wrap"><div class="office"><div>
   <h1>${esc(heading)}</h1>

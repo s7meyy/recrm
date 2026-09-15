@@ -1,0 +1,226 @@
+/* ===== طبقة ضاد: الرموز والخط والهوية (المرحلة ٣٤) =====
+ *
+ * هذا الملف **رموزٌ لا تخطيط**: لا قاعدة هنا ترسم عنصرًا، وإنما تُعرّف المقاييس التي ترسم
+ * بها بقيّةُ الملفات. فمن أراد تغيير الهوية غيّر هذا الملف وحده.
+ *
+ * وهويّة كسّاب باقية كما هي — الأخضر `#0f6e56` وخلفيّته الرملية — لأن ضاد لا تفرض شكلًا
+ * على مشروع له شكل، وإنما تضبط المقاييس تحته: سلّم مسافات واحد، وارتفاع سطرٍ يحمي
+ * التشكيل والهمزات، ومساحة لمسٍ لا تقلّ عن ٤٤ بكسلًا، وتركيزٌ يُرى، وألوانٌ دلالية
+ * للفعل والنجاح والتنبيه والخطأ **والمساعدة** (اللون الأخير كان ناقصًا فأُضيف).
+ *
+ * والملف **خارج البوابة** (انظر `excludedPath` في `netlify/edge-functions/gate.js`) كي
+ * تشاركه صفحةُ العروض العامة: هويّةٌ واحدة للموقع كلّه، ولا سرّ في لونٍ ومقاس.
+ */
+
+/* ===== الخط: IBM Plex Sans Arabic، محليًّا لا من شبكة خارجية =====
+ * أربعة أوزان لا ثمانية: التطبيق لا يستعمل غيرها، و٣٠٠ كيلوبايت أهون من ٦٠٠.
+ * و`swap` كي يُقرأ النصّ بخط النظام ريثما يصل الخط، فلا تبيضّ الصفحة لحظةً.
+ * الرخصة: /assets/fonts/OFL-LICENSE.txt
+ */
+@font-face { font-family: "IBM Plex Sans Arabic"; font-weight: 400; font-style: normal; font-display: swap; src: url("/assets/fonts/IBMPlexSansArabic-Regular.woff2") format("woff2"); }
+@font-face { font-family: "IBM Plex Sans Arabic"; font-weight: 500; font-style: normal; font-display: swap; src: url("/assets/fonts/IBMPlexSansArabic-Medium.woff2") format("woff2"); }
+@font-face { font-family: "IBM Plex Sans Arabic"; font-weight: 600; font-style: normal; font-display: swap; src: url("/assets/fonts/IBMPlexSansArabic-SemiBold.woff2") format("woff2"); }
+@font-face { font-family: "IBM Plex Sans Arabic"; font-weight: 700; font-style: normal; font-display: swap; src: url("/assets/fonts/IBMPlexSansArabic-Bold.woff2") format("woff2"); }
+
+:root {
+  /* ===== الخطوط ===== */
+  --dhad-font-body: "IBM Plex Sans Arabic", system-ui, -apple-system, "Segoe UI", Tahoma, "Noto Naskh Arabic", "Noto Sans Arabic", Arial, sans-serif;
+  --dhad-font-mono: "SF Mono", "Menlo", "Monaco", "Consolas", monospace;
+
+  /* ===== سلّم القياس ===== */
+  --dhad-font-size-100: 11px;
+  --dhad-font-size-200: 12px;
+  --dhad-font-size-300: 13px;
+  --dhad-font-size-400: 14px;
+  --dhad-font-size-500: 15px;
+  --dhad-font-size-600: 17px;
+  --dhad-font-size-700: 19px;
+  --dhad-font-size-800: 22px;
+  --dhad-font-size-900: 26px;
+  --dhad-font-size-1000: 30px;
+
+  /* ارتفاع السطر: `reading` هو المتن العربي — ١٫٧ تترك للهمزة والتشكيل مكانًا فوق الحرف،
+     و`body` ١٫٥٥ للواجهة الكثيفة، و`tight` للأرقام الكبيرة التي لا تشكيل فيها. */
+  --dhad-line-tight: 1.15;
+  --dhad-line-heading: 1.4;
+  --dhad-line-body: 1.55;
+  --dhad-line-reading: 1.7;
+
+  /* ===== المسافات ===== */
+  --dhad-space-0: 0px;
+  --dhad-space-1: 4px;
+  --dhad-space-2: 8px;
+  --dhad-space-3: 12px;
+  --dhad-space-4: 16px;
+  --dhad-space-5: 24px;
+  --dhad-space-6: 32px;
+  --dhad-space-7: 40px;
+  --dhad-space-8: 64px;
+
+  /* ===== الأقطار ===== */
+  --dhad-radius-xs: 6px;
+  --dhad-radius-sm: 10px;
+  --dhad-radius-md: 14px;
+  --dhad-radius-lg: 18px;
+  --dhad-radius-xl: 24px;
+  --dhad-radius-round: 999px;
+
+  /* ===== المقاسات =====
+     `control` هو ارتفاع الزرّ والحقل على الفأرة، و`touch` أدنى مساحة لمس على الإصبع —
+     ويُرفع الأول إلى الثاني في `pointer: coarse` أسفل الملف. */
+  --dhad-size-control: 40px;
+  --dhad-size-touch: 44px;
+  --dhad-size-topbar: 56px;
+  --dhad-size-content: 1240px;
+  --dhad-size-reading: 70ch;
+
+  /* ===== الحركة ===== */
+  --dhad-duration-fast: 90ms;
+  --dhad-duration-base: 150ms;
+  --dhad-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+
+  /* ===== التركيز ===== */
+  --dhad-focus-width: 3px;
+  --dhad-focus-offset: 2px;
+
+  /* ===== الطبقات ===== */
+  --dhad-z-content: 1;
+  --dhad-z-topbar: 20;
+  --dhad-z-scrim: 34;
+  --dhad-z-sidebar: 35;
+  --dhad-z-modal: 50;
+  --dhad-z-toast: 60;
+}
+
+/* ===== الألوان: الوضع النهاري (هوية كسّاب) ===== */
+:root {
+  color-scheme: light;
+  --dhad-color-bg: #f2f4f1;
+  --dhad-color-surface-1: #ffffff;
+  --dhad-color-surface-2: #e9ede8;
+  --dhad-color-hover: #e2e8e1;
+  --dhad-color-border: #d9e0d9;
+  --dhad-color-border-strong: #b9c4bb;
+  --dhad-color-text-1: #1a1f1c;
+  --dhad-color-text-2: #5f6b64;
+  --dhad-color-on-fill: #ffffff;
+
+  /* الفعل */
+  --dhad-color-action: #0f6e56;
+  --dhad-color-action-hover: #0b5a46;
+  --dhad-color-action-active: #084433;
+  --dhad-color-action-text: #0a4d3c;
+  --dhad-color-action-soft: #dff0ea;
+
+  /* النجاح */
+  --dhad-color-success: #1f7a3f;
+  --dhad-color-success-soft: #e0f2e5;
+
+  /* التنبيه */
+  --dhad-color-warning: #8a5a00;
+  --dhad-color-warning-soft: #fbefd3;
+  --dhad-color-warning-border: #ead9a8;
+
+  /* الخطأ */
+  --dhad-color-danger: #b4432f;
+  --dhad-color-danger-hover: #963627;
+  --dhad-color-danger-active: #7a2b1e;
+  --dhad-color-danger-soft: #f9e2dd;
+  --dhad-color-danger-border: #efc5bd;
+
+  /* المساعدة والشرح — كان هذا اللون ناقصًا، فكان الشرحُ يلبس لباس التنبيه فيُقلق بلا داعٍ. */
+  --dhad-color-help: #5b3f91;
+  --dhad-color-help-soft: #ece7f7;
+  --dhad-color-help-border: #cfc4ea;
+
+  --dhad-color-scrim: rgba(16, 24, 20, 0.45);
+  --dhad-shadow-raised: 0 1px 3px rgba(16, 24, 20, 0.07);
+  --dhad-shadow-modal: 0 20px 60px rgba(16, 24, 20, 0.28);
+  --dhad-shadow-toast: 0 6px 20px rgba(16, 24, 20, 0.22);
+}
+
+/* ===== الألوان: الوضع الليلي ===== */
+:root[data-theme="dark"] { color-scheme: dark; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { color-scheme: dark; } }
+
+:root[data-theme="dark"],
+:root[data-dhad-theme="dark"] {
+  --dhad-color-bg: #121714;
+  --dhad-color-surface-1: #1a211d;
+  --dhad-color-surface-2: #232b27;
+  --dhad-color-hover: #2b352f;
+  --dhad-color-border: #2e3833;
+  --dhad-color-border-strong: #46534c;
+  --dhad-color-text-1: #e8eeea;
+  --dhad-color-text-2: #9fb0a7;
+  --dhad-color-on-fill: #ffffff;
+  --dhad-color-action: #3fa88a;
+  --dhad-color-action-hover: #4dbd9c;
+  --dhad-color-action-active: #5fd0ae;
+  --dhad-color-action-text: #8fe0c6;
+  --dhad-color-action-soft: #17342c;
+  --dhad-color-success: #63c98a;
+  --dhad-color-success-soft: #17331f;
+  --dhad-color-warning: #e0b062;
+  --dhad-color-warning-soft: #3a2f18;
+  --dhad-color-warning-border: #55451f;
+  --dhad-color-danger: #e58272;
+  --dhad-color-danger-hover: #f09585;
+  --dhad-color-danger-active: #f7a999;
+  --dhad-color-danger-soft: #3d211c;
+  --dhad-color-danger-border: #5c332b;
+  --dhad-color-help: #c3aaf0;
+  --dhad-color-help-soft: #272138;
+  --dhad-color-help-border: #3e3358;
+  --dhad-color-scrim: rgba(0, 0, 0, 0.6);
+  --dhad-shadow-raised: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --dhad-shadow-modal: 0 20px 60px rgba(0, 0, 0, 0.6);
+  --dhad-shadow-toast: 0 6px 20px rgba(0, 0, 0, 0.5);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --dhad-color-bg: #121714;
+    --dhad-color-surface-1: #1a211d;
+    --dhad-color-surface-2: #232b27;
+    --dhad-color-hover: #2b352f;
+    --dhad-color-border: #2e3833;
+    --dhad-color-border-strong: #46534c;
+    --dhad-color-text-1: #e8eeea;
+    --dhad-color-text-2: #9fb0a7;
+    --dhad-color-on-fill: #ffffff;
+    --dhad-color-action: #3fa88a;
+    --dhad-color-action-hover: #4dbd9c;
+    --dhad-color-action-active: #5fd0ae;
+    --dhad-color-action-text: #8fe0c6;
+    --dhad-color-action-soft: #17342c;
+    --dhad-color-success: #63c98a;
+    --dhad-color-success-soft: #17331f;
+    --dhad-color-warning: #e0b062;
+    --dhad-color-warning-soft: #3a2f18;
+    --dhad-color-warning-border: #55451f;
+    --dhad-color-danger: #e58272;
+    --dhad-color-danger-hover: #f09585;
+    --dhad-color-danger-active: #f7a999;
+    --dhad-color-danger-soft: #3d211c;
+    --dhad-color-danger-border: #5c332b;
+    --dhad-color-help: #c3aaf0;
+    --dhad-color-help-soft: #272138;
+    --dhad-color-help-border: #3e3358;
+    --dhad-color-scrim: rgba(0, 0, 0, 0.6);
+    --dhad-shadow-raised: 0 1px 3px rgba(0, 0, 0, 0.4);
+    --dhad-shadow-modal: 0 20px 60px rgba(0, 0, 0, 0.6);
+    --dhad-shadow-toast: 0 6px 20px rgba(0, 0, 0, 0.5);
+  }
+}
+
+/* على الإصبع يرتفع كل عنصرٍ يُلمس إلى ٤٤ بكسلًا؛ وعلى الفأرة يبقى ٤٠ فلا تتبعثر الواجهة
+   الكثيفة بلا حاجة. وهذا فرق الكثافة «المريحة» و«المضغوطة» في ضاد. */
+@media (pointer: coarse) {
+  :root { --dhad-size-control: var(--dhad-size-touch); }
+}
+
+/* احترام «قلّل الحركة»: تُصفَّر المدد فتسري القواعد نفسها بلا انتقال. */
+@media (prefers-reduced-motion: reduce) {
+  :root { --dhad-duration-fast: 0ms; --dhad-duration-base: 0ms; }
+}

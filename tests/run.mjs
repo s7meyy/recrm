@@ -33,6 +33,7 @@ const SUITES = [
   ['calendar-lock-unit.mjs', null],
   ['app-pages.mjs', OPEN],
   ['mobile-smoke.mjs', OPEN],
+  ['design-dhad.mjs', OPEN],
   ['sidebar-order.mjs', OPEN],
   ['source-and-priority.mjs', OPEN],
   ['invoices.mjs', OPEN],

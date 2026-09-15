@@ -11,10 +11,14 @@
 // البيانات نفسها في IndexedDB ولا علاقة لعامل الخدمة بها إطلاقًا.
 
 // يُرفع الرقم كلما تغيّرت قواعد التخزين نفسها — فيُمسح المخزن القديم كاملًا عند التفعيل.
-const VERSION = 'kassab-v2';
+const VERSION = 'kassab-v3';
 const SHELL = [
   '/', '/index.html',
-  '/css/base.css', '/css/components.css',
+  '/css/dhad.css', '/css/base.css', '/css/components.css',
+  '/assets/fonts/IBMPlexSansArabic-Regular.woff2',
+  '/assets/fonts/IBMPlexSansArabic-Medium.woff2',
+  '/assets/fonts/IBMPlexSansArabic-SemiBold.woff2',
+  '/assets/fonts/IBMPlexSansArabic-Bold.woff2',
   '/js/app.js',
   '/manifest.webmanifest',
 ];

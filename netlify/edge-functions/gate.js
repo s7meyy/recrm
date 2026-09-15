@@ -6,6 +6,10 @@
 //
 // المستثنى من البوابة: صفحة العروض العامة `/offers` ومسارات الدوال `/api/*` و`/.netlify/*`
 // (دالة النشر محميّة بمفتاحها الخاص، ودالّتا القراءة عامّتان بقصد).
+//
+// ومعها **ملف هوية ضاد وخطّه** (`/css/dhad.css` و`/assets/fonts/*`): الصفحة العامة تلبس
+// هوية الموقع نفسها، ولا سرَّ في لونٍ ومقاسٍ وحرف. ولو بقيا خلف البوابة لعادت الصفحة
+// العامة إلى خطّ النظام وحده — موقعان بوجهين.
 
 const COOKIE = 'kassab_gate';
 const MAX_AGE_DAYS = 30;
@@ -43,19 +47,49 @@ function loginPage({ error = false, target = '/' } = {}) {
 <html lang="ar" dir="rtl"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>كسّاب — الدخول</title>
+<link rel="stylesheet" href="/css/dhad.css">
 <style>
-  :root { color-scheme: light; }
+  /* صفحة الدخول تلبس هوية ضاد نفسها: خطُّها وألوانُها ومقاييسُها من \`/css/dhad.css\`
+     (وهو خارج البوابة بقصد). والقيم الاحتياطية مكتوبة بعد كل رمز كي تبقى الصفحة صحيحة
+     لو تعذّر تحميل الملف — لا يليق بصفحة الدخول أن تعتمد على شيء قد لا يصل. */
   *, *::before, *::after { box-sizing: border-box; } /* بدونها يفيض حقل الإدخال بعرض الحشو على الجوال */
-  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f2f4f1; color: #1a1f1c;
-    font-family: system-ui, -apple-system, "Segoe UI", Tahoma, "Noto Naskh Arabic", Arial, sans-serif; }
-  form { background: #fff; padding: 28px; border-radius: 12px; border: 1px solid #d9e0d9; width: min(360px, 92vw);
-    box-shadow: 0 10px 40px rgba(16,24,20,.08); }
-  h1 { margin: 0 0 4px; font-size: 22px; }
-  p { margin: 0 0 18px; color: #5f6b64; font-size: 14px; }
-  input { width: 100%; padding: 10px 12px; font: inherit; border: 1px solid #b9c4bb; border-radius: 8px; }
-  button { width: 100%; margin-top: 12px; padding: 10px 12px; font: inherit; font-weight: 600; cursor: pointer;
-    background: #0f6e56; color: #fff; border: 0; border-radius: 8px; }
-  .err { background: #f9e2dd; color: #b4432f; padding: 8px 10px; border-radius: 8px; font-size: 14px; margin-bottom: 12px; }
+  body {
+    margin: 0; min-height: 100vh; display: grid; place-items: center;
+    padding: var(--dhad-space-4, 16px);
+    background: var(--dhad-color-bg, #f2f4f1); color: var(--dhad-color-text-1, #1a1f1c);
+    line-height: var(--dhad-line-reading, 1.7);
+    font-family: var(--dhad-font-body, system-ui, -apple-system, "Segoe UI", Tahoma, "Noto Naskh Arabic", Arial, sans-serif);
+  }
+  form {
+    background: var(--dhad-color-surface-1, #fff); padding: var(--dhad-space-6, 32px);
+    border-radius: var(--dhad-radius-md, 14px); border: 1px solid var(--dhad-color-border, #d9e0d9);
+    width: min(360px, 100%); box-shadow: 0 10px 40px rgba(16,24,20,.08);
+  }
+  h1 { margin: 0 0 var(--dhad-space-1, 4px); font-size: var(--dhad-font-size-800, 22px); line-height: var(--dhad-line-heading, 1.4); }
+  p { margin: 0 0 var(--dhad-space-5, 24px); color: var(--dhad-color-text-2, #5f6b64); font-size: var(--dhad-font-size-400, 14px); }
+  input {
+    width: 100%; min-height: var(--dhad-size-touch, 44px); padding: var(--dhad-space-3, 12px);
+    font: inherit; border: 1px solid var(--dhad-color-border-strong, #b9c4bb); border-radius: var(--dhad-radius-sm, 10px);
+    background: var(--dhad-color-surface-1, #fff); color: inherit;
+  }
+  input:focus { border-color: var(--dhad-color-action, #0f6e56); outline: none;
+    box-shadow: 0 0 0 var(--dhad-focus-width, 3px) var(--dhad-color-action-soft, #dff0ea); }
+  button {
+    width: 100%; margin-top: var(--dhad-space-3, 12px); min-height: var(--dhad-size-touch, 44px);
+    padding: var(--dhad-space-3, 12px); font: inherit; font-weight: 600; cursor: pointer;
+    background: var(--dhad-color-action, #0f6e56); color: var(--dhad-color-on-fill, #fff);
+    border: 0; border-radius: var(--dhad-radius-sm, 10px);
+  }
+  button:hover { background: var(--dhad-color-action-hover, #0b5a46); }
+  button:active { background: var(--dhad-color-action-active, #084433); }
+  /* التركيز يُرى هنا أيضًا: من يدخل بلوحة المفاتيح يجب أن يعرف أين هو. */
+  :focus-visible { outline: var(--dhad-focus-width, 3px) solid var(--dhad-color-action, #0f6e56); outline-offset: 2px; }
+  .err {
+    background: var(--dhad-color-danger-soft, #f9e2dd); color: var(--dhad-color-danger, #b4432f);
+    border: 1px solid var(--dhad-color-danger-border, #efc5bd);
+    padding: var(--dhad-space-2, 8px) var(--dhad-space-3, 12px); border-radius: var(--dhad-radius-sm, 10px);
+    font-size: var(--dhad-font-size-400, 14px); margin-bottom: var(--dhad-space-3, 12px);
+  }
 </style></head>
 <body>
   <form method="POST" action="/__login">
@@ -111,5 +145,5 @@ export default async (request, context) => {
 
 export const config = {
   path: '/*',
-  excludedPath: ['/offers', '/offers/*', '/api/*', '/.netlify/*'],
+  excludedPath: ['/offers', '/offers/*', '/api/*', '/.netlify/*', '/css/dhad.css', '/assets/fonts/*'],
 };
