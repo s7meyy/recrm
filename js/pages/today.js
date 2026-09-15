@@ -6,7 +6,7 @@
 
 import { repo } from '../data/repository.js';
 import { ENUMS, labelFor, clientPriority, clientTagClass, reviewCandidates } from '../data/schema.js';
-import { getLists, getCompleteness, getFollowUpSettings, typeLabel, getUI, setUI, getGoals, getCompany, getPlaybooks } from '../data/settings.js';
+import { getLists, getCompleteness, getFollowUpSettings, typeLabel, getUI, setUI, getGoals, getCompany, getPlaybooks, getPublishSettings } from '../data/settings.js';
 import { loadMatchingContext, candidatesFor, matchReadiness } from '../data/matching.js';
 import { buildOpportunityIndex, topOpportunities } from '../util/opportunity.js';
 import { receivables } from '../util/receivables.js';
@@ -16,10 +16,12 @@ import { expiringAgreements } from '../util/agreements.js';
 import { dealAnniversaries } from '../util/calendar.js';
 import { runPlans } from '../util/plans.js';
 import { el, clear, badge, emptyState, confirmDialog, toast, openModal, labeled, selectEl } from '../util/dom.js';
-import { formatSAR, formatDate, formatDateTime, formatNumber, relativeDays, daysBetween, daysWord } from '../util/format.js';
+import { formatSAR, formatDate, formatDateTime, formatNumber, relativeDays, daysBetween, daysWord, countWord } from '../util/format.js';
 import { formatPhone, toInternational } from '../util/phone.js';
 import { clientName } from './requests.js';
 import { audioNoteField } from '../util/audio-note.js';
+import { openedNotCalled } from '../util/list-opens.js';
+import { orderByCallTime, callFit, noShowCounts, windowAt } from '../util/call-timing.js';
 
 export async function render(container) {
   const data = await loadData();
@@ -35,6 +37,20 @@ async function loadData() {
     getGoals(), repo.deals.list(), repo.expenses.list(), getCompany(),
   ]);
   const showings = await repo.showings.list(); // المعاينات (المرحلة ٢٧)
+  // فتحات قوائم العملاء (المرحلة ٣٥): إشارةٌ تأتي من الخادم، فقد لا تصل — بلا اتصال، أو
+  // والدالة غير منشورة. وفشلُها **لا يكسر «يومي»**: لوحةٌ تغيب أهون من صفحةٍ لا تُفتح.
+  //
+  // **ولا يُسأل الخادم إلا إن كان للسؤال معنى:** القائمة المخصّصة لا تُنشأ إلا من عروضٍ
+  // منشورة (تردّ الدالة نفسها بـ400 على قائمةٍ بلا عروض)، فمن لم ينشر شيئًا لا قوائم له.
+  // وطلبٌ يُرسَل في كل فتحةٍ لأكثر صفحاتك فتحًا، ليعود بلا شيء، كلفةٌ بلا مقابل.
+  const publishSettings = await getPublishSettings();
+  const hasPublished = (publishSettings.publishedRefs || []).length > 0;
+  const clientLists = hasPublished
+    ? await fetch('/api/client-list', { credentials: 'same-origin' })
+      .then((r) => (r.ok ? r.json() : { lists: [] }))
+      .then((j) => j.lists || [])
+      .catch(() => [])
+    : [];
   const since = ui.lastVisitAt || null;
   const due = receivables({ invoices, deals }); // المستحقات (المرحلة ١٧)
   // عملاء جدد بلا ردّ (المرحلة ٢٣): «سرعة الردّ» أقوى ما تبيعه الأنظمة الكبرى، وحسابه بسيط.
@@ -44,11 +60,19 @@ async function loadData() {
   const clientsById = new Map(ctx.clients.map((c) => [c.id, c]));
   const now = Date.now();
 
+  /* فتح قائمته ولم يتصل (المرحلة ٣٥) — أحرّ إشارة شراءٍ في النظام */
+  const openedLists = openedNotCalled({
+    lists: clientLists,
+    clients: ctx.clients,
+    contactsByClient: new Map(ctx.clients.map((c) => [c.id, repo.clients.lastContactAt(c)])),
+    now,
+  });
+
   /* متابعات اليوم: موعد المتابعة المسجَّل حلّ أو فات */
-  const followUps = ctx.clients
+  const followUps = orderByCallTime(ctx.clients
     .map((c) => ({ client: c, at: repo.clients.nextFollowUp(c) }))
     .filter((x) => x.at && new Date(x.at).getTime() <= now + 86400000)
-    .sort((a, b) => (a.at || '').localeCompare(b.at || ''));
+    .sort((a, b) => (a.at || '').localeCompare(b.at || '')), (r) => r.client, now);
 
   /* عملاء تجاوزوا حدّ عدم التواصل */
   const stale = reachable
@@ -57,6 +81,8 @@ async function loadData() {
     .map((x) => ({ ...x, days: x.last ? daysBetween(x.last, new Date().toISOString()) : null }))
     .filter((x) => x.days == null || x.days >= followUp.staleContactDays)
     .sort((a, b) => (b.days ?? 9999) - (a.days ?? 9999));
+  // الاتصال في وقته (المرحلة ٣٥): من وقتُه الآن يتقدّم، والباقي يبقى على ترتيب الإلحاح.
+  const staleOrdered = orderByCallTime(stale, (r) => r.client, now);
 
   /* مهام اليوم والمتأخرة */
   const pending = tasks.filter((t) => !t.done && t.dueAt);
@@ -113,7 +139,7 @@ async function loadData() {
     .sort((a, b) => b.days - a.days);
 
   return {
-    since, lists, followUps, stale, dueTasks, newMatches, incomplete, awaitingApproval, unreadyExternals, opportunities,
+    since, lists, followUps, stale: staleOrdered, dueTasks, newMatches, incomplete, awaitingApproval, unreadyExternals, opportunities,
     progress, renewals, staleListings,
     clientsById, waiting, tasksPending: tasks.filter((t) => !t.done).length,
     quotesOpen: invoices.filter((i) => i.type === 'quote').length,
@@ -129,6 +155,11 @@ async function loadData() {
     // المعاينات (المرحلة ٢٧): القادمة خلال ٤٨ ساعة، والتي مضت بلا انطباع.
     upcoming: upcomingShowings(showings),
     pendingFeedback: needFeedback(showings),
+    // فتح قائمته ولم يتصل (المرحلة ٣٥)
+    openedLists,
+    // الاتصال في وقته (المرحلة ٣٥): الفترة الحالية، ومن أخلف مواعيده.
+    callWindow: windowAt(now),
+    noShows: noShowCounts(showings),
     propertiesById: new Map(ctx.properties.map((p) => [p.id, p])),
     externalsById: new Map(externals.map((x) => [x.id, x])),
   };
@@ -347,6 +378,24 @@ const row = (main, meta, actions = null) => el('div', { class: 'today-row' },
   el('div', {}, el('div', { class: 'strong' }, main), meta ? el('div', { class: 'muted small' }, meta) : null),
   actions);
 
+/**
+ * شاراتٌ تسبق الاتصال (المرحلة ٣٥): وقتُه، وسجلّ حضوره.
+ * ولا تُخفي أحدًا — تُخبر فقط، فالقرار قرارك وقد تكون مكالمتك عاجلة.
+ */
+function callHints(client, d) {
+  const hints = [];
+  if (callFit(client, Date.now()) === 'later' && client?.bestTime) {
+    hints.push(badge(`يفضّل ${labelFor(ENUMS.contactTimes, client.bestTime)}`, 'badge-warn'));
+  }
+  // «أخلف موعدين» لا «أخلف ٢ مواعيد»: للعربية مثنًّى، و`countWord` تعرفه منذ المرحلة ١٧.
+  const missed = d?.noShows?.get(client?.id) || 0;
+  if (missed) {
+    hints.push(badge(`أخلف ${countWord(missed, ['موعدًا', 'موعدين', 'مواعيد', 'موعدًا'])}`,
+      missed >= 2 ? 'badge-danger' : ''));
+  }
+  return hints.length ? el('span', { class: 'row', style: { gap: '4px' } }, ...hints) : null;
+}
+
 function clientActions(client) {
   const actions = el('div', { class: 'row' });
   if (client?.phone) {
@@ -452,6 +501,18 @@ function build(container, d) {
           waitedMinutes < 120 ? `منذ ${waitedMinutes} دقيقة` : `منذ ${Math.round(waitedMinutes / 60)} ساعة`,
           clientActions(client)))),
       { href: '#/clients', hrefText: 'العملاء →', tone: 'today-warn' }));
+  }
+
+  /* فتح قائمته ولم يتصل (المرحلة ٣٥) — الإشارة كانت عمودًا في جدولٍ لا يُفتح إلا للنشر */
+  if (d.openedLists.length) {
+    grid.append(section('فتحوا قائمتهم ولم تتصل بهم', d.openedLists.length,
+      el('div', {},
+        el('p', { class: 'muted small', text: 'من يفتح قائمة عقاراته مرّتين يقرأ لا يتصفّح. ولا يظهر هنا من كلّمتَه بعد فتحه.' }),
+        ...d.openedLists.slice(0, 8).map(({ client, list, opens, lastOpenAt }) => row(
+          clientName(client) || list.clientName || list.title || 'قائمة',
+          `${formatNumber(opens)} فتحة · آخرها ${formatDateTime(lastOpenAt)}`,
+          clientActions(client)))),
+      { href: '#/publish', hrefText: 'القوائم →', tone: 'today-ok' }));
   }
 
   /* مستحقات لم تُقبض (المرحلة ١٧) — لا تظهر اللوحة إن لم يكن لك شيء عند أحد */
@@ -586,10 +647,12 @@ function build(container, d) {
   /* متابعات اليوم */
   grid.append(section('متابعات اليوم', d.followUps.length,
     d.followUps.length
-      ? el('div', {}, d.followUps.slice(0, 8).map(({ client, at }) => row(
-        el('span', {}, clientName(client), ...(client.tags || []).filter(clientTagClass).map((t) => badge(t, clientTagClass(t)))),
-        `موعد المتابعة: ${formatDate(at)}${new Date(at).getTime() < Date.now() ? ' — فات' : ''}`,
-        clientActions(client))))
+      ? el('div', {},
+        d.callWindow ? el('p', { class: 'muted small', text: `الفترة الآن: ${labelFor(ENUMS.contactTimes, d.callWindow)} — ومن يفضّلها مقدَّمٌ في الترتيب.` }) : null,
+        ...d.followUps.slice(0, 8).map(({ client, at }) => row(
+          el('span', {}, clientName(client), ...(client.tags || []).filter(clientTagClass).map((t) => badge(t, clientTagClass(t))), callHints(client, d)),
+          `موعد المتابعة: ${formatDate(at)}${new Date(at).getTime() < Date.now() ? ' — فات' : ''}`,
+          clientActions(client))))
       : el('p', { class: 'muted small', text: 'لا متابعات مجدولة اليوم.' }),
     { href: '#/clients', hrefText: 'العملاء →', tone: d.followUps.length ? 'today-warn' : '' }));
 
@@ -617,7 +680,7 @@ function build(container, d) {
   grid.append(section('عملاء لم يُتواصل معهم', d.stale.length,
     d.stale.length
       ? el('div', {}, d.stale.slice(0, 8).map(({ client, days }) => row(
-        clientName(client),
+        el('span', {}, clientName(client), callHints(client, d)),
         days == null ? 'لم يُسجَّل أي تواصل بعد' : `آخر تواصل قبل ${daysWord(days)}`,
         clientActions(client))))
       : el('p', { class: 'muted small', text: 'لا أحد تجاوز الحدّ.' }),

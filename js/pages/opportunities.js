@@ -11,6 +11,8 @@ import { el, clear, badge, selectEl, checkbox, emptyState, openModal, toast } fr
 import { formatSAR, formatArea, formatNumber } from '../util/format.js';
 import { formatPhone } from '../util/phone.js';
 import { clientName } from './requests.js';
+import { revivedRequests } from '../util/revived-requests.js';
+import { formatDate } from '../util/format.js';
 
 export async function render(container) {
   const ctx = { container, city: '', byType: true, nodes: {} };
@@ -53,6 +55,40 @@ function build(ctx) {
   draw(ctx);
 }
 
+/**
+ * «طلبات عادت» (المرحلة ٣٥): أدفأ اسمٍ عندك كان مخفيًّا.
+ *
+ * صفحة المطابقات ترشّح `status === 'active'` وحدها، فالطلب الموقوف لا يُطابَق أبدًا مهما
+ * دخل مخزونك بعده. وهذه اللوحة تصله: مخزونٌ **جديد بعد إيقاف الطلب**، خلال سنة، وبدرجةٍ
+ * أعلى من عتبتك المعتادة — فالمكالمة إلى من أوقفتَ طلبه لا تُبذل إلا على عرضٍ ممتاز.
+ */
+function drawRevived(ctx) {
+  const rows = revivedRequests({ requests: ctx.match.requests, ctx: ctx.match })
+    .filter((r) => !ctx.city || r.request.city === ctx.city);
+  if (!rows.length) return;
+
+  ctx.nodes.body.append(
+    el('h2', { class: 'section-title', style: { marginTop: '22px' }, text: 'طلبات عادت — أوقفتَها ثم جاء ما يناسبها' }),
+    el('p', { class: 'muted small', text: 'الطلب الموقوف وحده — والمُنجز صفقةٌ تمّت لا يُوقَظ صاحبها. ولا يُحتسب إلا عرضٌ دخل مخزونك بعد إيقاف الطلب: ما كان موجودًا يومها ليس خبرًا، وربما عرضتَه عليه ورفضه. والنافذة سنة، والدرجة أعلى من عتبتك المعتادة.' }),
+    el('div', { class: 'table-wrap' }, el('table', { class: 'table' },
+      el('thead', {}, el('tr', {}, ['العميل', 'الطلب', 'أُوقف', 'أفضل مرشّح', 'الدرجة', 'مرشّحون'].map((t) => el('th', { text: t })))),
+      el('tbody', {}, rows.map((r) => {
+        const client = ctx.clientsById.get(r.request.clientId);
+        const listing = r.best?.listing || {};
+        return el('tr', {},
+          el('td', {},
+            el('div', { class: 'strong', text: clientName(client) }),
+            client?.phone ? el('a', { class: 'tel small', href: `tel:${client.phone}`, text: formatPhone(client.phone) }) : null),
+          el('td', { text: `${typeLabel(ctx.lists, r.request.type)} — ${(r.request.districts || []).join('، ') || r.request.city || ''}` }),
+          el('td', {}, el('div', { class: 'small', text: formatDate(new Date(r.closedAt).toISOString()) }),
+            el('div', { class: 'muted small', text: `قبل ${formatNumber(r.monthsAgo)} شهرًا` })),
+          el('td', { text: `${typeLabel(ctx.lists, listing.type)} — ${listing.district || listing.city || ''}`
+            + (listing.price ? ` · ${formatSAR(listing.price)}` : '') }),
+          el('td', {}, badge(`${formatNumber(r.best?.score || 0)}٪`, 'badge-ok')),
+          el('td', { class: 'num', text: formatNumber(r.candidates.length) }));
+      })))));
+}
+
 function chip(value, label) {
   return el('div', { class: 'stat-chip' },
     el('div', { class: 'stat-num', text: formatNumber(value) }),
@@ -81,6 +117,8 @@ function draw(ctx) {
   ctx.nodes.body.append(
     el('h2', { class: 'section-title', text: 'أحياء يطلبها عملاؤك ولا تملك فيها' }),
     hot.length ? table(ctx, hot) : el('p', { class: 'muted small', text: 'لا عجز حاليًا — كل طلب نشط يجد مرشحًا واحدًا على الأقل.' }));
+
+  drawRevived(ctx);
 
   if (surplus.length) {
     ctx.nodes.body.append(

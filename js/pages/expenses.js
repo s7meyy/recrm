@@ -165,6 +165,14 @@ async function openForm(ctx, existing) {
     options: ENUMS.expenseCategories.map((c) => ({ value: c.key, label: c.label })), value: draft.category || 'other',
   });
   const noteInput = el('input', { class: 'input', type: 'text', value: draft.note || '', placeholder: 'تفصيل قصير' });
+  // المصدر (المرحلة ٣٥): من قائمة المصادر نفسها التي تُوسم بها عملاؤك — وإلا لم يلتقِ
+  // الجدولان. ويقبل الكتابة الحرّة كي لا يُحبس صرفٌ على مصدرٍ لم تسجّله بعد.
+  const sourceSelect = el('input', {
+    class: 'input', type: 'text', list: 'expense-sources',
+    value: draft.source || '', placeholder: 'مثال: سناب · إحالة عميل قديم',
+  });
+  const sourceList = el('datalist', { id: 'expense-sources' },
+    (ctx.lists.sources || []).map((name) => el('option', { value: name })));
   const dealSelect = selectEl({
     options: [...ctx.deals].sort((a, b) => (b.date || '').localeCompare(a.date || ''))
       .map((d) => ({ value: d.id, label: `${formatDate(d.date)} — ${formatSAR(d.finalPrice)}` })),
@@ -177,7 +185,7 @@ async function openForm(ctx, existing) {
     const data = {
       date: fromInputDate(dateInput.value),
       amount: amountInput.value === '' ? null : Number(amountInput.value),
-      category: categorySelect.value, note: noteInput.value,
+      category: categorySelect.value, note: noteInput.value, source: sourceSelect.value.trim(),
       dealId: dealSelect.value || null, propertyId: draft.propertyId || null,
     };
     saveBtn.disabled = true;
@@ -203,6 +211,7 @@ async function openForm(ctx, existing) {
       labeled('المبلغ (ريال)', amountInput, { required: true }),
       labeled('التصنيف', categorySelect),
       labeled('مرتبط بصفقة', dealSelect, { hint: 'اختياري — يفيد في معرفة تكلفة كل صفقة' }),
+      labeled('المصدر الذي صُرف عليه', el('div', {}, sourceSelect, sourceList), { hint: 'اختياري — يحوّل تقرير المصادر من عدّ صفقات إلى ربحٍ بعد الكلفة' }),
       labeled('ملاحظة', noteInput, { full: true }))),
     footer: [
       el('button', { type: 'button', class: 'btn btn-ghost', text: 'إلغاء', onClick: () => modal.close() }),

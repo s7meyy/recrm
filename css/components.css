@@ -769,3 +769,14 @@ body.client-mode #client-mode-btn { background: var(--accent); color: #fff; }
   .calendar-table th { font-size: var(--dhad-font-size-100); }
   .calendar-table th, .calendar-table td { padding-inline: 2px; }
 }
+
+/* ===== المرحلة ٣٥ — شهادة السوق على العقار ===== */
+.evidence-box { border-top: 1px solid var(--line); }
+.evidence-facts { display: flex; flex-wrap: wrap; gap: var(--dhad-space-2); margin-bottom: var(--dhad-space-3); }
+/* الحكم هو ما يُقرأ للمالك، فيأخذ لون الفعل وحجمًا يفصله عمّا حوله. */
+.evidence-verdict {
+  background: var(--accent-soft); color: var(--accent-text); border-radius: var(--radius);
+  padding: var(--dhad-space-3); margin: 0 0 var(--dhad-space-3); line-height: var(--dhad-line-body);
+}
+.evidence-group { margin-bottom: var(--dhad-space-3); }
+.evidence-title { margin: 0 0 var(--dhad-space-2); font-size: var(--fs-sm); color: var(--muted); font-weight: 700; }

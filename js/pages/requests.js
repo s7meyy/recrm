@@ -418,9 +418,23 @@ async function openForm(ctx, existing, prefill = null) {
     options: ctx.lists.cities.map((c) => ({ value: c, label: c })), value: draft.city || ctx.lists.cities[0],
     onChange: async () => { await loadZones(); drawZones(); drawDistricts(); },
   });
+  // سبب موت الطلب (المرحلة ٣٥): يُسأل عند الإغلاق وحده — سؤالٌ في غير موضعه لا يُجاب.
+  const closeReasonSelect = selectEl({
+    options: ENUMS.matchRejectReasons.map((r) => ({ value: r.key, label: r.label })),
+    placeholder: 'بلا سبب مسجَّل', value: draft.closeReason || '',
+  });
+  const closeReasonField = labeled('لماذا أُوقف؟', closeReasonSelect, {
+    hint: 'اختياري — لكنه الحقل الذي يعلّمك أين تخسر: أهو سعرك أم بطء ردّك أم مخزونك',
+  });
+  // «موقوف» وحده هو الخسارة: `done` صفقةٌ تمّت لا طلبٌ مات، وسؤال صاحبها «لماذا انتهى؟»
+  // خطأٌ في الفهم قبل أن يكون خطأً في الواجهة.
+  const DEAD = ['paused'];
+  const syncCloseReason = () => { closeReasonField.hidden = !DEAD.includes(statusSelect.value); };
   const statusSelect = selectEl({
     options: ENUMS.requestStatuses.map((s) => ({ value: s.key, label: s.label })), value: draft.status || 'active',
+    onChange: () => syncCloseReason(),
   });
+  syncCloseReason(); // الحالة الابتدائية: الحقل مخفيّ ما لم يكن الطلب منتهيًا أصلًا
   const budgetInput = el('input', { class: 'input', type: 'number', min: '0', step: '1000', value: draft.budgetMax ?? '', onInput: () => updateHints() });
   const areaInput = el('input', { class: 'input', type: 'number', min: '0', step: '10', value: draft.area ?? '', onInput: () => updateHints() });
   const notesInput = el('textarea', { class: 'input', rows: 3, value: draft.notes || '' });
@@ -538,6 +552,8 @@ async function openForm(ctx, existing, prefill = null) {
       type: typeSelect.value, purpose: purposeSelect.value, city: citySelect.value,
       districts: [...selectedDistricts], districtZones: [...selectedZones],
       budgetMax: num(budgetInput), area: num(areaInput), notes: notesInput.value, status: statusSelect.value,
+      // السبب لا يُحفظ إلا مع حالة «موقوف»: طلبٌ أُعيد تنشيطه، أو تمّت صفقته، لا سببَ لموته.
+      closeReason: DEAD.includes(statusSelect.value) ? (closeReasonSelect.value || null) : null,
       priceFlexibility: num(priceFlexPercent), priceFlexAmount: num(priceFlexAmount),
       areaFlexibility: num(areaFlexPercent), areaFlexAmount: num(areaFlexAmount),
       referralSource: source.input.value,
@@ -593,6 +609,7 @@ async function openForm(ctx, existing, prefill = null) {
       el('div', { class: 'form-grid' },
         labeled('العميل', clientRow, { required: true }),
         labeled('الحالة', statusSelect),
+        closeReasonField,
         labeled('نوع العقار', typeSelect, { required: true, hint: 'فاصل قاطع: لا تُطابق إلا عقارات هذا النوع' }),
         labeled('الغرض', purposeSelect, { required: true, hint: 'فاصل قاطع: الطلب لغرض واحد' }),
         labeled('المدينة', citySelect, { required: true, hint: 'فاصل قاطع' }),

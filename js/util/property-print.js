@@ -8,6 +8,7 @@ import { formatPhone } from './phone.js';
 import { getImageUrl } from '../data/images.js';
 import { labelFor, ENUMS, TYPE_FIELD_GROUPS } from '../data/schema.js';
 import { typeLabel, typeGroup } from '../data/settings.js';
+import { propertyEvidence, MIN_SAMPLE } from './property-evidence.js';
 
 const MAX_IMAGES = 4;
 
@@ -162,7 +163,7 @@ const SOURCE_LABEL = { inventory: 'من مخزونك', external: 'عرض معل�
  * @param {object} property العقار
  * @param {{ lists, company, owner, estimate, trend, asking }} ctx `estimate` ناتج estimatePrice
  */
-export async function printCma(property, { lists, company = {}, owner = null, estimate = null, trend = null } = {}) {
+export async function printCma(property, { lists, company = {}, owner = null, estimate = null, trend = null, showings = [], matches = [] } = {}) {
   const where = [property.district, property.city].filter(Boolean).join('، ');
   const subtitle = `${typeLabel(lists, property.type)}${where ? ` — ${where}` : ''} · ${formatDate(new Date().toISOString())}`;
 
@@ -211,6 +212,29 @@ export async function printCma(property, { lists, company = {}, owner = null, es
         + `${trend.days != null ? ` · مضى على السعر الحالي ${daysWord(trend.days)}` : ''}` })
     : null;
 
+  // شهادة السوق (المرحلة ٣٥): الجزء الذي لا يستطيع المالك مجادلته — لا رأي الوسيط، بل
+  // ما قاله من رأى العقار ومن رفضه. وهو أثقل في التفاوض من كل جدول مقارنات قبله.
+  const ev = propertyEvidence({ property, showings, matches });
+  const reasonRows = ev.allReasons.map(([key, n]) => el('tr', {},
+    el('td', { text: labelFor(ENUMS.matchRejectReasons, key) || key }),
+    el('td', { text: formatNumber(n) })));
+  const market = ev.opinions
+    ? el('div', {},
+        el('p', { class: 'print-statement', text: [
+          `سُجّلت ${formatNumber(ev.showings.done)} معاينة لهذا العقار`,
+          ev.showings.noShow ? `و${formatNumber(ev.showings.noShow)} موعدًا لم يحضره صاحبه` : '',
+          `و${formatNumber(ev.opinions)} رأيًا`,
+          ev.dominant && ev.enough
+            ? `— وأكثرها على سببٍ واحد: ${labelFor(ENUMS.matchRejectReasons, ev.dominant.key)} (${formatNumber(ev.dominant.count)} من ${formatNumber(ev.opinions)}).`
+            : `— ولم تبلغ عيّنةً تكفي لحكمٍ واحد (الحدّ ${formatNumber(MIN_SAMPLE)} آراء فأكثر يجتمع أكثرها على سبب).`,
+        ].filter(Boolean).join(' ') }),
+        reasonRows.length
+          ? el('table', { class: 'print-table' },
+              el('thead', {}, el('tr', {}, el('th', { text: 'ما قاله الناس' }), el('th', { style: { width: '20%' }, text: 'العدد' }))),
+              el('tbody', {}, reasonRows))
+          : null)
+    : null;
+
   printNode(el('article', { class: 'print-doc' },
     await officeHeader(company, 'تقرير مقارنة سوقية', subtitle),
     el('table', { class: 'print-table' },
@@ -222,6 +246,8 @@ export async function printCma(property, { lists, company = {}, owner = null, es
     history,
     el('h2', { class: 'print-section-title', text: 'العقارات المقارَنة' }),
     comparables,
+    market ? el('h2', { class: 'print-section-title', text: 'ماذا قال السوق عن هذا العقار' }) : null,
+    market,
     el('footer', { class: 'print-footer' },
       'هذا التقرير مبني على بيانات هذا المكتب وحده (مخزونه وعروض معلنة رصدها وصفقات أتمّها) '
       + 'وقت طباعته، وهو تقديرٌ استرشادي للتفاوض — وليس تقييمًا عقاريًا معتمدًا ولا شهادة تقييم نظامية. '

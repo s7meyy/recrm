@@ -24,6 +24,7 @@ import { renderTemplate, templateValues, whatsappLink } from '../util/templates.
 import { buildPriceIndex, comparePrice, priceTrend, priceSamples, estimatePrice } from '../util/price-stats.js';
 import { printProperty, printPropertyCatalog, printAgreement, printCma } from '../util/property-print.js';
 import { adCopy, adGaps } from '../util/ad-copy.js';
+import { propertyEvidence, priceDrops, MIN_SAMPLE } from '../util/property-evidence.js';
 
 // "الحالة" فرز خاص بالعقارات (بلا معنى للعروض الخارجية) فيبقى معرَّفًا هنا؛ بقية المجموعات
 // مشتركة مع خريطة العقارات عبر util/property-filters.js فلا تنحرف الصفحتان عن بعضهما.
@@ -58,9 +59,9 @@ export async function render(container) {
 }
 
 async function loadData(ctx) {
-  const [properties, clients, lists, customFields, completeness, externals, deals] = await Promise.all([
+  const [properties, clients, lists, customFields, completeness, externals, deals, showings, matches] = await Promise.all([
     repo.properties.list(), repo.clients.list(), getLists(), getCustomFields(), getCompleteness(),
-    repo.externalListings.list(), repo.deals.list(),
+    repo.externalListings.list(), repo.deals.list(), repo.showings.list(), repo.matches.list(),
   ]);
   // العقارات بانتظار المعالجة/الاعتماد (المرحلة ٢) لا تظهر هنا ولا تدخل أي مطابقة — راجعها من صفحة الجولات الميدانية.
   const approved = properties.filter((p) => p.captureStatus === 'approved');
@@ -75,6 +76,10 @@ async function loadData(ctx) {
   ctx.priceIndex = buildPriceIndex({ properties, externals, deals });
   // العيّنة الخام (المرحلة ٢٦): يحتاجها تقرير المالك ليعرض المقارنات صفًّا صفًّا لا وسيطًا فقط.
   ctx.priceSamples = priceSamples({ properties, externals, deals });
+  // شهادة السوق (المرحلة ٣٥): ما قاله من رأى العقار ومن رفضه قبل أن يراه — يحتاجهما
+  // لوحة «ماذا قال السوق» في النموذج، وتقرير المالك.
+  ctx.showings = showings;
+  ctx.matches = matches;
   // أرقام العروض المنشورة (المرحلة ٢٨): يذكرها نصّ الإعلان ليطابق ما يراه العميل على صفحتك.
   const publish = await getPublishSettings();
   ctx.publishedRefs = new Map(publish.publishedRefs || []);
@@ -583,7 +588,7 @@ async function openShareMenu(ctx, p) {
           purpose: (p.purposes || []).includes('rent') && !(p.purposes || []).includes('sale') ? 'rent' : 'sale',
           excludeId: p.id,
         }, ctx.priceSamples);
-        await printCma(p, { lists: ctx.lists, company, owner, estimate, trend: priceTrend(p) });
+        await printCma(p, { lists: ctx.lists, company, owner, estimate, trend: priceTrend(p), showings: ctx.showings || [], matches: ctx.matches || [] });
       },
     }),
     el('button', {
@@ -924,6 +929,7 @@ async function openForm(ctx, existing) {
       newOwnerBox),
     typeBox,
     customBox,
+    isEdit ? evidenceSection(ctx, existing) : null,
     el('div', { class: 'form-section' },
       el('div', { class: 'form-grid one' },
         labeled('الملاحظات', notesInput),
@@ -952,6 +958,71 @@ async function openForm(ctx, existing) {
   });
 }
 
+
+/**
+ * «ماذا قال السوق عن هذا العقار؟» (المرحلة ٣٥).
+ *
+ * النظام يسأل بعد كل معاينة عن رأي العميل وسببه، ويسأل عند رفض المطابقة عن سببه — ثم لا
+ * يجمع ذلك على العقار أبدًا. وهذه اللوحة تجمعه، لا لتكون تقريرًا يُقرأ بل لتكون **ما تقوله
+ * للمالك**: رأيُك وحدك أن سعره مرتفع جدالٌ بين رأيين، وأن تقول «تسعة من اثني عشر قالوا
+ * السعر مرتفع» شهادةُ سوق.
+ *
+ * وتفصل بين شهادتين لأن علاجهما مختلف: من رآه ثم قال يحكم على **العقار**، ومن رفض قبل أن
+ * يراه يحكم على **إعلانك** (سعرك المكتوب وصورك ووصفك).
+ */
+function evidenceSection(ctx, property) {
+  const ev = propertyEvidence({
+    property, showings: ctx.showings || [], matches: ctx.matches || [],
+  });
+  const s = ev.showings;
+  if (!s.booked && !ev.opinions && !ev.priceDrops) return null;
+
+  const reasonLabel = (key) => labelFor(ENUMS.matchRejectReasons, key) || key;
+  const reasonList = (rows, title, note) => (rows.length
+    ? el('div', { class: 'evidence-group' },
+      el('h4', { class: 'evidence-title' }, title, el('span', { class: 'muted small', text: ` — ${note}` })),
+      el('ul', { class: 'simple-list' }, rows.map(([key, n]) => el('li', {},
+        el('span', { text: reasonLabel(key) }),
+        el('span', { class: 'num strong', text: formatNumber(n) })))))
+    : null);
+
+  // الحكم لا يُعطى على عيّنة لا تكفي — والصمت هنا أصدق من رقمٍ يوهم.
+  const verdict = ev.dominant && ev.enough
+    ? el('p', { class: 'evidence-verdict' },
+      el('strong', { text: `${formatNumber(ev.dominant.count)} من ${formatNumber(ev.opinions)} ` }),
+      el('span', { text: `قالوا: ${reasonLabel(ev.dominant.key)}.` }))
+    : el('p', { class: 'muted small' }, ev.opinions
+      ? `العيّنة ${formatNumber(ev.opinions)} — ولا يُعطى حكمٌ دون ${formatNumber(MIN_SAMPLE)} آراء، ولا ما لم يجتمع أكثرها على سبب واحد.`
+      : 'لا آراء مسجَّلة بعد. سجّل رأي العميل بعد كل معاينة، فهذه اللوحة هي حجّتك أمام المالك.');
+
+  const drops = priceDrops(property);
+  const facts = el('div', { class: 'evidence-facts' }, [
+    ['معاينات', formatNumber(s.done)],
+    s.noShow ? ['لم يحضر', formatNumber(s.noShow)] : null,
+    ['أعجبه', formatNumber(s.liked)],
+    ['تردّد', formatNumber(s.maybe)],
+    ['لم يعجبه', formatNumber(s.disliked)],
+    ev.daysListed !== null ? ['في السوق', daysWord(ev.daysListed)] : null,
+    drops.length ? ['تخفيضات', formatNumber(drops.length)] : null,
+  ].filter(Boolean).map(([k, v]) => el('span', { class: 'badge' }, `${k}: `, el('span', { class: 'num', text: v }))));
+
+  // رحلة السعر (البند أ٤): التخفيضات مكتوبة في السجل منذ زمن ولا تُعرض.
+  const journey = drops.length
+    ? el('div', { class: 'evidence-group' },
+      el('h4', { class: 'evidence-title', text: 'رحلة السعر' }),
+      el('ul', { class: 'simple-list' }, drops.map((d) => el('li', {},
+        el('span', { text: formatDate(d.at) }),
+        el('span', { class: 'num', text: `${formatSAR(d.from)} ← ${formatSAR(d.to)} (−${formatNumber(Math.round(d.cut * 100))}٪)` })))))
+    : null;
+
+  return el('div', { class: 'form-section evidence-box' },
+    el('h3', { class: 'form-section-title', text: 'ماذا قال السوق عن هذا العقار؟' }),
+    facts,
+    verdict,
+    reasonList(ev.seenReasons, 'رأوه ثم لم يعجبهم', 'حكمٌ على العقار'),
+    reasonList(ev.unseenReasons, 'رفضوه قبل أن يروه', 'حكمٌ على إعلانك: السعر المكتوب والصور والوصف'),
+    journey);
+}
 
 /**
  * نصّ الإعلان الجاهز (المرحلة ٢٨).

@@ -16,6 +16,7 @@ import { revenueForecast } from '../util/forecast.js';
 import { el, clear, badge } from '../util/dom.js';
 import { formatNumber, formatSAR, daysBetween, relativeDays, countWord } from '../util/format.js';
 import { formatPhone, toInternational } from '../util/phone.js';
+import { discountEffect } from '../util/property-evidence.js';
 
 const DISTRICT_MIN_SAMPLE = 3;
 
@@ -228,6 +229,7 @@ function buildLayout(container, data) {
   grid.append(panel('صافي الربح', null, ...profitSection({ deals, expenses })));
   grid.append(panel('أين تضيع: قمع التحويل', null, ...funnelSection({ requests, matches })));
   grid.append(panel('لماذا تضيع الصفقات', null, ...rejectSection(matches)));
+  grid.append(panel('لماذا يتركك الناس', 'سبب موت الطلب كلّه لا سبب رفض عرضٍ واحد.', ...lossSection(requests)));
 
   /* توقّع الإيراد (المرحلة ٢٨) */
   grid.append(panel('العمولة المتوقَّعة', 'من طلباتك النشطة ونسب قمعك أنت — تقدير لا وعد.',
@@ -235,9 +237,12 @@ function buildLayout(container, data) {
 
   /* المعاينات ونسبتها إلى الصفقات (المرحلة ٢٧) */
   grid.append(panel('المعاينات', 'الموعد الذي يصير صفقة — والذي لا يصير.', ...showingSection({ showings, deals })));
+  // رحلة السعر مجموعةً (المرحلة ٣٥، البند أ٤): التخفيض مكتوبٌ في كل سجل ولم يُقرأ قط.
+  const discount = discountSection({ properties: approved, deals });
+  if (discount) grid.append(discount);
 
   /* من أين يأتي المال، وأي عقار يستحق جهدك (المرحلة ٢٤) */
-  grid.append(panel('مصادر العملاء', 'أي مصدرٍ أعطاك صفقات لا مجرد أسماء.', ...sourceSection({ clients, requests, deals })));
+  grid.append(panel('مصادر العملاء', 'أي مصدرٍ أعطاك صفقات لا مجرد أسماء.', ...sourceSection({ clients, requests, deals, expenses })));
   grid.append(panel('ربحية العقارات', 'العمولة الصافية ناقص ما صُرف على العقار.', ...propertySection({ properties, deals, expenses, lists })));
 
   /* مؤشر السوق من بياناتك (المرحلة ١١) */
@@ -295,6 +300,33 @@ function forecastSection({ requests, matches, deals, company }) {
 }
 
 /**
+ * «هل ينفع التخفيض معك؟» (المرحلة ٣٥).
+ *
+ * `priceHistory` يُكتب عند كل تغيير سعر منذ زمن ولا يُقرأ إلا داخل حسابات السعر. وفيه جوابٌ
+ * لا يملكه غيرك: كم يومًا بِعتَ **بعد** التخفيض، وأي نسبةٍ هي التي باعت فعلًا — فتكفّ عن
+ * اقتراح خمسة بالمئة وأنت تعرف أن ما باع عندك كان اثني عشر.
+ *
+ * ولا يُعطى رقمٌ دون عيّنة: صفقتان لا تصنعان قاعدة، والصمت هنا أصدق.
+ */
+function discountSection({ properties, deals }) {
+  const d = discountEffect({ properties, deals });
+  if (!d.sold) return null;
+  if (d.sample < 3) {
+    return el('div', { class: 'panel' },
+      el('h2', { text: 'هل ينفع التخفيض معك؟' }),
+      el('p', { class: 'panel-desc', text: `بِعتَ ${formatNumber(d.sold)} عقارًا، منها ${formatNumber(d.soldAfterCut)} بعد تخفيضٍ مسجَّل.`
+        + ' والعيّنة أقلّ من ثلاث، فلا رقم — نسبةٌ من صفقتين ليست نسبة.' }));
+  }
+  return el('div', { class: 'panel' },
+    el('h2', { text: 'هل ينفع التخفيض معك؟' }),
+    el('p', { class: 'panel-desc', text: 'من تاريخك أنت لا من قاعدةٍ عامة — وآخر تخفيضٍ سبق الصفقة هو المحسوب، فلا تُنسب صفقةٌ إلى تخفيضٍ جاء بعدها.' }),
+    el('div', { class: 'stat-strip' },
+      statChip(d.soldAfterCut, `من ${formatNumber(d.sold)} صفقة سبقها تخفيض`),
+      statChip(Math.round(d.medianCut * 100), 'وسيط نسبة التخفيض (٪)'),
+      statChip(d.medianDays, 'يومًا وسطيًّا من التخفيض إلى البيع')));
+}
+
+/**
  * المعاينات (المرحلة ٢٧): وحدتها **المعاينة** لا الطلب، ولذلك هي لوحة مستقلة لا مرحلة في
  * القمع — القمع كل مراحله بالطلب وكل مرحلة مجموعة جزئية مما قبلها، والمعاينة تكسر الشرطين.
  */
@@ -329,23 +361,28 @@ function showingSection({ showings, deals }) {
  * أداء مصادر العملاء (المرحلة ٢٤): تاق «المصدر» يُكتب منذ المرحلة ٨ ولم يكن يُقرأ.
  * العمود الحاسم هو **العمولة**، لأن مصدرًا يعطيك خمسين اسمًا بلا صفقة تكلفةٌ لا مورد.
  */
-function sourceSection({ clients, requests, deals }) {
-  const { rows, totals } = sourceReport({ clients, requests, deals });
+function sourceSection({ clients, requests, deals, expenses }) {
+  const { rows, totals } = sourceReport({ clients, requests, deals, expenses });
   if (!rows.length) return [el('div', { class: 'muted small', text: 'لا عملاء بعد.' })];
   const pct = (v) => (v == null ? '—' : `${formatNumber(Math.round(v * 100))}٪`);
   return [
     el('div', { class: 'table-wrap' }, el('table', { class: 'table' },
-      el('thead', {}, el('tr', {}, ['المصدر', 'عملاء', 'طلبات نشطة', 'صفقات', 'تحويل', 'عمولة صافية'].map((t) => el('th', { text: t })))),
+      el('thead', {}, el('tr', {}, ['المصدر', 'عملاء', 'صفقات', 'تحويل', 'عمولة', 'كلفة', 'الصافي'].map((t) => el('th', { text: t })))),
       el('tbody', {}, rows.slice(0, 10).map((r) => el('tr', {},
         el('td', { class: 'strong', text: r.source }),
         el('td', { class: 'num', text: formatNumber(r.clients) }),
-        el('td', { class: 'num', text: formatNumber(r.active) }),
         el('td', { class: 'num', text: formatNumber(r.deals) }),
         el('td', { class: 'num', text: pct(r.conversion) }),
-        el('td', { class: 'num strong', text: formatSAR(r.commission) }))))))
+        el('td', { class: 'num', text: formatSAR(r.commission) }),
+        el('td', { class: 'num', text: r.spent ? formatSAR(r.spent) : '—' }),
+        // الصافي هو الحكم — وسالبُه يُلوَّن بلون الخطأ: مصدرٌ يأخذ أكثر مما يعطي.
+        el('td', { class: 'num strong' }, r.spent
+          ? badge(formatSAR(r.net), r.net >= 0 ? 'badge-ok' : 'badge-danger')
+          : el('span', { text: formatSAR(r.commission) })))))))
     ,
     rows.length > 10 ? el('div', { class: 'muted small', text: `+ ${formatNumber(rows.length - 10)} مصدرًا آخر` }) : null,
-    el('div', { class: 'muted small', text: `${formatNumber(totals.sources)} مصدرًا مسمّى · العمولة صافية بعد نصيب الشريك.` }),
+    el('div', { class: 'muted small', text: `${formatNumber(totals.sources)} مصدرًا مسمّى · العمولة صافية بعد نصيب الشريك.`
+      + (totals.spent ? ` · صُرف ${formatSAR(totals.spent)} موسومًا بمصدره.` : ' · لا مصروف موسوم بمصدره بعد — وسم المصروف في صفحة المصاريف يجعل هذا الجدول ربحًا لا عدًّا.') }),
     totals.deals < 5
       ? el('div', { class: 'muted small', text: 'العيّنة صغيرة: لا تُلغِ مصدرًا قبل أن تتجاوز صفقاتك خمسًا.' })
       : null,
@@ -467,6 +504,35 @@ function rejectSection(matches) {
       ? breakdownColumn('الأسباب', counts)
       : el('div', { class: 'muted small', text: 'لم يُسجَّل سبب لأي رفض بعد — يُسأل تلقائيًا عند اختيار «غير مهتم».' }),
     withReason.length < 10
+      ? el('div', { class: 'muted small', text: 'العيّنة صغيرة: لا تبنِ قرارًا على أقل من عشرة أسباب.' })
+      : null,
+  ].filter(Boolean);
+}
+
+/**
+ * «لماذا يتركك الناس؟» (المرحلة ٣٥).
+ *
+ * اللوحة التي قبلها تقول لماذا رُفض **عرضٌ بعينه**. وهذه تقول لماذا مات **الطلب كلّه** —
+ * والفرق بينهما هو الفرق بين تحسين عرضٍ وتحسين نفسك: «السعر مرتفع» في عرضٍ تغيّر العرض،
+ * و«تأخّر الردّ» في خُمس طلباتك تغيّر يومك.
+ */
+function lossSection(requests) {
+  // «موقوف» وحده: `done` صفقةٌ تمّت لا خسارة، وعدّها هنا يقلب الرقم رأسًا على عقب.
+  const dead = requests.filter((r) => r.status === 'paused');
+  if (!dead.length) return [el('div', { class: 'muted small', text: 'لا طلبات موقوفة بعد.' })];
+  const withReason = dead.filter((r) => r.closeReason);
+  const counts = countBy(withReason, (r) => labelFor(ENUMS.matchRejectReasons, r.closeReason));
+  // ما يخصّك أنت من الأسباب: هذه وحدها التي بيدك إصلاحها اليوم.
+  const mine = withReason.filter((r) => r.closeReason === 'slow' || r.closeReason === 'price').length;
+  return [
+    el('div', { class: 'stat-strip' },
+      statChip(dead.length, 'طلب أُوقف'),
+      statChip(dead.length - withReason.length, 'بلا سبب مسجَّل'),
+      statChip(mine, 'بسببٍ بيدك (سعرك أو بطء ردّك)')),
+    withReason.length
+      ? breakdownColumn('الأسباب', counts)
+      : el('div', { class: 'muted small', text: 'لم يُسجَّل سبب لأي طلب موقوف بعد — اختر السبب عند تغيير حالة الطلب إلى «موقوف».' }),
+    withReason.length && withReason.length < 10
       ? el('div', { class: 'muted small', text: 'العيّنة صغيرة: لا تبنِ قرارًا على أقل من عشرة أسباب.' })
       : null,
   ].filter(Boolean);
