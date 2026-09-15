@@ -1,0 +1,83 @@
+// قوالب رسائل التسليم — نصٌّ يتغيّر بحسب حال التقرير، فتقريرٌ سيّئ لا يُسلَّم بنبرة تقريرٍ جيّد.
+
+import { stats } from './schema.js';
+import { topComplaints } from './lexicon.js';
+import { recentVsOlder } from './recency.js';
+import { progress } from './plan.js';
+
+/** يصنّف حال المنشأة ليُختار القالب المناسب. */
+export function situation(job) {
+  const s = stats(job.place);
+  const r = recentVsOlder(job.place);
+  const avg = s.googleAverage ?? s.sampleAverage;
+
+  if (r.verdict === 'انحدار') return 'declining';
+  if (avg !== null && avg < 3.5) return 'weak';
+  if (avg !== null && avg >= 4.5 && s.negative <= 1) return 'strong';
+  return 'mixed';
+}
+
+const LABELS = {
+  strong:    'وضع قوي',
+  mixed:     'وضع متوسط',
+  weak:      'وضع ضعيف',
+  declining: 'انحدار حديث',
+};
+
+/**
+ * يبني نص رسالة التسليم.
+ * @param {object} job
+ * @param {'whatsapp'|'email'|'short'} channel
+ */
+export function build(job, channel = 'whatsapp') {
+  const s = stats(job.place);
+  const r = recentVsOlder(job.place);
+  const p = progress(job.plan || []);
+  const name = job.place?.identity?.name || 'المنشأة';
+  const avg = s.googleAverage ?? s.sampleAverage;
+  const worst = topComplaints(job.place, 3);
+  const sit = situation(job);
+
+  const head = {
+    strong:    `تقرير ${name} جاهز، والنتيجة مطمئنة.`,
+    mixed:     `تقرير ${name} جاهز، وفيه ما يُبنى عليه وما يُعالَج.`,
+    weak:      `تقرير ${name} جاهز، وفيه ملاحظات تستحق الوقوف عندها.`,
+    declining: `تقرير ${name} جاهز، وفيه إشارة مهمة تخصّ الأشهر الأخيرة.`,
+  }[sit];
+
+  const body = [];
+  body.push(`التقييم: ${avg ?? '—'} من 5${s.googleCount ? ` (${s.googleCount} تقييمًا)` : ''}`);
+  body.push(`التعليقات المُحلَّلة: ${s.total}`);
+
+  if (sit === 'declining' && r.diff !== null) {
+    body.push(`متوسط آخر ${r.window} يومًا ${r.recent.avg} مقابل ${r.older.avg} قبلها — وهذا ما يستدعي النظر أولًا.`);
+  }
+  if (worst.length && channel !== 'short') {
+    body.push(`أبرز ما تكرر: ${worst.map((t) => `${t.name} (${t.neg})`).join('، ')}`);
+  }
+  if (p.total) body.push(`خطة العمل: ${p.total} مهمة${p.done ? `، منجز منها ${p.done}` : ''}.`);
+
+  const tail = {
+    strong:    'التقرير يفصّل ما يُحافَظ عليه وما يُعزَّز.',
+    mixed:     'التقرير يفصّل نقاط القوة والضعف مع توصيات مرتبطة بتعليقات بعينها.',
+    weak:      'التقرير يرتّب الشكاوى بحسب تكرارها ويقترح معالجة لكل واحدة.',
+    declining: 'التقرير يبيّن متى بدأ التغيّر وفي أي جانب تحديدًا.',
+  }[sit];
+
+  if (channel === 'short') {
+    return [head, body[0], 'التقرير الكامل مرفق بصيغة PDF.'].join('\n');
+  }
+
+  const lines = [head, '', ...body.map((b) => `• ${b}`), '', tail, '', 'التقرير الكامل مرفق بصيغة PDF.'];
+  if (channel === 'email') {
+    lines.push('', 'وفي خدمتك لأي استفسار أو توضيح.');
+  }
+  return lines.join('\n');
+}
+
+export function subject(job) {
+  const name = job.place?.identity?.name || 'منشأة';
+  return `تقرير تحليلي — ${name}`;
+}
+
+export const situationLabel = (job) => LABELS[situation(job)];

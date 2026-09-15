@@ -1,0 +1,485 @@
+<!doctype html>
+<html dir="rtl" lang="ar">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>رابح — تقارير تحليلية للمنشآت من خرائط قوقل</title>
+<meta name="description" content="منصّة لاستخراج تعليقات وتقييمات المنشآت من خرائط قوقل وتحليلها بنماذج ذكاء اصطناعي وإخراج تقرير احترافي قابل للمشاركة.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2316324f'/%3E%3Ctext x='32' y='44' font-size='36' text-anchor='middle' fill='%23c9a84c' font-family='sans-serif'%3E%D8%B1%3C/text%3E%3C/svg%3E">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#16324f">
+<link rel="stylesheet" href="css/rabih.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="inner">
+    <div class="logo">رابــح<small>تقارير المنشآت من خرائط قوقل</small></div>
+    <nav>
+      <button type="button" data-go="new">تقرير جديد</button>
+      <button type="button" data-go="compare">المقارنة</button>
+      <button type="button" data-go="settings">الإعدادات</button>
+      <button type="button" data-go="archive">الأرشيف</button>
+      <button type="button" id="btn-tour">جولة</button>
+      <button type="button" data-go="about">كيف يعمل</button>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div id="queue-bar" hidden></div>
+
+  <!-- ١) الإدخال -->
+  <section class="view" id="view-new">
+    <div class="steps" id="steps-bar"></div>
+
+    <div class="card">
+      <h2>١. المنشأة وموقعها</h2>
+      <p class="hint">ألصق رابط المنشأة من خرائط قوقل، ثم حدّد المدينة والتصنيف والحي — هذه الثلاثة تُبنى عليها شجرة الأرشيف ومحاور التحليل.</p>
+
+      <div class="field">
+        <label for="f-url">رابط قوقل مابز</label>
+        <input id="f-url" type="url" inputmode="url" placeholder="https://maps.app.goo.gl/… أو https://www.google.com/maps/place/…">
+        <div class="note" id="url-note">يُقبل الرابط الكامل والمختصر. من التطبيق: مشاركة ← نسخ الرابط.</div>
+      </div>
+
+      <div class="grid c2">
+        <div class="field">
+          <label for="f-region">المنطقة</label>
+          <select id="f-region"></select>
+        </div>
+        <div class="field">
+          <label for="f-city">المدينة</label>
+          <select id="f-city"></select>
+        </div>
+      </div>
+
+      <div class="grid c2">
+        <div class="field">
+          <label for="f-group">مجال النشاط</label>
+          <select id="f-group"></select>
+        </div>
+        <div class="field">
+          <label for="f-category">التصنيف</label>
+          <select id="f-category"></select>
+        </div>
+      </div>
+
+      <div class="grid c2">
+        <div class="field">
+          <label for="f-brand">العلامة / المالك (اختياري)</label>
+          <input id="f-brand" list="brand-list" placeholder="مثال: مقهى الدرب — لجمع الفروع في تقرير مجموعة">
+          <datalist id="brand-list"></datalist>
+        </div>
+        <div class="field">
+          <label for="f-branch">اسم الفرع (اختياري)</label>
+          <input id="f-branch" placeholder="مثال: فرع الملقا">
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="f-district">الحي</label>
+        <div class="row">
+          <select id="f-district" style="flex:1 1 220px"></select>
+          <button type="button" class="btn ghost sm" id="btn-add-district">+ إضافة حي</button>
+        </div>
+        <div class="note">إن لم تجد الحي في القائمة فأضفه — يُحفَظ في متصفحك ويظهر في المرات القادمة.</div>
+      </div>
+
+      <div class="field" id="bulk-field" hidden>
+        <label for="bulk-list">قائمة المحلات — سطر لكل محل: <code>الاسم | الرابط | الحي</code></label>
+        <textarea id="bulk-list" class="tall" placeholder="مقهى الدرب | https://maps.app.goo.gl/xxx | الملقا&#10;كوفي النرجس | https://maps.app.goo.gl/yyy | النرجس"></textarea>
+        <div class="note">تُنشأ التقارير بالمدينة والتصنيف المختارين أعلاه، وتُوضَع في الطابور بالترتيب.</div>
+        <div class="row"><button type="button" class="btn sm" id="btn-bulk-create">إنشاء الدفعة</button></div>
+      </div>
+      <div id="new-msg"></div>
+      <div class="row end">
+        <button type="button" class="btn ghost" id="btn-bulk">إنشاء دفعة…</button>
+        <button type="button" class="btn gold" id="btn-start">ابدأ →</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ٢) البيانات -->
+  <section class="view" id="view-data" hidden>
+    <div class="steps" id="steps-bar-2"></div>
+
+    <details class="help">
+      <summary>كيف أنسخ التعليقات من قوقل مابز؟</summary>
+      <ol>
+        <li>افتح رابط المنشأة في متصفح الحاسوب، ثم اضغط على عدد التقييمات لفتح قائمة التعليقات.</li>
+        <li>رتّبها من «الأحدث» ثم مرّر لأسفل حتى يُحمَّل ما تريد تحليله، واضغط «المزيد» لفتح النصوص المطوية.</li>
+        <li>حدّد قائمة التعليقات بالفأرة وانسخها (Ctrl+C)، ثم ألصقها في المربع أدناه.</li>
+        <li>لا تقلق من الفوضى: المحلّل يتعرّف على النجوم والتواريخ وردود المالك ويتجاهل الأسطر الزائدة.</li>
+        <li>للدقة القصوى استعمل الصيغة الصريحة: <code>5 | الاسم | قبل شهر</code> ثم نص التعليق ثم سطر <code>---</code>.</li>
+      </ol>
+    </details>
+
+    <div class="card">
+      <h2>٢. بطاقة المنشأة</h2>
+      <p class="hint">املأ ما تراه في أعلى صفحة المنشأة. المتوسط وعدد التقييمات مهمّان لقياس نسبة العيّنة.</p>
+      <div class="grid c2">
+        <div class="field"><label for="d-name">اسم المنشأة *</label><input id="d-name" placeholder="مثال: مقهى الدرب"></div>
+        <div class="field"><label for="d-cat">النشاط كما يظهر في قوقل</label><input id="d-cat" placeholder="مثال: مقهى"></div>
+      </div>
+      <div class="grid c3">
+        <div class="field"><label for="d-avg">متوسط التقييم</label><input id="d-avg" type="number" step="0.1" min="1" max="5" placeholder="4.3"></div>
+        <div class="field"><label for="d-count">عدد التقييمات</label><input id="d-count" type="number" min="0" placeholder="1287"></div>
+        <div class="field"><label for="d-price">مستوى الأسعار</label><input id="d-price" placeholder="مثال: ٣٠–٦٠ ريال"></div>
+      </div>
+      <div class="grid c2">
+        <div class="field"><label for="d-address">العنوان</label><input id="d-address" placeholder="الحي، الشارع، المدينة"></div>
+        <div class="field"><label for="d-phone">الهاتف</label><input id="d-phone" inputmode="tel" placeholder="05xxxxxxxx"></div>
+      </div>
+      <div class="grid c2">
+        <div class="field"><label for="d-hours">ساعات العمل (سطر لكل يوم)</label><textarea id="d-hours" placeholder="الأحد: 7ص – 12م&#10;الاثنين: 7ص – 12م"></textarea></div>
+        <div class="field"><label for="d-attrs">المميزات المعلنة (سطر لكل ميزة)</label><textarea id="d-attrs" placeholder="توصيل&#10;مواقف مجانية&#10;جلسات عائلية"></textarea></div>
+      </div>
+      <div class="grid c2">
+        <div class="field">
+          <label for="d-qna">الأسئلة والأجوبة من صفحة قوقل</label>
+          <textarea id="d-qna" placeholder="سؤال&#10;جوابه&#10;&#10;سؤال بلا جواب"></textarea>
+          <div class="note">سطر للسؤال وما بعده جوابه، وسطر فارغ بين كل سؤالين. السؤال بلا جواب مؤشّر بنفسه.</div>
+        </div>
+        <div class="field">
+          <label for="d-peak">أوقات الذروة</label>
+          <textarea id="d-peak" placeholder="الخميس: 8ص=20, 6م=80, 7م=95&#10;الجمعة: 4م=30, 9م=100"></textarea>
+          <div class="note">اسم اليوم ثم الساعة=نسبة الازدحام. تربط شكوى الانتظار بساعتها فتصير التوصية محدَّدة.</div>
+        </div>
+      </div>
+      <div id="context-box"></div>
+      <div class="field"><label for="d-notes">ملاحظاتك أنت (تُعامَل كبيانات موثوقة)</label><textarea id="d-notes" placeholder="أي معلومة تعرفها عن المنشأة وتريد أن يأخذها التحليل بالحسبان."></textarea></div>
+    </div>
+
+    <div class="card">
+      <h2>٣. التعليقات</h2>
+      <p class="hint">ألصق هنا. يُقبل أيضًا JSON من أي مزوّد بيانات.</p>
+      <div class="field">
+        <textarea id="d-reviews" class="tall" placeholder="ألصق التعليقات هنا…"></textarea>
+      </div>
+      <div class="row">
+        <button type="button" class="btn ghost sm" id="btn-parse">تحليل اللصق</button>
+        <button type="button" class="btn ghost sm" id="btn-clear-reviews">مسح</button>
+        <span class="spacer"></span>
+        <span id="parse-info" class="badge"></span>
+      </div>
+      <div id="parse-msg"></div>
+      <div class="stat-grid" id="parse-stats" hidden></div>
+      <div id="recency-box"></div>
+      <div id="topics-box"></div>
+      <div id="entities-box"></div>
+      <div id="replies-box"></div>
+    </div>
+
+    <div class="card">
+      <h2>٤. فحص سلامة العيّنة</h2>
+      <p class="hint">إشارات على تعليقات قد تكون مفتعلة أو ناقصة. لا يُحذف شيء تلقائيًّا — القرار قرارك.</p>
+      <div id="anomaly-box"></div>
+    </div>
+
+    <div class="card">
+      <h2>٥. صور المنشأة (اختياري)</h2>
+      <p class="hint">تُضمَّن داخل ملف التقرير نفسه فيبقى يعمل بلا إنترنت. الأفضل ٣ إلى ٦ صور.</p>
+      <div class="field">
+        <input id="d-photos" type="file" accept="image/*" multiple>
+      </div>
+      <div class="chips" id="photo-chips"></div>
+    </div>
+
+    <div class="row end">
+      <button type="button" class="btn ghost" data-go="new">→ رجوع</button>
+      <button type="button" class="btn gold" id="btn-to-pipeline">إلى خط التحليل →</button>
+    </div>
+  </section>
+
+  <!-- ٣) خط النماذج -->
+  <section class="view" id="view-pipeline" hidden>
+    <div class="steps" id="steps-bar-3"></div>
+
+    <div class="card">
+      <h2>٦. خط التحليل — ثماني خطوات</h2>
+      <p class="hint" id="pipeline-hint">
+        في كل خطوة: انسخ الرسالة، افتح النموذج المقترح، ألصقها، ثم أعد إجابته إلى المربع. تُحفظ كل خطوة تلقائيًا فيمكنك التوقف والعودة.
+      </p>
+      <div class="row">
+        <button type="button" class="btn ghost sm" id="btn-open-openrouter">فتح OpenRouter</button>
+        <button type="button" class="btn ghost sm" id="btn-export-job">تصدير الحالة JSON</button>
+        <span class="spacer"></span>
+        <span class="badge" id="pipeline-progress"></span>
+      </div>
+    </div>
+
+    <div class="card" id="agreement-card" hidden>
+      <h2>اتفاق النماذج</h2>
+      <p class="hint">قبل الدمج: أين اتفق الثلاثة وأين انفرد واحد. هذا يجعل الدمج مراجعةً لا تفويضًا.</p>
+      <div id="agreement-box"></div>
+    </div>
+
+    <div id="pipeline-steps"></div>
+
+    <div class="row end">
+      <button type="button" class="btn ghost" data-go="data">→ رجوع للبيانات</button>
+      <button type="button" class="btn gold" id="btn-to-report">إلى التقرير →</button>
+    </div>
+  </section>
+
+  <!-- ٤) التقرير -->
+  <section class="view" id="view-report" hidden>
+    <div class="steps" id="steps-bar-4"></div>
+
+    <div class="card">
+      <h2>٧. التقرير النهائي</h2>
+      <p class="hint">التقرير يُبنى من مخرج الخطوة الثامنة. يمكنك تحريره قبل الإخراج.</p>
+      <div class="field">
+        <label for="r-md">نص التقرير الموحَّد</label>
+        <textarea id="r-md" class="tall"></textarea>
+      </div>
+      <div class="row" id="history-row">
+        <button type="button" class="btn ghost sm" id="btn-undo" disabled>تراجع</button>
+        <button type="button" class="btn ghost sm" id="btn-redo" disabled>إعادة</button>
+        <span class="spacer"></span>
+        <span class="badge" id="history-depth"></span>
+      </div>
+      <div id="completeness-box"></div>
+      <div class="grid c2">
+        <div class="field">
+          <label for="r-template">قالب الإخراج</label>
+          <select id="r-template"></select>
+          <div class="note" id="tpl-note"></div>
+        </div>
+        <div class="field">
+          <label for="r-font">خط عربي مضمَّن (اختياري)</label>
+          <input id="r-font" type="file" accept=".ttf,.otf,.woff,.woff2,font/*">
+          <div class="note" id="font-note">بدونه يُستعمل خط الجهاز. تضمينه يزيد حجم الملف نحو ٣٠٠ كيلوبايت ويثبّت الشكل عند كل مستقبِل.</div>
+        </div>
+      </div>
+      <div class="row">
+        <button type="button" class="btn" id="btn-render">تحديث المعاينة</button>
+        <button type="button" class="btn ghost" id="btn-print">طباعة / حفظ PDF</button>
+        <button type="button" class="btn ghost" id="btn-download-html">تنزيل HTML</button>
+        <button type="button" class="btn ghost" id="btn-download-md">تنزيل النص</button>
+        <button type="button" class="btn ghost" id="btn-download-xlsx">تنزيل Excel</button>
+        <button type="button" class="btn gold" id="btn-freeze">تجميد النسخة المُسلَّمة</button>
+      </div>
+      <div id="snapshots-box"></div>
+    </div>
+
+    <div class="card">
+      <h2>٨. خطة العمل</h2>
+      <p class="hint">تُستخرج من قسم التوصيات في التقرير، وتصير مهامًّ لها حالة ومهلة. ما يُنجَز منها يُقاس في التقرير القادم.</p>
+      <div class="row">
+        <button type="button" class="btn ghost sm" id="btn-extract-plan">استخراج التوصيات</button>
+        <button type="button" class="btn ghost sm" id="btn-add-task">+ مهمة يدوية</button>
+        <label style="display:flex;align-items:center;gap:6px;margin:0;font-weight:500">
+          <input type="checkbox" id="plan-in-report" style="width:auto"> إدراج الخطة في التقرير
+        </label>
+        <span class="spacer"></span>
+        <span class="badge" id="plan-progress"></span>
+      </div>
+      <div id="plan-box"></div>
+    </div>
+
+    <div class="card">
+      <h2>٩. الإرسال</h2>
+      <p class="hint">احفظ الـPDF أولًا ثم أرفقه في القناة التي تختارها؛ النص التمهيدي يُجهَّز لك.</p>
+      <div class="grid c2">
+        <div class="field"><label for="s-phone">رقم الجوال (واتساب)</label><input id="s-phone" inputmode="tel" placeholder="9665xxxxxxxx"></div>
+        <div class="field"><label for="s-email">البريد الإلكتروني</label><input id="s-email" type="email" placeholder="owner@example.com"></div>
+      </div>
+      <div class="field">
+        <label for="s-msg">نص الإرسال <span class="badge" id="s-situation"></span></label>
+        <textarea id="s-msg"></textarea>
+        <div class="note">يتغيّر تلقائيًّا بحسب حال التقرير — ويمكنك تحريره.</div>
+      </div>
+      <div class="row">
+        <button type="button" class="btn ghost" id="btn-wa">واتساب</button>
+        <button type="button" class="btn ghost" id="btn-tg">تليقرام</button>
+        <button type="button" class="btn ghost" id="btn-mail">بريد</button>
+        <button type="button" class="btn ghost" id="btn-copy-summary">نسخ نص الإرسال</button>
+      </div>
+    </div>
+
+    <div class="preview"><iframe id="r-frame" title="معاينة التقرير"></iframe></div>
+  </section>
+
+  <!-- المقارنة -->
+  <section class="view" id="view-compare" hidden>
+    <div class="card">
+      <h2>المقارنة الزمنية</h2>
+      <p class="hint">ماذا تغيّر في منشأة بين تقريرين. تحتاج تقريرين فأكثر للمنشأة نفسها.</p>
+      <div class="grid c3">
+        <div class="field"><label for="cmp-place">المنشأة</label><select id="cmp-place"></select></div>
+        <div class="field"><label for="cmp-from">التقرير الأقدم</label><select id="cmp-from"></select></div>
+        <div class="field"><label for="cmp-to">التقرير الأحدث</label><select id="cmp-to"></select></div>
+      </div>
+      <div id="timeline-box"></div>
+    </div>
+
+    <div class="card">
+      <h2>تقرير المجموعة</h2>
+      <p class="hint">فروع مالك واحد تحت علامة واحدة. يجيب عن: أي فرع الأضعف؟ وأي شكوى مشتركة بين الفروع (مشكلة نظام)؟ وأيّها انفردت بفرع (مشكلة إدارته)؟</p>
+      <div class="field">
+        <label for="grp-brand">العلامة</label>
+        <select id="grp-brand"></select>
+      </div>
+      <div id="group-box"></div>
+      <div class="row" id="group-actions" hidden>
+        <button type="button" class="btn sm" id="btn-group-prompt">نسخ رسالة النموذج</button>
+        <button type="button" class="btn ghost sm" id="btn-group-xlsx">تنزيل Excel</button>
+        <button type="button" class="btn ghost sm" id="btn-group-print">طباعة التقرير</button>
+      </div>
+      <div class="field" id="group-answer-field" hidden>
+        <label for="grp-answer">إجابة النموذج (تظهر في التقرير المطبوع)</label>
+        <textarea id="grp-answer" placeholder="ألصق هنا تقرير المجموعة الذي كتبه النموذج…"></textarea>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>مقارنة المنافسين</h2>
+      <p class="hint">منشآت في أرشيفك بنفس المدينة والتصنيف. كلما زاد أرشيفك زادت دقّة الصورة.</p>
+      <div class="field"><label for="cmp-target">المنشأة محلّ المقارنة</label><select id="cmp-target"></select></div>
+      <div id="bench-box"></div>
+    </div>
+  </section>
+
+  <!-- الأرشيف -->
+  <section class="view" id="view-archive" hidden>
+    <div class="card" id="safety-card">
+      <h2>حماية الأرشيف</h2>
+      <p class="hint">تقاريرك محفوظة داخل متصفحك وحده. المتصفح قد يمسحها عند ضيق المساحة، و«مسح بيانات التصفح» يمحوها.</p>
+      <div id="safety-box"></div>
+      <div class="row">
+        <button type="button" class="btn ghost sm" id="btn-persist">تثبيت التخزين</button>
+        <button type="button" class="btn ghost sm" id="btn-backup-folder">اختيار مجلد نسخ احتياطي</button>
+        <button type="button" class="btn ghost sm" id="btn-backup-now">نسخة احتياطية الآن</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>الأرشيف</h2>
+      <p class="hint">كل التقارير محفوظة في متصفحك، مرتّبة: المنطقة ← المدينة ← التصنيف ← الحي.</p>
+      <div class="row">
+        <input id="ar-search" placeholder="بحث باسم المنشأة…" style="flex:1 1 220px">
+        <button type="button" class="btn ghost sm" id="btn-export-all">تصدير الكل JSON</button>
+        <button type="button" class="btn ghost sm" id="btn-archive-xlsx">تصدير الكل Excel</button>
+        <label class="btn ghost sm" style="margin:0;font-weight:600">استيراد<input id="ar-import" type="file" accept="application/json" hidden></label>
+      </div>
+    </div>
+    <div class="card"><div class="tree" id="archive-tree"></div></div>
+  </section>
+
+  <!-- الإعدادات -->
+  <section class="view" id="view-settings" hidden>
+    <div class="card">
+      <h2>هوية المكتب</h2>
+      <p class="hint">التقارير تُباع باسمك، فتحمل هويتك لا هوية الأداة. كل شيء محفوظ في متصفحك.</p>
+      <div class="grid c2">
+        <div class="field"><label for="id-office">اسم المكتب أو المُعِدّ</label><input id="id-office" placeholder="مثال: مكتب بصيرة للاستشارات"></div>
+        <div class="field"><label for="id-tagline">سطر تعريفي</label><input id="id-tagline" placeholder="تحليل تجربة العملاء"></div>
+      </div>
+      <div class="grid c3">
+        <div class="field"><label for="id-phone">الهاتف</label><input id="id-phone" inputmode="tel" placeholder="05xxxxxxxx"></div>
+        <div class="field"><label for="id-email">البريد</label><input id="id-email" type="email" placeholder="you@example.com"></div>
+        <div class="field"><label for="id-website">الموقع</label><input id="id-website" placeholder="example.com"></div>
+      </div>
+      <div class="grid c3">
+        <div class="field"><label for="id-logo">الشعار</label><input id="id-logo" type="file" accept="image/*"><div class="note" id="logo-note"></div></div>
+        <div class="field"><label for="id-primary">اللون الأساسي</label><input id="id-primary" type="color" value="#16324f"></div>
+        <div class="field"><label for="id-accent">لون التمييز</label><input id="id-accent" type="color" value="#9a7b26"></div>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;font-weight:500">
+        <input type="checkbox" id="id-showrabih" checked style="width:auto"> إظهار «رابح» على الغلاف
+      </label>
+      <div id="id-msg"></div>
+    </div>
+
+    <div class="card">
+      <h2>القفل والتشفير</h2>
+      <p class="hint">كلمة السر لا تُحفَظ — يُحفَظ منها مُتحقِّق مشتقّ. ونسيانها يعني ضياع أي ملف صدّرته مشفَّرًا.</p>
+      <div id="lock-state"></div>
+      <div class="grid c2">
+        <div class="field"><label for="lk-pass">كلمة السر</label><input id="lk-pass" type="password" autocomplete="new-password" placeholder="أربعة أحرف فأكثر"></div>
+        <div class="field" style="display:flex;align-items:flex-end;gap:8px">
+          <button type="button" class="btn sm" id="btn-lock-on">تفعيل القفل</button>
+          <button type="button" class="btn ghost sm" id="btn-lock-off">إلغاؤه</button>
+        </div>
+      </div>
+      <div class="row">
+        <button type="button" class="btn ghost sm" id="btn-export-enc">تصدير الأرشيف مشفَّرًا</button>
+        <label class="btn ghost sm" style="margin:0;font-weight:600">استيراد مشفَّر<input id="lk-import" type="file" accept="application/json" hidden></label>
+      </div>
+      <div id="lock-msg"></div>
+    </div>
+
+    <div class="card">
+      <h2>محرّر القاموس</h2>
+      <p class="hint">القاموس أوّليّ بطبعه، ولهجاتنا أوسع من أي قائمة تُكتَب مرة. أضف إليه ممّا يفوته في تعليقاتك الحقيقية، فيتحسّن كلما استعملته.</p>
+      <div id="lex-uncovered"></div>
+      <div class="grid c3">
+        <div class="field"><label for="lex-word">الكلمة</label><input id="lex-word" placeholder="مثال: ملخبط"></div>
+        <div class="field"><label for="lex-topic">الموضوع</label><select id="lex-topic"></select></div>
+        <div class="field" style="display:flex;align-items:flex-end;gap:8px">
+          <button type="button" class="btn sm" id="btn-lex-add">إضافة</button>
+          <button type="button" class="btn ghost sm" id="btn-lex-reset">تصفير إضافاتي</button>
+        </div>
+      </div>
+      <div id="lex-msg"></div>
+      <div id="lex-custom"></div>
+    </div>
+
+    <div class="card">
+      <h2>أداء النماذج</h2>
+      <p class="hint">درجة مدقّق السند تُحفَظ مع اسم النموذج الذي اخترته في كل خطوة. بعد عشرين تقريرًا تعرف بالبيانات أيّها يستحق الثقة.</p>
+      <div id="models-box"></div>
+      <div class="row"><button type="button" class="btn ghost sm" id="btn-models-clear">تصفير السجل</button></div>
+    </div>
+
+    <div class="card">
+      <h2>اختصارات لوحة المفاتيح</h2>
+      <div class="table-wrap"><table class="mini">
+        <tbody>
+          <tr><td><kbd>Ctrl</kbd>+<kbd>Enter</kbd></td><td>نسخ رسالة الخطوة الحالية في خط التحليل</td></tr>
+          <tr><td><kbd>Alt</kbd>+<kbd>←</kbd> / <kbd>→</kbd></td><td>التالي / السابق في طابور الدفعات</td></tr>
+          <tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>حفظ فوري</td></tr>
+          <tr><td><kbd>Ctrl</kbd>+<kbd>P</kbd></td><td>طباعة التقرير</td></tr>
+          <tr><td><kbd>Esc</kbd></td><td>إغلاق ما هو مفتوح</td></tr>
+        </tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <!-- كيف يعمل -->
+  <section class="view" id="view-about" hidden>
+    <div class="card">
+      <h2>كيف تعمل رابح</h2>
+      <p class="hint">أربع مراحل، ثماني خطوات، ومخرج واحد.</p>
+      <ol>
+        <li><b>الإدخال:</b> رابط المنشأة + المدينة والتصنيف والحي.</li>
+        <li><b>الاستخراج:</b> في هذه المرحلة يدويًّا باللصق. البنية مهيّأة لاستبداله بمصدر آلي دون تغيير شيء بعده.</li>
+        <li><b>التوحيد:</b> ثلاثة نماذج تنظّم البيانات، ورابع يدمج مخرجاتها في واحد بلا تكرار ولا اختراع.</li>
+        <li><b>التحليل:</b> ثلاثة نماذج تكتب تقريرًا تفصيليًّا، ورابع يوحّدها في تقرير واحد.</li>
+        <li><b>الإخراج:</b> تقرير A4 مرقّم مع توزيع النجوم والصور، جاهز للطباعة والمشاركة.</li>
+      </ol>
+      <h3 style="margin-top:18px;font-size:15px;color:var(--navy)">ما الذي يمنع الهلوسة؟</h3>
+      <ul>
+        <li>ميثاق مُلزِم يتصدّر كل رسالة: لا استنتاج بلا معرّف تعليق.</li>
+        <li>الإحصاءات تُحسَب برمجيًّا وتُسلَّم للنموذج جاهزة، فلا يعيد حسابها ولا يقدّرها.</li>
+        <li>كل تعليق له معرّف ثابت (R001, R002…) يُستشهَد به، فيسهل عليك التحقق.</li>
+        <li>خطوتا الدمج مأمورتان بالحذف لا بالإضافة، وبالرجوع للمصدر عند التعارض.</li>
+      </ul>
+      <h3 style="margin-top:18px;font-size:15px;color:var(--navy)">ماذا ينتظر التفعيل لاحقًا؟</h3>
+      <ul>
+        <li><b>مفتاح OpenRouter:</b> يجعل الخطوات الثماني آلية بلا نسخ ولصق.</li>
+        <li><b>مفتاح Google Places:</b> يملأ بطاقة المنشأة والصور تلقائيًّا من الرابط.</li>
+        <li><b>مزوّد بيانات وسيط:</b> يجلب مئات التعليقات بدل اللصق اليدوي.</li>
+      </ul>
+    </div>
+  </section>
+
+</div>
+
+<div class="toast" id="toast" hidden></div>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
