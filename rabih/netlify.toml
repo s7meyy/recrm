@@ -1,0 +1,31 @@
+# نشر رابح على Netlify: موقع ثابت بلا أداة بناء، ومعه بوابة دخول على الحافة.
+#
+# البوابة في netlify/edge-functions/gate.js وتعمل على كل المسارات، فلا يُسلَّم ملفٌّ
+# واحد قبل دخولٍ صحيح. كلمة السر في متغيّر البيئة APP_PASSWORD على لوحة Netlify.
+
+[build]
+  publish = "."
+
+[functions]
+  directory = "netlify/functions"
+
+# لا تخبئة لصفحة التطبيق وملفاته: التحديث يصل فور النشر.
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/js/*"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/css/*"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"
