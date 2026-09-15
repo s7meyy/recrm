@@ -377,6 +377,7 @@ async function openForm(ctx, existing) {
   const nameInput = el('input', { class: 'input', type: 'text', value: draft.name || '' });
   const phoneInput = el('input', { class: 'input', type: 'tel', value: draft.phone || '', dir: 'ltr', placeholder: '05xxxxxxxx' });
   const phone2Input = el('input', { class: 'input', type: 'tel', value: draft.phone2 || '', dir: 'ltr' });
+  const nationalIdInput = el('input', { class: 'input', type: 'text', inputmode: 'numeric', value: draft.nationalId || '', placeholder: '١٠ أرقام', dir: 'ltr' });
   const rolesBox = el('div', { class: 'check-group' }, ENUMS.clientRoles.map((r) => checkbox(r.label, { name: 'role', value: r.key, checked: (draft.roles || []).includes(r.key) })));
   const stageSelect = selectEl({ options: ENUMS.clientStages.map((s) => ({ value: s.key, label: s.label })), value: draft.stage || 'new' });
   const notesInput = el('textarea', { class: 'input', rows: 3, value: draft.notes || '' });
@@ -418,6 +419,7 @@ async function openForm(ctx, existing) {
     errorsBox.hidden = true;
     const data = {
       name: nameInput.value, phone: phoneInput.value, phone2: phone2Input.value,
+      nationalId: nationalIdInput.value.trim(),
       roles: [...rolesBox.querySelectorAll('input:checked')].map((i) => i.value),
       stage: stageSelect.value, tags: [...selectedTags], notes: notesInput.value,
       referralSource: source.input.value,
@@ -455,6 +457,7 @@ async function openForm(ctx, existing) {
         labeled('الاسم', nameInput, { hint: 'الاسم أو الجوال مطلوب على الأقل' }),
         labeled('الجوال', phoneInput, { hint: 'تُوحَّد الصيغة تلقائيًا (05 / 9665 / +966)' }),
         labeled('جوال آخر', phone2Input),
+        labeled('رقم الهوية أو الإقامة', nationalIdInput, { hint: 'اختياري — يطلبه عقد الإيجار وتوثيق الصفقة، ولا يُطلب إلا ممن يتعاقد' }),
         labeled('المرحلة', stageSelect),
         fieldGroup('الأدوار', rolesBox, { full: true }),
         fieldGroup('التصنيفات', tagsBox, { full: true }),

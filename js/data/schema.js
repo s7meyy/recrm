@@ -220,6 +220,9 @@ export const SCHEMAS = {
     labels: { name: 'الاسم', phone: 'الجوال' },
     defaults: () => ({
       name: '', phone: '', phone2: '', notes: '',
+      // رقم الهوية أو الإقامة (المرحلة ٣٧): يطلبه عقد الإيجار وتوثيقُ الصفقة.
+      // اختياري دائمًا — ولا يُطلب إلا ممن يتعاقد فعلًا.
+      nationalId: '',
       roles: [], // 'owner' | 'seeker'
       tags: [], // تصنيفات من إعدادات clientTags
       stage: 'new', // ENUMS.clientStages
@@ -237,6 +240,9 @@ export const SCHEMAS = {
       city: 'الرياض', district: '', type: '', // type: مفتاح من قائمة الأنواع
       purposes: [], // مجموعة من ENUMS.purposes
       location: null, // { lat, lng } | null
+      // رقم الصك (المرحلة ٣٧): يطلبه عقد الإيجار وكل توثيق، وكان يُكتب في الملاحظات
+      // فلا يُبحث فيه ولا يدخل حزمة عقد. نصٌّ حرّ: الصكوك قديمها وحديثها تختلف صيغها.
+      deedNumber: '',
       area: null, price: null, // أرقام أو null (السعر غير المعروف = null)
       images: [], // معرّفات في مخزن images
       ownerId: null, // عميل من مخزن clients
@@ -408,6 +414,8 @@ export const SCHEMAS = {
     defaults: () => ({
       type: 'invoice', // ENUMS.invoiceTypes
       number: '', // رقم المستند (يُقترح متسلسلًا عند الإنشاء ويبقى قابلًا للتعديل)
+      // رابط السداد (المرحلة ٣٧): يُنشَأ من بوابة الدفع حين تُهيَّأ، ويُحفظ ليُرسل ويُتابَع.
+      paymentUrl: '', paymentRef: '', paymentCreatedAt: null,
       date: '', // ISO
       clientId: null, // عميل مرتبط (اختياري)
       clientName: '', clientPhone: '', // لقطة اسم/جوال وقت الإصدار: المستند المطبوع لا يتغير بحذف العميل أو تعديله

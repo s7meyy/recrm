@@ -34,6 +34,7 @@ import * as notesPage from './pages/notes.js';
 import * as clientPage from './pages/client.js';
 import * as healthPage from './pages/health.js';
 import * as settingsPage from './pages/settings.js';
+import * as integrationsPage from './pages/integrations.js';
 import { applyRole } from './util/role.js';
 
 // سجل الصفحات: الصفحات اللاحقة تُضاف هنا وفي القائمة الجانبية في index.html.
@@ -57,6 +58,7 @@ const ROUTES = {
   notes: { title: 'الأفكار والملاحظات', render: notesPage.render },
   client: { title: 'ملف العميل', render: clientPage.render },
   health: { title: 'صحة البيانات', render: healthPage.render },
+  integrations: { title: 'التكاملات', render: integrationsPage.render },
   settings: { title: 'الإعدادات', render: settingsPage.render },
 };
 const DEFAULT_ROUTE = 'today'; // صفحة «يومي» هي المقصد الأول عند الفتح (المرحلة ١١)
@@ -107,7 +109,7 @@ function markTableHeaders(root) {
 }
 
 /** مساراتٌ كلّها مال: لا تُفتح بدور المساعد (المرحلة ٣٦). */
-const OWNER_ONLY_ROUTES = new Set(['invoices', 'expenses']);
+const OWNER_ONLY_ROUTES = new Set(['invoices', 'expenses', 'integrations']);
 
 async function navigate() {
   const name = routeName();

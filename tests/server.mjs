@@ -31,6 +31,8 @@ const leadFn = (await import(`${ROOT}/netlify/functions/lead.js`)).default;
 const viewFn = (await import(`${ROOT}/netlify/functions/view.js`)).default;
 const bookFn = (await import(`${ROOT}/netlify/functions/book.js`)).default;
 const metaFn = (await import(`${ROOT}/netlify/functions/meta-lead.js`)).default;
+const integrationsFn = (await import(`${ROOT}/netlify/functions/integrations.js`)).default;
+const meFn = (await import(`${ROOT}/netlify/functions/me.js`)).default;
 const gateFn = (await import(`${ROOT}/netlify/edge-functions/gate.js`)).default;
 const { config: gateConfig } = await import(`${ROOT}/netlify/edge-functions/gate.js`);
 
@@ -61,7 +63,9 @@ const server = http.createServer(async (req, res) => {
 
   let response;
   try {
-    if (url.pathname === '/api/publish') response = await publishFn(request);
+    if (url.pathname === '/api/integrations') response = await integrationsFn(request);
+    else if (url.pathname === '/api/me') response = await meFn(request);
+    else if (url.pathname === '/api/publish') response = await publishFn(request);
     else if (url.pathname === '/api/listings') response = await listingsFn(request);
     else if (url.pathname === '/api/media') response = await mediaFn(request);
     else if (url.pathname.startsWith('/offers/l/')) response = await offerFn(request);

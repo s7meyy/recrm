@@ -481,6 +481,8 @@ export function orderedPageKeys(defaultKeys, savedOrder = []) {
 
 export const DEFAULT_COMPANY = {
   name: '', phone: '', email: '', address: '', crNumber: '', // السجل التجاري/رقم الترخيص — نص حر يُطبع كما هو
+  // رقم الوسيط المعتمد لدى الهيئة العامة للعقار (المرحلة ٣٧) — يطلبه عقد إيجار.
+  licenseNumber: '',
   // اتفاقية الوساطة (المرحلة ١٣): تُطبع من بيانات العقار والمالك + هذه البنود
   commissionPercent: 2.5,
   agreementDurationDays: 90,

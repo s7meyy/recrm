@@ -779,6 +779,7 @@ async function openForm(ctx, existing) {
 
   /* الملاحظات */
   const notesInput = el('textarea', { class: 'input', rows: 3, value: draft.notes || '' });
+  const deedInput = el('input', { class: 'input', type: 'text', value: draft.deedNumber || '', placeholder: 'رقم الصك كما هو' });
   const source = sourceField(draft.referralSource, ctx.lists.sources);
 
   /* الصور */
@@ -850,6 +851,7 @@ async function openForm(ctx, existing) {
       ownerId: ownerSelect.value && ownerSelect.value !== '__new__' ? ownerSelect.value : null,
       status: statusSelect.value,
       notes: notesInput.value.trim(),
+      deedNumber: deedInput.value.trim(),
       typeFields, extra,
       agreementSignedAt: fromInputDate(agreementInput.value),
       agreementDays: agreementDaysInput.value === '' ? null : Number(agreementDaysInput.value),
@@ -942,6 +944,7 @@ async function openForm(ctx, existing) {
       labeled('صاحب العقار', ownerSelect),
       labeled('الحالة', el('div', { class: 'field-row' }, statusSelect, addStatusBtn)),
       labeled('المصدر (وسيط الإحالة)', source.node, { hint: 'اختياري — لا يظهر شيء ما لم يُعبَّأ' }),
+      labeled('رقم الصك', deedInput, { hint: 'اختياري — يطلبه عقد الإيجار وكل توثيق، ويدخل حزمة العقد' }),
       labeled('توقيع اتفاقية الوساطة', agreementInput, { hint: 'يُنبّهك «يومي» قبل انتهائها — والعقار بلا اتفاقية قد تخسره' }),
       labeled('مدّة الاتفاقية (يومًا)', agreementDaysInput, { hint: 'اتركه فارغًا لتُستعمل المدّة الافتراضية من الإعدادات' }),
       newOwnerBox),

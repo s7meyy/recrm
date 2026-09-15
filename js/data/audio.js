@@ -96,6 +96,13 @@ export async function getAudioUrl(id) {
   return url;
 }
 
+/** الملفّ نفسه لا رابطه — يحتاجه التفريغ النصّي (المرحلة ٣٧). */
+export async function getAudioBlob(id) {
+  if (!id) return null;
+  const rec = await repo.audio.get(id);
+  return rec?.blob || null;
+}
+
 export async function removeAudio(id) {
   if (!id) return;
   if (urlCache.has(id)) { URL.revokeObjectURL(urlCache.get(id)); urlCache.delete(id); }

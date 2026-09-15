@@ -16,6 +16,7 @@ import { vatSummary, invoiceYears, QUARTERS, quarterOf } from '../util/vat-repor
 import { receivables } from '../util/receivables.js';
 import { formatPhone } from '../util/phone.js';
 import { matchesQuery } from '../util/arabic.js';
+import { runIntegration, explain } from '../data/integrations.js';
 
 const typeLabelOf = (key) => labelFor(ENUMS.invoiceTypes, key);
 const clientName = (c) => (c ? (c.name || formatPhone(c.phone) || 'عميل بلا اسم') : null);
@@ -176,6 +177,32 @@ function openCollect(ctx, inv) {
   const amountInput = el('input', { class: 'input', type: 'number', min: '0', step: '1', value: remaining });
   const dateInput = el('input', { class: 'input', type: 'date', value: toInputDate() });
 
+  /**
+   * رابط سداد للفاتورة (المرحلة ٣٧).
+   *
+   * بلا بوابةٍ مُهيَّأة **لا يُخفى الزرّ**: يُضغط فيقول ما ينقص بالضبط وأين يُضاف. وزرٌّ
+   * مخفيّ يترك صاحبه لا يعرف أن الميزة موجودة أصلًا، فلا يسعى إلى تشغيلها.
+   */
+  const payBtn = el('button', {
+    type: 'button', class: 'btn', text: '💳 رابط سداد',
+    title: 'ينشئ رابط دفع من بوابتك ويحفظه على الفاتورة',
+    onClick: async () => {
+      payBtn.disabled = true;
+      const res = await runIntegration('payments', 'link.create', {
+        amount: remaining,
+        description: `فاتورة ${inv.number || ''} — ${inv.clientName || ''}`.trim(),
+      });
+      if (!res.ok) { toast(explain(res, 'payments'), 'error', 8000); payBtn.disabled = false; return; }
+      const url = res.provider?.url || res.provider?.payment_url || res.provider?.link || '';
+      await repo.invoices.update(inv.id, {
+        paymentUrl: url, paymentRef: res.provider?.id || '', paymentCreatedAt: new Date().toISOString(),
+      });
+      try { await navigator.clipboard.writeText(url); toast('أُنشئ الرابط ونُسخ', 'success'); }
+      catch (_) { toast(url || 'أُنشئ الرابط', 'success', 9000); }
+      payBtn.disabled = false;
+    },
+  });
+
   const save = async (fullAmount) => {
     errorsBox.hidden = true;
     const added = fullAmount != null ? fullAmount : Number(amountInput.value);
@@ -208,6 +235,8 @@ function openCollect(ctx, inv) {
     footer: [
       el('button', { type: 'button', class: 'btn btn-primary', text: `قُبض كاملًا (${money(remaining)})`, onClick: () => save(remaining) }),
       el('button', { type: 'button', class: 'btn', text: 'حفظ المبلغ المكتوب', onClick: () => save(null) }),
+      payBtn,
+      el('span', { class: 'spacer' }),
       el('button', { type: 'button', class: 'btn btn-ghost', text: 'إلغاء', onClick: () => modal.close() }),
     ],
   });

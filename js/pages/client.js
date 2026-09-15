@@ -8,7 +8,7 @@
 
 import { repo } from '../data/repository.js';
 import { ENUMS, labelFor, clientTagClass, invoiceGrandTotal, COLLECTION_LABELS, invoiceCollection, checklistProgress, duePayments } from '../data/schema.js';
-import { getLists, typeLabel } from '../data/settings.js';
+import { getLists, typeLabel, getCompany } from '../data/settings.js';
 import { loadMatchingContext, candidatesFor } from '../data/matching.js';
 import { receivables } from '../util/receivables.js';
 import { el, clear, badge, emptyState, openModal, labeled, checkbox, promptDialog, toast } from '../util/dom.js';
@@ -16,6 +16,7 @@ import { formatSAR, formatArea, formatDate, formatDateTime, formatNumber, daysWo
 import { formatPhone, toInternational } from '../util/phone.js';
 import { audioPlayer } from '../util/audio-note.js';
 import { historyBox } from '../util/history-view.js';
+import { ejarPackage, ejarText } from '../util/ejar-package.js';
 
 function routeClientId() {
   const m = /^#\/client\/([^/?#]+)/.exec(location.hash || '');
@@ -154,7 +155,7 @@ export async function render(container) {
           progress ? `المسار ${progress.done}/${progress.total}` : null,
           due.length ? `${formatNumber(due.length)} دفعة مستحقّة` : null,
         ].filter(Boolean).join(' · '),
-        el('button', { type: 'button', class: 'btn btn-ghost btn-sm', text: 'إدارة', onClick: () => openDeal(d, lists) }));
+        el('button', { type: 'button', class: 'btn btn-ghost btn-sm', text: 'إدارة', onClick: () => openDeal(d, lists, client) }));
     }))
     : el('p', { class: 'muted small', text: 'لا صفقات معه بعد.' })));
 
@@ -186,7 +187,7 @@ export async function render(container) {
  * هنا **وحده** لأن الصفقة لا صفحة لها: تُنشأ من المطابقات ولا تُعدَّل بعدها في أي مكان.
  * وهذه أقرب شاشة إليها منطقيًا — ملف صاحبها.
  */
-function openDeal(deal, lists) {
+function openDeal(deal, lists, client = null) {
   const draft = JSON.parse(JSON.stringify(deal));
   draft.payments = draft.payments || [];
   draft.checklist = draft.checklist || [];
@@ -295,6 +296,16 @@ function openDeal(deal, lists) {
     }
   };
 
+  // يظهر لصفقةٍ إيجارية وحدها: لها نهاية عقدٍ أو جدول دفعات. والبيع لا عقد إيجار له.
+  const isLease = !!deal.leaseEndAt || (deal.payments || []).length > 0;
+  const ejarBtn = isLease
+    ? el('button', {
+      type: 'button', class: 'btn', text: '📄 حزمة عقد إيجار',
+      title: 'تجمع حقول العقد من سجلاتك في ورقة واحدة',
+      onClick: () => showEjarPackage(deal, client),
+    })
+    : null;
+
   const modal = openModal({
     title: `صفقة ${formatDate(deal.date)} — ${formatSAR(deal.finalPrice)}`,
     size: 'wide',
@@ -313,6 +324,50 @@ function openDeal(deal, lists) {
       paymentsWrap),
     footer: [
       el('button', { type: 'button', class: 'btn btn-primary', text: 'حفظ', onClick: save }),
+      ejarBtn,
+      el('span', { class: 'spacer' }),
+      el('button', { type: 'button', class: 'btn btn-ghost', text: 'إغلاق', onClick: () => modal.close() }),
+    ],
+  });
+}
+
+/**
+ * «حزمة عقد إيجار» (المرحلة ٣٧) — تعمل الآن بلا اشتراك ولا مفتاح.
+ *
+ * منصّة «إيجار» لا تفتح واجهةً برمجية عامة يُسجَّل بها من أي تطبيق، فالوعد بالتسجيل الآلي
+ * وعدٌ لا يُوفى. والذي يُوفى: أن تُجمع حقول العقد من سجلاتك في ورقةٍ تنقلها مرّة واحدة،
+ * بدل التنقّل بين أربع شاشات تنسخ رقمًا رقمًا. **وما ينقص يُقال ولا يُملأ بتخمين.**
+ */
+async function showEjarPackage(deal, client) {
+  const [property, company] = await Promise.all([
+    deal.propertyId ? repo.properties.get(deal.propertyId) : null,
+    getCompany(),
+  ]);
+  const owner = property?.ownerId ? await repo.clients.get(property.ownerId) : null;
+  const pkg = ejarPackage({ deal, property, tenant: client, owner, company });
+  const text = ejarText(pkg);
+
+  const body = el('div', {},
+    el('p', { class: 'muted small', text: 'منصّة «إيجار» لا تفتح واجهة تسجيلٍ عامة، فهذه الحزمة تُنقل يدويًّا مرّة واحدة — وهي أكثر ما يختصر الوقت على كل حال.' }),
+    el('table', { class: 'table' }, el('tbody', {}, pkg.rows.map(([k, v]) => el('tr', {},
+      el('th', { style: { width: '38%' }, text: k }),
+      v == null || v === ''
+        ? el('td', {}, badge('ناقص في سجلاتك', 'badge-warn'))
+        : el('td', { text: String(v) }))))));
+
+  const modal = openModal({
+    title: 'حزمة عقد إيجار',
+    size: 'wide',
+    body,
+    footer: [
+      el('button', {
+        type: 'button', class: 'btn btn-primary', text: '📋 انسخ الحزمة',
+        onClick: async () => {
+          try { await navigator.clipboard.writeText(text); toast('نُسخت — الصقها في إيجار', 'success'); }
+          catch (_) { toast('تعذّر النسخ — حدّدها بيدك من الجدول', 'error'); }
+        },
+      }),
+      el('span', { class: 'spacer' }),
       el('button', { type: 'button', class: 'btn btn-ghost', text: 'إغلاق', onClick: () => modal.close() }),
     ],
   });

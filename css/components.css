@@ -812,3 +812,9 @@ body.assistant-mode [data-sensitive] { display: none !important; }
 /* ولوحة الخزنة تُخفى كاملة: الخادم يرفض الرفع والاسترجاع بدور المساعد، وإظهار زرٍّ
    يُردّ صاحبُه بـ٤٠٣ إزعاجٌ لا حماية. */
 body.assistant-mode [data-owner-only] { display: none !important; }
+
+/* ===== المرحلة ٣٧ — صفحة التكاملات ===== */
+.steps-list { margin: 0 0 var(--dhad-space-3); padding-inline-start: var(--dhad-space-5); line-height: var(--dhad-line-reading); }
+.steps-list li { margin-bottom: var(--dhad-space-1); }
+/* نصّ التفريغ بجوار الصوت لا فوق ملاحظتك: الآلي يخطئ في العربية، ومحوُ ما كتبتَه خسارة. */
+.audio-transcript { display: block; margin-top: var(--dhad-space-2); color: var(--muted); line-height: var(--dhad-line-reading); }

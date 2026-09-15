@@ -24,6 +24,7 @@ export const SIDEBAR_PAGES = [
   { key: 'calendar', label: 'التقويم', icon: '📆' },
   { key: 'notes', label: 'الأفكار والملاحظات', icon: '💡' },
   { key: 'health', label: 'صحة البيانات', icon: '🩺' },
+  { key: 'integrations', label: 'التكاملات', icon: '🔌' },
   { key: 'settings', label: 'الإعدادات', icon: '⚙️' },
 ];
 

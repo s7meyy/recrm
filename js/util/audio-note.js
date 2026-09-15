@@ -101,16 +101,59 @@ export function audioNoteField() {
   };
 }
 
-/** مشغّل تسجيل محفوظ داخل سجل التواصل. */
-export function audioPlayer(audioId, seconds = 0) {
+/**
+ * مشغّل تسجيل محفوظ داخل سجل التواصل — ومعه زرّ تفريغه نصًّا (المرحلة ٣٧).
+ *
+ * والتفريغ يحتاج مزوّدًا؛ فبلا مفتاح **يقول ما ينقص** ولا يتظاهر. والنصّ حين يأتي
+ * يُعرض بجوار الصوت ولا يُكتب فوق ملاحظتك: تفريغٌ آليٌّ للعربية يخطئ، ومحوُ ما كتبتَه
+ * بيدك لأجله خسارة.
+ *
+ * @param {string} audioId معرّف التسجيل
+ * @param {number} seconds مدّته
+ * @param {{ onTranscript }} options تُستدعى بالنصّ ليُحفظ حيث يخصّ المستدعي
+ */
+export function audioPlayer(audioId, seconds = 0, { onTranscript = null } = {}) {
   const node = el('span', { class: 'contact-audio' });
   const btn = el('button', { type: 'button', class: 'btn btn-ghost btn-sm', text: `▶ ${formatSeconds(seconds)}` });
   btn.addEventListener('click', async () => {
     const { getAudioUrl } = await import('../data/audio.js');
     const url = await getAudioUrl(audioId);
     if (!url) { toast('التسجيل غير موجود', 'error'); return; }
-    node.replaceChildren(el('audio', { controls: true, autoplay: true, src: url, style: { maxWidth: '100%' } }));
+    node.replaceChildren(el('audio', { controls: true, autoplay: true, src: url, style: { maxWidth: '100%' } }), textBtn);
   });
-  node.append(btn);
+
+  const textBtn = el('button', {
+    type: 'button', class: 'btn btn-ghost btn-sm', text: '✍️ فرّغه نصًّا',
+    title: 'يحوّل التسجيل إلى نصّ مكتوب — يحتاج تكامل التفريغ',
+    onClick: async () => {
+      textBtn.disabled = true;
+      textBtn.textContent = 'يفرّغ…';
+      try {
+        const { getAudioBlob } = await import('../data/audio.js');
+        const { runIntegration, explain } = await import('../data/integrations.js');
+        const blob = await getAudioBlob(audioId);
+        if (!blob) { toast('التسجيل غير موجود', 'error'); return; }
+        const base64 = await blobToBase64(blob);
+        const res = await runIntegration('transcribe', 'audio.transcribe', { audio: base64 });
+        if (!res.ok) { toast(explain(res, 'transcribe'), 'error', 8000); return; }
+        const text = res.provider?.text || res.provider?.transcript || '';
+        if (!text) { toast('لم يُرجع المزوّد نصًّا', 'error'); return; }
+        node.append(el('span', { class: 'audio-transcript small', text }));
+        onTranscript?.(text);
+      } finally {
+        textBtn.disabled = false;
+        textBtn.textContent = '✍️ فرّغه نصًّا';
+      }
+    },
+  });
+
+  node.append(btn, textBtn);
   return node;
+}
+
+async function blobToBase64(blob) {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(binary);
 }
