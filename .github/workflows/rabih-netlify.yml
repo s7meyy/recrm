@@ -1,0 +1,84 @@
+# نشر «رابح» على Netlify خلف بوابة الحافة.
+#
+# يختلف عن Pages: هناك يُسلَّم ciphertext لمن يطلب الصفحة ويُفكّ في متصفحه، وهنا
+# لا يُسلَّم شيء أصلًا قبل دخولٍ صحيح — البوابة في netlify/edge-functions/gate.js
+# تعترض كل مسار، وكلمة السر في متغيّر بيئة على Netlify تُغيَّر بلا إعادة نشر.
+#
+# ولا يمسّ كسّاب: هذه نشرة مجلد rabih/ إلى موقع rabih-app، ونشرة كسّاب في
+# deploy.yml إلى موقعه هي كما كانت.
+#
+# **يلزمه سرٌّ واحد:** Settings ← Secrets and variables ← Actions ← Secrets:
+#   NETLIFY_AUTH_TOKEN  من Netlify: User settings ← Applications ← Personal access tokens
+#
+# ولا يفشل حين لا يجده — يمرّ بملاحظة، فالأحمر عند كل دفعة يُعلّم تجاهل الإشارة.
+
+name: نشر رابح على Netlify
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: الفرع الذي يُقرأ منه مجلد rabih
+        required: false
+        default: claude/sleepy-tesla-ikhvof
+  push:
+    branches: [main]
+    paths:
+      - 'rabih/**'
+
+concurrency:
+  group: rabih-netlify
+  cancel-in-progress: true # نشرتان متلاحقتان: الأحدث تكفي
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref_name }}
+
+      - name: تحقّق من وجود المجلد
+        run: |
+          if [ ! -f rabih/index.html ]; then
+            echo "::error::لا يوجد rabih/index.html في هذا الفرع — راجع مُدخَل ref."
+            exit 1
+          fi
+          if [ ! -f rabih/netlify/edge-functions/gate.js ]; then
+            echo "::error::البوابة مفقودة — النشر بلا بوابة يكشف الموقع."
+            exit 1
+          fi
+
+      - name: تحقّق من التوكن
+        id: guard
+        env:
+          TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          TOKEN_AS_VAR: ${{ vars.NETLIFY_AUTH_TOKEN }}
+        run: |
+          if [ -n "$TOKEN" ]; then
+            echo "has_token=true" >> "$GITHUB_OUTPUT"
+            echo "التوكن موجود (${#TOKEN} حرفًا)."
+            exit 0
+          fi
+          echo "has_token=false" >> "$GITHUB_OUTPUT"
+          if [ -n "$TOKEN_AS_VAR" ]; then
+            echo "::warning::NETLIFY_AUTH_TOKEN في تبويب Variables لا Secrets، فلا تراه الوظيفة. انقله إلى: Settings ← Secrets and variables ← Actions ← Secrets."
+          else
+            echo "::notice::لا توكن — يُتخطّى النشر. أضف NETLIFY_AUTH_TOKEN في Secrets ثم أعد التشغيل."
+          fi
+
+      # الاختبارات ليست جزءًا من الموقع المنشور.
+      - name: تنظيف
+        if: steps.guard.outputs.has_token == 'true'
+        run: rm -rf rabih/tests rabih/tools rabih/node_modules
+
+      - name: نشر
+        if: steps.guard.outputs.has_token == 'true'
+        working-directory: rabih
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: dc23aef2-a68a-435b-9432-18b2aac80345
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message || 'نشر يدوي' }}
+        run: |
+          npx -y netlify-cli@latest deploy --prod --no-build \
+            --message "${COMMIT_MESSAGE}"
