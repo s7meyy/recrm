@@ -1,0 +1,139 @@
+# نشر «رابح» على Netlify خلف بوابة الحافة.
+#
+# يختلف عن Pages: هناك يُسلَّم ciphertext لمن يطلب الصفحة ويُفكّ في متصفحه، وهنا
+# لا يُسلَّم شيء أصلًا قبل دخولٍ صحيح — البوابة في netlify/edge-functions/gate.js
+# تعترض كل مسار، وكلمة السر في متغيّر بيئة على Netlify تُغيَّر بلا إعادة نشر.
+#
+# ولا يمسّ كسّاب: هذه نشرة مجلد rabih/ إلى موقع rabih-app، ونشرة كسّاب في
+# deploy.yml إلى موقعه هي كما كانت.
+#
+# **يلزمه سرٌّ واحد:** Settings ← Secrets and variables ← Actions ← Secrets:
+#   NETLIFY_AUTH_TOKEN  من Netlify: User settings ← Applications ← Personal access tokens
+#
+# ولا يفشل حين لا يجده — يمرّ بملاحظة، فالأحمر عند كل دفعة يُعلّم تجاهل الإشارة.
+
+name: نشر رابح على Netlify
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: الفرع الذي يُقرأ منه مجلد rabih
+        required: false
+        default: claude/sleepy-tesla-ikhvof
+  # الملف موجود على الفرعين: الدفعُ إلى فرعٍ لا يحمل الوظيفة لا يُطلقها.
+  # ومجلد رابح على فرع التطوير اليوم، فهناك يقع التغيير وهناك ينبغي أن ينطلق النشر.
+  push:
+    branches: [main, claude/sleepy-tesla-ikhvof]
+    paths:
+      - 'rabih/**'
+
+concurrency:
+  group: rabih-netlify
+  cancel-in-progress: true # نشرتان متلاحقتان: الأحدث تكفي
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref_name }}
+
+      - name: تحقّق من وجود المجلد
+        run: |
+          if [ ! -f rabih/index.html ]; then
+            echo "::error::لا يوجد rabih/index.html في هذا الفرع — راجع مُدخَل ref."
+            exit 1
+          fi
+          if [ ! -f rabih/netlify/edge-functions/gate.js ]; then
+            echo "::error::البوابة مفقودة — النشر بلا بوابة يكشف الموقع."
+            exit 1
+          fi
+
+      - name: تحقّق من التوكن
+        id: guard
+        env:
+          TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          TOKEN_AS_VAR: ${{ vars.NETLIFY_AUTH_TOKEN }}
+        run: |
+          if [ -n "$TOKEN" ]; then
+            echo "has_token=true" >> "$GITHUB_OUTPUT"
+            echo "التوكن موجود (${#TOKEN} حرفًا)."
+            exit 0
+          fi
+          echo "has_token=false" >> "$GITHUB_OUTPUT"
+          if [ -n "$TOKEN_AS_VAR" ]; then
+            echo "::warning::NETLIFY_AUTH_TOKEN في تبويب Variables لا Secrets، فلا تراه الوظيفة. انقله إلى: Settings ← Secrets and variables ← Actions ← Secrets."
+          else
+            echo "::notice::لا توكن — يُتخطّى النشر. أضف NETLIFY_AUTH_TOKEN في Secrets ثم أعد التشغيل."
+          fi
+
+      # **يُنسخ المجلد خارج المستودع قبل النشر.** أداة Netlify تصعد إلى جذر المستودع
+      # بحثًا عن netlify.toml فتجد ملفّ كسّاب، فتنشر كسّاب ودوالّه وتترك بوابة رابح.
+      # وقد وقع هذا فعلًا في أول نشرة: اثنتا عشرة دالة من كسّاب، وصفر دوالّ حافة.
+      # ومجلدٌ خارج شجرة git يجعل رابح هو جذر المشروع، فيُقرأ ملفُّه هو.
+      - name: تجهيز مجلد النشر
+        if: steps.guard.outputs.has_token == 'true'
+        run: |
+          rm -rf "$RUNNER_TEMP/site"
+          mkdir -p "$RUNNER_TEMP/site"
+          cp -a rabih/. "$RUNNER_TEMP/site"/
+          rm -rf "$RUNNER_TEMP/site/tests" "$RUNNER_TEMP/site/tools" "$RUNNER_TEMP/site/node_modules"
+          test -f "$RUNNER_TEMP/site/netlify/edge-functions/gate.js"
+          test ! -e "$RUNNER_TEMP/site/.git"
+
+      # الأداة تُثبَّت بإصدارٍ مثبَّت لا بـ@latest، ومعها تجاوزٌ لتبعية مكسورة:
+      # @types/node@26.6.0 مُدرَج في سجلّ npm وملفُّه مفقود (404)، فتسقط كل نشرة
+      # تحلّ التبعيات من جديد. التثبيت على 26.5.1 يتخطّى النشرة المكسورة.
+      - name: تثبيت أداة Netlify
+        if: steps.guard.outputs.has_token == 'true'
+        run: |
+          mkdir -p "$RUNNER_TEMP/nl"
+          cat > "$RUNNER_TEMP/nl/package.json" <<'JSON'
+          {
+            "name": "netlify-deploy-runner",
+            "private": true,
+            "dependencies": { "netlify-cli": "27.7.0" },
+            "overrides": { "@types/node": "26.5.1" }
+          }
+          JSON
+          cd "$RUNNER_TEMP/nl"
+          npm install --no-audit --no-fund
+          echo "$RUNNER_TEMP/nl/node_modules/.bin" >> "$GITHUB_PATH"
+
+      - name: نشر
+        id: deploy
+        if: steps.guard.outputs.has_token == 'true'
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: dc23aef2-a68a-435b-9432-18b2aac80345
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message || 'نشر يدوي' }}
+        run: |
+          cd "$RUNNER_TEMP/site"
+          netlify deploy --prod --no-build --message "${COMMIT_MESSAGE}" --json > deploy.json
+          python3 -c "import json;print('deploy_id='+json.load(open('deploy.json'))['deploy_id'])" >> "$GITHUB_OUTPUT"
+          python3 -c "import json;d=json.load(open('deploy.json'));print('الرابط:',d.get('url') or d.get('deploy_url'))"
+
+      # **تحقّقٌ لا يُستغنى عنه:** موقعٌ بلا بوابة موقعٌ مكشوف، والأداة لا تفشل
+      # حين لا تجد دوالّ الحافة — تمرّ بسطرٍ في السجل يسهل ألا يُقرأ. فنسأل واجهة
+      # Netlify نفسها عن النشرة، ونُسقطها إن لم تحمل بوابة.
+      - name: تحقّق من رفع البوابة
+        if: steps.guard.outputs.has_token == 'true'
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          DEPLOY_ID: ${{ steps.deploy.outputs.deploy_id }}
+        run: |
+          curl -sS -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+            "https://api.netlify.com/api/v1/deploys/$DEPLOY_ID" > d.json
+          python3 - <<'PY'
+          import json, sys
+          d = json.load(open('d.json'))
+          msgs = [m.get('title', '') + ' ' + (m.get('description') or '') for m in d.get('summary', {}).get('messages', [])]
+          blob = ' | '.join(msgs)
+          print(blob)
+          if 'No edge functions deployed' in blob:
+              print('::error::نُشر الموقع بلا بوابة — مكشوف. راجع مجلد netlify/edge-functions.')
+              sys.exit(1)
+          print('✓ البوابة مرفوعة.')
+          PY
