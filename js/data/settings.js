@@ -11,6 +11,7 @@ export const SETTINGS_KEYS = {
   matching: 'matching', // أوزان المعايير وحدود المرونة والحدّ الأدنى للظهور (المرحلة ٣)
   zones: 'zones', // نطاقات الأحياء: { [city]: [{ key, label, districts: [] }] } (المرحلة ٣)
   user: 'user', // { id, name, createdAt }
+  team: 'team', // [{ id, name, active }] أعضاء المكتب (المرحلة ٤٧) — للإسناد والنسبة
   lists: 'lists', // { propertyTypes: [], propertyStatuses: [], clientTags: [], cities: [], districts: { city: [] } } — إضافات المستخدم فقط
   customFields: 'customFields', // [{ key, label, input: 'text'|'number', forTypes: [] }]
   completeness: 'completeness', // ['city', ...]
@@ -54,6 +55,32 @@ export async function ensureUser() {
 export function userHandle(user) {
   const raw = String(user?.id ?? '').replace(/[^a-zA-Z0-9]/g, '');
   return raw ? `u${raw.slice(0, 6).toLowerCase()}` : 'ulocal';
+}
+
+/* ===== الفريق (المرحلة ٤٧) ===== */
+
+/**
+ * أعضاءُ المكتب — للإسناد ولنسبة السجلّات إلى أصحابها.
+ *
+ * **ويُضاف صاحبُ الجهاز إليها تلقائيًّا** إن لم يكن فيها: فمكتبٌ من شخصٍ واحدٍ يجد نفسَه
+ * في القائمة بلا إعدادٍ يضبطه، ومكتبٌ من عشرةٍ يضيف بقيّتهم.
+ */
+export async function getTeam() {
+  const stored = await repo.settings.get(SETTINGS_KEYS.team, null);
+  const list = Array.isArray(stored) ? stored.filter((m) => m && m.id) : [];
+  const me = await ensureUser();
+  if (me?.id && !list.some((m) => m.id === me.id)) {
+    list.unshift({ id: me.id, name: me.name || 'الوسيط', active: true });
+  }
+  return list;
+}
+
+export async function setTeam(list) {
+  const clean = (Array.isArray(list) ? list : [])
+    .filter((m) => m && m.id && norm(m.name))
+    .map((m) => ({ id: m.id, name: norm(m.name), active: m.active !== false }));
+  await repo.settings.set(SETTINGS_KEYS.team, clean);
+  return clean;
 }
 
 export async function updateUserName(name) {
@@ -567,6 +594,9 @@ export const DEFAULT_PUBLISH = {
   lastPublishAt: null,
   lastPublishCount: 0,
   publishedRefs: [], // [[propertyId, ref]] من آخر نشرة — لبناء روابط العروض المفردة (المرحلة ١٠)
+  // بصمةُ ما نُشر (المرحلة ٤٧): `[[id, { status, price }]]` — تُقارَن بمخزونك فيُعرف ما
+  // تغيّر بعد النشر. والحالةُ والسعرُ وحدهما: بصمةٌ تحفظ كلَّ حقلٍ تكبر بحجم مخزونك.
+  publishedState: [],
   // حجز المواعيد (المرحلة ٢٩): أوقاتك المتاحة كما تُنشر للعميل ليختار منها بنفسه.
   // معطَّل افتراضيًا — لا يُفتح تقويمك للناس إلا بقرارك.
   booking: {

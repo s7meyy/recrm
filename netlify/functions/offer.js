@@ -117,6 +117,8 @@ ${image ? `<meta property="og:image" content="${esc(image)}">` : ''}
     ${listing.mapUrl ? `<a class="btn" href="${esc(listing.mapUrl)}" target="_blank" rel="noopener">${esc(t.location)}</a>` : ''}
     <a class="btn" href="/offers/?lang=${t.lang}">${esc(t.all)}</a>
   </div>
+  <!-- الإفصاح النظاميّ (المرحلة ٤٧): رقمُ ترخيص الإعلان يلزم كلَّ إعلان. ولا يُترجَم. -->
+  ${listing.disclosure ? `<p class="card-license">${esc(listing.disclosure)}</p>` : ''}
 </main>
 <footer class="wrap footer"><p class="muted small">${esc(office.name || '')}${office.phone ? ` · ${esc(office.phone)}` : ''}</p>
 <p class="muted small">${esc(t.disclaimer)}</p></footer>

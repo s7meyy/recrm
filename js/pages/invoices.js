@@ -60,15 +60,15 @@ async function refresh(ctx) {
 function buildLayout(ctx) {
   clear(ctx.container);
   ctx.nodes.count = el('span', { class: 'count' });
-  const search = el('input', {
+  const search = ctx.nodes.search = el('input', {
     class: 'input', type: 'search', placeholder: 'ابحث برقم المستند أو العميل أو البيان…',
     onInput: debounce((e) => { ctx.query = e.target.value.trim(); renderList(ctx); }, 150),
   });
-  const typeFilter = selectEl({
+  const typeFilter = ctx.nodes.typeFilter = selectEl({
     options: [{ value: '', label: 'الكل' }, ...ENUMS.invoiceTypes.map((t) => ({ value: t.key, label: t.label }))],
     value: '', onChange: (e) => { ctx.type = e.target.value; renderList(ctx); },
   });
-  const collectionFilter = selectEl({
+  const collectionFilter = ctx.nodes.collectionFilter = selectEl({
     options: [
       { value: '', label: 'كل حالات التحصيل' },
       { value: 'due', label: 'لم يُقبض أو جزئيًا' },
@@ -127,7 +127,18 @@ function renderList(ctx) {
     return;
   }
   if (!items.length) {
-    area.append(emptyState('لا نتائج تطابق البحث أو الفرز.'));
+    area.append(emptyState(
+      `لا مستندَ من ${formatNumber(ctx.invoices.length)} يطابق ما اخترتَه.`,
+      el('button', {
+        type: 'button', class: 'btn btn-primary', text: 'امسح الفرز والبحث',
+        onClick: () => {
+          ctx.query = ''; ctx.type = ''; ctx.collection = '';
+          if (ctx.nodes.search) ctx.nodes.search.value = '';
+          if (ctx.nodes.typeFilter) ctx.nodes.typeFilter.value = '';
+          if (ctx.nodes.collectionFilter) ctx.nodes.collectionFilter.value = '';
+          renderList(ctx);
+        },
+      })));
     return;
   }
   const head = el('tr', {}, ['الرقم', 'النوع', 'التاريخ', 'العميل', 'الإجمالي', 'التحصيل', ''].map((t) => el('th', { text: t })));

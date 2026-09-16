@@ -67,3 +67,48 @@ export function whatsappLink(text, phone = '') {
   const to = phone ? toInternational(phone) : '';
   return `https://wa.me/${to}?text=${encodeURIComponent(text)}`;
 }
+
+/* ===== القالبُ في موضع الحاجة (المرحلة ٤٧) ===== */
+
+/**
+ * **مواضعُ الحاجة** ومفاتيحُ القوالب التي تناسب كلًّا منها، مرتّبةً بالأولى فالأولى.
+ *
+ * القوالبُ مبنيّةٌ بمتغيّراتها منذ المرحلة ١١، وتُقرأ في صفحة الإعدادات، وتُختار من قائمةٍ
+ * في شاشةٍ أو شاشتين. **وما ينقصها أن تُقترح حيث تُحتاج**: لا يُفتح الوسيطُ صفحةَ القوالب
+ * ليختار، بل يرى الحالة فيريد الرسالة الآن.
+ *
+ * ولا تُخترع قوالب: يُبحث في قوالب المستخدم عن المفتاح، فإن غيّر مفاتيحها فبالكلمات في
+ * عنوانها — ومن حذفها كلَّها لا يُقترح له شيءٌ ولا يُدسّ في إعداداته قالبٌ لم يكتبه.
+ */
+export const TEMPLATE_CONTEXTS = {
+  /** عميلٌ طال انقطاعُه: تُفتح بمتابعةٍ لا بعرضٍ جديد. */
+  stale: { keys: ['followup'], words: ['متابعة'], label: 'متابعة' },
+  /** معاينةٌ مضت بلا انطباع: «كيف كانت المعاينة؟». */
+  showingFeedback: { keys: ['followup'], words: ['معاينة', 'متابعة'], label: 'رأيه في المعاينة' },
+  /** موعدٌ قادم: تذكيرٌ يسبقه. */
+  upcoming: { keys: ['reminder'], words: ['تذكير', 'موعد'], label: 'تذكير بالموعد' },
+  /** مطابقةٌ جديدة: عرضُ العقار. */
+  match: { keys: ['offer'], words: ['عرض'], label: 'عرض العقار' },
+  /** صفقةٌ أُبرمت: شكر. */
+  won: { keys: ['thanks'], words: ['شكر', 'مبارك'], label: 'شكر بعد الصفقة' },
+};
+
+/**
+ * يختار قالبًا يناسب موضعًا — **أو `null`** إن لم يكن في قوالب المستخدم ما يناسبه.
+ *
+ * والترتيب: مفتاحٌ مطابق، ثم عنوانٌ يحمل كلمةً من كلمات الموضع، ثم لا شيء. **ولا يُرجَع
+ * أوّلُ قالبٍ وُجد** حين لا يناسب: رسالةُ «مبارك عليك» إلى عميلٍ منقطعٍ أسوأ من لا رسالة.
+ */
+export function suggestTemplate(templates = [], context = '') {
+  const ctx = TEMPLATE_CONTEXTS[context];
+  if (!ctx || !templates.length) return null;
+  for (const key of ctx.keys) {
+    const hit = templates.find((t) => t.key === key);
+    if (hit) return hit;
+  }
+  for (const word of ctx.words) {
+    const hit = templates.find((t) => String(t.label || '').includes(word));
+    if (hit) return hit;
+  }
+  return null;
+}

@@ -80,7 +80,9 @@ export default async (request) => {
       slotMinutes: Number(booking.slotMinutes) || 30,
       dayNames: DAY_NAMES,
       office: snapshot?.office || {},
-      slots: buildSlots(booking, taken).slice(0, 200),
+      // `snapshot.busy` مواعيدُك المرفوعة مع النشرة (المرحلة ٤٧) — طوابعُ زمنيّةٌ
+      // وامتدادات، بلا اسمٍ ولا عقارٍ ولا سبب. رقمٌ يقول «مشغول» ولا يقول بمَ.
+      slots: buildSlots(booking, taken, Date.now(), snapshot?.busy || []).slice(0, 200),
     });
   }
 
@@ -98,7 +100,7 @@ export default async (request) => {
 
     const taken = (await loadBookings(store)).map((b) => b.at);
     const at = String(body.at || '');
-    if (!slotAllowed(at, booking, taken)) {
+    if (!slotAllowed(at, booking, taken, Date.now(), snapshot?.busy || [])) {
       return json({ error: 'هذا الوقت لم يعد متاحًا — اختر غيره' }, 409);
     }
 

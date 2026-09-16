@@ -18,6 +18,8 @@ import { audioPlayer } from '../util/audio-note.js';
 import { historyBox } from '../util/history-view.js';
 import { ejarPackage, ejarText } from '../util/ejar-package.js';
 import { printReceipt } from '../util/property-print.js';
+import { whatsappButton, INFERRED_LABEL } from '../util/outreach.js';
+import { investorPortfolio, yieldPct } from '../util/investor.js';
 
 function routeClientId() {
   const m = /^#\/client\/([^/?#]+)/.exec(location.hash || '');
@@ -57,10 +59,8 @@ export async function render(container) {
     el('h1', {}, name, ' ', ...(client.tags || []).filter(clientTagClass).map((t) => badge(t, clientTagClass(t)))),
     el('div', { class: 'head-actions' },
       client.phone ? el('a', { class: 'btn', href: `tel:${client.phone}`, text: '📞 اتصال', 'data-sensitive': true }) : null,
-      client.phone ? el('a', {
-        class: 'btn', text: '💬 واتساب', 'data-sensitive': true,
-        href: `https://wa.me/${toInternational(client.phone)}`, target: '_blank', rel: 'noopener noreferrer',
-      }) : null,
+      // يفتح المحادثة **ويسجّل تواصلًا مستنتَجًا** (المرحلة ٤٧) — فلا تظهر في «المتأخّرين» وقد كلّمتَه.
+      client.phone ? whatsappButton(el, { clientId: client.id, phone: client.phone, note: 'فُتحت المحادثة من ملفّه' }) : null,
       el('a', { class: 'btn btn-ghost', href: `#/clients/${client.id}`, text: 'تعديل البيانات' }))));
 
   container.append(el('div', { class: 'stat-strip' },
@@ -106,7 +106,11 @@ export async function render(container) {
     ? el('div', {}, contacts.slice(0, 10).map((c) => row(
       labelFor(ENUMS.contactTypes, c.type),
       `${formatDateTime(c.date)}${c.note ? ` — ${c.note}` : ''}`,
-      c.audioId ? audioPlayer(c.audioId, c.audioSeconds) : null)))
+      el('span', { class: 'row' },
+        // المستنتَجُ يُعلَّم (المرحلة ٤٧): سجلٌّ يقول «راسلتُه» وهو لم يُتأكَّد إرسالُه
+        // يُحتجّ به خطأً — والوسمُ يمنع ذلك بلا أن يحذف الفائدة.
+        c.inferred ? badge('مُستنتَج', 'badge-outline', { title: INFERRED_LABEL }) : null,
+        c.audioId ? audioPlayer(c.audioId, c.audioSeconds) : null))))
     : el('p', { class: 'muted small', text: 'لم يُسجَّل تواصل بعد — سجّله من «يومي» بعد كل مكالمة.' })));
 
   /* ===== معاينـاته (المرحلة ٢٧) ===== */
@@ -181,6 +185,58 @@ export async function render(container) {
   if (client.notes) {
     grid.append(panel('ملاحظاتك', null, el('p', { 'data-sensitive': true, text: client.notes })));
   }
+
+  /* ===== محفظته: المتوقَّع والواقع (المرحلة ٤٧) ===== */
+  if (properties.length) container.append(portfolioPanel({ client, properties, deals, lists }));
+}
+
+/**
+ * **محفظةُ المالك: ما وُعد به وما وصله.**
+ *
+ * الحاسبةُ في «التسعير» تجيب عن سؤالٍ افتراضيّ: «لو اشتريتُ وأجّرتُ، كم يعود؟». وهذا
+ * يجيب عن سؤالٍ واقع: **«ما الذي أملكه، وكم وصلني منه هذا العام؟»** — وهو السؤالُ الذي
+ * يُسأل في اجتماعٍ يُحضَّر له بجدول، لا في حاسبة.
+ *
+ * **والعمودان متقابلان قصدًا:** المتوقَّعُ من جدول الدفعات سنةً أمامنا، والواقعُ من
+ * المقبوض سنةً خلفنا. وافتراقُهما هو الخبر — لا مجموعُهما.
+ */
+function portfolioPanel({ client, properties, deals, lists }) {
+  const pf = investorPortfolio({ ownerId: client.id, properties, deals });
+  const pct = (n) => { const v = yieldPct(n); return v == null ? '—' : `${formatNumber(v)}٪`; };
+
+  const head = ['العقار', 'قيمته', 'المتوقَّع سنويًّا', 'العائد المتوقَّع', 'قُبض في سنة', 'العائد الواقع', 'لم يُحصَّل'];
+  return el('section', { class: 'panel' },
+    el('h2', { text: 'محفظته: المتوقَّع والواقع' }),
+    el('div', { class: 'stat-strip' },
+      stat(countOf(pf.count, 'عقار'), 'تحت ملكه'),
+      stat(pf.value ? formatSAR(pf.value) : '—', pf.unpriced ? `قيمةُ ${countOf(pf.unpriced, 'عقار')} غير معلومة — خارج المجموع` : 'مجموع ما عُرفت قيمته'),
+      stat(pct(pf.expectedYield), 'العائد المتوقَّع'),
+      stat(pct(pf.actualYield), 'العائد الواقع — من المقبوض فعلًا'),
+      pf.missed ? stat(formatSAR(pf.missed), 'استُحقّ ولم يُقبض في سنة') : null),
+    el('div', { class: 'table-wrap' }, el('table', { class: 'table' },
+      el('thead', {}, el('tr', {}, head.map((h) => el('th', { text: h })))),
+      el('tbody', {}, pf.rows.map((r) => el('tr', {},
+        el('td', {}, el('a', {
+          href: `#/properties/${r.property.id}`,
+          text: `${typeLabel(lists, r.property.type)} — ${r.property.district || r.property.city || ''}`,
+        })),
+        el('td', {}, r.value == null
+          ? el('span', { class: 'muted small', text: r.valueReason })
+          : formatSAR(r.value)),
+        el('td', {}, r.expected == null
+          ? el('span', { class: 'muted small', text: r.hasLease ? 'لا دفعةٌ مجدوَلةٌ في السنة القادمة' : 'لا عقد إيجارٍ مربوط' })
+          : el('span', {}, formatSAR(r.expected), el('div', { class: 'muted small', text: `من ${r.expectedFrom}` }))),
+        el('td', { text: pct(r.expectedYield) }),
+        el('td', { text: r.actualRows ? formatSAR(r.actual) : '—' }),
+        // لا عائدَ واقعًا بلا قبضٍ واقع: «٠٪» هنا حكمٌ، و«—» صمتٌ صادق.
+        el('td', { text: r.actualRows ? pct(r.actualYield) : '—' }),
+        el('td', {}, r.missed
+          ? badge(`${formatNumber(r.missedCount)} · ${formatSAR(r.missed)}`, 'badge-danger')
+          : el('span', { class: 'muted', text: '—' }))))))),
+    el('p', { class: 'muted small' },
+      'المتوقَّعُ مجموعُ الدفعات المجدوَلة في الاثني عشر شهرًا القادمة، والواقعُ ما قُبض فعلًا في الاثني عشر الماضية بتاريخ قبضه. ',
+      'والعائدُ يُقسم على قيمة التملّك وحدها؛ فعرضُ إيجارٍ سعرُه أجرةٌ سنويّةٌ لا يُحسب له عائد. ',
+      'ولا يدخل هنا تغيّرُ قيمة العقار ولا التمويلُ ولا الضريبة.'));
 }
 
 /**

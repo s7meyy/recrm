@@ -252,3 +252,37 @@ export function formatBytes(bytes) {
   while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
   return `${v.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
 }
+
+
+/* ===== حصّة التخزين (المرحلة ٤٧) ===== */
+
+/** فوق هذه النسبة يُنذَر — قبل الامتلاء لا بعده. */
+export const STORAGE_WARN_PCT = 80;
+
+/** متوسّطُ ما تشغله الصورة المضغوطة عندك — لتقدير «كم صورةً تبقى». */
+const AVG_IMAGE_BYTES = 260000;
+
+/**
+ * كم بقي من حصّة المتصفّح، وكم صورةً تكفي.
+ *
+ * **ومكانُ هذا الحساب هنا لا في صفحة الإعدادات** (المرحلة ٤٧): كان محسوبًا في الإعدادات
+ * وحدها، ونصُّ إنذاره بيده يقول «وامتلاؤه أثناء جولة ميدانية يعني ضياع التقاط اليوم» —
+ * **وهي الصفحة التي لا تُفتح في الجولة ولا قبلها**. فصار الحسابُ مشتركًا يُقرأ من «يومي»
+ * ومن صفحة الالتقاط أيضًا.
+ *
+ * @returns {Promise<{ supported, usage, quota, pct, low, imagesLeft } | null>}
+ */
+export async function storageStatus() {
+  if (!navigator.storage?.estimate) return { supported: false, usage: 0, quota: 0, pct: 0, low: false, imagesLeft: null };
+  try {
+    const est = await navigator.storage.estimate();
+    const usage = est.usage || 0;
+    const quota = est.quota || 0;
+    const pct = quota > 0 ? Math.round((usage / quota) * 100) : 0;
+    // تقديرٌ يُقال تقديرًا: حجمُ الصورة يختلف بالمشهد والإضاءة، ولا يُدَّعى رقمٌ قاطع.
+    const imagesLeft = quota > 0 ? Math.max(0, Math.floor((quota - usage) / AVG_IMAGE_BYTES)) : null;
+    return { supported: true, usage, quota, pct, low: quota > 0 && pct >= STORAGE_WARN_PCT, imagesLeft };
+  } catch (_) {
+    return { supported: false, usage: 0, quota: 0, pct: 0, low: false, imagesLeft: null };
+  }
+}

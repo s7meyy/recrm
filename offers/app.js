@@ -84,7 +84,10 @@ function card(listing) {
         waLink ? el('a', { class: 'btn btn-primary', href: waLink, target: '_blank', rel: 'noopener', text: t.whatsapp }) : null,
         listing.contactPhone ? el('a', { class: 'btn', href: `tel:${listing.contactPhone}`, text: t.call }) : null,
         listing.mapUrl ? el('a', { class: 'btn', href: listing.mapUrl, target: '_blank', rel: 'noopener', text: t.location }) : null,
-        el('a', { class: 'btn', href: `${single}?lang=${lang}`, text: t.allOffers === 'All listings' ? 'Details' : 'تفاصيل' }))));
+        el('a', { class: 'btn', href: `${single}?lang=${lang}`, text: t.allOffers === 'All listings' ? 'Details' : 'تفاصيل' })),
+      // **سطرُ الإفصاح** (المرحلة ٤٧): النظام يوجب ذكرَ رقم ترخيص الإعلان في كلّ إعلان.
+      // ولا يُترجَم: رقمٌ نظاميّ سعوديّ يُقرأ كما صدر بأيّ لغةٍ عُرضت الصفحة.
+      listing.disclosure ? el('p', { class: 'card-license', text: listing.disclosure }) : null));
 }
 
 function draw() {

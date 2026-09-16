@@ -147,6 +147,7 @@ const inEnum = (list, key) => list.some((x) => x.key === key);
 /* تطبيع كل كيان قبل الحفظ */
 const PREPARE = {
   clients(rec) {
+    rec.assignedTo = rec.assignedTo || null; // الإسناد (المرحلة ٤٧) — فارغٌ لا يُخترع له صاحب
     rec.name = trim(rec.name);
     // **جوالٌ كُتب فيه شيءٌ ولم يبقَ منه رقم لا يُبتلع**: «جوالي عندك» كانت تصير فراغًا
     // فيُحفظ العميل بلا رقمٍ يظنّه مسجَّلًا (المرحلة ٤٤).
@@ -168,6 +169,7 @@ const PREPARE = {
     ]);
   },
   properties(rec) {
+    rec.assignedTo = rec.assignedTo || null; // الإسناد (المرحلة ٤٧) — فارغٌ لا يُخترع له صاحب
     rec.agreementSignedAt = rec.agreementSignedAt || null; // اتفاقية الوساطة (المرحلة ٣١)
     rec.agreementDays = toNumberOrNull(rec.agreementDays);
     rec.city = trim(rec.city);
@@ -203,8 +205,23 @@ const PREPARE = {
     rec.agreementNumber = trim(rec.agreementNumber);
     rec.agreementScopes = uniq(rec.agreementScopes).filter((k) => inEnum(ENUMS.agreementScopes, k));
     rec.adLicense = cleanAdLicense(rec.adLicense);
+    // طلبات الصيانة (المرحلة ٤٧) — بلاغٌ بلا وصفٍ لا يُحفظ، وكلفةٌ غيرُ رقمٍ تُردّ لا تُبتلع.
+    rec.maintenance = (Array.isArray(rec.maintenance) ? rec.maintenance : [])
+      .map((m) => ({
+        id: m.id || newId(),
+        at: m.at || nowISO(),
+        what: trim(m.what),
+        status: ['open', 'doing', 'done'].includes(m.status) ? m.status : 'open',
+        cost: numField(rec, 'كلفة الصيانة', m.cost),
+        bearer: ['owner', 'tenant', 'office'].includes(m.bearer) ? m.bearer : 'owner',
+        doneAt: m.status === 'done' ? (m.doneAt || nowISO()) : null,
+        note: trim(m.note),
+      }))
+      .filter((m) => m.what)
+      .sort((a, b) => String(b.at).localeCompare(String(a.at)));
     rec.searchKey = buildSearchKey([
-      rec.city, rec.district, rec.notes, ...Object.values(rec.typeFields), ...Object.values(rec.extra),
+      rec.city, rec.district, rec.notes, ...(rec.maintenance || []).map((m) => m.what),
+      ...Object.values(rec.typeFields), ...Object.values(rec.extra),
       rec.referralSource,
       // «إدارة أملاك» كلمةٌ يبحث بها من يبحث — فتدخل مفتاح البحث لا تبقى حقلًا صامتًا.
       rec.management ? 'إدارة أملاك' : '',
@@ -221,6 +238,7 @@ const PREPARE = {
     rec.searchKey = buildSearchKey([rec.city, ...rec.districts, rec.notes]);
   },
   requests(rec) {
+    rec.assignedTo = rec.assignedTo || null; // الإسناد (المرحلة ٤٧) — فارغٌ لا يُخترع له صاحب
     rec.city = trim(rec.city);
     rec.districts = uniq(rec.districts);
     rec.budgetMax = numField(rec, 'سقف الميزانية', rec.budgetMax);
@@ -559,9 +577,9 @@ const CASCADE = {
  * وبياناتك في متصفحٍ له حدّ مساحة.
  */
 const TRACKED = {
-  properties: ['price', 'status', 'captureStatus', 'area', 'ownerName', 'agreementSignedAt'],
-  clients: ['stage', 'phone', 'phone2', 'doNotContact', 'referralSource'],
-  requests: ['status', 'budgetMax', 'budgetMin', 'area', 'rooms', 'closeReason'],
+  properties: ['price', 'status', 'captureStatus', 'area', 'ownerName', 'agreementSignedAt', 'assignedTo'],
+  clients: ['stage', 'phone', 'phone2', 'doNotContact', 'referralSource', 'assignedTo'],
+  requests: ['status', 'budgetMax', 'budgetMin', 'area', 'rooms', 'closeReason', 'assignedTo'],
   deals: ['finalPrice', 'commission', 'partnerName', 'partnerShare', 'commissionPaidAt'],
   invoices: ['type', 'number', 'status'],
 };
@@ -871,12 +889,19 @@ const clients = Object.assign(makeEntity('clients'), {
     return all.find((c) => c.phone2 === p) ?? null;
   },
 
-  async addContact(clientId, { type, date, note = '', followUpAt = null, audioId = null, audioSeconds = 0 }) {
+  /**
+   * @param {{ inferred?: boolean }} o — **`inferred` يفرّق بين ما رأيناه وما ظنّناه**
+   *   (المرحلة ٤٧): فتحُ محادثةٍ بقالبٍ جاهز ليس إرسالًا — قد تُغلقها ولا تكتب. فيُسجَّل
+   *   التواصلُ كي لا تظهر في «المتأخّرين» وقد كلّمتَه، **ويُوسَم بأنّه مستنتَج** كي لا
+   *   يُحتجّ به احتجاجَ المؤكَّد. والفرقُ يُقال ولا يُخمَّن.
+   */
+  async addContact(clientId, { type, date, note = '', followUpAt = null, audioId = null, audioSeconds = 0, inferred = false }) {
     const client = await this.get(clientId);
     if (!client) throw new Error('العميل غير موجود');
     if (!inEnum(ENUMS.contactTypes, type)) throw new ValidationError(['نوع التواصل غير معروف']);
     const contact = {
       id: newId(), type, date: date || nowISO(), note: trim(note), followUpAt: followUpAt || null,
+      inferred: !!inferred,
       // ملاحظة صوتية (المرحلة ٢٦): معرّف في مخزن audio لا الملف نفسه — سجل العميل يبقى خفيفًا.
       audioId: audioId || null, audioSeconds: audioId ? Number(audioSeconds) || 0 : 0,
       createdAt: nowISO(), createdBy: currentUser.id,

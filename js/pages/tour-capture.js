@@ -11,6 +11,8 @@ import { storeImage } from '../data/images.js';
 import { readImageMeta } from '../util/exif.js';
 import { parseLocation, isShortMapLink, locationToText, mapsLink } from '../util/location.js';
 import { el, clear, labeled, openModal, toast, badge } from '../util/dom.js';
+import { storageStatus } from '../data/images.js';
+import { countOf } from '../util/format.js';
 
 function isoDateOnly(input) {
   const d = input ? new Date(input) : new Date();
@@ -269,11 +271,24 @@ export function openCaptureForm({ tour = null, onSaved = null } = {}) {
     }
   });
 
+  // **المساحةُ تُقاس قبل الالتقاط لا بعده** (المرحلة ٤٧): الالتقاطُ يكتب صورًا، وامتلاءُ
+  // التخزين في وسط الجولة يُضيّع عملَ اليوم. والإنذارُ كان في صفحة الإعدادات وحدها.
+  const storageBox = el('div', { hidden: true });
+  storageStatus().then((st) => {
+    if (!st.low) return;
+    storageBox.hidden = false;
+    storageBox.append(el('div', { class: 'notice notice-warn' },
+      el('strong', { text: `التخزين بلغ ${st.pct}٪. ` }),
+      st.imagesLeft != null ? `يكفي نحو ${countOf(st.imagesLeft, 'صورة')} تقريبًا — ` : '',
+      'صدّر نسخة احتياطية قبل أن تكمل الجولة.'));
+  }).catch(() => {});
+
   const modal = openModal({
     title: 'التقاط عقار',
     size: 'wide',
     body: el('div', {},
       errorsBox,
+      storageBox,
       tourBox,
       el('div', { class: 'form-section' },
         el('div', { class: 'form-grid one' },

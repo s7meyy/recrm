@@ -76,11 +76,11 @@ export function monthlySummary({ expenses = [], deals = [], incomes = [], months
 function build(ctx) {
   clear(ctx.container);
   ctx.nodes.count = el('span', { class: 'count' });
-  const search = el('input', {
+  const search = ctx.nodes.search = el('input', {
     class: 'input search', type: 'search', placeholder: 'بحث في الملاحظات…',
     onInput: debounce((e) => { ctx.query = e.target.value.trim(); renderList(ctx); }, 150),
   });
-  const categoryFilter = selectEl({
+  const categoryFilter = ctx.nodes.categoryFilter = selectEl({
     options: [{ value: '', label: 'كل التصنيفات' }, ...categoriesFor(ctx).map((c) => ({ value: c.key, label: c.label }))],
     value: ctx.category, onChange: (e) => { ctx.category = e.target.value; renderList(ctx); },
   });
@@ -152,7 +152,21 @@ function renderList(ctx) {
       : 'لا مصاريف مسجّلة بعد. سجّل وقودك وإعلاناتك ليصير رقم الأرباح صادقًا.'));
     return;
   }
-  if (!items.length) { area.append(emptyState('لا نتائج.')); return; }
+  if (!items.length) {
+    // فراغٌ يفعل (المرحلة ٤٧): «لا نتائج» تترك الواقفَ واقفًا، والزرُّ يُخرجه منها.
+    area.append(emptyState(
+      `لا ${ctx.kind === 'income' ? 'إيرادَ' : 'مصروفَ'} من ${formatNumber(all.length)} يطابق ما اخترتَه.`,
+      el('button', {
+        type: 'button', class: 'btn btn-primary', text: 'امسح البحث والتصنيف',
+        onClick: () => {
+          ctx.query = ''; ctx.category = '';
+          if (ctx.nodes.search) ctx.nodes.search.value = '';
+          if (ctx.nodes.categoryFilter) ctx.nodes.categoryFilter.value = '';
+          renderList(ctx);
+        },
+      })));
+    return;
+  }
 
   area.append(el('div', { class: 'table-wrap' }, el('table', { class: 'table' },
     el('thead', {}, el('tr', {}, ['التاريخ', 'التصنيف', 'المبلغ', 'الملاحظة', 'مرتبط بـ', ''].map((t) => el('th', { text: t })))),

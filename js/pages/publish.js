@@ -10,9 +10,11 @@
 
 import { repo } from '../data/repository.js';
 import { ENUMS, labelFor } from '../data/schema.js';
-import { getLists, typeLabel, getCompany, getPublishSettings, setPublishSettings } from '../data/settings.js';
-import { el, clear, labeled, selectEl, checkbox, badge, toast, emptyState, confirmDialog, debounce, openModal } from '../util/dom.js';
+import { getLists, typeLabel, statusLabel, getCompany, getPublishSettings, setPublishSettings } from '../data/settings.js';
+import { el, clear, labeled, selectEl, checkbox, badge, toast, emptyState, confirmDialog, choiceDialog, debounce, openModal } from '../util/dom.js';
 import { formatSAR, formatArea, formatDateTime, formatNumber, countOf } from '../util/format.js';
+import { adBlockers, adDisclosure } from '../util/rega.js';
+import { publishDrift, publishFingerprint, busyTimes } from '../util/publish-drift.js';
 import { mapsLink } from '../util/location.js';
 import { isVideo } from '../data/images.js';
 import { matchesQuery } from '../util/arabic.js';
@@ -29,8 +31,9 @@ export async function render(container) {
 }
 
 async function loadData(ctx) {
-  const [properties, lists, company, publish, clients] = await Promise.all([
+  const [properties, lists, company, publish, clients, showings] = await Promise.all([
     repo.properties.list(), getLists(), getCompany(), getPublishSettings(), repo.clients.list(),
+    repo.showings.list(), // مواعيدُك — تُرفع طوابعَ زمنيّةً كي لا يُحجز عليك وقتٌ مشغول
   ]);
   // المعروض للاختيار: المخزون المعتمد فقط (نفس نطاق صفحة العقارات) — لا التقاطات غير معتمدة.
   ctx.properties = properties
@@ -40,6 +43,7 @@ async function loadData(ctx) {
   ctx.company = company;
   ctx.publish = publish;
   ctx.clients = clients; // لازم لاختيار عميل القائمة المخصّصة (المرحلة ١١)
+  ctx.showings = showings;
   ctx.selected = new Set(publish.listingIds);
   // المقاطع لا تُنشر (المرحلة ٣٨): مقطعٌ واحد بحدّه ٦٠ م.ب يساوي مئاتِ الصور رفعًا
   // وتخزينًا، وصفحةُ العميل تُفتح من جوّالٍ على بياناته. فتُنشر الصور وحدها، ويُقال ذلك
@@ -100,8 +104,9 @@ function build(ctx) {
     el('h2', {}, 'العقارات المختارة للنشر ', ctx.nodes.count),
     el('div', { class: 'head-actions' }, search,
       el('button', { type: 'button', class: 'btn btn-sm', text: 'إلغاء اختيار الكل', onClick: () => selectAll(ctx, false) }))));
+  ctx.nodes.drift = el('div', { hidden: true });
   ctx.nodes.list = el('div');
-  ctx.container.append(ctx.nodes.list);
+  ctx.container.append(ctx.nodes.drift, ctx.nodes.list);
   drawList(ctx);
 }
 
@@ -174,7 +179,37 @@ function drawStatus(ctx) {
 
 /* ===== قائمة الاختيار ===== */
 
+/**
+ * شريطُ «ما تغيّر بعد النشر» (المرحلة ٤٧) — يظهر حين يوجد، ويختفي حين لا يوجد.
+ *
+ * **ولا يُعيد النشر بنفسه.** يقول ماذا تغيّر بالاسم، والضغطةُ ضغطتُك.
+ */
+function drawDrift(ctx) {
+  const box = ctx.nodes.drift;
+  if (!box) return;
+  clear(box);
+  const rows = publishDrift(ctx.properties, ctx.publish.publishedState || []);
+  box.hidden = rows.length === 0;
+  if (!rows.length) return;
+
+  const line = (r) => {
+    const where = r.property
+      ? `${typeLabel(ctx.lists, r.property.type)} — ${[r.property.district, r.property.city].filter(Boolean).join('، ')}`
+      : 'عرضٌ حُذف أو دُمج';
+    if (r.kind === 'closed') return `${where}: ${statusLabel(ctx.lists, r.to)} — ويُعرض للناس`;
+    if (r.kind === 'gone') return `${where} — وبطاقتُه باقيةٌ ورابطُه يشير إلى لا شيء`;
+    return `${where}: السعر ${r.from == null ? 'أُضيف' : formatSAR(r.from)} ← ${r.to == null ? 'أُزيل' : formatSAR(r.to)}`;
+  };
+
+  box.append(el('div', { class: 'notice notice-warn' },
+    el('strong', { text: `${countOf(rows.length, 'عرض')} منشورٌ تغيّر بعد آخر نشرة. ` }),
+    el('div', {}, rows.slice(0, 6).map((r) => el('div', { class: 'small', text: line(r) }))),
+    rows.length > 6 ? el('div', { class: 'small', text: `… و${countOf(rows.length - 6, 'عرض')} غيرها` }) : null,
+    el('p', { class: 'small', text: 'الصفحةُ العامة تعرض ما نُشر آخرَ مرّة — لا ما في مخزونك الآن. فالتحديثُ بيدك.' })));
+}
+
 function drawList(ctx) {
+  drawDrift(ctx);
   const items = ctx.properties.filter((p) => !ctx.query || matchesQuery(p.searchKey || '', ctx.query));
   ctx.nodes.count.textContent = `(${ctx.selected.size} من ${ctx.properties.length})`;
   const area = ctx.nodes.list;
@@ -202,12 +237,38 @@ function drawList(ctx) {
           String(all.length - vids),
           vids ? el('span', { class: 'muted small', title: 'المقاطع لا تُنشر في الصفحة العامة', text: ` (+${countOf(vids, 'مقطع')} لا يُنشر)` }) : null);
       })()),
+      el('td', {}, licenseCell(ctx, p)),
       el('td', {}, viewCell(ctx, p)),
       el('td', {}, shareButton(ctx, p)));
   });
   area.append(el('div', { class: 'table-wrap' }, el('table', { class: 'table' },
-    el('thead', {}, el('tr', {}, ['نشر', 'النوع', 'الموقع', 'الغرض', 'المساحة', 'السعر', 'الصور', 'مشاهدات', 'الرابط'].map((t) => el('th', { text: t })))),
+    el('thead', {}, el('tr', {}, ['نشر', 'النوع', 'الموقع', 'الغرض', 'المساحة', 'السعر', 'الصور', 'الترخيص', 'مشاهدات', 'الرابط'].map((t) => el('th', { text: t })))),
     el('tbody', {}, rows))));
+}
+
+/**
+ * ما يمنع الإعلانَ عن هذا العقار — في صفحة النشر نفسها (المرحلة ٤٧).
+ *
+ * **والحسابُ كان مبنيًّا ولا يُسأل هنا.** `adBlockers` تعرف الموانع النظامية منذ المرحلة ٤٠
+ * (لا عقد · نطاقٌ بلا تسويق · بلا رقم عقدٍ موثَّق · لا ترخيصَ إعلان · ترخيصٌ منتهٍ)،
+ * وكانت تُستدعى من نموذج العقار وحده. **وصفحةُ النشر — التي تضع العرض أمام الناس فعلًا —
+ * لم تكن تذكرها**، فيمضي النشرُ بمربّعٍ تؤشّره.
+ */
+function propertyBlockers(ctx, property) {
+  return adBlockers(property, { defaultDays: ctx.company.agreementDurationDays });
+}
+
+function licenseCell(ctx, property) {
+  const blockers = propertyBlockers(ctx, property);
+  if (!blockers.length) {
+    const number = property.adLicense?.number;
+    return el('span', { class: 'muted small', title: number ? `ترخيص ${number}` : '', text: '✓' });
+  }
+  return el('span', {
+    class: 'badge badge-danger',
+    title: blockers.map((b) => b.text).join('\n'),
+    text: blockers[0].short + (blockers.length > 1 ? ` +${blockers.length - 1}` : ''),
+  });
 }
 
 /**
@@ -351,12 +412,51 @@ function toPublicListing(ctx, property, index) {
     images: (property.images || []).filter((id) => !ctx.videoIds.has(id)),
     mapUrl: property.location ? mapsLink(property.location) : null,
     contactPhone: ctx.publish.contactPhone || ctx.company.phone || '',
+    // **سطرُ الإفصاح** (المرحلة ٤٧): النظام يوجب ذكرَ رقم ترخيص الإعلان في كلّ إعلانٍ على
+    // أيّ قناة. وكان يُكتب في نصّ إعلان الواتساب وفي صفحة العقود — **ولا يظهر في صفحتك
+    // العامة**، وهي التي يراها كلُّ زائر. ويعود فارغًا بلا ترخيص، فلا يُكتب سطرٌ يوهم به.
+    disclosure: adDisclosure(property, ctx.company),
   };
 }
 
+/**
+ * سؤالٌ قبل النشر عن العروض الممنوعة نظامًا (المرحلة ٤٧).
+ *
+ * **ولا منعٌ قسريّ.** قد يكون الترخيص صدر ولم تُدخله بعد، والنظامُ لا يعرف إلا ما كتبتَه —
+ * فمنعُك من نشر عقارٍ مرخَّصٍ عندك لأنّ حقلًا فارغ عطبٌ لا حماية. ويُعرض الاختيار:
+ * انشر المرخَّصة وحدها، أو انشر الكلّ وأنت تعلم.
+ *
+ * @returns {Promise<Array|null>} القائمة التي تُنشر، أو `null` إن أُلغي
+ */
+async function passLicenseGate(ctx, chosen) {
+  const blocked = chosen.map((p) => ({ p, blockers: propertyBlockers(ctx, p) })).filter((x) => x.blockers.length);
+  if (!blocked.length) return chosen;
+
+  const clean = chosen.filter((p) => !blocked.some((b) => b.p.id === p.id));
+  const lines = blocked.slice(0, 8)
+    .map((x) => `• ${typeLabel(ctx.lists, x.p.type)} — ${[x.p.district, x.p.city].filter(Boolean).join('، ')}: ${x.blockers.map((b) => b.short).join(' · ')}`)
+    .join('\n');
+
+  const answer = await choiceDialog({
+    title: 'عروضٌ يمنعها النظام',
+    message: `${countOf(blocked.length, 'عرض')} من المختارة ينقصها ما يوجبه نظام الوساطة للإعلان:\n\n${lines}`
+      + (blocked.length > 8 ? `\n… و${countOf(blocked.length - 8, 'عرض')} غيرها` : '')
+      + '\n\nوالإعلانُ بلا ترخيصٍ مخالفة. وقد يكون الترخيص صدر ولم تُدخله بعد — فالقرار قرارك.',
+    choices: [
+      { key: 'clean', label: clean.length ? `انشر ${countOf(clean.length, 'عرض')} المرخَّصة وحدها` : 'لا شيء يصلح للنشر', disabled: !clean.length },
+      { key: 'all', label: 'انشر الكلّ وأنا أعلم', ghost: true },
+    ],
+  });
+  if (answer === 'all') return chosen;
+  if (answer === 'clean' && clean.length) return clean;
+  return null;
+}
+
 async function doPublish(ctx, btn) {
-  const chosen = ctx.properties.filter((p) => ctx.selected.has(p.id));
-  if (!chosen.length) { toast('اختر عقارًا واحدًا على الأقل قبل النشر', 'error'); return; }
+  const picked = ctx.properties.filter((p) => ctx.selected.has(p.id));
+  if (!picked.length) { toast('اختر عقارًا واحدًا على الأقل قبل النشر', 'error'); return; }
+  const chosen = await passLicenseGate(ctx, picked);
+  if (!chosen) return;
   if (chosen.length > PREVIEW_LIMIT) { toast(`الحد الأعلى ${countOf(PREVIEW_LIMIT, 'عرض')} في النشرة الواحدة`, 'error'); return; }
 
   btn.disabled = true;
@@ -397,6 +497,9 @@ async function doPublish(ctx, btn) {
       // لا بيانات عميل ولا عقار.
       // إعدادات الحجز (المرحلة ٢٩): الخادم يولّد الأوقات منها، فلا مصدر ثانٍ يخالفها.
       booking: ctx.publish.booking || { enabled: false },
+      // أوقاتُك المشغولة (المرحلة ٤٧): طوابعُ زمنيّةٌ وامتدادات، بلا اسمٍ ولا عقارٍ ولا
+      // سبب — كي لا يحجز عليك عميلٌ وقتًا عندك فيه معاينة.
+      busy: busyTimes(ctx.showings || [], ctx.publish.booking || {}),
       forms: {
         purposes: ENUMS.purposes.map((x) => ({ key: x.key, label: x.label })),
         types: (ctx.lists.propertyTypes || []).map((x) => ({ key: x.key, label: x.label })),
@@ -409,6 +512,7 @@ async function doPublish(ctx, btn) {
     ctx.publish = await setPublishSettings({
       lastPublishAt: result.publishedAt, lastPublishCount: result.count,
       publishedRefs: chosen.map((p, i) => [p.id, String(i + 1)]), // لبناء روابط العروض المفردة
+      publishedState: publishFingerprint(chosen), // ليُعرف لاحقًا ما تغيّر بعد النشر
     });
     ctx.publishedRefs = new Map(ctx.publish.publishedRefs);
     drawStatus(ctx);

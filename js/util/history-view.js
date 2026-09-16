@@ -27,6 +27,7 @@ const FIELD_LABELS = {
   partnerName: 'الشريك',
   partnerShare: 'نصيب الشريك',
   commissionPaidAt: 'قبض العمولة',
+  assignedTo: 'الإسناد',
   type: 'النوع',
   number: 'الرقم',
 };

@@ -19,20 +19,27 @@ import { formatPhone } from '../util/phone.js';
 import { parseLocation, isShortMapLink, mapsLink, locationToText } from '../util/location.js';
 import { LISTING_GROUPS, LISTING_VALUES, listingFilterOptions } from '../util/property-filters.js';
 import { sourceField, rememberSource, sourceBadge } from '../util/source-field.js';
-import { FEE_TYPES, contractState, STATE_LABEL, monthlyFee } from '../util/management.js';
+import {
+  FEE_TYPES, contractState, STATE_LABEL, monthlyFee,
+  MAINTENANCE_STATUSES, MAINTENANCE_BEARERS, openMaintenance,
+} from '../util/management.js';
 import { announceMatches } from '../util/match-alert.js';
 import { getTemplates, getCompany, getSavedSearches, addSavedSearch, removeSavedSearch, getPublishSettings } from '../data/settings.js';
 import { getCurrentUser } from '../data/repository.js';
 import { renderTemplate, templateValues, whatsappLink } from '../util/templates.js';
-import { buildPriceIndex, comparePrice, priceTrend, priceSamples, estimatePrice } from '../util/price-stats.js';
+import { buildPriceIndex, comparePrice, priceTrend, priceSamples, estimatePrice, INDEX_SCOPE_NOTE } from '../util/price-stats.js';
 import { printProperty, printPropertyCatalog, printAgreement, printCma } from '../util/property-print.js';
 import { adCopy, adGaps } from '../util/ad-copy.js';
 import { adBlockers } from '../util/rega.js';
+import { whatsappButton } from '../util/outreach.js';
+import { capitalValue, portfolioRow, yieldPct, dealsByProperty } from '../util/investor.js';
 import { propertyEvidence, priceDrops, MIN_SAMPLE } from '../util/property-evidence.js';
 import { historyBox } from '../util/history-view.js';
 import { capped, PAGE_SIZE } from '../util/render-cap.js';
 import { isArchived, archivePropertyCandidates, archiveRow } from '../util/archive.js';
 import { propertyDuplicates, suggestPropertyKeeper } from '../util/duplicates.js';
+import { memberName, assignOptions, activeMembers, assignRow, passesAssign } from '../util/team.js';
+import { getTeam } from '../data/settings.js';
 import { parseOfferText } from '../data/listing-parse.js';
 import { runPlans } from '../util/plans.js';
 
@@ -60,7 +67,7 @@ function routePropertyId() {
 
 export async function render(container) {
   const ctx = {
-    container, query: '', view: 'grid', selected: new Set(), showArchived: false,
+    container, query: '', view: 'grid', selected: new Set(), showArchived: false, assign: '', team: [], meId: '',
     sort: { key: 'createdAt', dir: 'desc' },
     filters: Object.fromEntries(GROUPS.map(([k]) => [k, new Set()])),
     properties: [], clients: [], clientMap: new Map(),
@@ -78,10 +85,12 @@ export async function render(container) {
 }
 
 async function loadData(ctx) {
-  const [properties, clients, lists, customFields, completeness, externals, deals, showings, matches] = await Promise.all([
+  const [properties, clients, lists, customFields, completeness, externals, deals, showings, matches, team] = await Promise.all([
     repo.properties.list(), repo.clients.list(), getLists(), getCustomFields(), getCompleteness(),
-    repo.externalListings.list(), repo.deals.list(), repo.showings.list(), repo.matches.list(),
+    repo.externalListings.list(), repo.deals.list(), repo.showings.list(), repo.matches.list(), getTeam(),
   ]);
+  ctx.team = team;
+  ctx.meId = getCurrentUser()?.id || '';
   // العقارات بانتظار المعالجة/الاعتماد (المرحلة ٢) لا تظهر هنا ولا تدخل أي مطابقة — راجعها من صفحة الجولات الميدانية.
   const approved = properties.filter((p) => p.captureStatus === 'approved');
   approved.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
@@ -99,6 +108,9 @@ async function loadData(ctx) {
   // لوحة «ماذا قال السوق» في النموذج، وتقرير المالك.
   ctx.showings = showings;
   ctx.matches = matches;
+  // عقود الإيجار (المرحلة ٤٧): منها يُقرأ العائد الواقع في المقارنة — لا يُخمَّن.
+  ctx.dealsByProperty = dealsByProperty(deals);
+  ctx.yieldCache = new Map(); // يُفرَّغ مع كل تحميل، فلا يبقى عائدٌ محسوبٌ على سعرٍ قديم
   // أرقام العروض المنشورة (المرحلة ٢٨): يذكرها نصّ الإعلان ليطابق ما يراه العميل على صفحتك.
   const publish = await getPublishSettings();
   ctx.publishedRefs = new Map(publish.publishedRefs || []);
@@ -185,6 +197,15 @@ function renderSelectionBar(ctx) {
     }));
 }
 
+/** سطرُ عائدِ عقارٍ في المقارنة، يُحسب مرّةً ويُخزَّن — فالمقارنةُ تسأل عنه مرّتين. */
+function yieldRow(ctx, p) {
+  ctx.yieldCache = ctx.yieldCache || new Map();
+  if (!ctx.yieldCache.has(p.id)) {
+    ctx.yieldCache.set(p.id, portfolioRow({ property: p, deal: ctx.dealsByProperty?.get(p.id) || null }));
+  }
+  return ctx.yieldCache.get(p.id);
+}
+
 /** مقارنة جنبًا إلى جنب: صفٌّ لكل معيار وعمودٌ لكل عقار — كما يقرؤها العميل. */
 function openCompare(ctx, items) {
   const rows = [
@@ -195,6 +216,18 @@ function openCompare(ctx, items) {
     ['المساحة', (p) => formatArea(p.area)],
     ['السعر', (p) => formatSAR(p.price)],
     ['سعر المتر', (p) => (p.price && p.area ? `${formatNumber(Math.round(p.price / p.area))} ريال` : '—')],
+    // العائد (المرحلة ٤٧): من يقارن ليستثمر يقارن بالعائد لا بالسعر وحده. ولا يُخترع
+    // رقم: الأجرةُ من جدول دفعات عقده إن وُجد، وإلّا من أجرته المعروضة، وإلّا «غير معلوم».
+    ['الإيجار السنوي', (p) => {
+      const r = yieldRow(ctx, p);
+      return r.expected == null ? 'غير معلوم' : `${formatSAR(r.expected)} (${r.expectedFrom})`;
+    }],
+    ['العائد الإجمالي', (p) => {
+      const r = yieldRow(ctx, p);
+      const v = yieldPct(r.expectedYield);
+      if (v != null) return `${formatNumber(v)}٪`;
+      return r.value == null ? capitalValue(p).reason : 'لا إيجارٌ معلوم';
+    }],
     ['الحالة', (p) => statusLabel(ctx.lists, p.status)],
     ['الصور', (p) => formatNumber((p.images || []).length)],
     ['ملاحظات', (p) => p.notes || '—'],
@@ -221,6 +254,7 @@ function openCompare(ctx, items) {
 /* ===== الفرز ===== */
 
 function passes(ctx, p, exceptGroup = null) {
+  if (!passesAssign(p, ctx.assign, ctx.meId)) return false;
   // المؤرشف خارج القائمة ما لم يُطلَب (المرحلة ٤٥) — عَرضٌ لا حذف.
   if (!ctx.showArchived && isArchived(p)) return false;
   for (const [g] of GROUPS) {
@@ -377,6 +411,13 @@ function renderFilters(ctx) {
     wrap.append(el('div', { class: 'filter-row' }, el('span', { class: 'filter-label', text: label }), chips));
   }
   /* الأرشيف (المرحلة ٤٥) */
+  const aRow = assignRow({
+    rows: ctx.properties, team: ctx.team, meId: ctx.meId, value: ctx.assign,
+    onPick: (v) => { ctx.assign = v; renderFilters(ctx); renderList(ctx); },
+    el, formatNumber,
+  });
+  if (aRow) wrap.append(aRow);
+
   const archRow = archiveRow({
     rows: ctx.properties, showArchived: ctx.showArchived,
     candidates: archivePropertyCandidates(ctx.properties), bulkLabel: 'أرشف ما بِيع أو أُجِّر منذ سنة',
@@ -542,11 +583,29 @@ function renderList(ctx) {
   const area = ctx.nodes.list;
   clear(area);
   if (!ctx.properties.length) {
-    area.append(emptyState('لا توجد عقارات بعد. أضف أول عقار من الزر أعلاه، أو أدرج بيانات تجريبية من الإعدادات.'));
+    // فراغٌ يُرشد ويفعل (المرحلة ٤٧): ثلاثةُ أبوابٍ إلى أوّل عقار، لا جملةٌ تصف الخلوّ.
+    area.append(emptyState(
+      'لا عقارات بعد.\nالمخزونُ هو ما تُطابَق به الطلبات — وبلا عقارٍ واحدٍ لا مطابقةَ ولا عرض.',
+      el('button', { type: 'button', class: 'btn btn-primary', text: '+ أوّل عقار', onClick: () => openForm(ctx, null) }),
+      el('a', { class: 'btn btn-ghost', href: '#/extract', text: '📄 اقرأه من صكّ أو إعلان' }),
+      el('a', { class: 'btn btn-ghost', href: '#/settings', text: 'أو أدرج بياناتٍ تجريبيّة' })));
     return;
   }
   if (!items.length) {
-    area.append(emptyState('لا نتائج تطابق الفرز أو البحث.'));
+    area.append(emptyState(
+      `لا عقارَ من ${countOf(ctx.properties.length, 'عقار')} يطابق ما اخترتَه.`,
+      el('button', {
+        type: 'button', class: 'btn btn-primary', text: 'امسح الفرز والبحث',
+        onClick: () => {
+          for (const [g] of GROUPS) ctx.filters[g].clear();
+          ctx.query = ''; // `renderFilters` تُعيد قيمة صندوق البحث من `ctx.query`
+          renderFilters(ctx); renderList(ctx); renderSaved(ctx);
+        },
+      }),
+      ctx.showArchived ? null : el('button', {
+        type: 'button', class: 'btn btn-ghost', text: 'أو أظهر المؤرشف',
+        onClick: () => { ctx.showArchived = true; renderFilters(ctx); renderList(ctx); },
+      })));
     return;
   }
   // حدّ الرسم (المرحلة ٣٥): الفرز والبحث والعدّ فوق على المجموعة كاملة، والمرسوم مئتان.
@@ -784,7 +843,12 @@ function ppmBadge(ctx, p) {
   const cmp = comparePrice(p, ctx.priceIndex);
   if (!cmp) return null;
   const ppm = `${formatNumber(Math.round(cmp.ppm))} ريال/م²`;
-  return badge(cmp.median == null ? ppm : `${ppm} · ${cmp.label}`, cmp.tone || 'badge-outline');
+  // حدُّ المؤشّر يُقال حيث يُستشهد به (المرحلة ٤٧): الشارةُ تُقرأ حكمًا من السوق وهي
+  // حكمٌ من محفظتك — والعيّنةُ التي بُني عليها تُذكر بعددها فيُعرف وزنُه.
+  const note = cmp.median == null
+    ? INDEX_SCOPE_NOTE
+    : `${INDEX_SCOPE_NOTE} والعيّنة هنا ${countOf(cmp.count, 'عرض')}.`;
+  return badge(cmp.median == null ? ppm : `${ppm} · ${cmp.label}`, cmp.tone || 'badge-outline', { title: note });
 }
 
 let modalRef = null; // نافذة المشاركة الحالية — تُغلق قبل فتح نافذة الطباعة
@@ -798,12 +862,19 @@ async function openShareMenu(ctx, p) {
   const values = templateValues({ client: owner, property: p, lists: ctx.lists, user: getCurrentUser(), company, link });
   const templatesBox = el('div', { class: 'share-menu-templates' },
     el('div', { class: 'field-label', text: 'رسالة جاهزة' }),
-    templates.map((t) => el('a', {
-      class: 'btn btn-ghost', target: '_blank', rel: 'noopener noreferrer',
-      href: whatsappLink(renderTemplate(t.body, values), owner?.phone || ''),
-      text: `💬 ${t.label}`,
-      title: owner?.phone ? `تُرسل إلى ${owner.name || owner.phone}` : 'تختار المستلم داخل واتساب',
-    })));
+    // إلى مالكٍ معروف: يُفتح **ويُسجَّل مستنتَجًا** في سجلّه (المرحلة ٤٧). وإلى مستلمٍ
+    // تختاره داخل واتساب: لا سجلَّ لأنّنا لا نعرف من هو — ولا يُخترع له سجلّ.
+    templates.map((t) => (owner?.phone
+      ? whatsappButton(el, {
+        clientId: owner.id, phone: owner.phone, text: renderTemplate(t.body, values),
+        label: `💬 ${t.label}`, cls: 'btn btn-ghost', note: `أُرسلت له رسالة «${t.label}» عن عقاره`,
+      })
+      : el('a', {
+        class: 'btn btn-ghost', target: '_blank', rel: 'noopener noreferrer',
+        href: whatsappLink(renderTemplate(t.body, values), ''),
+        text: `💬 ${t.label}`,
+        title: 'تختار المستلم داخل واتساب — ولذلك لا يُسجَّل تواصلٌ لأحد',
+      }))));
 
   const body = el('div', { class: 'share-menu' },
     templatesBox,
@@ -1015,6 +1086,10 @@ async function openForm(ctx, existing, prefill = {}) {
   draft.extra = draft.extra || {};
   draft.images = draft.images || [];
   const state = { newFiles: [], removedImages: new Set(), previewUrls: [], newOwner: null };
+  const assignSelect = selectEl({
+    options: assignOptions(ctx.team, draft.assignedTo || ''),
+    value: draft.assignedTo || '', placeholder: 'بلا مسند',
+  });
 
   const errorsBox = el('div', { class: 'form-errors', hidden: true });
   const showErrors = (errors) => {
@@ -1118,12 +1193,56 @@ async function openForm(ctx, existing, prefill = {}) {
   });
   const mgmtFee = el('input', { class: 'input', type: 'number', min: '0', step: '0.5', value: mgmt?.feeValue ?? '' });
   const mgmtNotes = el('input', { class: 'input', type: 'text', value: mgmt?.notes || '', placeholder: 'ما تتولّاه: تحصيل، صيانة، تجديد…' });
+  // بلاغاتُ الصيانة (المرحلة ٤٧): نصفُ عملِ مديرِ الأملاك بلاغٌ ورَدَ، ومن يتحمّل كلفته،
+  // ومتى أُنجز. وكان يعيش في الملاحظات: لا يُذكَّر به، ولا يُخصَم في كشف المالك، ولا يُبحَث عنه.
+  // **ومن يتحمّل الكلفة حقلٌ مستقلّ**، لأنّه موضعُ الخلاف الأوّل بين المالك والمستأجر،
+  // ولأنّ كشفَ المالك لا يخصم إلّا ما كان عليه هو.
+  const maint = (draft.maintenance || []).map((m) => ({ ...m }));
+  const maintWrap = el('div', {});
+  const drawMaint = () => {
+    clear(maintWrap);
+    if (!maint.length) {
+      maintWrap.append(el('p', { class: 'muted small', text: 'لا بلاغ صيانة. ما تضيفه هنا يظهر في «إدارة الأملاك»، وما كان على المالك يُخصم في كشف حسابه.' }));
+    }
+    maint.forEach((m, i) => {
+      const what = el('input', { class: 'input', type: 'text', value: m.what || '', placeholder: 'ما العطل؟ (تسريب في المطبخ…)', onInput: (e) => { m.what = e.target.value; } });
+      const bearer = selectEl({
+        options: MAINTENANCE_BEARERS.map((b) => ({ value: b.key, label: `على ${b.label}` })),
+        value: m.bearer || 'owner', onChange: (e) => { m.bearer = e.target.value; },
+      });
+      const status = selectEl({
+        options: MAINTENANCE_STATUSES.map((x) => ({ value: x.key, label: x.label })),
+        value: m.status || 'open',
+        onChange: (e) => {
+          m.status = e.target.value;
+          // «أُنجز» بلا تاريخِ إنجازٍ لا يدخل كشفَ شهرٍ بعينه — فيُختم بتاريخ اليوم ما لم يُحدَّد.
+          if (m.status === 'done' && !m.doneAt) { m.doneAt = new Date().toISOString(); doneAt.value = toInputDate(m.doneAt); }
+          doneAt.hidden = m.status !== 'done';
+        },
+      });
+      const cost = el('input', { class: 'input', type: 'number', min: '0', step: '50', value: m.cost ?? '', placeholder: 'الكلفة', onInput: (e) => { m.cost = e.target.value === '' ? null : Number(e.target.value); } });
+      const doneAt = el('input', {
+        class: 'input', type: 'date', title: 'تاريخ الإنجاز', hidden: (m.status || 'open') !== 'done',
+        value: m.doneAt ? toInputDate(m.doneAt) : '',
+        onInput: (e) => { m.doneAt = e.target.value ? fromInputDate(e.target.value) : null; },
+      });
+      maintWrap.append(el('div', { class: 'plan-step' }, what, bearer, status, cost, doneAt,
+        el('button', { type: 'button', class: 'icon-btn', text: '✕', title: 'حذف البلاغ', onClick: () => { maint.splice(i, 1); drawMaint(); } })));
+    });
+    maintWrap.append(el('button', {
+      type: 'button', class: 'btn btn-ghost btn-sm', text: '+ بلاغ صيانة',
+      onClick: () => { maint.push({ what: '', bearer: 'owner', status: 'open', cost: null, at: new Date().toISOString() }); drawMaint(); },
+    }));
+  };
+  drawMaint();
+
   const mgmtFields = el('div', { class: 'form-grid', hidden: !mgmt },
     labeled('بداية عقد الإدارة', mgmtStart),
     labeled('نهاية عقد الإدارة', mgmtEnd, { hint: 'يُنبّهك «إدارة الأملاك» قبل انتهائه بشهر' }),
     labeled('نوع الأجر', mgmtFeeType),
     labeled('قيمة الأجر', mgmtFee, { hint: 'نسبةً مئويةً من الإيجار، أو مبلغًا شهريًّا بالريال' }),
-    labeled('ماذا نتولّى؟', mgmtNotes, { full: true }));
+    labeled('ماذا نتولّى؟', mgmtNotes, { full: true }),
+    labeled('بلاغات الصيانة', maintWrap, { full: true, hint: 'الكلفة تُخصم من كشف المالك متى كان البلاغ عليه وأُنجز في شهر الكشف' }));
   mgmtBox.querySelector('input').addEventListener('change', (e) => { mgmtFields.hidden = !e.target.checked; });
 
   // العقد الموثَّق ونطاقه، وترخيص الإعلان (المرحلة ٤٠).
@@ -1299,6 +1418,8 @@ async function openForm(ctx, existing, prefill = {}) {
         feeValue: mgmtFee.value === '' ? null : Number(mgmtFee.value),
         notes: mgmtNotes.value.trim(),
       } : null,
+      // الصيانة تُحفظ ولو رُفعت علامةُ الإدارة: بلاغٌ حصل لا يُمحى بتغيير خانة.
+      maintenance: maint,
       agreementNumber: agreementNumberInput.value.trim(),
       agreementScopes: [...scopesBox.querySelectorAll('input:checked')].map((i) => i.value),
       adLicense: adNumberInput.value.trim() ? {
@@ -1351,6 +1472,7 @@ async function openForm(ctx, existing, prefill = {}) {
       }
       // ترتيب draft.images هو ترتيب العرض (أولها الغلاف) — يُحفظ كما رتّبته.
       data.images = draft.images.filter((id) => !state.removedImages.has(id));
+      data.assignedTo = assignSelect.value || null;
       let rec = isEdit ? await repo.properties.update(existing.id, data) : await repo.properties.create(data);
       if (state.removedImages.size) await deleteImages([...state.removedImages]);
       if (state.newFiles.length) {
@@ -1412,6 +1534,9 @@ async function openForm(ctx, existing, prefill = {}) {
       labeled('صاحب العقار', ownerSelect),
       labeled('الحالة', el('div', { class: 'field-row' }, statusSelect, addStatusBtn)),
       labeled('المصدر (وسيط الإحالة)', source.node, { hint: 'اختياري — لا يظهر شيء ما لم يُعبَّأ' }),
+      activeMembers(ctx.team).length > 1
+        ? labeled('المسند إليه', assignSelect, { hint: 'من يتولّى هذا العقار — تنسيقٌ لا حجب' })
+        : null,
       labeled('رقم الصك', deedInput, { hint: 'اختياري — يطلبه عقد الإيجار وكل توثيق، ويدخل حزمة العقد' }),
       labeled('توقيع اتفاقية الوساطة', agreementInput, { hint: 'يُنبّهك «يومي» قبل انتهائها — والعقار بلا اتفاقية قد تخسره' }),
       labeled('مدّة الاتفاقية (يومًا)', agreementDaysInput, { hint: 'اتركه فارغًا لتُستعمل المدّة الافتراضية من الإعدادات — والنظام يجعلها ٩٠ يومًا حين لا تُذكر' }),

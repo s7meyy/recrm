@@ -5,6 +5,17 @@ const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '');
 const BASE = process.env.TEST_URL || 'http://127.0.0.1:8234';
 const b = await chromium.launch();
 const ok = (n,c,x='') => console.log(`${c?'PASS':'FAIL'} — ${n}${x?' :: '+x:''}`);
+
+/**
+ * بوّابةُ ترخيص الإعلان (المرحلة ٤٧): عقارٌ بلا عقد وساطةٍ ولا ترخيصِ إعلان يُسأل عنه
+ * قبل النشر. وبياناتُ الاختبار بلا عقودٍ ولا تراخيص — فيُجاب السؤالُ صراحةً كما يُجيبه
+ * المستخدم: **«انشر الكلّ وأنا أعلم»**. والسؤالُ نفسُه مفحوصٌ في `publish-gate-unit`.
+ */
+async function answerLicenseGate(page) {
+  const btn = page.locator('.modal button:has-text("انشر الكلّ وأنا أعلم")');
+  try { await btn.waitFor({ timeout: 2500 }); await btn.click(); } catch (_) { /* لا مانعَ فلا سؤال */ }
+}
+
 const ctx = await b.newContext({ locale: 'ar-SA' });
 const page = await ctx.newPage();
 const errors = [];
@@ -31,6 +42,7 @@ await page.evaluate(async () => {
 await page.evaluate(() => { location.hash = '#/publish'; });
 await page.waitForTimeout(1200);
 await page.locator('button:has-text("نشر الآن")').click();
+await answerLicenseGate(page);
 await page.waitForTimeout(3500);
 // **جدولُ العروض بعينه لا «أوّل جدول»**: صفحة النشر فيها جدولان — «طلبات وصلت من الصفحة
 // العامة» ثم العروض. وكان الفحصُ يأخذ أوّلَهما فيصيب العروضَ ما دام جدولُ الطلبات فارغًا،

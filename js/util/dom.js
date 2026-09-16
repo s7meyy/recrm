@@ -68,8 +68,14 @@ export function checkbox(labelText, { name, value, checked = false, onChange = n
   return el('label', { class: 'check' }, input, el('span', { text: labelText }));
 }
 
-export function emptyState(message, action = null) {
-  return el('div', { class: 'empty' }, el('p', { text: message }), action);
+/**
+ * حالُ الفراغ. **ورسالةٌ وحدها لا تكفي** (المرحلة ٤٧): من يقرأ «لا نتائج» يبقى واقفًا،
+ * ومن يجد تحتها زرًّا يمضي. فتقبل أكثرَ من فعلٍ، وتُبقي الرسالةَ سطرًا واحدًا واضحًا.
+ */
+export function emptyState(message, ...actions) {
+  return el('div', { class: 'empty' },
+    el('p', { class: 'pre-line', text: message }),
+    actions.length ? el('div', { class: 'row empty-actions' }, actions) : null);
 }
 
 export function debounce(fn, ms = 150) {
@@ -161,6 +167,41 @@ export function confirmDialog({ title = 'تأكيد', message, confirmText = 'ت
       footer: [
         el('button', { type: 'button', class: 'btn btn-ghost', text: cancelText, onClick: () => modal.close() }),
         el('button', { type: 'button', class: `btn ${danger ? 'btn-danger' : 'btn-primary'}`, text: confirmText, onClick: () => { finish(true); modal.close(); } }),
+      ],
+    });
+  });
+}
+
+/**
+ * سؤالٌ بأكثرَ من جوابين (المرحلة ٤٧).
+ *
+ * `confirmDialog` تكفي حين يكون الجوابُ نعم أو لا. وحين تكون الأجوبةُ ثلاثةً — «انشر
+ * المرخَّصة وحدها» و«انشر الكلّ وأنا أعلم» و«ألغِ» — فحشرُها في نعم/لا يُخفي أحدَها أو
+ * يجعله سؤالين متتاليين، وكلاهما يُربك القرار.
+ *
+ * والرسالةُ تُعرض بأسطرها كما كُتبت (`white-space: pre-line`)، فالقائمةُ فيها تُقرأ قائمة.
+ *
+ * @param {[{ key, label, ghost?, danger?, disabled? }]} choices — أوّلُها هو المميَّز
+ * @returns {Promise<string|null>} مفتاحُ ما اختير، أو `null` للإلغاء والإغلاق
+ */
+export function choiceDialog({ title = 'اختر', message = '', choices = [], cancelText = 'إلغاء' }) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (v) => { if (!settled) { settled = true; resolve(v); } };
+    const modal = openModal({
+      title,
+      body: el('p', { class: 'pre-line', text: message }),
+      onClose: () => finish(null),
+      footer: [
+        el('button', { type: 'button', class: 'btn btn-ghost', text: cancelText, onClick: () => modal.close() }),
+        el('span', { class: 'spacer' }),
+        ...choices.map((c, i) => el('button', {
+          type: 'button',
+          class: `btn ${c.danger ? 'btn-danger' : (c.ghost || i > 0 ? 'btn-ghost' : 'btn-primary')}`,
+          text: c.label,
+          disabled: !!c.disabled,
+          onClick: () => { finish(c.key); modal.close(); },
+        })),
       ],
     });
   });

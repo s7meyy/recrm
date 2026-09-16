@@ -1,6 +1,6 @@
 // صفحة العملاء: الأدوار المتعددة، المراحل، التصنيفات، وسجل التواصل بمواعيد المتابعة.
 
-import { repo, ValidationError } from '../data/repository.js';
+import { repo, ValidationError, getCurrentUser } from '../data/repository.js';
 import { ENUMS, labelFor, clientTagClass, clientPriority } from '../data/schema.js';
 import { getLists, addClientTag, typeLabel, statusLabel, getFollowUpSettings } from '../data/settings.js';
 import { sourceField, rememberSource, sourceBadge } from '../util/source-field.js';
@@ -11,6 +11,7 @@ import {
 import {
   formatDate, formatDateTime, formatSAR, formatNumber, relativeDays, daysBetween, daysWord,
   toInputDateTime, fromInputDateTime, fromInputDate, countOf } from '../util/format.js';
+import { INFERRED_LABEL } from '../util/outreach.js';
 import { matchesQuery } from '../util/arabic.js';
 import { scoreClient } from '../util/lead-score.js';
 import { formatPhone } from '../util/phone.js';
@@ -18,6 +19,8 @@ import { findDuplicates, suggestKeeper } from '../util/duplicates.js';
 import { audioNoteField, audioPlayer } from '../util/audio-note.js';
 import { capped, PAGE_SIZE } from '../util/render-cap.js';
 import { isArchived, archiveCandidates, archiveRow } from '../util/archive.js';
+import { memberName, assignOptions, activeMembers, assignRow, passesAssign } from '../util/team.js';
+import { getTeam } from '../data/settings.js';
 
 const GROUPS = [['role', 'الدور'], ['stage', 'المرحلة'], ['tag', 'التصنيف']];
 const VALUES = { role: (c) => c.roles || [], stage: (c) => [c.stage], tag: (c) => c.tags || [] };
@@ -31,7 +34,7 @@ function routeClientId() {
 
 export async function render(container) {
   const ctx = {
-    container, query: '', showArchived: false,
+    container, query: '', showArchived: false, assign: '', team: [], meId: '',
     filters: Object.fromEntries(GROUPS.map(([k]) => [k, new Set()])),
     clients: [], properties: [], lists: null, nodes: {},
   };
@@ -46,9 +49,11 @@ export async function render(container) {
 }
 
 async function loadData(ctx) {
-  const [clients, properties, lists, requests, followUp] = await Promise.all([
-    repo.clients.list(), repo.properties.list(), getLists(), repo.requests.list(), getFollowUpSettings(),
+  const [clients, properties, lists, requests, followUp, team] = await Promise.all([
+    repo.clients.list(), repo.properties.list(), getLists(), repo.requests.list(), getFollowUpSettings(), getTeam(),
   ]);
+  ctx.team = team;
+  ctx.meId = getCurrentUser()?.id || '';
   // درجة الأولوية (المرحلة ٢٣): تُحسب من سجلات موجودة — لا تخزين ولا نموذج.
   const byClient = new Map();
   for (const r of requests) {
@@ -79,7 +84,7 @@ function buildLayout(ctx) {
   ctx.container.append(el('div', { class: 'page-head' },
     el('h1', {}, 'العملاء ', ctx.nodes.count),
     el('div', { class: 'head-actions' },
-      el('input', {
+      ctx.nodes.search = el('input', {
         class: 'input search', type: 'search', placeholder: 'بحث بالاسم أو الجوال أو الملاحظات…',
         onInput: debounce((e) => { ctx.query = e.target.value; renderFilters(ctx); renderList(ctx); }, 150),
       }),
@@ -103,6 +108,7 @@ function buildLayout(ctx) {
 
 function passes(ctx, c, exceptGroup = null) {
   // المؤرشف خارج القائمة ما لم يُطلَب (المرحلة ٤٥) — **ولا يُحذف**: رقاقةٌ تُظهره.
+  if (!passesAssign(c, ctx.assign, ctx.meId)) return false;
   if (!ctx.showArchived && isArchived(c)) return false;
   for (const [g] of GROUPS) {
     if (g === exceptGroup) continue;
@@ -145,6 +151,13 @@ function renderFilters(ctx) {
     wrap.append(el('div', { class: 'filter-row' }, el('span', { class: 'filter-label', text: label }), chips));
   }
   /* الأرشيف (المرحلة ٤٥): رقاقةٌ تقول كم طُوي، لا إخفاءٌ صامت */
+  const aRow = assignRow({
+    rows: ctx.clients, team: ctx.team, meId: ctx.meId, value: ctx.assign,
+    onPick: (v) => { ctx.assign = v; renderFilters(ctx); renderList(ctx); },
+    el, formatNumber,
+  });
+  if (aRow) wrap.append(aRow);
+
   const row = archiveRow({
     rows: ctx.clients, showArchived: ctx.showArchived,
     candidates: archiveCandidates(ctx.clients), bulkLabel: 'أرشف المغلقين منذ سنة',
@@ -234,11 +247,25 @@ function renderList(ctx) {
   const area = ctx.nodes.list;
   clear(area);
   if (!ctx.clients.length) {
-    area.append(emptyState('لا يوجد عملاء بعد. أضف أول عميل من الزر أعلاه.'));
+    // فراغٌ يُرشد ويفعل (المرحلة ٤٧): لا يقول «لا شيء» ثم يتركك واقفًا.
+    area.append(emptyState(
+      'لا عملاء بعد.\nالعميلُ أوّلُ الخيط: منه الطلب، ومن الطلب المطابقة، ومن المطابقة الصفقة.',
+      el('button', { type: 'button', class: 'btn btn-primary', text: '+ أوّل عميل', onClick: () => openForm(ctx, null) }),
+      el('a', { class: 'btn btn-ghost', href: '#/requests?paste=1', text: 'أو الصق رسالة واتساب فتُقرأ' })));
     return;
   }
   if (!items.length) {
-    area.append(emptyState('لا نتائج تطابق الفرز أو البحث.'));
+    area.append(emptyState(
+      `لا عميلَ من ${countOf(ctx.clients.length, 'عميل')} يطابق ما اخترتَه.`,
+      el('button', {
+        type: 'button', class: 'btn btn-primary', text: 'امسح الفرز والبحث',
+        onClick: () => {
+          for (const [g] of GROUPS) ctx.filters[g].clear();
+          ctx.query = '';
+          if (ctx.nodes.search) ctx.nodes.search.value = '';
+          renderFilters(ctx); renderList(ctx);
+        },
+      })));
     return;
   }
   // حدّ الرسم (المرحلة ٣٥): ألفا عميل تضع ٢٨ ألف عنصر في الصفحة وتستغرق ثانيتين — قيسَ
@@ -248,7 +275,11 @@ function renderList(ctx) {
   if (signature !== ctx.lastSignature) { ctx.shown = PAGE_SIZE; ctx.lastSignature = signature; }
   const { visible, more } = capped(items, ctx.shown || PAGE_SIZE);
 
-  const head = el('tr', {}, ['الأولوية', 'الاسم', 'الجوال', 'الأدوار', 'المرحلة', 'التصنيفات', 'آخر تواصل', 'المتابعة القادمة'].map((t) => el('th', { text: t })));
+  const showAssign = activeMembers(ctx.team).length > 1;
+  const cols = ['الأولوية', 'الاسم', 'الجوال', 'الأدوار', 'المرحلة', 'التصنيفات'];
+  if (showAssign) cols.push('المسند إليه');
+  cols.push('آخر تواصل', 'المتابعة القادمة');
+  const head = el('tr', {}, cols.map((t) => el('th', { text: t })));
   const body = el('tbody', {}, visible.map((c) => el('tr', { class: `row-priority-${clientPriority(c)}`, onClick: () => openDetail(ctx, c.id) },
     el('td', {}, scoreBadge(ctx, c)),
     el('td', { class: 'strong' }, c.name || el('span', { class: 'muted', text: 'بلا اسم' }), sourceBadge(c.referralSource),
@@ -257,6 +288,7 @@ function renderList(ctx) {
     el('td', {}, (c.roles || []).map((r) => labelFor(ENUMS.clientRoles, r)).join('، ') || '—'),
     el('td', {}, stageBadge(c.stage)),
     el('td', {}, (c.tags || []).length ? c.tags.map((t) => badge(t, clientTagClass(t))) : '—'),
+    showAssign ? el('td', { text: c.assignedTo ? memberName(ctx.team, c.assignedTo, { me: ctx.meId }) : '—' }) : null,
     el('td', {}, lastContactNode(c)),
     el('td', {}, followUpNode(c)))));
   area.append(el('div', { class: 'table-wrap' }, el('table', { class: 'table' }, el('thead', {}, head), body)));
@@ -348,6 +380,8 @@ async function openDetail(ctx, clientId) {
         ? el('div', { class: 'contact-list' }, contacts.map((c) => el('div', { class: 'contact-item' },
           el('span', { class: 'contact-type', text: labelFor(ENUMS.contactTypes, c.type) }),
           el('span', { class: 'contact-date', text: formatDateTime(c.date) }),
+          // المستنتَجُ يُعلَّم (المرحلة ٤٧) — ولا يُحتجّ به احتجاجَ المؤكَّد.
+          c.inferred ? badge('مُستنتَج', 'badge-outline', { title: INFERRED_LABEL }) : null,
           el('button', {
             type: 'button', class: 'icon-btn', text: '✕', title: 'حذف هذا التواصل',
             onClick: async () => {
@@ -425,6 +459,10 @@ async function openDetail(ctx, clientId) {
 async function openForm(ctx, existing) {
   const isEdit = !!existing;
   const draft = existing ? JSON.parse(JSON.stringify(existing)) : repo.clients.defaults();
+  const assignSelect = selectEl({
+    options: assignOptions(ctx.team, draft.assignedTo || ''),
+    value: draft.assignedTo || '', placeholder: 'بلا مسند',
+  });
   const errorsBox = el('div', { class: 'form-errors', hidden: true });
   const showErrors = (errors) => {
     clear(errorsBox);
@@ -478,6 +516,7 @@ async function openForm(ctx, existing) {
     const data = {
       name: nameInput.value, phone: phoneInput.value, phone2: phone2Input.value,
       nationalId: nationalIdInput.value.trim(),
+      assignedTo: assignSelect.value || null,
       roles: [...rolesBox.querySelectorAll('input:checked')].map((i) => i.value),
       stage: stageSelect.value, tags: [...selectedTags], notes: notesInput.value,
       referralSource: source.input.value,
@@ -521,6 +560,9 @@ async function openForm(ctx, existing) {
         fieldGroup('التصنيفات', tagsBox, { full: true }),
         labeled('المصدر (وسيط الإحالة)', source.node, { hint: 'اختياري — لا يظهر شيء ما لم يُعبَّأ' }),
         labeled('أفضل وقت للاتصال', bestTimeSelect, { hint: 'يظهر لك قبل أن تتصل' }),
+        activeMembers(ctx.team).length > 1
+          ? labeled('المسند إليه', assignSelect, { hint: 'من يتولّى هذا العميل — تنسيقٌ لا حجب' })
+          : null,
         el('div', { class: 'field field-full' }, dncBox,
           el('span', { class: 'field-hint', text: 'يُخرجه من لوحات «المتأخرون» و«ينتظرون ردّك» — ويبقى في قوائمه وسجلّه كما هو.' })),
         labeled('الملاحظات', notesInput, { full: true }))),

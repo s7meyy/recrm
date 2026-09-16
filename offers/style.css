@@ -95,6 +95,15 @@ h1 { margin: 0; font-size: clamp(22px, 4vw, 30px); line-height: var(--dhad-line-
   line-height: var(--dhad-line-heading, 1.4);
 }
 .card-notes { margin: var(--dhad-space-1, 4px) 0 0; white-space: pre-line; }
+/* سطرُ الإفصاح النظاميّ (المرحلة ٤٧): يُذكر ولا يُبرز — هو شرطُ الإعلان لا عنوانُه.
+   وأرقامُه تبقى في اتجاهها الصحيح داخل سطرٍ عربيّ. */
+.card-license {
+  margin: var(--dhad-space-2, 8px) 0 0; padding-top: var(--dhad-space-2, 8px);
+  border-top: 1px solid var(--line, #e3e7e3);
+  font-size: .78rem; color: var(--muted, #6b7a70); line-height: 1.8;
+  unicode-bidi: isolate;
+}
+
 .card-actions { margin-top: auto; padding-top: var(--dhad-space-3, 12px); display: flex; gap: var(--dhad-space-2, 8px); flex-wrap: wrap; }
 
 /* الزرّ ٤٤ بكسلًا على الأقل: هذه صفحةٌ يفتحها الناس على جوالاتهم قبل كل شيء. */

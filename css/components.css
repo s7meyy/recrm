@@ -231,6 +231,12 @@ input[type="tel"].input, input[type="email"].input, input[type="url"].input {
   border: 1px dashed var(--line-strong); border-radius: var(--radius-lg); background: var(--surface);
   line-height: var(--dhad-line-reading);
 }
+/* أفعالُ حال الفراغ (المرحلة ٤٧): تُوسَّط، وتنزل سطرًا سطرًا على الجوّال بعرضٍ يُلمس */
+.empty-actions { justify-content: center; margin-top: var(--dhad-space-3); flex-wrap: wrap; }
+@media (max-width: 480px) {
+  .empty-actions { flex-direction: column; align-items: stretch; }
+  .empty-actions > * { width: 100%; }
+}
 
 /* ===== الصور في النموذج ===== */
 .images-box { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -1017,3 +1023,42 @@ body.modal-open .voice-dock { display: none; }
 .delta { margin-inline-start: 6px; font-weight: 600; white-space: nowrap; unicode-bidi: isolate; }
 .delta-up { color: var(--ok); }
 .delta-down { color: var(--danger); }
+
+/* رسالةٌ تحفظ أسطرها كما كُتبت — القائمةُ داخل حوارٍ تُقرأ قائمةً لا فقرة. (المرحلة ٤٧) */
+.pre-line { white-space: pre-line; }
+
+/* ===== الرسوم البيانية (المرحلة ٤٧) — SVG خالص، بلا مكتبة ===== */
+.chart { margin: 0 0 var(--dhad-space-3); }
+.chart-title { font-size: var(--fs-sm); font-weight: 700; color: var(--text); margin-bottom: var(--dhad-space-2); }
+.chart-svg { width: 100%; height: auto; display: block; overflow: visible; }
+/* الحلقةُ مربّعةٌ فلا تُمطّ عرضًا، وتُوسَّط في مكانها */
+.chart-donut { max-width: 170px; margin-inline: auto; }
+.chart-axis { stroke: var(--line-strong); stroke-width: 1; }
+.chart-bar { transition: opacity var(--dhad-duration-fast) var(--dhad-ease); }
+.chart-bar:hover { opacity: 0.82; }
+.chart-tick { font-family: var(--dhad-font-body); font-size: 9px; fill: var(--muted); }
+.chart-line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.chart-area { fill: var(--accent-soft); opacity: 0.7; stroke: none; }
+.chart-dot-svg { fill: var(--surface); stroke: var(--accent); stroke-width: 1.5; }
+.chart-ring { fill: none; stroke: var(--surface-2); }
+.chart-center { font-family: var(--dhad-font-body); font-size: 13px; font-weight: 700; fill: var(--text); }
+.chart-values { margin-top: var(--dhad-space-2); line-height: var(--dhad-line-body); }
+.chart-legend { list-style: none; margin: var(--dhad-space-2) 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px var(--dhad-space-3); font-size: var(--fs-sm); color: var(--muted); }
+.chart-legend li { display: flex; align-items: center; gap: 6px; }
+.chart-dot { width: 10px; height: 10px; border-radius: var(--dhad-radius-round); flex: 0 0 auto; }
+.chart-empty { padding: var(--dhad-space-3) 0; }
+
+/* ===== بطاقة «ابدأ من هنا» وحالات الفراغ التي تفعل (المرحلة ٤٧) ===== */
+.start-card { border: 1px solid var(--accent); border-radius: var(--dhad-radius-md); background: var(--accent-soft); padding: var(--dhad-space-4); margin-bottom: var(--dhad-space-4); }
+.start-card h2 { margin: 0 0 var(--dhad-space-2); font-size: var(--fs-lg); }
+.start-steps { list-style: none; margin: var(--dhad-space-3) 0 0; padding: 0; display: grid; gap: var(--dhad-space-2); }
+.start-step { display: flex; align-items: center; gap: var(--dhad-space-3); background: var(--surface); border: 1px solid var(--border); border-radius: var(--dhad-radius-sm); padding: var(--dhad-space-2) var(--dhad-space-3); min-height: var(--dhad-size-touch); }
+.start-step .start-num { flex: 0 0 auto; width: 26px; height: 26px; border-radius: var(--dhad-radius-round); background: var(--accent); color: var(--dhad-color-on-fill); display: grid; place-items: center; font-size: var(--fs-sm); font-weight: 700; }
+.start-step.done .start-num { background: var(--ok); }
+.start-step .start-text { flex: 1 1 auto; min-width: 0; }
+.start-step .start-text .strong { display: block; }
+.start-card .row { margin-top: var(--dhad-space-3); }
+@media (max-width: 640px) {
+  .start-step { flex-wrap: wrap; }
+  .start-step .btn { width: 100%; }
+}

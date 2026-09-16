@@ -48,7 +48,9 @@ function card(listing) {
       listing.notes ? el('p', { class: 'card-notes', text: listing.notes }) : null,
       el('div', { class: 'card-actions' },
         wa ? el('a', { class: 'btn btn-primary', href: wa, target: '_blank', rel: 'noopener', text: 'واتساب' }) : null,
-        el('a', { class: 'btn', href: single, text: 'تفاصيل' }))));
+        el('a', { class: 'btn', href: single, text: 'تفاصيل' })),
+      // الإفصاح النظاميّ يلزم كلَّ إعلان — والقائمةُ المخصّصة إعلانٌ كغيرها (المرحلة ٤٧).
+      listing.disclosure ? el('p', { class: 'card-license', text: listing.disclosure }) : null));
 }
 
 async function load() {

@@ -8,6 +8,17 @@ page.on('pageerror', e => errors.push('PAGEERROR: ' + e.message));
 page.on('console', m => { const t = m.text(); if (m.type() === 'error' && !t.includes('ERR_') && !t.includes('Failed to load resource') && !t.includes('favicon')) errors.push(t); });
 const ok = (n, c, x = '') => console.log(`${c ? 'PASS' : 'FAIL'} — ${n}${x ? ' :: ' + x : ''}`);
 
+/**
+ * بوّابةُ ترخيص الإعلان (المرحلة ٤٧): عقارٌ بلا عقد وساطةٍ ولا ترخيصِ إعلان يُسأل عنه
+ * قبل النشر. وبياناتُ الاختبار بلا عقودٍ ولا تراخيص — فيُجاب السؤالُ صراحةً كما يُجيبه
+ * المستخدم: **«انشر الكلّ وأنا أعلم»**. والسؤالُ نفسُه مفحوصٌ في `publish-gate-unit`.
+ */
+async function answerLicenseGate(page) {
+  const btn = page.locator('.modal button:has-text("انشر الكلّ وأنا أعلم")');
+  try { await btn.waitFor({ timeout: 2500 }); await btn.click(); } catch (_) { /* لا مانعَ فلا سؤال */ }
+}
+
+
 console.log('--- البند ٢: البوابة في متصفح حقيقي ---');
 await page.goto(BASE + '/');
 ok('الزائر يرى شاشة الدخول لا التطبيق', await page.locator('input[type="password"]').count() === 1 && await page.locator('.app-shell').count() === 0);
@@ -59,6 +70,7 @@ await page.waitForTimeout(600);
 ok('اختيار العقارات يُحفظ', (await page.locator('.count').first().innerText()).includes('2'), `${rowCount} صف`);
 
 await page.locator('button:has-text("نشر الآن")').click();
+await answerLicenseGate(page);
 await page.waitForTimeout(3500);
 const status = await page.locator('.settings-grid .panel:has-text("الحالة") .kv').innerText();
 ok('النشر تمّ وسُجّل وقته وعدده', status.includes('2') && !status.includes('لم يُنشر'), status.replace(/\n/g, ' | '));
@@ -85,6 +97,7 @@ ok('زر واتساب مبني بالرقم الدولي', (await pub.locator('a
 await page.locator('.table tbody input[type="checkbox"]').nth(1).uncheck();
 await page.waitForTimeout(400);
 await page.locator('button:has-text("نشر الآن")').click();
+await answerLicenseGate(page);
 await page.waitForTimeout(3000);
 await pub.reload();
 await pub.waitForTimeout(1500);

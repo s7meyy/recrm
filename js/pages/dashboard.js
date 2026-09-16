@@ -5,10 +5,10 @@
 // الإيراد ولا تدخل معدل التحويل.
 
 import { repo } from '../data/repository.js';
-import { ENUMS, labelFor, invoiceGrandTotal } from '../data/schema.js';
+import { ENUMS, labelFor, invoiceGrandTotal, netCommission } from '../data/schema.js';
 import { getLists, getCompleteness, getFollowUpSettings, typeLabel, statusLabel, getCompany } from '../data/settings.js';
 import { tourStats } from './tours.js';
-import { buildPriceIndex } from '../util/price-stats.js';
+import { buildPriceIndex, INDEX_SCOPE_NOTE } from '../util/price-stats.js';
 import { conversionFunnel } from '../util/funnel.js';
 import { sourceReport, propertyProfit } from '../util/sources.js';
 import { showingStats } from '../util/showings.js';
@@ -17,6 +17,11 @@ import { el, clear, badge } from '../util/dom.js';
 import { formatNumber, formatSAR, daysBetween, relativeDays, countWord, countOf, deltaOf } from '../util/format.js';
 import { formatPhone, toInternational } from '../util/phone.js';
 import { discountEffect } from '../util/property-evidence.js';
+import { memberStats, activeMembers } from '../util/team.js';
+import { columnsChart, lineChart, donutChart, monthsBack } from '../util/charts.js';
+import { whatsappButton } from '../util/outreach.js';
+
+import { getTeam } from '../data/settings.js';
 
 const DISTRICT_MIN_SAMPLE = 3;
 
@@ -32,12 +37,13 @@ async function loadData() {
     repo.invoices.list(), repo.expenses.list(), repo.requests.list(),
   ]);
   const showings = await repo.showings.list(); // المعاينات (المرحلة ٢٧)
+  const team = await getTeam(); // أداءُ الفريق (المرحلة ٤٧)
   const incomes = await repo.incomes.list(); // الإيرادات (المرحلة ٣٨)
   const company = await getCompany(); // نسبة العمولة لتوقّع الإيراد (المرحلة ٢٨)
   const approved = properties.filter((p) => p.captureStatus === 'approved');
   const clientMap = new Map(clients.map((c) => [c.id, c]));
   const dealPropertyIds = new Set(deals.map((d) => d.propertyId).filter(Boolean));
-  return { clients, properties, approved, tours, matches, externals, deals, lists, completeness, followUp, tasks, invoices, expenses, incomes, requests, showings, company, clientMap, dealPropertyIds };
+  return { clients, properties, approved, tours, matches, externals, deals, lists, completeness, followUp, tasks, invoices, expenses, incomes, requests, showings, company, clientMap, dealPropertyIds, team };
 }
 
 /* ===== أدوات تجميع عامة ===== */
@@ -178,6 +184,14 @@ function buildLayout(container, data) {
   const grid = el('div', { class: 'dashboard-grid' });
   container.append(grid);
 
+  /* ثلاثةُ أشكالٍ قبل الجداول (المرحلة ٤٧): الرقمُ يُقرأ، والشكلُ يُرى في لحظة. */
+  grid.append(panel('صفقاتُك شهرًا بشهر', 'ستّةُ أشهرٍ مضت — الأقدمُ يمينًا كما يُقرأ الزمن بالعربيّة.',
+    ...dealsChartSection(deals)));
+  grid.append(moneyPanel('عمولتُك: إلى أين تسير؟', 'اثنا عشر شهرًا. والخطُّ يقول الاتّجاه، والرقمُ يقول المقدار.',
+    ...commissionChartSection(deals)));
+  grid.append(panel('من أين يأتيك الناس', 'حصصُ المصادر من عملائك المسجَّلين — ومن لا مصدرَ له يُسمّى ولا يُخفى.',
+    ...sourceChartSection(clients)));
+
   /* عملاء لم يُتواصل معهم منذ أكثر من أسبوعين — الأهم */
   grid.append(panel(
     `عملاء لم يُتواصل معهم منذ أكثر من ${countOf(staleDays, 'يوم')} (${formatNumber(stale.length)})`,
@@ -187,6 +201,27 @@ function buildLayout(container, data) {
       : el('div', { class: 'muted small', text: `لا يوجد — كل عملائك تم التواصل معهم خلال آخر ${countOf(staleDays, 'يوم')}.` }),
     stale.length > 12 ? el('div', { class: 'muted small', text: `+ ${countOf(stale.length - 12, 'عميل')} آخر` }) : null,
   ));
+
+  /* أداءُ الفريق (المرحلة ٤٧) — لا تظهر لمكتبٍ من شخصٍ واحد */
+  if (activeMembers(data.team || []).length > 1) {
+    const rows = memberStats({
+      team: data.team, clients: data.clients, properties: approved,
+      requests: data.requests, deals: data.deals,
+    });
+    grid.append(panel('أداءُ الفريق', 'من الحسابات نفسِها مصفّاةً بصاحب العمل — والإسنادُ يغلب الإنشاء: عميلٌ أدخلتَه وأسندتَه إلى غيرك هو عميلُه.',
+      el('div', { class: 'table-wrap' }, el('table', { class: 'table' },
+        el('thead', {}, el('tr', {}, ['العضو', 'عملاء', 'عقارات', 'طلبات', 'صفقات', 'عمولات', 'أدخله بيده'].map((t) => el('th', { text: t })))),
+        el('tbody', {}, rows.map((r) => el('tr', {},
+          el('td', { class: 'strong', text: r.member.name }),
+          el('td', { class: 'num', text: formatNumber(r.clients) }),
+          el('td', { class: 'num', text: formatNumber(r.properties) }),
+          el('td', { class: 'num', text: formatNumber(r.requests) }),
+          el('td', { class: 'num', text: formatNumber(r.deals) }),
+          el('td', { class: 'num', text: formatSAR(r.commission) }),
+          el('td', { class: 'num muted', text: formatNumber(r.entered) })))))),
+      el('p', { class: 'muted small', text: 'وهذا تمييزٌ وتنسيق لا حجب: كلُّ عضوٍ يرى كلَّ شيء — والفصلُ الحقيقيّ يحتاج خادمًا يملك السجلّات.' })),
+    );
+  }
 
   /* طابور بانتظار الاعتماد */
   grid.append(panel('بانتظار الاعتماد', null,
@@ -263,7 +298,7 @@ function buildLayout(container, data) {
   grid.append(moneyPanel('ربحية العقارات', 'العمولة الصافية ناقص ما صُرف على العقار.', ...propertySection({ properties, deals, expenses, lists })));
 
   /* مؤشر السوق من بياناتك (المرحلة ١١) */
-  grid.append(panel('مؤشر سعر المتر', null, ...priceSection({ properties, externals, deals, lists })));
+  grid.append(panel('مؤشر سعر المتر', INDEX_SCOPE_NOTE, ...priceSection({ properties, externals, deals, lists })));
 
   /* الفواتير وعروض الأسعار (المرحلة ١٠) */
   grid.append(moneyPanel('الفواتير وعروض الأسعار', null, ...invoiceSection(invoices)));
@@ -717,10 +752,77 @@ function staleClientRow(x) {
   if (c.phone) {
     actions.push(el('a', { class: 'btn btn-ghost btn-sm', href: `tel:${c.phone}`, text: '📞' }));
     if (/^966\d{9}$/.test(intl)) {
-      actions.push(el('a', { class: 'btn btn-ghost btn-sm', href: `https://wa.me/${intl}`, target: '_blank', rel: 'noopener noreferrer', text: '💬' }));
+      // يفتح المحادثة **ويسجّل تواصلًا مستنتَجًا** (المرحلة ٤٧): كان رابطًا صامتًا،
+      // فيبقى العميلُ في «المتأخّرين» بعد أن راسلتَه من هذه اللوحة نفسِها.
+      actions.push(whatsappButton(el, {
+        clientId: c.id, phone: c.phone, label: '💬', cls: 'btn btn-ghost btn-sm',
+        note: 'فُتحت المحادثة من لوحة المتأخّرين',
+      }));
     }
   }
   return el('div', { class: 'stale-row' },
     el('div', {}, el('div', { class: 'strong' }, name), el('div', { class: 'muted small', text: lastText })),
     el('div', { class: 'row' }, badge(labelFor(ENUMS.clientStages, c.stage)), ...actions));
+}
+
+
+/* ===== الرسوم الثلاثة (المرحلة ٤٧) ===== */
+
+/** مفتاحُ شهرٍ من تاريخٍ نصّيّ — بلا `new Date` لأنّ السلسلة `YYYY-MM-DD` تكفي وتصدُق. */
+const monthKey = (iso) => String(iso || '').slice(0, 7);
+
+/** يجمع قيمةً لكل شهرٍ من الأشهر المطلوبة، ويُعيد الصفوفَ بالترتيب المعروض (الأقدمُ يمينًا). */
+function byMonth(items, months, { dateOf, amountOf = () => 1 }) {
+  // **لا تُسمَّ الدالةُ `valueOf`**: كلُّ كائنٍ يرثها من `Object.prototype`، فالقيمةُ
+  // الافتراضيّة في التفكيك لا تُستعمل أبدًا، وتُستدعى وراثيّةً بلا `this` فتنفجر.
+  const sums = new Map(months.map((m) => [m.key, 0]));
+  for (const it of items) {
+    const k = monthKey(dateOf(it));
+    if (sums.has(k)) sums.set(k, sums.get(k) + (Number(amountOf(it)) || 0));
+  }
+  // **الأقدمُ أوّلًا لأنّ الرسمَ يضع الأوّلَ يمينًا**، والزمنُ في العربيّة يسير يمينًا
+  // فيسارًا. و`monthsBack` تُعيد الأحدثَ أوّلًا، فتُقلَب هنا — وكان أوّلُ وصلٍ لها يضع
+  // الشهرَ الجاريَ في أقصى اليمين، فيُقرأ الاتّجاهُ معكوسًا.
+  return months.slice().reverse().map((m) => ({ label: m.label, value: sums.get(m.key) }));
+}
+
+function dealsChartSection(deals) {
+  const months = monthsBack(6);
+  const rows = byMonth(deals, months, { dateOf: (d) => d.date });
+  const total = rows.reduce((a, r) => a + r.value, 0);
+  return [
+    columnsChart({
+      rows, format: (v) => formatNumber(v), height: 150,
+      emptyText: 'لا صفقاتٍ بعد. سجّل أوّل صفقةٍ من ملفّ عميلها، فيبدأ هذا الشكل يمتلئ.',
+    }),
+    total ? null : el('p', { class: 'muted small', text: 'لا صفقةَ في الأشهر الستّة الماضية.' }),
+  ];
+}
+
+function commissionChartSection(deals) {
+  const months = monthsBack(12);
+  const rows = byMonth(deals, months, { dateOf: (d) => d.date, amountOf: (d) => netCommission(d) });
+  return [
+    lineChart({
+      rows, format: (v) => formatSAR(Math.round(v)), height: 150,
+      emptyText: 'لا عمولاتٍ بعد — يظهر الاتّجاه بعد شهرين فيهما صفقة.',
+    }),
+    el('p', { class: 'muted small', text: 'العمولةُ صافيةً بعد حصّة الوسيط الشريك، وبتاريخ الصفقة لا بتاريخ قبضها.' }),
+  ];
+}
+
+function sourceChartSection(clients) {
+  const counted = countBy(clients, (c) => String(c.referralSource || '').trim() || 'بلا مصدر مسجَّل');
+  const rows = counted.slice(0, 5).map(([label, value]) => ({ label, value }));
+  const rest = counted.slice(5).reduce((a, [, v]) => a + v, 0);
+  if (rest) rows.push({ label: 'مصادر أخرى', value: rest });
+  return [
+    donutChart({
+      rows, format: (v) => formatNumber(v),
+      emptyText: 'لا عملاءَ بعد. أضِف أوّل عميلٍ وسجّل من أين جاءك، فتعرف بعد شهرٍ أيُّ بابٍ يأتيك منه أكثرُهم.',
+    }),
+    counted.some(([l]) => l === 'بلا مصدر مسجَّل')
+      ? el('p', { class: 'muted small', text: 'من لا مصدرَ مسجَّلًا له يُعدّ باسمه الصريح — فلا يُنسب إلى مصدرٍ لم يأتِ منه.' })
+      : null,
+  ];
 }

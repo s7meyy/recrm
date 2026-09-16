@@ -2,7 +2,7 @@
 // مع الأحياء المرغوبة (مفردة أو بنطاق مسمّى)، وسقف الميزانية، والمساحة، ومرونة خاصة بالطلب.
 // عدد المطابقات في القائمة يُحسب لحظيًا من محرك المطابقة (لا يُخزَّن).
 
-import { repo, ValidationError } from '../data/repository.js';
+import { repo, ValidationError, getCurrentUser } from '../data/repository.js';
 import { ENUMS, labelFor, clientPriority } from '../data/schema.js';
 import { sourceField, rememberSource, sourceBadge } from '../util/source-field.js';
 import { getLists, typeLabel, addDistrict, getZonesFor, zoneLabel } from '../data/settings.js';
@@ -18,6 +18,8 @@ import { formatSAR, formatArea, formatNumber, relativeDays, countOf } from '../u
 import { matchesQuery } from '../util/arabic.js';
 import { formatPhone } from '../util/phone.js';
 import { isArchived, archiveRequestCandidates, archiveRow } from '../util/archive.js';
+import { memberName, assignOptions, activeMembers, assignRow, passesAssign } from '../util/team.js';
+import { getTeam } from '../data/settings.js';
 
 const GROUPS = [['status', 'الحالة'], ['type', 'النوع'], ['purpose', 'الغرض'], ['city', 'المدينة']];
 const VALUES = {
@@ -38,7 +40,7 @@ function routeRequestIdParam() {
 
 export async function render(container) {
   const ctx = {
-    container, query: '', showArchived: false,
+    container, query: '', showArchived: false, assign: '', team: [], meId: '',
     filters: Object.fromEntries(GROUPS.map(([k]) => [k, new Set()])),
     requests: [], clientsById: new Map(), lists: null, match: null, counts: new Map(), nodes: {},
   };
@@ -70,7 +72,9 @@ export async function render(container) {
 }
 
 async function loadData(ctx) {
-  const [lists, match] = await Promise.all([getLists(), loadMatchingContext({ withMatches: false })]);
+  const [lists, match, team] = await Promise.all([getLists(), loadMatchingContext({ withMatches: false }), getTeam()]);
+  ctx.team = team;
+  ctx.meId = getCurrentUser()?.id || '';
   ctx.lists = lists;
   ctx.match = match;
   ctx.clientsById = new Map(match.clients.map((c) => [c.id, c]));
@@ -94,7 +98,7 @@ function buildLayout(ctx) {
   ctx.container.append(el('div', { class: 'page-head' },
     el('h1', {}, 'الطلبات العقارية ', ctx.nodes.count),
     el('div', { class: 'head-actions' },
-      el('input', {
+      ctx.nodes.search = el('input', {
         class: 'input search', type: 'search', placeholder: 'بحث بالمدينة أو الحي أو الملاحظات…',
         onInput: debounce((e) => { ctx.query = e.target.value; renderFilters(ctx); renderList(ctx); }, 150),
       }),
@@ -111,6 +115,7 @@ function buildLayout(ctx) {
 
 function passes(ctx, r, exceptGroup = null) {
   // المؤرشف خارج القائمة ما لم يُطلَب (المرحلة ٤٥) — عَرضٌ لا حذف.
+  if (!passesAssign(r, ctx.assign, ctx.meId)) return false;
   if (!ctx.showArchived && isArchived(r)) return false;
   for (const [g] of GROUPS) {
     if (g === exceptGroup) continue;
@@ -162,6 +167,13 @@ function renderFilters(ctx) {
     wrap.append(el('div', { class: 'filter-row' }, el('span', { class: 'filter-label', text: label }), chips));
   }
   /* الأرشيف (المرحلة ٤٥) */
+  const aRow = assignRow({
+    rows: ctx.requests, team: ctx.team, meId: ctx.meId, value: ctx.assign,
+    onPick: (v) => { ctx.assign = v; renderFilters(ctx); renderList(ctx); },
+    el, formatNumber,
+  });
+  if (aRow) wrap.append(aRow);
+
   const archRow = archiveRow({
     rows: ctx.requests, showArchived: ctx.showArchived,
     candidates: archiveRequestCandidates(ctx.requests), bulkLabel: 'أرشف المنتهية منذ سنة',
@@ -238,11 +250,25 @@ function renderList(ctx) {
   const area = ctx.nodes.list;
   clear(area);
   if (!ctx.requests.length) {
-    area.append(emptyState('لا طلبات بعد. أضف أول طلب من الزر أعلاه.'));
+    // فراغٌ يُرشد ويفعل (المرحلة ٤٧): الطلبُ هو ما يُطابَق، فبابُه يُفتح من هنا لا يُوصف.
+    area.append(emptyState(
+      'لا طلبات بعد.\nالطلبُ هو ما يُطابَق بمخزونك، ومنه تأتيك التنبيهات حين يدخل ما يناسبه.',
+      el('button', { type: 'button', class: 'btn btn-primary', text: '+ أوّل طلب', onClick: () => openForm(ctx, null) }),
+      el('button', { type: 'button', class: 'btn btn-ghost', text: '📋 الصق رسالة عميل فتُقرأ', onClick: () => openPasteForm(ctx) })));
     return;
   }
   if (!items.length) {
-    area.append(emptyState('لا نتائج تطابق الفرز أو البحث.'));
+    area.append(emptyState(
+      `لا طلبَ من ${countOf(ctx.requests.length, 'طلب')} يطابق ما اخترتَه.`,
+      el('button', {
+        type: 'button', class: 'btn btn-primary', text: 'امسح الفرز والبحث',
+        onClick: () => {
+          for (const [g] of GROUPS) ctx.filters[g].clear();
+          ctx.query = '';
+          if (ctx.nodes.search) ctx.nodes.search.value = '';
+          renderFilters(ctx); renderList(ctx);
+        },
+      })));
     return;
   }
   const head = el('tr', {}, ['العميل', 'النوع', 'الغرض', 'المدينة', 'الأحياء المرغوبة', 'سقف الميزانية', 'المساحة', 'الحالة', 'المطابقات'].map((t) => el('th', { text: t })));
@@ -521,6 +547,10 @@ async function openForm(ctx, existing, prefill = null) {
   });
   const areaInput = el('input', { class: 'input', type: 'number', min: '0', step: '10', value: draft.area ?? '', onInput: () => updateHints() });
   const notesInput = el('textarea', { class: 'input', rows: 3, value: draft.notes || '' });
+  const assignSelect = selectEl({
+    options: assignOptions(ctx.team, draft.assignedTo || ''),
+    value: draft.assignedTo || '', placeholder: 'بلا مسند',
+  });
   const source = sourceField(draft.referralSource, ctx.lists.sources);
 
   /* النطاقات والأحياء */
@@ -642,6 +672,7 @@ async function openForm(ctx, existing, prefill = null) {
       priceFlexibility: num(priceFlexPercent), priceFlexAmount: num(priceFlexAmount),
       areaFlexibility: num(areaFlexPercent), areaFlexAmount: num(areaFlexAmount),
       referralSource: source.input.value,
+      assignedTo: assignSelect.value || null,
     };
     saveBtn.disabled = true;
     try {
@@ -708,6 +739,9 @@ async function openForm(ctx, existing, prefill = null) {
         fieldGroup('أحياء مفردة', el('div', {}, el('div', { class: 'field-row' }, districtInput, districtList,
           el('button', { type: 'button', class: 'btn btn-sm', text: 'إضافة', onClick: () => addDistrictValue(districtInput.value) })), districtsBox), { full: true }),
         labeled('المصدر (وسيط الإحالة)', source.node, { hint: 'اختياري — لا يظهر شيء ما لم يُعبَّأ' }),
+        activeMembers(ctx.team).length > 1
+          ? labeled('المسند إليه', assignSelect, { hint: 'من يتولّى هذا الطلب — تنسيقٌ لا حجب' })
+          : null,
         labeled('الملاحظات', notesInput, { full: true })),
       el('div', { class: 'form-section' },
         el('h3', { class: 'form-section-title', text: 'مرونة خاصة بهذا الطلب (اختيارية — تتجاوز الإعداد العام)' }),

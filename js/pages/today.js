@@ -4,9 +4,9 @@
 // الصفحات الأخرى (نفس دوال المصدر: tourStats للمطابقة، getFollowUpSettings للحدّ، إلخ)،
 // فلا مصدر حقيقة ثانيًا يمكن أن يتناقض معها.
 
-import { repo } from '../data/repository.js';
+import { repo, getCurrentUser } from '../data/repository.js';
 import { ENUMS, labelFor, clientPriority, clientTagClass, reviewCandidates } from '../data/schema.js';
-import { getLists, getCompleteness, getFollowUpSettings, typeLabel, getUI, setUI, getGoals, getCompany, getPlaybooks, getPublishSettings } from '../data/settings.js';
+import { getLists, getCompleteness, getFollowUpSettings, typeLabel, getUI, setUI, getGoals, getCompany, getPlaybooks, getPublishSettings, getBackupInfo, getTemplates } from '../data/settings.js';
 import { loadMatchingContext, candidatesFor, matchReadiness } from '../data/matching.js';
 import { buildOpportunityIndex, topOpportunities } from '../util/opportunity.js';
 import { receivables } from '../util/receivables.js';
@@ -14,9 +14,14 @@ import { awaitingReply } from '../util/lead-score.js';
 import { upcomingShowings, needFeedback } from '../util/showings.js';
 import { expiringAgreements } from '../util/agreements.js';
 import { externalDuplicates } from '../util/duplicates.js';
+import { publishDrift } from '../util/publish-drift.js';
+import { storageStatus, formatBytes } from '../data/images.js';
 import { dealAnniversaries } from '../util/calendar.js';
 import { runPlans } from '../util/plans.js';
 import { el, clear, badge, emptyState, confirmDialog, toast, openModal, labeled, selectEl } from '../util/dom.js';
+import { startSteps, startProgress, shouldShowStart } from '../util/onboarding.js';
+import { suggestTemplate, renderTemplate, templateValues, TEMPLATE_CONTEXTS } from '../util/templates.js';
+import { whatsappButton } from '../util/outreach.js';
 import { formatSAR, formatDate, formatDateTime, formatNumber, relativeDays, daysBetween, daysWord, countWord, countOf } from '../util/format.js';
 import { formatPhone, toInternational } from '../util/phone.js';
 import { clientName } from './requests.js';
@@ -46,6 +51,13 @@ async function loadData() {
   // منشورة (تردّ الدالة نفسها بـ400 على قائمةٍ بلا عروض)، فمن لم ينشر شيئًا لا قوائم له.
   // وطلبٌ يُرسَل في كل فتحةٍ لأكثر صفحاتك فتحًا، ليعود بلا شيء، كلفةٌ بلا مقابل.
   const publishSettings = await getPublishSettings();
+  // حصّةُ التخزين (المرحلة ٤٧): كان الإنذارُ في صفحة الإعدادات وحدها — وهي التي لا تُفتح
+  // في الجولة ولا قبلها، ونصُّه بيده يقول إنّ الامتلاءَ فيها يُضيّع التقاطَ اليوم.
+  const storage = await storageStatus();
+  // «ابدأ من هنا» (المرحلة ٤٧): حالُ كل خطوةٍ تُقرأ من بياناتك لا من علامةٍ تُرفع بالنقر.
+  const backup = await getBackupInfo();
+  // القالبُ في موضع الحاجة (المرحلة ٤٧): يُقترح حيث تُرى الحالة، لا في صفحةٍ تُفتح لتُختار منها.
+  const templates = await getTemplates();
   const hasPublished = (publishSettings.publishedRefs || []).length > 0;
   const clientLists = hasPublished
     ? ((await readPublicApi('/api/client-list', { lists: [] })) || {}).lists || []
@@ -161,6 +173,9 @@ async function loadData() {
     .sort((a, b) => b.days - a.days);
 
   return {
+    ui, backup, templates, user: getCurrentUser(),
+    // «ابدأ من هنا» (المرحلة ٤٧): المجموعاتُ كاملةً — الخطوةُ تسأل «أوُجد واحدٌ؟» لا «كم اليوم؟»
+    allProperties: ctx.properties, allRequests: ctx.requests, allMatches: ctx.matches, allClients: ctx.clients,
     since, lists, followUps, stale: staleOrdered, dueTasks, newMatches, incomplete, awaitingApproval, unreadyExternals, opportunities,
     progress, renewals, staleListings,
     clientsById, waiting, tasksPending: tasks.filter((t) => !t.done).length,
@@ -193,6 +208,10 @@ async function loadData() {
     //
     // وما كان **رصدَك أنت** (جوّال المعلن جوّالُك) يُستبعد من هنا: هو ملاحظةُ بياناتٍ
     // مكرّرة، ومكانُها صفحة الصحّة كما كانت.
+    // ما تغيّر بعد النشر (المرحلة ٤٧): صفحتُك العامة تعرض ما نُشر آخرَ مرّة لا ما في
+    // مخزونك الآن — فعقارٌ بِيع يبقى معروضًا لمشترٍ يتصل بك عنه.
+    drift: publishDrift(ctx.properties, publishSettings.publishedState || []),
+    storage,
     poached: externalDuplicates({
       properties: ctx.properties, externals,
       myPhones: [company.phone].filter(Boolean),
@@ -262,7 +281,8 @@ async function greetAnniversary(deal, client, years, company) {
   else toast('العميل بلا جوال', 'info');
   await repo.deals.update(deal.id, { anniversaryGreetedAt: new Date().toISOString() });
   if (client?.id) {
-    await repo.clients.addContact(client.id, { type: 'whatsapp', date: new Date().toISOString(), note: 'تهنئة بذكرى الصفقة' }).catch(() => {});
+    // مستنتَجٌ لا مؤكَّد (المرحلة ٤٧): فُتحت المحادثة، ولا يعلم النظامُ أنّك ضغطت «إرسال».
+    await repo.clients.addContact(client.id, { type: 'whatsapp', date: new Date().toISOString(), note: 'تهنئة بذكرى الصفقة', inferred: true }).catch(() => {});
   }
   window.dispatchEvent(new CustomEvent('kassab:data-changed'));
   build(document.getElementById('page'), await loadData());
@@ -367,7 +387,7 @@ async function requestReview(event, deal, client, reviewUrl, company) {
   else toast('العميل بلا جوال — نُسخ النص لترسله بنفسك', 'info', 6000);
   await repo.deals.update(deal.id, { reviewRequestedAt: new Date().toISOString() });
   if (client?.id) {
-    await repo.clients.addContact(client.id, { type: 'whatsapp', date: new Date().toISOString(), note: 'طلب تقييم بعد الصفقة' }).catch(() => {});
+    await repo.clients.addContact(client.id, { type: 'whatsapp', date: new Date().toISOString(), note: 'طلب تقييم بعد الصفقة', inferred: true }).catch(() => {});
   }
   window.dispatchEvent(new CustomEvent('kassab:data-changed'));
   build(document.getElementById('page'), await loadData());
@@ -532,6 +552,17 @@ function build(container, d) {
     el('h1', {}, `${greeting} — هذا ما ينتظرك اليوم`),
     el('span', { class: 'muted small', text: d.since ? `آخر دخول: ${formatDateTime(d.since)}` : 'أول دخول' })));
 
+  /* «ابدأ من هنا» (المرحلة ٤٧): الشاشةُ الأولى تُري النظامَ يعمل بدل أن تشرحه */
+  const steps = startSteps({
+    company: d.company || {},
+    clients: d.allClients || [],
+    properties: d.allProperties || [],
+    requests: d.allRequests || [],
+    matches: d.allMatches || [],
+    backup: d.backup || {},
+  });
+  if (shouldShowStart(steps, d.ui || {})) container.append(startCard(steps, container));
+
   container.append(el('div', { class: 'stat-strip' },
     chip(d.followUps.length, 'متابعة اليوم'),
     chip(d.dueTasks.length, 'مهمة مستحقة'),
@@ -564,6 +595,37 @@ function build(container, d) {
             lead.phone ? el('a', { class: 'btn btn-ghost btn-sm', href: `tel:${lead.phone}`, text: '📞', title: 'اتصال' }) : null,
             el('a', { class: 'btn btn-sm', href: '#/publish', text: 'أدخِله' }))))),
       { href: '#/publish', hrefText: 'الطلبات →', tone: 'today-warn' }));
+  }
+
+  /* التخزين يوشك (المرحلة ٤٧) — الإنذارُ حيث تراه لا حيث لا تفتح */
+  if (d.storage?.low) {
+    grid.append(section('التخزين يوشك على الامتلاء', null,
+      el('div', {},
+        el('p', { class: 'strong', text: `بلغ ${d.storage.pct}٪ — ${formatBytes(d.storage.usage)} من ${formatBytes(d.storage.quota)}.` }),
+        el('p', { class: 'muted small', text: (d.storage.imagesLeft != null ? `يكفي نحو ${countOf(d.storage.imagesLeft, 'صورة')} تقريبًا. ` : '')
+          + 'وامتلاؤه أثناء جولة ميدانية يعني ضياع التقاط اليوم.' }),
+        el('div', { class: 'row' },
+          el('a', { class: 'btn btn-sm btn-primary', href: '#/settings', text: 'صدّر نسخة احتياطية' }),
+          el('a', { class: 'btn btn-sm', href: '#/properties', text: 'احذف صور المبيعة' }))),
+      { tone: 'today-warn' }));
+  }
+
+  /* عروضٌ منشورةٌ تغيّرت (المرحلة ٤٧) — ما يراه الناسُ ليس ما عندك */
+  if (d.drift.length) {
+    const closed = d.drift.filter((r) => r.kind === 'closed').length;
+    grid.append(section('عروضٌ منشورة تغيّرت', d.drift.length,
+      el('div', {},
+        el('p', { class: 'muted small', text: 'الصفحةُ العامة تعرض ما نُشر آخرَ مرّة لا ما في مخزونك الآن.'
+          + (closed ? ` ومنها ${countOf(closed, 'عرض')} أُقفل ولا يزال معروضًا.` : '') }),
+        ...d.drift.slice(0, 5).map((r) => row(
+          r.property
+            ? `${typeLabel(d.lists, r.property.type)} — ${[r.property.district, r.property.city].filter(Boolean).join('، ')}`
+            : 'عرضٌ حُذف أو دُمج',
+          r.kind === 'closed' ? 'أُقفل بعد النشر — ويُعرض للناس'
+            : r.kind === 'gone' ? 'بطاقتُه باقية ورابطُه معطَّل'
+              : `السعر ${r.from == null ? 'أُضيف' : formatSAR(r.from)} ← ${r.to == null ? 'أُزيل' : formatSAR(r.to)}`,
+          el('a', { class: 'btn btn-sm', href: '#/publish', text: 'حدّث النشرة' })))),
+      { href: '#/publish', hrefText: 'الصفحة العامة →', tone: closed ? 'today-warn' : '' }));
   }
 
   /* عقارك معروضٌ عند غيرك (المرحلة ٤٥) — الكشف قائمٌ منذ ٣٢ وكان في صفحة الصحّة وحدها */
@@ -715,10 +777,15 @@ function build(container, d) {
         ...d.pendingFeedback.slice(0, 6).map(({ showing }) => row(
           showingTitle(d, showing),
           `${formatDateTime(showing.at)} · ${clientName(d.clientsById.get(showing.clientId))}`,
-          el('button', {
-            type: 'button', class: 'btn btn-sm', text: 'سجّل رأيه',
-            onClick: () => askShowingFeedback(showing),
-          }))))));
+          el('span', { class: 'row' },
+            contextTemplateButton(d, 'showingFeedback', {
+              client: d.clientsById.get(showing.clientId),
+              property: d.propertiesById?.get(showing.propertyId) || null,
+            }),
+            el('button', {
+              type: 'button', class: 'btn btn-sm', text: 'سجّل رأيه',
+              onClick: () => askShowingFeedback(showing),
+            })))))));
   }
 
   /* طلب التقييم بعد الصفقة (المرحلة ٢٥) */
@@ -790,7 +857,7 @@ function build(container, d) {
       ? el('div', {}, d.stale.slice(0, 8).map(({ client, days }) => row(
         el('span', {}, clientName(client), callHints(client, d)),
         days == null ? 'لم يُسجَّل أي تواصل بعد' : `آخر تواصل قبل ${daysWord(days)}`,
-        clientActions(client))))
+        el('span', { class: 'row' }, contextTemplateButton(d, 'stale', { client }), clientActions(client)))))
       : el('p', { class: 'muted small', text: 'لا أحد تجاوز الحدّ.' }),
     { href: '#/clients' }));
 
@@ -854,4 +921,58 @@ function chip(value, label) {
   return el('div', { class: 'stat-chip' },
     el('div', { class: 'stat-num', text: String(value) }),
     el('div', { class: 'stat-label', text: label }));
+}
+
+
+/**
+ * **بطاقةُ البدء** — خمسُ خطواتٍ، كلُّ واحدةٍ تنفع وحدها، وحالُها مقروءةٌ من بياناتك.
+ *
+ * وموضعُها «يومي» لا الداشبورد: هذه أوّلُ شاشةٍ تُفتح كلَّ صباح، والداشبوردُ يُفتح
+ * ليُقرأ لا ليُبتدأ منه. ولا تُعلَّم خطوةٌ منجزةً بالنقر: من كتب اسم مكتبه فقد أنجز
+ * الأولى سواءٌ مرّ بهذه البطاقة أم لم يمرّ. والإخفاءُ قرارُ صاحبها، ويُحفظ فلا يُلاحَق به.
+ */
+function startCard(steps, container) {
+  const p = startProgress(steps);
+  return el('section', { class: 'start-card' },
+    el('h2', { text: 'ابدأ من هنا' }),
+    el('p', { class: 'muted small' },
+      `أنجزتَ ${formatNumber(p.done)} من ${formatNumber(p.total)}. `,
+      p.next ? `التاليةُ: ${p.next.title}.` : ''),
+    el('ul', { class: 'start-steps' }, steps.map((s, i) => el('li', { class: `start-step${s.done ? ' done' : ''}` },
+      el('span', { class: 'start-num', text: s.done ? '✓' : formatNumber(i + 1) }),
+      el('span', { class: 'start-text' },
+        el('span', { class: 'strong', text: s.title }),
+        el('span', { class: 'muted small', text: s.hint })),
+      s.done
+        ? badge('تمّت', 'badge-ok')
+        : el('a', { class: 'btn btn-sm btn-primary', href: s.href, text: s.cta })))),
+    el('div', { class: 'row' },
+      el('button', {
+        type: 'button', class: 'btn btn-ghost btn-sm', text: 'أخفِ هذه البطاقة',
+        title: 'تختفي وحدها متى تمّت خطواتُها — وهذا يُخفيها الآن',
+        onClick: async () => { await setUI({ startCardHidden: true }); await render(container); },
+      })));
+}
+
+
+/**
+ * **زرُّ القالب في موضع الحاجة** (المرحلة ٤٧).
+ *
+ * يظهر متى كان في قوالب المستخدم ما يناسب الموضع، **ويغيب متى لم يكن** — ولا يُخترع له
+ * قالبٌ ولا يُدسّ في إعداداته نصٌّ لم يكتبه. ومتى أُرسل سُجّل التواصلُ **مستنتَجًا**
+ * كسائر ما يُفتح من النظام.
+ */
+function contextTemplateButton(d, context, { client = null, property = null } = {}) {
+  if (!client?.phone) return null;
+  const tpl = suggestTemplate(d.templates || [], context);
+  if (!tpl) return null;
+  const text = renderTemplate(tpl.body, templateValues({
+    client, property, lists: d.lists, user: d.user, company: d.company,
+  }));
+  const label = TEMPLATE_CONTEXTS[context]?.label || tpl.label;
+  return whatsappButton(el, {
+    clientId: client.id, phone: client.phone, text,
+    label: `💬 ${label}`, cls: 'btn btn-ghost btn-sm',
+    note: `أُرسل له قالب «${tpl.label}»`,
+  });
 }

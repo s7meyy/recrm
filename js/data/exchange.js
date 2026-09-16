@@ -149,6 +149,25 @@ export const CSV_EXPORTS = {
       { label: 'ملاحظات', get: (d) => d.notes },
     ],
   },
+  /**
+   * **المصاريف والإيرادات** (المرحلة ٤٧) — وهما ما يطلبه المحاسب آخرَ السنة.
+   *
+   * كان التصديرُ خمسةً: العملاء والعقارات والطلبات والصفقات والفواتير. **ولا مصاريفَ ولا
+   * إيرادات** — وهما اللذان بُنيا في المرحلة ٣٨ ليصير صافيك محسوبًا، فيُحسب على الشاشة
+   * ولا يخرج في ملفّ.
+   *
+   * والربطُ يُصدَّر باسمه لا بمعرّفه: «عقار: شقة — النرجس» أنفعُ لمن يقرأ من `p_1a2b3c`.
+   */
+  expenses: {
+    label: 'المصاريف',
+    async rows() { return repo.expenses.list(); },
+    headers: (ctx) => financeHeaders(ctx, ENUMS.expenseCategories),
+  },
+  incomes: {
+    label: 'الإيرادات',
+    async rows() { return repo.incomes.list(); },
+    headers: (ctx) => financeHeaders(ctx, ENUMS.incomeCategories),
+  },
   invoices: {
     label: 'الفواتير وعروض الأسعار',
     async rows() { return repo.invoices.list(); },
@@ -165,14 +184,63 @@ export const CSV_EXPORTS = {
   },
 };
 
-/** يبني ملف CSV لكيان ويعيد `{ blob, filename, count }`. */
-export async function buildCsv(entity, ctx) {
+/** أعمدةُ المال المشتركة بين المصاريف والإيرادات — واحدةٌ فلا تفترقان في ملفّ المحاسب. */
+function financeHeaders(ctx, categories) {
+  return [
+    { label: 'التاريخ', get: (x) => formatDate(x.date) },
+    { label: 'المبلغ', get: (x) => x.amount ?? '' },
+    { label: 'التصنيف', get: (x) => labelFor(categories, x.category) },
+    { label: 'البيان', get: (x) => x.note },
+    { label: 'العقار', get: (x) => (x.propertyId && ctx.propertyLabel ? ctx.propertyLabel(x.propertyId) : '') },
+    { label: 'العميل', get: (x) => (x.clientId && ctx.clientName ? ctx.clientName(x.clientId) : '') },
+    { label: 'مرتبط بصفقة', get: (x) => (x.dealId ? 'نعم' : '') },
+  ];
+}
+
+/** حقلُ التاريخ الذي يُقاس به المدى في كل كيان — والذي لا تاريخَ له لا يُقيَّد بمدى. */
+const DATE_FIELD = {
+  expenses: 'date', incomes: 'date', deals: 'date', invoices: 'date',
+  clients: 'createdAt', properties: 'createdAt', requests: 'createdAt',
+};
+
+/** هل يقبل هذا الكيان تحديد مدًى زمنيّ؟ */
+export const supportsRange = (entity) => !!DATE_FIELD[entity];
+
+/**
+ * تصفيةٌ بمدًى زمنيّ **شاملٍ للطرفين** (`YYYY-MM-DD`)، وطرفٌ متروكٌ = بلا حدٍّ من جهته.
+ *
+ * وسجلٌّ بلا تاريخٍ أصلًا **يُستبعد متى حُدِّد مدًى**: إدخالُه في ملفّ الربع ادّعاءُ أنّه
+ * وقع فيه، وإخراجُه صمتٌ صادق. ويبقى في الملفّ الكامل حيث لا مدى.
+ */
+export function filterByRange(rows, entity, { from = '', to = '' } = {}) {
+  const field = DATE_FIELD[entity];
+  if (!field || (!from && !to)) return rows;
+  return rows.filter((r) => {
+    const day = String(r[field] || '').slice(0, 10);
+    if (!day) return false;
+    if (from && day < from) return false;
+    if (to && day > to) return false;
+    return true;
+  });
+}
+
+/**
+ * يبني ملف CSV لكيان ويعيد `{ blob, filename, count }`.
+ * @param {{ from?: string, to?: string }} range مدًى اختياريّ — فملفُّ الربع لا ملفُّ العمر.
+ */
+export async function buildCsv(entity, ctx, range = {}) {
   const def = CSV_EXPORTS[entity];
   if (!def) throw new Error('نوع تصدير غير معروف');
-  const rows = await def.rows();
+  const rows = filterByRange(await def.rows(), entity, range);
   const csv = toCsv(rows, def.headers(ctx));
   const stamp = new Date().toISOString().slice(0, 10);
-  return { blob: new Blob([csv], { type: 'text/csv;charset=utf-8' }), filename: `kassab-${entity}-${stamp}.csv`, count: rows.length };
+  // اسمُ الملفّ يحمل مداه: ثلاثةُ ملفّاتٍ في مجلّد المحاسب لا يفرّقها تاريخُ التصدير وحده.
+  const span = range.from || range.to ? `-${range.from || 'البداية'}_${range.to || 'اليوم'}` : '';
+  return {
+    blob: new Blob([csv], { type: 'text/csv;charset=utf-8' }),
+    filename: `kassab-${entity}${span}-${stamp}.csv`,
+    count: rows.length,
+  };
 }
 
 /* ===== استيراد CSV (المرحلة ١٨) ===== */

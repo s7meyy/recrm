@@ -304,3 +304,53 @@ export async function printReceipt({
 
   printNode(page);
 }
+
+/**
+ * **كشفُ حسابِ المالك** لشهر (المرحلة ٤٧).
+ *
+ * والمالكُ يسأل سؤالًا واحدًا كلَّ شهر: «كم لي؟». وكان جوابُه يُجمع بيدك من ثلاث شاشات.
+ * **وهذا يُظهره بندًا بندًا**: ما قُبض، وأجرُ الإدارة، والصيانةُ التي يتحمّلها — فيراجعه
+ * ولا يصدّقه وحسب.
+ */
+export async function printOwnerStatement({ property, owner = null, statement, lists = null, company = {} } = {}) {
+  const where = `${typeLabel(lists, property.type)} — ${[property.district, property.city].filter(Boolean).join('، ')}`;
+  const money = (n) => formatSAR(Math.round(Number(n) || 0));
+
+  const collectedRows = statement.rows.map((p) => el('tr', {},
+    el('td', { text: p.note || 'دفعة إيجار' }),
+    el('td', { text: formatDate(p.paidAt) }),
+    el('td', { class: 'num', text: money(p.amount) })));
+
+  const costRows = statement.maintenanceRows.map((m) => el('tr', {},
+    el('td', { text: m.what }),
+    el('td', { text: formatDate(m.doneAt || m.at) }),
+    el('td', { class: 'num', text: `− ${money(m.cost)}` })));
+
+  printNode(el('article', { class: 'print-doc' },
+    await officeHeader(company, 'كشف حساب المالك', `عن شهر ${statement.month}`),
+    el('table', { class: 'print-table' }, el('tbody', {},
+      el('tr', {}, el('th', { style: { width: '30%' }, text: 'المالك' }), el('td', { text: owner?.name || '—' })),
+      el('tr', {}, el('th', { text: 'العقار' }), el('td', { text: where })))),
+
+    el('h2', { class: 'print-section-title', text: 'المقبوض' }),
+    el('table', { class: 'print-table' },
+      el('tbody', {}, collectedRows.length ? collectedRows
+        : [el('tr', {}, el('td', { colSpan: 3, text: 'لم يُقبض شيءٌ في هذا الشهر.' }))])),
+
+    statement.maintenanceRows.length ? el('h2', { class: 'print-section-title', text: 'الصيانة على المالك' }) : null,
+    statement.maintenanceRows.length ? el('table', { class: 'print-table' }, el('tbody', {}, costRows)) : null,
+
+    el('h2', { class: 'print-section-title', text: 'الخلاصة' }),
+    el('table', { class: 'print-table' }, el('tbody', {},
+      el('tr', {}, el('th', { text: 'المقبوض' }), el('td', { class: 'num', text: money(statement.collected) })),
+      el('tr', {}, el('th', { text: 'أجر الإدارة' }), el('td', { class: 'num', text: `− ${money(statement.fee)}` })),
+      el('tr', {}, el('th', { text: 'الصيانة على المالك' }), el('td', { class: 'num', text: `− ${money(statement.maintenance)}` })),
+      el('tr', {}, el('th', {}, el('span', { class: 'strong', text: 'الصافي المستحقّ للمالك' })),
+        el('td', { class: 'num' }, el('span', { class: 'strong', text: money(statement.net) }))))),
+
+    el('section', { class: 'print-signatures' },
+      el('div', {}, el('div', { text: 'المكتب' }), el('div', { class: 'print-sign-line' })),
+      el('div', {}, el('div', { text: 'المالك' }), el('div', { class: 'print-sign-line' }))),
+    company.footerNote ? el('div', { class: 'print-notes', text: company.footerNote }) : null,
+    el('div', { class: 'print-notes', text: 'أجرُ الإدارة بالنسبة يُحسب على ما قُبض فعلًا — فلا أجرَ على مالٍ لم يصل. والصيانةُ المخصومة هي ما يتحمّله المالك وحده.' })));
+}

@@ -58,7 +58,29 @@ export const DAY_NAMES = ['الأحد', 'الإثنين', 'الثلاثاء', '�
  * @param {string[]} taken لحظات ISO محجوزة
  * @returns {[{ iso, date, time, dow, dayLabel }]}
  */
-export function buildSlots(booking = {}, taken = [], now = Date.now()) {
+/**
+ * أوقاتُك المشغولة كما تصل من النشرة (المرحلة ٤٧) — طوابعُ زمنيّةٌ لا غير.
+ *
+ * **والعطبُ الذي تُصلحه:** صفحةُ الحجز كانت تستبعد ما حُجز **عبرها وحدها**، ومواعيدُك
+ * المسجَّلة في التطبيق لا يراها الخادم إطلاقًا (هي في متصفّح جهازك). فيحجز عميلٌ الخامسةَ
+ * الثلاثاء وعندك معاينةٌ في الخامسة الثلاثاء، **ويصلك الاثنان**.
+ *
+ * **والتداخلُ لا التطابق:** معاينةٌ في ٥:١٥ لا تساوي بدايةَ فتحةِ ٥:٠٠، لكنّها تشغلها.
+ * فيُحسب لكلّ موعدٍ امتدادُه (`minutes`، وافتراضُه ساعة) ويُستبعد ما تقاطع معه.
+ * والمحجوزُ عبر الصفحة يبقى على المطابقة التامّة كما كان — فهو يشغل فتحتَه وحدها.
+ */
+function busyRanges(busy = [], fallbackMinutes = 60) {
+  const out = [];
+  for (const b of busy) {
+    const at = new Date(typeof b === 'string' ? b : b?.at).getTime();
+    if (!Number.isFinite(at)) continue;
+    const mins = Math.max(5, Math.min(600, Number(typeof b === 'object' ? b?.minutes : 0) || fallbackMinutes));
+    out.push([at, at + mins * 60000]);
+  }
+  return out;
+}
+
+export function buildSlots(booking = {}, taken = [], now = Date.now(), busy = []) {
   const from = minutesOf(booking.from) ?? 16 * 60;
   const to = minutesOf(booking.to) ?? 21 * 60;
   const step = Math.max(10, Math.min(240, Math.round(Number(booking.slotMinutes) || 30)));
@@ -67,7 +89,8 @@ export function buildSlots(booking = {}, taken = [], now = Date.now()) {
   const lead = Math.max(0, Number(booking.leadHours) || 0) * 3600000;
   if (to <= from) return [];
 
-  const busy = new Set(taken.map((t) => new Date(t).getTime()).filter(Number.isFinite));
+  const bookedExact = new Set(taken.map((t) => new Date(t).getTime()).filter(Number.isFinite));
+  const ranges = busyRanges(busy, Math.max(step, Number(booking.visitMinutes) || 60));
   const out = [];
   const firstMidnight = localMidnight(now);
 
@@ -77,7 +100,9 @@ export function buildSlots(booking = {}, taken = [], now = Date.now()) {
     for (let m = from; m + step <= to; m += step) {
       const at = utcFor(midnight, m);
       if (at - now < lead) continue; // مهلة الإشعار: لا يُحجز عليك موعد بعد دقائق
-      if (busy.has(at)) continue;
+      if (bookedExact.has(at)) continue;
+      // الفتحةُ [at, at+step) تُستبعد إن تقاطعت مع أيّ موعدٍ لك.
+      if (ranges.some(([a, b]) => at < b && a < at + step * 60000)) continue;
       const parts = localParts(at);
       out.push({ iso: new Date(at).toISOString(), ...parts, dayLabel: DAY_NAMES[parts.dow] });
     }
@@ -86,8 +111,8 @@ export function buildSlots(booking = {}, taken = [], now = Date.now()) {
 }
 
 /** هل هذا الوقت من المجموعة المولَّدة فعلًا؟ (شرط القبول) */
-export function slotAllowed(iso, booking, taken, now = Date.now()) {
+export function slotAllowed(iso, booking, taken, now = Date.now(), busy = []) {
   const target = new Date(iso).getTime();
   if (!Number.isFinite(target)) return false;
-  return buildSlots(booking, taken, now).some((s) => new Date(s.iso).getTime() === target);
+  return buildSlots(booking, taken, now, busy).some((s) => new Date(s.iso).getTime() === target);
 }

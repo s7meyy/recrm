@@ -10,7 +10,8 @@ import { getMatchingSettings, getLists, getCompany, getTemplates } from '../data
 import { getCurrentUser } from '../data/repository.js';
 import { el, openModal, toast, selectEl } from './dom.js';
 import { formatPhone } from '../util/phone.js';
-import { renderTemplate, templateValues, whatsappLink } from './templates.js';
+import { renderTemplate, templateValues } from './templates.js';
+import { whatsappButton } from './outreach.js';
 import { countOf } from './format.js';
 
 /**
@@ -67,9 +68,12 @@ export async function announceMatches(property, { title = 'هذا العقار �
           el('strong', { text: client?.name || (client?.phone ? formatPhone(client.phone) : 'عميل بلا اسم') }),
           el('span', { class: 'muted small', text: client?.phone ? ` · ${formatPhone(client.phone)}` : ' · بلا جوال' })),
         el('span', { class: 'row' },
-          client?.phone ? el('a', {
-            class: 'btn btn-primary btn-sm', text: '💬 أرسل', target: '_blank', rel: 'noopener noreferrer',
-            href: whatsappLink(text, client.phone),
+          // «أرسل» يسجّل ما فتحه (المرحلة ٤٧): تُرسل لعشرة عملاء من هذه اللوحة، ولا
+          // يبقى منها أثرٌ في سجلّ أيٍّ منهم — فيُعاد الاتصال بهم غدًا.
+          client?.phone ? whatsappButton(el, {
+            clientId: client.id, phone: client.phone, text,
+            label: '💬 أرسل', cls: 'btn btn-primary btn-sm',
+            note: 'أُرسل له عرضٌ مطابقٌ من لوحة المطابقات',
           }) : null,
           el('a', { class: 'btn btn-ghost btn-sm', href: `#/matches/${request.id}`, text: 'الطلب', onClick: () => modal.close() })));
     }));

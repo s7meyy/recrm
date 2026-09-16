@@ -1,0 +1,145 @@
+// محفظة المستثمر والعائد الواقع (المرحلة ٤٧).
+//
+// «استثمار» غرضٌ في النظام منذ أوّله، وللنظام حاسبةُ عائدٍ **استرشادية** تجيب عن سؤالٍ
+// افتراضيّ: «لو اشتريتُ بكذا وأجّرتُ بكذا، كم يعود؟». وليس فيه ما يجيب عن السؤال
+// الواقع: **«ما الذي أملكه فعلًا، وكم عاد عليّ منه هذا العام؟»**
+//
+// والفرقُ بينهما هو الفرقُ بين وعدٍ ومحاسبة. المتوقَّعُ يُكتب في العقد، والواقعُ يُقرأ من
+// الدفعات المقبوضة. ومتى افترقا فذلك أهمُّ رقمٍ في الصفحة: شهرٌ لم يُحصَّل، أو وحدةٌ
+// شغرت، أو مستأجرٌ يماطل.
+//
+// **ولا يُخترع رقم:** ما لا يُعرف يُقال «غير معلوم» وتُذكر علّتُه بنصٍّ صريح، ولا يُكتب
+// صفرًا يُضلّل المجموع.
+
+import { ENUMS } from '../data/schema.js';
+
+const DAY = 86400000;
+const YEAR = 365 * DAY;
+
+/**
+ * **قيمةُ التملّك** — أساسُ كسر العائد، ولا يصحّ العائد بغيره.
+ *
+ * وفي النظام حقلُ `price` واحدٌ يحمل معنيين بحسب غرض العرض: **ثمنَ تملّكٍ** لعرض البيع
+ * أو الاستثمار، و**أجرةً سنويّة** لعرض الإيجار. وقسمةُ الأجرة على الأجرة عائدٌ كاذبٌ
+ * مئةٌ بالمئة — فلا تُحسب، ويُقال سببُ امتناعها.
+ *
+ * @returns {{ value: number|null, reason: string }}
+ */
+export function capitalValue(property) {
+  const price = Number(property?.price);
+  const purposes = property?.purposes || [];
+  if (!Number.isFinite(price) || price <= 0) return { value: null, reason: 'سعر العقار غير مُدخل' };
+  // إيجارٌ وحده: السعرُ أجرةٌ سنويّةٌ لا ثمنَ تملّك.
+  if (purposes.length && purposes.every((k) => k === 'rent')) {
+    return { value: null, reason: 'السعر المسجَّل أجرةٌ سنويّة لا ثمنَ تملّك — أضِف عرض بيعٍ أو استثمارٍ ليُحسب العائد' };
+  }
+  return { value: price, reason: '' };
+}
+
+/** أحدثُ صفقةٍ مربوطةٍ بكل عقار — هي عقدُه الساري. */
+export function dealsByProperty(deals = []) {
+  const map = new Map();
+  for (const d of deals) {
+    if (!d.propertyId) continue;
+    const cur = map.get(d.propertyId);
+    if (!cur || String(d.date || '') > String(cur.date || '')) map.set(d.propertyId, d);
+  }
+  return map;
+}
+
+/**
+ * **سطرُ عقارٍ واحدٍ في المحفظة**: المتوقَّعُ سنةً أمامنا، والواقعُ سنةً خلفنا.
+ *
+ * • **المتوقَّع** — مجموعُ الدفعات المجدوَلة المستحقّة في الاثني عشر شهرًا القادمة. فإن لم
+ *   يكن جدولٌ أصلًا، وكان العرضُ للإيجار بسعرٍ معلوم، فالسعرُ أجرةٌ سنويّةٌ يُؤخذ بها.
+ * • **الواقع** — مجموعُ ما **قُبض فعلًا** في الاثني عشر شهرًا الماضية، بتاريخ قبضه.
+ * • **الفجوة** — ما استُحقّ في السنة الماضية ولم يُقبض. وهي التي تُطارَد.
+ */
+export function portfolioRow({ property, deal = null, now = Date.now() } = {}) {
+  const { value, reason } = capitalValue(property);
+  const payments = (deal?.payments || []).filter((p) => p.dueAt || p.paidAt);
+
+  const inWindow = (iso, from, to) => {
+    const t = new Date(iso).getTime();
+    return Number.isFinite(t) && t >= from && t < to;
+  };
+
+  const expectedRows = payments.filter((p) => p.dueAt && inWindow(p.dueAt, now, now + YEAR));
+  let expected = expectedRows.reduce((a, p) => a + (Number(p.amount) || 0), 0);
+  let expectedFrom = expectedRows.length ? 'جدول الدفعات' : '';
+  if (!expectedRows.length) {
+    const askRent = (property?.purposes || []).includes('rent') ? Number(property?.price) : NaN;
+    if (Number.isFinite(askRent) && askRent > 0) { expected = askRent; expectedFrom = 'الأجرة المعروضة'; }
+    else { expected = null; expectedFrom = ''; }
+  }
+
+  const actualRows = payments.filter((p) => p.paidAt && inWindow(p.paidAt, now - YEAR, now));
+  const actual = actualRows.reduce((a, p) => a + (Number(p.amount) || 0), 0);
+
+  // ما فات موعدُه في السنة الماضية ولم يُقبض — لا ما استُحقّ اليوم.
+  const missedRows = payments.filter((p) => !p.paidAt && p.dueAt && inWindow(p.dueAt, now - YEAR, now));
+  const missed = missedRows.reduce((a, p) => a + (Number(p.amount) || 0), 0);
+
+  const pct = (n) => (value && Number.isFinite(n) && n != null ? (n / value) * 100 : null);
+
+  return {
+    property,
+    deal,
+    value,
+    valueReason: reason,
+    expected,
+    expectedFrom,
+    actual,
+    actualRows: actualRows.length,
+    missed,
+    missedCount: missedRows.length,
+    expectedYield: pct(expected),
+    actualYield: pct(actual),
+    // فجوةُ التحصيل نسبةً: كم من المستحقّ وصل فعلًا؟ ولا نسبةَ بلا مستحقّ.
+    collectionRate: (actual + missed) > 0 ? (actual / (actual + missed)) * 100 : null,
+    hasLease: !!deal && payments.length > 0,
+  };
+}
+
+/**
+ * **محفظةُ مالكٍ واحد**: كلُّ ما يملكه، وما يعود عليه، ومجاميعُ ذلك.
+ *
+ * والمجاميعُ لا تُجمع إلّا ممّا عُرف: عقارٌ مجهولُ القيمة يُعدّ ويُسمّى، ولا يدخل
+ * كسرَ العائد فيُفسده.
+ */
+export function investorPortfolio({ ownerId, properties = [], deals = [], now = Date.now() } = {}) {
+  const byProperty = dealsByProperty(deals);
+  const mine = properties.filter((p) => p.ownerId && p.ownerId === ownerId);
+  const rows = mine.map((p) => portfolioRow({ property: p, deal: byProperty.get(p.id) || null, now }));
+
+  const priced = rows.filter((r) => r.value != null);
+  const value = priced.reduce((a, r) => a + r.value, 0);
+  const expected = rows.reduce((a, r) => a + (r.expected || 0), 0);
+  const actual = rows.reduce((a, r) => a + r.actual, 0);
+  const missed = rows.reduce((a, r) => a + r.missed, 0);
+
+  return {
+    rows: rows.sort((a, b) => (b.value || 0) - (a.value || 0)),
+    count: rows.length,
+    unpriced: rows.length - priced.length,
+    value,
+    expected,
+    actual,
+    missed,
+    // العائدُ الكلّيّ يُقسم على قيمة ما عُرفت قيمتُه وحده — وعددُ المجهول يُقال فوقه.
+    expectedYield: value > 0 ? (expected / value) * 100 : null,
+    actualYield: value > 0 ? (actual / value) * 100 : null,
+    withoutLease: rows.filter((r) => !r.hasLease).length,
+  };
+}
+
+/** نسبةٌ مئويّةٌ بمنزلةٍ واحدة — أو `null` كما هي، فلا تُطبع «٠٪» على مجهول. */
+export const yieldPct = (n) => (n == null || !Number.isFinite(n) ? null : Math.round(n * 10) / 10);
+
+/** هل يُعنى هذا العميل بالاستثمار؟ غرضٌ مصرَّحٌ به، أو ملكيّةُ أكثرَ من عقار. */
+export function isInvestor(client, owned = 0) {
+  const purposes = client?.purposes || client?.purpose ? [].concat(client.purposes || client.purpose) : [];
+  return purposes.includes('investment') || owned > 1;
+}
+
+export const PURPOSE_LABELS = Object.fromEntries(ENUMS.purposes.map((p) => [p.key, p.label]));

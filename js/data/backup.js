@@ -283,9 +283,11 @@ export async function mergeBackup(parsed) {
  * @param {object} parsed النسخة المقروءة
  * @param {{ keep }} options `keep` مفاتيح لا تُستبدل — والخزنة منها دائمًا: عبارتها السرّية
  *   تخصّ هذا الجهاز، ونقلُها من نسخةٍ يعني كتابة عبارة جهازٍ آخر فوق عبارتك.
+ *   **و`user` مثلُها منذ المرحلة ٤٧**: هويّةُ الجهاز تخصّه، ونقلُها تجعل جهازَ موظّفك
+ *   يوقّع السجلّات باسمك — فتُنسب أعمالُه إليك ويسقط تمييزُ الفريق كلُّه.
  * @returns {{ moved: number, kept: string[] }}
  */
-export async function importSettings(parsed, { keep = ['vault'] } = {}) {
+export async function importSettings(parsed, { keep = ['vault', 'user'] } = {}) {
   const rows = Array.isArray(parsed?.db?.settings) ? parsed.db.settings : [];
   if (!rows.length) return { moved: 0, kept: [] };
   const out = [];

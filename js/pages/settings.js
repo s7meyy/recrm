@@ -4,7 +4,7 @@
 import { repo, getCurrentUser } from '../data/repository.js';
 import { ENUMS, COMPLETENESS_CANDIDATES, labelFor } from '../data/schema.js';
 import {
-  updateUserName, userHandle, getLists, addPropertyType, removePropertyType, addPropertyStatus, removePropertyStatus,
+  updateUserName, userHandle, getTeam, setTeam, getLists, addPropertyType, removePropertyType, addPropertyStatus, removePropertyStatus,
   addClientTag, removeClientTag, isBuiltinClientTag, addSource, removeSource, addCity, addDistrict, removeDistrict,
   getCustomFields, addCustomField, removeCustomField, getCompleteness, setCompleteness, getBackupInfo,
   getMatchingSettings, setMatchingSettings, DEFAULT_MATCHING, getZones, addZone, updateZone, removeZone,
@@ -20,7 +20,7 @@ import {
 import { pushSupported, enablePush, disablePush, currentSubscription, syncReminders } from '../util/push.js';
 import { TEMPLATE_VARS } from '../util/templates.js';
 import {
-  parseVCards, importContacts, buildVCards, buildCsv, CSV_EXPORTS,
+  parseVCards, importContacts, buildVCards, buildCsv, CSV_EXPORTS, supportsRange,
   parseCsv, CSV_IMPORTS, suggestMapping, previewImport, runImport,
 } from '../data/exchange.js';
 import { typeLabel as typeLabelOf, statusLabel as statusLabelOf, getUI, setUI } from '../data/settings.js';
@@ -31,7 +31,7 @@ import { requestFollowUpPermission } from '../util/follow-up-alerts.js';
 import { getPlans, setPlans, PLAN_TRIGGERS, PLAN_STEP_TYPES, SAMPLE_PLAN } from '../data/settings.js';
 import { getPlaybooks, setPlaybooks } from '../data/settings.js';
 import { exportBackup, downloadBlob, markExported, readBackupFile, importBackup } from '../data/backup.js';
-import { imagesSummary, formatBytes } from '../data/images.js';
+import { imagesSummary, formatBytes, storageStatus } from '../data/images.js';
 import { audioSummary } from '../data/audio.js';
 import { seedExists, insertSeed, clearSeed } from '../data/seed.js';
 import { el, clear, labeled, selectEl, checkbox, badge, confirmDialog, openModal, toast, appendChildren, debounce } from '../util/dom.js';
@@ -50,7 +50,8 @@ export async function render(container) {
   container.append(settingsNav(grid));
   container.append(grid);
   grid.append(
-    panel('المستخدم الحالي', 'اسمك يُسجَّل على كل ما تنشئه أو تعدّله (تمهيدًا لتعدد المستخدمين لاحقًا).', userBody),
+    panel('المستخدم الحالي', 'اسمك يُسجَّل على كل ما تنشئه أو تعدّله، ويظهر في السجلّات باسمك.', userBody),
+    panel('الفريق', 'أعضاء مكتبك: تُسنَد إليهم العملاء والعقارات والطلبات، وتُنسب السجلّات إليهم، ويُقاس عمل كل واحد. وهذا تمييزٌ وتنسيق لا حجب — اقرأ الحدّ المكتوب في اللوحة.', teamBody),
     panel('المظهر والتاريخ', 'فاتح أو داكن، وإظهار التاريخ الهجري مع الميلادي.', themeBody),
     panel('القفل التلقائي', 'يقفل التطبيق بعد مدّة بلا نشاط — لأن جوالًا على طاولة مجلس يعني قائمة عملائك مكشوفة. معطَّل حتى تضبط مدّته.', autoLockBody),
     panel('ترتيب صفحات القائمة الجانبية', 'رتّب الصفحات كما تريد رؤيتها في القائمة. كل الصفحات تبقى ظاهرة؛ الترتيب فقط هو ما يُحفظ.', sidebarOrderBody),
@@ -260,23 +261,22 @@ async function storageBody() {
     rows.push(el('dt', { text: 'الملاحظات الصوتية' }),
       el('dd', { text: `${countOf(voice.count, 'تسجيل')} — ${formatBytes(voice.bytes)}` }));
   }
+  // الحسابُ مشتركٌ في `storageStatus` (المرحلة ٤٧): كان هنا وحده، فكان الإنذارُ في
+  // الصفحة التي لا تُفتح في الجولة. وصار يُقرأ من «يومي» ومن صفحة الالتقاط أيضًا،
+  // **بقياسٍ واحدٍ لا قياسين يختلفان**.
   let warning = null;
-  if (navigator.storage?.estimate) {
-    try {
-      const est = await navigator.storage.estimate();
-      const usage = est.usage || 0;
-      const quota = est.quota || 0;
-      const pct = quota > 0 ? Math.round((usage / quota) * 100) : 0;
-      rows.push(el('dt', { text: 'المستخدم من المتصفح' }),
-        el('dd', { text: `${formatBytes(usage)} من ${formatBytes(quota)} متاحة${quota ? ` (${pct}٪)` : ''}` }));
-      // التحذير قبل الامتلاء لا بعده: الامتلاء **أثناء جولة ميدانية** يعني ضياع التقاط اليوم.
-      if (pct >= 80) {
-        warning = el('div', { class: 'notice notice-warn' },
-          el('strong', { text: `التخزين بلغ ${pct}٪ من المتاح. ` }),
-          'صدّر نسخة احتياطية الآن، ثم احذف صور العقارات المبيعة أو المؤجَّرة من نماذجها. ',
-          'وامتلاؤه أثناء جولة ميدانية يعني ضياع التقاط اليوم.');
-      }
-    } catch (_) { /* غير مدعوم */ }
+  const st = await storageStatus();
+  if (st.supported) {
+    rows.push(el('dt', { text: 'المستخدم من المتصفح' }),
+      el('dd', { text: `${formatBytes(st.usage)} من ${formatBytes(st.quota)} متاحة${st.quota ? ` (${st.pct}٪)` : ''}` }));
+    // التحذير قبل الامتلاء لا بعده: الامتلاء **أثناء جولة ميدانية** يعني ضياع التقاط اليوم.
+    if (st.low) {
+      warning = el('div', { class: 'notice notice-warn' },
+        el('strong', { text: `التخزين بلغ ${st.pct}٪ من المتاح. ` }),
+        st.imagesLeft != null ? `يكفي نحو ${countOf(st.imagesLeft, 'صورة')} تقريبًا. ` : '',
+        'صدّر نسخة احتياطية الآن، ثم احذف صور العقارات المبيعة أو المؤجَّرة من نماذجها. ',
+        'وامتلاؤه أثناء جولة ميدانية يعني ضياع التقاط اليوم.');
+    }
   }
   return el('div', {}, warning, el('dl', { class: 'kv' }, rows));
 }
@@ -1075,6 +1075,64 @@ async function companyBody(redraw) {
 }
 
 
+/* ===== الفريق (المرحلة ٤٧) ===== */
+
+/**
+ * أعضاءُ المكتب: إضافةً وتعطيلًا وإعادةَ تسمية.
+ *
+ * **ولا يُحذف عضو** — يُعطَّل. فسجلّاتُه القديمة منسوبةٌ إليه، وحذفُه يجعلها «غير معروف»،
+ * وذلك يُفسد كلَّ تقرير أداءٍ ماضٍ.
+ */
+async function teamBody(redraw) {
+  const [team, me] = await Promise.all([getTeam(), Promise.resolve(getCurrentUser())]);
+  const wrap = el('div', {});
+
+  for (const m of team) {
+    const nameInput = el('input', { class: 'input', type: 'text', value: m.name });
+    const isMe = m.id === me.id;
+    const activeBox = checkbox('عامل', {
+      checked: m.active !== false,
+      onChange: async (e) => {
+        await setTeam(team.map((x) => (x.id === m.id ? { ...x, active: e.target.checked } : x)));
+        toast(e.target.checked ? 'صار عاملًا' : 'عُطِّل — وسجلّاته باقيةٌ باسمه', 'success');
+      },
+    });
+    nameInput.addEventListener('change', async () => {
+      const next = team.map((x) => (x.id === m.id ? { ...x, name: nameInput.value } : x));
+      await setTeam(next);
+      if (isMe) await updateUserName(nameInput.value);   // اسمُ الجهاز واسمُ العضو واحد
+      toast('حُفظ الاسم', 'success');
+    });
+    wrap.append(el('div', { class: 'plan-step' },
+      nameInput,
+      isMe ? badge('هذا الجهاز', 'badge-ok') : null,
+      activeBox));
+  }
+
+  const newName = el('input', { class: 'input', type: 'text', placeholder: 'اسم العضو الجديد' });
+  const add = async () => {
+    const name = newName.value.trim();
+    if (!name) return;
+    // معرّفٌ محلّيّ يُولَّد هنا: لا حساباتٍ ولا خادم — هو وسمُ نسبةٍ لا هوّيةُ دخول.
+    await setTeam([...team, { id: `m${Date.now().toString(36)}`, name, active: true }]);
+    toast(`أُضيف ${name}`, 'success');
+    redraw();
+  };
+  newName.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
+
+  return el('div', {},
+    wrap,
+    el('div', { class: 'row' }, newName, el('button', { type: 'button', class: 'btn btn-sm', text: '+ عضو', onClick: add })),
+    el('div', { class: 'notice' },
+      el('strong', { text: 'حدُّ هذا معلَنٌ ولا يُخفى: ' }),
+      'هو تمييزٌ وتنسيق — تعرف من أدخل، وتوزّع العمل، وتقيس كلَّ واحد. ',
+      el('strong', { text: 'ولا يمنع أحدًا من رؤية شيء.' }),
+      ' فالتطبيق يعمل على قاعدةٍ في متصفّح كلّ جهاز، ومن فتح الجهاز وصل إلى ما فيه مهما أخفت الواجهة. ',
+      'والفصلُ الحقيقيّ يحتاج خادمًا يملك السجلّات ويصرّح بها سجلًّا سجلًّا — وذلك تحوّلٌ في بنية النظام لا إعدادٌ يُضاف.'),
+    el('p', { class: 'muted small', text: 'وعلى كل جهازٍ يعمل عليه أحدُهم: افتح «المستخدم الحالي» واكتب اسمه — فتُوقَّع سجلّاته باسمه.'
+      + ' وهويّةُ الجهاز لا تُنقل بـ«نقل الإعدادات»، فلا يوقّع جهازُ موظّفك باسمك.' }));
+}
+
 /* ===== الخزنة السحابية المشفَّرة (المرحلة ١٠) ===== */
 
 async function vaultBody(redraw) {
@@ -1310,6 +1368,29 @@ async function vaultBody(redraw) {
       + ' والأحدثُ كتابةً يغلب لكل سجلٍّ على حدة، والمحذوفُ يبقى محذوفًا.'
       + ' وما عُدّل في السجلّ نفسه من جهازين قبل أن يلتقيا: يبقى الأحدث ويذهب الآخر — وهذا حدُّها المعلَن.'
       + ' والصور والإعدادات خارجها: لكلٍّ زرُّه أعلاه.' }),
+    /* المزامنة بابًا لفريقك (المرحلة ٤٧) — بحدِّه مكتوبًا قبل أن يُفتح */
+    el('div', { class: 'panel-block' },
+      el('h3', { text: 'وهي تصلح لفريقك — بشرطها' }),
+      el('p', { class: 'muted small' },
+        'بُنيت لجهازيك أنت، ',
+        el('strong', { text: 'وهي نفسُها تصلح لجهازين لشخصين' }),
+        ': العبارةُ السرّية نفسُها على جهاز موظّفك، فيجتمع عملُكما ويُحترم ما حُذف.'),
+      el('p', { class: 'muted small' },
+        el('strong', { text: 'وحدُّها هو الذي يقرّر أتصلح لكم أم لا: ' }),
+        'عدّلتَ أنت وموظّفك السجلَّ نفسه قبل أن يلتقي الجهازان؟ يبقى الأحدثُ ويذهب الآخرُ بلا إنذار. ',
+        'فهي تنفع فريقًا يعمل على ',
+        el('strong', { text: 'عملاءَ متفرّقين' }),
+        '، ولا تنفع اثنين على سجلٍّ واحد.'),
+      el('p', { class: 'muted small' },
+        'ولذلك ',
+        el('strong', { text: 'الإسنادُ شرطُها لا رفاهيةٌ فيها' }),
+        ': أسنِد كلَّ عميلٍ وعقارٍ وطلبٍ إلى صاحبه، فيعمل كلٌّ في سجلّاته ولا يلتقيان على واحد. ',
+        el('a', { href: '#/settings', text: 'أعضاء المكتب في لوحة «الفريق» أعلاه' }),
+        '.'),
+      el('p', { class: 'muted small' },
+        el('strong', { text: 'وليست فصلًا بين المستخدمين: ' }),
+        'من فتح أيَّ جهازٍ منها وصل إلى كلّ ما فيه — النسخةُ تُنقل كاملةً. ',
+        'والفصلُ الحقيقيّ يحتاج خادمًا يملك السجلّات ويصرّح بها سجلًّا سجلًّا، وذلك تحوّلٌ في البنية وكلفةٌ شهريّة.')),
     el('div', { class: 'panel-block' }, el('h3', { text: 'نسخ البيانات (آخر ٥)' }), listBox),
     el('div', { class: 'panel-block' }, el('h3', { text: 'الصور' }), imagesBox,
       el('p', { class: 'muted small', text: 'الترتيب بين جهازين: استرجع الصور أوّلًا ثم ارفعها — فترفع دفعتك وفيها صور الجهازين، وتلتقي المكتبتان. والاسترجاع يضيف ولا يمحو.' }),
@@ -1414,13 +1495,33 @@ async function templatesBody(redraw) {
 
 /* ===== الاستيراد والتصدير (المرحلة ١١) ===== */
 
+/**
+ * **الربعُ المنقضي** بطرفيه — وهو المطلوب في العادة حين يُطلب ملفّ.
+ *
+ * المنقضي لا الجاري: ملفُّ ربعٍ لم ينتهِ ناقصٌ يُراجَع مرّتين.
+ */
+function lastQuarter(now = new Date()) {
+  const q = Math.floor(now.getMonth() / 3);
+  const startMonth = (q - 1) * 3;
+  const start = new Date(now.getFullYear(), startMonth, 1); // يعبر رأس السنة وحده إن كان الربع الأول
+  const end = new Date(start.getFullYear(), start.getMonth() + 3, 0);
+  const day = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return { from: day(start), to: day(end) };
+}
+
 async function exchangeBody(redraw) {
-  const [lists, clients] = await Promise.all([getLists(), repo.clients.list()]);
+  const [lists, clients, properties] = await Promise.all([getLists(), repo.clients.list(), repo.properties.list()]);
   const clientById = new Map(clients.map((c) => [c.id, c]));
+  const propertyById = new Map(properties.map((p) => [p.id, p]));
   const ctx = {
     typeLabel: (key) => typeLabelOf(lists, key),
     statusLabel: (key) => statusLabelOf(lists, key),
     clientName: (id) => { const c = clientById.get(id); return c ? (c.name || c.phone || '') : ''; },
+    // المصاريف والإيرادات تُربط بعقارٍ (المرحلة ٤٧): يُصدَّر باسمه لا بمعرّفه.
+    propertyLabel: (id) => {
+      const p = propertyById.get(id);
+      return p ? [typeLabelOf(lists, p.type), p.district, p.city].filter(Boolean).join(' — ') : '';
+    },
   };
 
   /* استيراد vCard */
@@ -1449,20 +1550,49 @@ async function exchangeBody(redraw) {
     },
   });
 
-  /* تصدير CSV */
+  /* تصدير CSV — بمدًى زمنيّ يُختار (المرحلة ٤٧): ملفُّ الربع لا ملفُّ العمر */
+  const fromInput = el('input', { class: 'input', type: 'date', title: 'من تاريخ' });
+  const toInput = el('input', { class: 'input', type: 'date', title: 'إلى تاريخ' });
+  const rangeHint = el('span', { class: 'muted small' });
+  const drawRangeHint = () => {
+    const { from, to } = csvRange();
+    rangeHint.textContent = from || to
+      ? `يُصدَّر ما بين ${from || 'البداية'} و${to || 'اليوم'} — والطرفان داخلان. وسجلٌّ بلا تاريخٍ لا يدخل مدًى.`
+      : 'بلا مدًى: يُصدَّر كلُّ شيء. حدِّد طرفًا أو طرفين ليضيق الملفّ على ما يطلبه محاسبُك.';
+  };
+  const csvRange = () => ({ from: fromInput.value || '', to: toInput.value || '' });
+  fromInput.addEventListener('input', drawRangeHint);
+  toInput.addEventListener('input', drawRangeHint);
+  drawRangeHint();
+
   const csvButtons = Object.entries(CSV_EXPORTS).map(([key, def]) => el('button', {
     type: 'button', class: 'btn btn-sm', text: def.label,
     onClick: async (e) => {
       const btn = e.currentTarget;
       btn.disabled = true;
       try {
-        const { blob, filename, count } = await buildCsv(key, ctx);
-        if (!count) { toast('لا بيانات لتصديرها', 'info'); return; }
+        const range = supportsRange(key) ? csvRange() : {};
+        const { blob, filename, count } = await buildCsv(key, ctx, range);
+        if (!count) {
+          toast(range.from || range.to ? 'لا سجلّ في هذا المدى' : 'لا بيانات لتصديرها', 'info');
+          return;
+        }
         downloadBlob(blob, filename);
         toast(`صُدّر ${countOf(count, 'سجل')}`, 'success');
       } catch (err) { errToast(err); } finally { btn.disabled = false; }
     },
   }));
+  const csvRangeRow = el('div', { class: 'plan-step' },
+    el('span', { class: 'field-label', text: 'المدى' }), fromInput, toInput,
+    el('button', {
+      type: 'button', class: 'btn btn-ghost btn-sm', text: 'الربع الماضي',
+      title: 'يملأ الطرفين بالربع المنقضي — وهو ما يُطلب في العادة',
+      onClick: () => { const q = lastQuarter(); fromInput.value = q.from; toInput.value = q.to; drawRangeHint(); },
+    }),
+    el('button', {
+      type: 'button', class: 'btn btn-ghost btn-sm', text: 'امسح المدى',
+      onClick: () => { fromInput.value = ''; toInput.value = ''; drawRangeHint(); },
+    }));
 
   /* استيراد CSV (المرحلة ١٨) */
   const csvImportInput = el('input', {
@@ -1523,6 +1653,8 @@ async function exchangeBody(redraw) {
     el('div', { class: 'panel-block' },
       el('h3', { text: 'تصدير إلى إكسل (CSV)' }),
       el('p', { class: 'muted small', text: 'ملف لكل جدول، بترميز يفتحه إكسل بالعربية مباشرة. للنسخ الاحتياطي الكامل استعمل التصدير أعلاه — CSV لا يحفظ الصور ولا يصلح للاستعادة.' }),
+      csvRangeRow,
+      rangeHint,
       el('div', { class: 'row' }, csvButtons)));
 }
 

@@ -8,6 +8,17 @@ const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
 const ok = (n, c, x = '') => console.log(`${c ? 'PASS' : 'FAIL'} — ${n}${x ? ' :: ' + x : ''}`);
 
+/**
+ * بوّابةُ ترخيص الإعلان (المرحلة ٤٧): عقارٌ بلا عقد وساطةٍ ولا ترخيصِ إعلان يُسأل عنه
+ * قبل النشر. وبياناتُ الاختبار بلا عقودٍ ولا تراخيص — فيُجاب السؤالُ صراحةً كما يُجيبه
+ * المستخدم: **«انشر الكلّ وأنا أعلم»**. والسؤالُ نفسُه مفحوصٌ في `publish-gate-unit`.
+ */
+async function answerLicenseGate(page) {
+  const btn = page.locator('.modal button:has-text("انشر الكلّ وأنا أعلم")');
+  try { await btn.waitFor({ timeout: 2500 }); await btn.click(); } catch (_) { /* لا مانعَ فلا سؤال */ }
+}
+
+
 await page.goto(BASE + '/');
 await page.fill('input[type="password"]', 'secret-pass');
 await page.click('button[type="submit"]');
@@ -25,6 +36,7 @@ await page.evaluate(async () => {
 await page.evaluate(() => { location.hash = '#/publish'; });
 await page.waitForTimeout(1500);
 await page.locator('button:has-text("نشر الآن")').click();
+await answerLicenseGate(page);
 await page.waitForTimeout(3500);
 
 /* إنشاء قائمة لعميل */
