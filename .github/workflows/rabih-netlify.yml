@@ -102,6 +102,13 @@ jobs:
           npm install --no-audit --no-fund
           echo "$RUNNER_TEMP/nl/node_modules/.bin" >> "$GITHUB_PATH"
 
+      - name: تثبيت اعتماديات الدوالّ
+        working-directory: ${{ runner.temp }}/site
+        run: |
+          # مخزن Netlify Blobs حزمةٌ واحدة؛ وبلا تثبيتها تردّ الدالّة برسالة
+          # «غير مهيّأ» بدل أن تنهار — لكن التثبيت هو الأصل.
+          if [ -f package.json ]; then npm install --omit=dev --no-audit --no-fund; fi
+
       - name: نشر
         id: deploy
         if: steps.guard.outputs.has_token == 'true'
