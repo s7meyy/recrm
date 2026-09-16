@@ -46,6 +46,7 @@ export function emptyReview() {
     language: '',
     likes: null,
     source: '',           // من أين جاء: paste | provider | places | json
+    platform: '',         // أي منصّة: google | hunger | jahez | talabat | tripadv | other
   };
 }
 

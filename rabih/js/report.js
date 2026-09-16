@@ -9,6 +9,11 @@ import { themeCss, coverHeader, footerLine, OFFICE_CSS } from './brand.js';
 import { extract as extractEntities } from './entities.js';
 import { analyze as analyzeReplies } from './replies.js';
 import { block as confidenceBlock } from './confidence.js';
+import { priorityBlock } from './priority.js';
+import { starsBlock } from './stars.js';
+import { voiceBlock } from './voice.js';
+import { impactBlock } from './impact.js';
+import { sourcesBlock } from './sources.js';
 
 const esc = (s) => String(s ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -293,6 +298,18 @@ code{background:#f3f5f8;padding:0 1mm;border-radius:3px;font-size:10pt}
 .bar-track{background:#eef1f5;border-radius:3px;height:5mm;overflow:hidden}
 .bar-fill{display:block;height:100%;background:linear-gradient(90deg,var(--navy),#3a6ea5)}
 .bar-value{font-size:10pt;color:var(--muted);text-align:left}
+.priority,.stars-calc,.voice,.impact,.sources{break-inside:avoid;margin:0 0 7mm}
+.prio .w-track{display:block;height:7px;background:#eef1f5;border-radius:4px;overflow:hidden;min-width:60px}
+.prio .w-fill{display:block;height:100%;background:var(--gold)}
+.prio .rid-cell{white-space:normal;line-height:1.9}
+.voice-cols{display:grid;grid-template-columns:1fr 1fr;gap:4mm;margin-bottom:4mm}
+.voice .q{margin:0 0 3mm;padding:3mm 4mm;border-radius:6px;border-inline-start:3px solid var(--line);background:#fafbfc;break-inside:avoid}
+.voice .q.neg{border-inline-start-color:#c0392b;background:#fdf6f5}
+.voice .q.pos{border-inline-start-color:#1e8449;background:#f5fbf7}
+.voice .q p{margin:0 0 2mm;font-size:10pt;line-height:1.85}
+.voice .q footer{font-size:8.5pt;color:var(--muted)}
+.impact .assume{padding:3mm 4mm;background:#fbfcfd;border:1px solid var(--line);border-radius:6px;margin-bottom:3mm;font-size:9.5pt}
+.impact .total{font-size:11pt;margin-top:3mm}
 .confidence{break-inside:avoid;margin:0 0 8mm;border:1px solid var(--line);border-radius:8px;padding:5mm 6mm;background:#fbfcfd}
 .honesty{margin-top:4mm;padding-top:3mm;border-top:1px dashed var(--line);font-size:9.5pt;color:#333}
 .honesty b{color:var(--navy)}
@@ -365,7 +382,8 @@ figcaption{font-size:9pt;color:var(--muted);margin-top:1mm;text-align:center}
  * @returns {string} HTML كامل مكتفٍ بذاته
  */
 export function buildReportHtml({ place, ctx = {}, markdown = '', photos = [], show = {}, font = null, identity = null, job = null }) {
-  const opt = { toc: true, stars: true, topics: true, photos: true, recency: true, entities: true, replies: true, confidence: true, ...show };
+  const opt = { toc: true, stars: true, topics: true, photos: true, recency: true, entities: true, replies: true, confidence: true,
+    priority: true, calc: true, voice: true, impact: true, sources: true, ...show };
   const s = stats(place);
   const body = tocFrom(mdToHtml(markdown));
   const date = new Date().toLocaleDateString('ar-SA-u-ca-gregory');
@@ -409,9 +427,14 @@ ${opt.toc ? body.toc : ''}
 ${opt.stars ? starBars(place) : ''}
 ${opt.recency ? recencyBlock(place) : ''}
 ${opt.topics ? topicsBlock(place) : ''}
+${opt.sources ? sourcesBlock(place) : ''}
+${opt.priority ? priorityBlock(place) : ''}
 ${opt.entities ? entitiesReportBlock(place) : ''}
 ${opt.replies ? repliesReportBlock(place) : ''}
+${opt.voice ? voiceBlock(place) : ''}
 ${body.html}
+${opt.calc ? starsBlock(place, { perMonth: job?.assume?.perMonth || 0 }) : ''}
+${opt.impact ? impactBlock(place, { ...(job?.assume || {}), lossRate: (Number(job?.assume?.loss) || 25) / 100 }) : ''}
 ${opt.photos ? photosBlock(photos) : ''}
 </main>
 ${footer}

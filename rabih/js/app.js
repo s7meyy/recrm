@@ -19,7 +19,7 @@ import { recentVsOlder, monthly, alerts as recencyAlerts, topicAges } from './re
 import * as safe from './persist.js';
 import { brands, analyze, groupPrompt } from './group.js';
 import { buildGroupReportHtml } from './report.js';
-import { CHARTER, promptDesign, batchCount, promptNormalizeBatch } from './prompts.js';
+import { CHARTER, promptDesign, promptReplyDrafts, batchCount, promptNormalizeBatch } from './prompts.js';
 import * as identity from './brand.js';
 import * as lock from './lock.js';
 import * as queue from './queue.js';
@@ -34,9 +34,16 @@ import { TOPICS, addKeyword, removeKeyword, customKeywords, resetCustom } from '
 import { parsePopularTimes, parseQna, peakInsight, tagLanguages, qnaInsight, contextBlock } from './peak.js';
 import { fetchPlace, merge as mergePlace } from './places.js';
 import { fetchAllReviews, mergeReviews } from './reviews.js';
-import { runStep, pendingSteps } from './runner.js';
+import { runStep, pendingSteps, callModel } from './runner.js';
 import { dataStamp, staleSteps } from './stamp.js';
 import { checkSource, exclusionNote } from './integrity.js';
+import { priorities } from './priority.js';
+import { PLATFORMS, platformName, compareSources } from './sources.js';
+import { ledger, setClient } from './clients.js';
+import { push as cloudPush, pull as cloudPull, removeBox, newBoxId } from './cloud.js';
+import { publish as sharePublish, unpublish as shareUnpublish } from './share.js';
+import { ladder } from './stars.js';
+import { impact } from './impact.js';
 import { compare as compareOutputs, mergeHint } from './agreement.js';
 import * as history from './history.js';
 import * as tour from './tour.js';
@@ -133,8 +140,11 @@ function blankJob() {
     planInReport: false,
     models: {},
     designHtml: '',
+    replyDrafts: '',     // مسوّدات ردود المالك — اقتراحٌ لا يدخل التقرير
+    shareId: '',         // معرّف الرابط الخاص إن نُشر
     stamps: {},          // بصمة البيانات وقت إنتاج كل خطوة
     excluded: [],        // ما استُبعد بقرارك — يُحفَظ ويُقَرّ به، ولا يُمحى
+    assume: {},          // أرقام المالك للأثر المالي — فرضُه لا تقديرنا
     template: DEFAULT_TEMPLATE,
     font: null,          // { name, dataUrl } خط عربي يرفعه المستخدم
   };
@@ -475,6 +485,14 @@ function loadDataView() {
   renderContext();
   renderAnomaly();
   renderIntegrity();
+  for (const [id, key] of [['#as-ticket', 'ticket'], ['#as-monthly', 'monthly'], ['#as-loss', 'loss'], ['#as-permonth', 'perMonth']]) {
+    const el2 = $(id);
+    if (el2) el2.value = job.assume?.[key] ?? '';
+  }
+  renderSources();
+  renderPriority();
+  renderStars();
+  renderImpactPreview();
   renderPhotoChips();
 }
 
@@ -487,7 +505,9 @@ function bindDataView() {
 
   $('#d-reviews').addEventListener('input', (e) => { job.rawPaste = e.target.value; scheduleSave(); });
   $('#d-reviews').addEventListener('paste', () => setTimeout(doParse, 50));
-  $('#btn-parse').addEventListener('click', doParse);
+  fillPlatforms();
+  $('#btn-parse').addEventListener('click', () => doParse(false));
+  $('#btn-parse-add').addEventListener('click', () => doParse(true));
   $('#btn-clear-reviews').addEventListener('click', () => {
     if (!confirm('مسح التعليقات الملصوقة وما استُخرج منها؟')) return;
     $('#d-reviews').value = '';
@@ -497,6 +517,19 @@ function bindDataView() {
     message('#parse-msg', 'ok', '');
     scheduleSave();
   });
+
+  // أرقام المالك للأثر المالي: تُحفَظ وتُعاد حسابها أمامه فورًا.
+  for (const [id, key] of [['#as-ticket', 'ticket'], ['#as-monthly', 'monthly'], ['#as-loss', 'loss'], ['#as-permonth', 'perMonth']]) {
+    const el2 = $(id);
+    if (!el2) continue;
+    el2.addEventListener('input', (e) => {
+      job.assume = job.assume || {};
+      job.assume[key] = e.target.value === '' ? '' : Number(e.target.value);
+      renderImpactPreview();
+      if (key === 'perMonth') renderStars();
+      scheduleSave();
+    });
+  }
 
   $('#btn-places').addEventListener('click', onFetchPlaces);
   $('#btn-fetch-reviews').addEventListener('click', onFetchReviews);
@@ -610,7 +643,27 @@ async function onFetchPlaces() {
   message('#places-msg', 'ok', 'تمّ الجلب من قوقل.', lines);
 }
 
-function doParse() {
+/** يملأ قائمة المنصّات مرةً واحدة. */
+function fillPlatforms() {
+  const sel = $('#d-platform');
+  if (!sel || sel.options.length) return;
+  sel.innerHTML = PLATFORMS.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
+}
+
+/** مقارنة المصادر — لا تظهر إلا إذا لُصق أكثر من منصّة. */
+function renderSources() {
+  const box = $('#sources-box');
+  if (!box) return;
+  const c = compareSources(job.place);
+  if (!c.ok) { box.innerHTML = ''; return; }
+  box.innerHTML = `<h3 class="mini-h">مقارنة المصادر</h3>
+    <div class="table-wrap"><table class="mini"><thead><tr><th>المصدر</th><th>التعليقات</th><th>المتوسط</th><th>السلبي</th></tr></thead><tbody>${
+      c.platforms.map((p) => `<tr><td><b>${esc(p.name)}</b></td><td>${p.count}</td><td>${p.average ?? '—'}</td><td>${p.negShare === null ? '—' : p.negShare + '%'}</td></tr>`).join('')
+    }</tbody></table></div>
+    ${c.gaps.length ? `<ul class="fine">${c.gaps.slice(0, 4).map((g) => `<li><b>${esc(g.name)}</b>: ${g.highShare}% في ${esc(g.high)} مقابل ${g.lowShare}% في ${esc(g.low)}</li>`).join('')}</ul>` : ''}`;
+}
+
+function doParse(append = false) {
   const raw = $('#d-reviews').value;
   job.rawPaste = raw;
   if (!raw.trim()) { message('#parse-msg', 'warn', 'المربع فارغ.'); return; }
@@ -625,7 +678,18 @@ function doParse() {
     return;
   }
 
-  job.place.reviews = reviews;
+  const before = append ? job.place.reviews.length : 0;
+  const platform = $('#d-platform')?.value || 'google';
+  const tagged = reviews.map((r) => ({ ...r, platform }));
+
+  /* «إضافة إلى ما سبق»: لصقُ منصّةٍ ثانية لا يمحو الأولى. والمكرّر لا يُضاف. */
+  if (append) {
+    const seen = new Set(job.place.reviews.map((r) => `${r.author}\u0000${r.text}`));
+    const fresh = tagged.filter((r) => !seen.has(`${r.author}\u0000${r.text}`));
+    job.place.reviews = [...job.place.reviews, ...fresh];
+  } else {
+    job.place.reviews = tagged;
+  }
   assignReviewIds(job.place);
 
   // إن لُصقت بطاقة المنشأة مع التعليقات، استفد منها دون أن تدهس ما أدخله المستخدم.
@@ -634,7 +698,11 @@ function doParse() {
   if (head.count && job.place.ratings.count === null) { job.place.ratings.count = head.count; $('#d-count').value = head.count; }
 
   const names = { json: 'JSON', structured: 'الصيغة الصريحة', loose: 'اللصق الخام' };
-  $('#parse-info').textContent = `${names[format]} — ${reviews.length} تعليقًا`;
+  // بعد الإضافة يُعرَض المجموع لا عدد اللصقة وحدها، وإلا ظنّ المستخدم أن ما سبق ضاع.
+  const totalNow = job.place.reviews.length;
+  $('#parse-info').textContent = append
+    ? `${names[format]} — أُضيف ${totalNow - before} · المجموع ${totalNow} تعليقًا`
+    : `${names[format]} — ${totalNow} تعليقًا`;
   $('#parse-info').className = 'badge ok';
 
   const v = validate(job.place);
@@ -650,8 +718,11 @@ function doParse() {
     notes.push('لإضافة النجوم: اكتب قبل كل تعليق سطرًا بصيغة <code>4 | الاسم | قبل شهر</code>، أو اجلبها كاملةً بزرّ «جلب كل التعليقات تلقائيًّا».');
   }
 
-  if (notes.length) message('#parse-msg', unrated === reviews.length ? 'warn' : (v.warnings.length ? 'warn' : 'ok'), `استُخرج ${reviews.length} تعليقًا. تنبيهات:`, notes);
-  else message('#parse-msg', 'ok', `استُخرج ${reviews.length} تعليقًا بنجاح.`);
+  const resultLine = append
+    ? `أُضيف ${totalNow - before} تعليقًا من ${platformName(platform)} — المجموع ${totalNow}.`
+    : `استُخرج ${totalNow} تعليقًا.`;
+  if (notes.length) message("#parse-msg", unrated === reviews.length ? "warn" : (v.warnings.length ? "warn" : "ok"), resultLine + " تنبيهات:", notes);
+  else message("#parse-msg", "ok", resultLine);
 
   renderParseStats();
   renderRecency();
@@ -661,6 +732,10 @@ function doParse() {
   renderContext();
   renderAnomaly();
   renderIntegrity();
+  renderSources();
+  renderPriority();
+  renderStars();
+  renderImpactPreview();
   scheduleSave();
 }
 
@@ -832,6 +907,55 @@ function renderAnomaly() {
  *
  * ولا تُجمِّل: إن وُجد نصٌّ لا يطابق مصدره قالت ذلك بالأحمر وسمّت التعليق.
  */
+/** أولويات الإصلاح — تُعرَض قبل تشغيل أي نموذج، فهي محسوبة لا مُستنتَجة. */
+function renderPriority() {
+  const box = $('#priority-box');
+  if (!box) return;
+  const rows = priorities(job.place, { limit: 6 });
+  if (!rows.length) { box.innerHTML = ''; return; }
+  const max = rows[0].weight || 1;
+  box.innerHTML = `<h3 class="mini-h">أولويات الإصلاح — بماذا يبدأ صاحب المحل</h3>
+    <div class="table-wrap"><table class="mini"><thead><tr><th>#</th><th>الموضوع</th><th>الوزن</th><th>لماذا</th></tr></thead><tbody>${
+      rows.map((r, i) => `<tr><td>${i + 1}</td><td><b>${esc(r.name)}</b></td>
+        <td><span class="w-track"><span class="w-fill" style="width:${Math.round((r.weight / max) * 100)}%"></span></span></td>
+        <td class="fine">${esc(r.why)}</td></tr>`).join('')
+    }</tbody></table></div>
+    <p class="fine">الوزن = تكرار الشكوى × حدّة تقييمها × حداثتها. محسوبٌ من بياناتك بلا نموذج.</p>`;
+}
+
+/** حاسبة النجوم — الجواب الحسابي على «كيف أرفع تقييمي؟». */
+function renderStars() {
+  const box = $('#stars-box');
+  if (!box) return;
+  const l = ladder(job.place.ratings?.average, job.place.ratings?.count, { perMonth: Number(job.assume?.perMonth) || 0 });
+  if (!l || !l.rows.length) {
+    box.innerHTML = job.place.ratings?.average
+      ? '' : '<p class="fine">أدخل متوسط التقييم وعدد التقييمات أعلاه لترى ما يلزم لرفعه.</p>';
+    return;
+  }
+  const four = l.rows.slice(0, 4).some((r) => r.fours !== null);
+  const rows = l.rows.slice(0, 4).map((r) => `<tr><td><b>${r.target}</b></td>
+    <td>${r.fives === null ? '—' : r.fives}</td>
+    ${four ? `<td>${r.fours === null ? '—' : r.fours}</td>` : ''}
+    <td>${r.months === null ? '—' : r.months + ' شهرًا'}</td></tr>`).join('');
+  box.innerHTML = `<h3 class="mini-h">ما الذي يلزم لرفع التقييم</h3>
+    <div class="table-wrap"><table class="mini"><thead><tr><th>الهدف</th><th>بخمس نجوم</th>${four ? '<th>أو بأربع</th>' : ''}<th>بمعدّلك</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="fine">تقييمٌ واحد بنجمة يُنزل متوسطك ${Math.abs(l.drop.one).toFixed(3)} — والمحافظة أرخص من التعويض.</p>`;
+}
+
+/** معاينة الأثر المالي بأرقام المالك — وتتغيّر أمامه كلما غيّرها. */
+function renderImpactPreview() {
+  const box = $('#impact-preview');
+  if (!box) return;
+  const a = job.assume || {};
+  const r = impact(job.place, { ticket: a.ticket, monthly: a.monthly, lossRate: (Number(a.loss) || 25) / 100 });
+  if (!r || !a.ticket || !a.monthly || !r.rows.length) { box.innerHTML = ''; return; }
+  const num = (n) => Number(n).toLocaleString('ar-SA');
+  box.innerHTML = `<div class="msg ok"><b>على فرضك: نحو ${num(r.totalRiyals)} ريال شهريًّا</b>
+    <p class="fine">${r.rows.slice(0, 3).map((x) => `${esc(x.name)}: ${num(x.riyals)}`).join(' · ')}</p>
+    <p class="fine">هذا يقيس حجم المشكلة على فرضك، ولا يزعم أنه إيرادٌ ضائع مقيس.</p></div>`;
+}
+
 function renderIntegrity() {
   const box = $('#integrity-box');
   if (!box) return;
@@ -1354,6 +1478,9 @@ function loadReportView() {
   renderConfidence();
   $('#d-design').value = job.designHtml || '';
   renderDesignState();
+  $('#d-replies').value = job.replyDrafts || '';
+  renderRepliesState();
+  if ($('#sh-url')) $('#sh-url').value = job.shareId ? `${location.origin}/r/${job.shareId}` : '';
   renderStaleReport();
   history.reset(job.id, $('#r-md').value);
   renderHistory();
@@ -1513,6 +1640,60 @@ const arrow = (d, goodIsUp = true) => {
 };
 
 let compareJobs = [];
+
+/**
+ * دفتر العملاء — يجيب عن سؤالين: مَن لم يُتابَع؟ وما الذي يُجدَّد قريبًا؟
+ *
+ * والحقول تُحرَّر في مكانها وتُحفَظ فور تركها، فلا نافذة ولا نموذج منفصل.
+ */
+async function renderClients() {
+  const box = $('#clients-box');
+  if (!box) return;
+  const jobs = await allJobs();
+  const { rows, totals } = ledger(jobs);
+  if (!rows.length) { box.innerHTML = '<div class="empty">لا منشآت في أرشيفك بعد.</div>'; return; }
+
+  const due = (r) => {
+    if (r.dueInDays === null) return '<span class="fine">—</span>';
+    if (r.dueInDays <= 0) return `<b class="err-text">مستحقّ الآن</b>`;
+    if (r.dueInDays <= 14) return `<b class="warn-text">بعد ${r.dueInDays} يومًا</b>`;
+    return `بعد ${r.dueInDays} يومًا`;
+  };
+
+  box.innerHTML = `<div class="stat-grid">
+      <div class="stat"><b>منشآت</b><span>${totals.places}</span></div>
+      <div class="stat"><b>تقارير مُسلَّمة</b><span>${totals.delivered}</span></div>
+      <div class="stat"><b>إيراد مُقدَّر</b><span>${totals.revenue.toLocaleString('ar-SA')} ريال</span></div>
+      <div class="stat"><b>تجديد خلال أسبوعين</b><span>${totals.dueSoon}</span></div>
+      <div class="stat"><b>متروك (٩٠ يومًا)</b><span>${totals.stale}</span></div>
+    </div>
+    <div class="table-wrap"><table class="mini clients"><thead><tr>
+      <th>المنشأة</th><th>المدينة</th><th>تقارير</th><th>آخر تقرير</th><th>جهة الاتصال</th><th>الجوال</th><th>الأتعاب</th><th>كل (شهر)</th><th>التجديد</th>
+    </tr></thead><tbody>${rows.map((r) => `<tr data-key="${esc(r.key)}"${r.stale ? ' class="stale-row"' : ''}>
+      <td><b>${esc(r.name)}</b>${r.stale ? ' <span class="chip warn">لم يُتابَع</span>' : ''}</td>
+      <td>${esc(r.city)}</td>
+      <td>${r.reports}</td>
+      <td>${r.lastDate ? esc(String(r.lastDate).slice(0, 10)) : '—'}${r.ageDays !== null ? `<div class="fine">منذ ${r.ageDays} يومًا</div>` : ''}</td>
+      <td contenteditable="true" class="c-field" data-f="contact">${esc(r.contact)}</td>
+      <td contenteditable="true" class="c-field" data-f="phone">${esc(r.phone)}</td>
+      <td contenteditable="true" class="c-field" data-f="fee">${r.fee || ''}</td>
+      <td contenteditable="true" class="c-field" data-f="everyMonths">${r.everyMonths || ''}</td>
+      <td>${due(r)}</td>
+    </tr>`).join('')}</tbody></table></div>
+    <p class="fine">اكتب في الخلايا مباشرةً — تُحفَظ عند تركها. والأتعاب والدورية عندك وحدك، ولا تدخل أي تقرير.</p>`;
+
+  box.querySelectorAll('.c-field').forEach((cell) => cell.addEventListener('blur', (e) => {
+    const key = e.target.closest('tr')?.dataset.key;
+    const row = rows.find((r) => r.key === key);
+    if (!row) return;
+    const f = e.target.dataset.f;
+    const raw = e.target.textContent.trim();
+    const val = (f === 'fee' || f === 'everyMonths') ? Number(raw) || 0 : raw;
+    // يُربَط بأي وظيفةٍ من وظائف هذه المنشأة: المفتاح واحد لها كلها.
+    const any = jobs.find((j) => row.jobIds.includes(j.id));
+    if (any) { setClient(any, { [f]: val }); renderClients(); }
+  }));
+}
 
 async function renderCompare() {
   compareJobs = await allJobs();
@@ -1891,6 +2072,224 @@ function renderDesignState() {
   badge.className = 'badge' + (v ? ' mid' : '');
 }
 
+/**
+ * مسوّدات الردود — تُكتب هنا ولا تدخل التقرير.
+ *
+ * وهي **اقتراحٌ للمالك** ينشره بنفسه، فلا تمرّ على مدقّق السند (لا تدّعي
+ * استنادًا إلى معرّفات) — لكنها تُبنى من الشكاوى بلا ردّ وحدها.
+ */
+function renderRepliesState() {
+  const badge = $('#replies-state');
+  if (!badge) return;
+  const pending = (job.place.reviews || []).filter((r) => ((r.rating !== null && r.rating <= 3)) && !(r.ownerReply || '').trim() && (r.text || '').trim()).length;
+  const has = ($('#d-replies')?.value || '').trim();
+  badge.textContent = pending ? `${pending} شكوى بلا ردّ${has ? ' · مسوّدات جاهزة' : ''}` : 'لا شكوى بلا ردّ';
+  badge.className = 'badge' + (pending ? (has ? ' ok' : ' mid') : ' ok');
+}
+
+/* ───────────── المزامنة والرصد والرابط الخاص ───────────── */
+
+const CLOUD_BOX = 'rabih:cloud-box';
+
+function bindCloud() {
+  const boxInput = $('#cl-box');
+  if (boxInput) boxInput.value = localStorage.getItem(CLOUD_BOX) || '';
+
+  const pass = () => ($('#cl-pass')?.value || '').trim();
+
+  $('#btn-cloud-push').addEventListener('click', async () => {
+    if (pass().length < 8) { message('#cloud-msg', 'err', 'كلمة السر ثمانية أحرف فأكثر — ونسيانها يعني ضياع النسخة.'); return; }
+    let id = localStorage.getItem(CLOUD_BOX);
+    if (!id) { id = newBoxId(); localStorage.setItem(CLOUD_BOX, id); $('#cl-box').value = id; }
+
+    message('#cloud-msg', 'warn', 'يُشفَّر في جهازك ثم يُرفَع…');
+    const jobs = await allJobs();
+    const r = await cloudPush(id, 'archive', { jobs, at: new Date().toISOString() }, pass());
+    if (!r.ok) {
+      message('#cloud-msg', 'err', r.error, r.needsStore
+        ? ['المخزن يعمل على Netlify وحدها، ويحتاج تفعيل Blobs للموقع.'] : []);
+      return;
+    }
+    message('#cloud-msg', 'ok', `رُفعت نسخة (${Math.round(r.bytes / 1024)} ك.ب).`, [
+      `احفظ معرّف صندوقك: ${id}`,
+      'وبلا كلمة السر لا تُفكّ النسخة — ولا نملك استعادتها لك.',
+    ]);
+  });
+
+  $('#btn-cloud-pull').addEventListener('click', async () => {
+    const id = ($('#cl-box')?.value || localStorage.getItem(CLOUD_BOX) || '').trim();
+    if (!id) { message('#cloud-msg', 'err', 'لا معرّف صندوق. ارفع نسخةً أولًا، أو ألصق معرّفك.'); return; }
+    if (pass().length < 8) { message('#cloud-msg', 'err', 'اكتب كلمة السر أولًا.'); return; }
+    if (!confirm('استعادة النسخة السحابية؟ ما يحمل المعرّف نفسه في أرشيفك سيُحدَّث بنسخة السحابة.')) return;
+
+    message('#cloud-msg', 'warn', 'يُجلَب ويُفكّ في جهازك…');
+    const r = await cloudPull(id, 'archive', pass());
+    if (!r.ok) { message('#cloud-msg', 'err', r.error); return; }
+    if (!r.found) { message('#cloud-msg', 'warn', 'لا نسخة في هذا الصندوق.'); return; }
+
+    let added = 0;
+    for (const j of r.data.jobs || []) { await saveJob(j); added += 1; }
+    localStorage.setItem(CLOUD_BOX, id);
+    message('#cloud-msg', 'ok', `استُعيد ${added} تقريرًا (نسخة ${String(r.updatedAt || '').slice(0, 16)}).`);
+    renderArchive();
+  });
+
+  $('#btn-cloud-copy').addEventListener('click', async () => {
+    const id = $('#cl-box')?.value;
+    if (id) toast(await copy(id) ? 'نُسخ المعرّف' : 'تعذّر النسخ');
+  });
+
+  $('#btn-cloud-del').addEventListener('click', async () => {
+    const id = localStorage.getItem(CLOUD_BOX);
+    if (!id) return;
+    if (!confirm('حذف النسخة من السحابة؟ أرشيفك في الجهاز لا يُمسّ.')) return;
+    await removeBox(id, 'archive');
+    message('#cloud-msg', 'ok', 'حُذفت النسخة السحابية. وأرشيفك في جهازك كما هو.');
+  });
+}
+
+function bindWatch() {
+  $('#btn-watch-sync').addEventListener('click', async () => {
+    const jobs = await allJobs();
+    const seen = new Set();
+    const places = [];
+    for (const j of jobs) {
+      const url = (j.mapsUrl || '').trim();
+      const name = j.place?.identity?.name || '';
+      if (!url || seen.has(url)) continue;
+      seen.add(url);
+      places.push({ id: j.id, name, url });
+    }
+    if (!places.length) { message('#watch-msg', 'warn', 'لا منشآت في أرشيفك بعد.'); return; }
+
+    const res = await fetch('/api/watch', {
+      method: 'PUT', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ places, at: new Date().toISOString() }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      message('#watch-msg', 'err', data.error || `تعذّر الرفع (${res.status}).`,
+        data.needsStore ? ['يعمل على Netlify وحدها.'] : []);
+      return;
+    }
+    $('#watch-state').textContent = `${places.length} منشأة مرصودة`;
+    $('#watch-state').className = 'badge ok';
+    message('#watch-msg', 'ok', `رُفعت قائمة الرصد: ${places.length} منشأة.`, [
+      'المرفوع الروابط وأسماؤها فقط — ولا تُرفَع تعليقات.',
+      'والجولة تعمل يوميًّا، وتحتاج مفتاح مزوّد للجلب.',
+    ]);
+  });
+
+  $('#btn-watch-run').addEventListener('click', async () => {
+    message('#watch-msg', 'warn', 'تعمل جولة… قد تستغرق دقائق بحسب عدد المنشآت.');
+    const res = await fetch('/api/watch');
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { message('#watch-msg', 'err', data.error || `تعذّرت الجولة (${res.status}).`); return; }
+    renderWatchResults(data);
+  });
+}
+
+/** نتيجة الجولة: ما تغيّر وما يستحقّ إنذارًا. */
+function renderWatchResults(data) {
+  const box = $('#watch-box');
+  if (!box) return;
+  const rows = data.results || [];
+  if (!rows.length) { message('#watch-msg', 'ok', data.note || 'لا منشآت مرصودة.'); box.innerHTML = ''; return; }
+
+  const alerts = rows.filter((r) => r.alerts?.length);
+  message('#watch-msg', alerts.length ? 'warn' : 'ok',
+    `فُحصت ${rows.length} منشأة — ${alerts.length ? `${alerts.length} تستحقّ نظرك` : 'لا تغيّر يستحقّ الإنذار'}.`);
+
+  box.innerHTML = `<div class="table-wrap"><table class="mini"><thead><tr>
+    <th>المنشأة</th><th>التعليقات</th><th>المتوسط</th><th>السلبي</th><th>ما تغيّر</th>
+  </tr></thead><tbody>${rows.map((r) => `<tr${r.alerts?.length ? ' class="stale-row"' : ''}>
+      <td><b>${esc(r.name || '—')}</b></td>
+      <td>${r.after?.count ?? '—'}${r.newOnes ? ` <span class="chip">+${r.newOnes}</span>` : ''}</td>
+      <td>${r.after?.average ?? '—'}${r.before?.average ? ` <span class="fine">(كان ${r.before.average})</span>` : ''}</td>
+      <td>${r.after?.negShare ?? '—'}%</td>
+      <td class="fine">${r.error ? esc(r.error) : (r.alerts?.length ? r.alerts.map((a) => esc(a.text)).join('<br>') : '—')}</td>
+    </tr>`).join('')}</tbody></table></div>`;
+}
+
+function bindShare() {
+  $('#btn-share-publish').addEventListener('click', async () => {
+    const pass = ($('#sh-pass')?.value || '').trim();
+    if (pass.length < 6) { message('#share-msg', 'err', 'كلمة سر التقرير ستّة أحرف فأكثر.'); return; }
+    const html = currentHtml();
+    if (!html) { message('#share-msg', 'err', 'لا تقرير لنشره.'); return; }
+
+    message('#share-msg', 'warn', 'يُشفَّر في جهازك ثم يُرفَع…');
+    const r = await sharePublish(html, pass, {
+      id: job.shareId || '',
+      meta: { name: job.place.identity.name, at: new Date().toISOString() },
+    });
+    if (!r.ok) {
+      message('#share-msg', 'err', r.error, r.needsStore ? ['يعمل على Netlify وحدها.'] : []);
+      return;
+    }
+    job.shareId = r.id;
+    scheduleSave();
+    $('#sh-url').value = r.url;
+    message('#share-msg', 'ok', 'نُشر.', [
+      'أرسل الرابط لعميلك، و<b>أرسل الكلمة في قناةٍ أخرى</b> — لا في الرسالة نفسها.',
+      'وإعادة النشر تُحدّث الرابط نفسه.',
+    ]);
+  });
+
+  $('#btn-share-copy').addEventListener('click', async () => {
+    const u = $('#sh-url')?.value;
+    if (u) toast(await copy(u) ? 'نُسخ الرابط' : 'تعذّر النسخ');
+  });
+
+  $('#btn-share-del').addEventListener('click', async () => {
+    if (!job.shareId) return;
+    if (!confirm('إلغاء الرابط؟ لن يفتحه عميلك بعدها.')) return;
+    await shareUnpublish(job.shareId);
+    job.shareId = '';
+    $('#sh-url').value = '';
+    scheduleSave();
+    message('#share-msg', 'ok', 'أُلغي الرابط.');
+  });
+}
+
+function bindRepliesView() {
+  $('#btn-replies-prompt').addEventListener('click', async () => {
+    const text = promptReplyDrafts(job.place, job.ctx);
+    toast(await copy(text) ? 'نُسخت رسالة المسوّدات — ألصقها في النموذج' : 'تعذّر النسخ');
+  });
+
+  $('#btn-replies-run').addEventListener('click', async () => {
+    const btn = $('#btn-replies-run');
+    btn.disabled = true;
+    message('#replies-msg', 'warn', 'يُشغَّل النموذج…');
+    const ta = $('#d-replies');
+    ta.value = '';
+    const r = await callModel('deepseek/deepseek-chat-v3:free', promptReplyDrafts(job.place, job.ctx), {
+      onChunk: (_p, whole) => { ta.value = whole; ta.scrollTop = ta.scrollHeight; },
+    });
+    btn.disabled = false;
+    if (!r.ok) {
+      ta.value = '';
+      message('#replies-msg', 'err', r.error, r.needsKey ? ['أضف OPENROUTER_KEY في متغيّرات البيئة على Netlify.'] : []);
+      return;
+    }
+    job.replyDrafts = r.text;
+    ta.value = r.text;
+    scheduleSave();
+    renderRepliesState();
+    message('#replies-msg', 'ok', 'جاهزة — راجعها قبل نشرها، فهي اقتراحٌ لا قرار.');
+  });
+
+  $('#d-replies').addEventListener('input', (e) => { job.replyDrafts = e.target.value; scheduleSave(); renderRepliesState(); });
+  $('#btn-replies-copy').addEventListener('click', async () => {
+    toast(await copy($('#d-replies').value) ? 'نُسخت المسوّدات' : 'تعذّر النسخ');
+  });
+  $('#btn-replies-dl').addEventListener('click', () => {
+    const t = $('#d-replies').value;
+    if (t.trim()) download(reportFileName('replies.md'), t, 'text/markdown;charset=utf-8');
+  });
+}
+
 function bindDesignView() {
   $('#btn-design-prompt').addEventListener('click', async () => {
     const text = promptDesign(reportMarkdown(), job.place, job.ctx);
@@ -2076,6 +2475,7 @@ function bindReportView() {
 /* ───────────────────────── الأرشيف ───────────────────────── */
 
 async function renderArchive(filter = '') {
+  renderClients();
   const host = $('#archive-tree');
   const jobs = await allJobs();
   const q = filter.trim();
@@ -2561,6 +2961,10 @@ async function boot() {
   bindReportView();
   bindPlanView();
   bindOutputView();
+  bindCloud();
+  bindWatch();
+  bindShare();
+  bindRepliesView();
   bindDesignView();
   bindHistory();
   bindFreeze();

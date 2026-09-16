@@ -173,6 +173,18 @@
         </div>
       </div>
       <div id="context-box"></div>
+
+      <details class="sub-card">
+        <summary>أرقامك للأثر المالي (اختياري) — تُدخَل مرة فتُحسَب السيناريوهات</summary>
+        <p class="hint">لا نستورد نسبًا من دراساتٍ عن أسواق أخرى. أدخل رقميك، وأنت تُقرّ الفرض، فيُحسَب أمامك ويُكتَب في التقرير مقرونًا بمصدره.</p>
+        <div class="grid c3">
+          <div class="field"><label for="as-ticket">متوسط الفاتورة (ريال)</label><input id="as-ticket" type="number" min="0" step="5" placeholder="85"></div>
+          <div class="field"><label for="as-monthly">عدد العملاء شهريًّا</label><input id="as-monthly" type="number" min="0" step="10" placeholder="800"></div>
+          <div class="field"><label for="as-loss">كم من الشاكين لا يعود؟ (%)</label><input id="as-loss" type="number" min="0" max="100" step="5" placeholder="25"></div>
+        </div>
+        <div class="field"><label for="as-permonth">كم تقييمًا جديدًا تتلقّى شهريًّا؟ (لحساب المدة)</label><input id="as-permonth" type="number" min="0" step="1" placeholder="8"></div>
+        <div id="impact-preview"></div>
+      </details>
       <div class="field"><label for="d-notes">ملاحظاتك أنت (تُعامَل كبيانات موثوقة)</label><textarea id="d-notes" placeholder="أي معلومة تعرفها عن المنشأة وتريد أن يأخذها التحليل بالحسبان."></textarea></div>
     </div>
 
@@ -183,7 +195,13 @@
         <textarea id="d-reviews" class="tall" placeholder="ألصق التعليقات هنا…"></textarea>
       </div>
       <div class="row">
+        <label class="inline-field" for="d-platform">مصدر هذا اللصق
+          <select id="d-platform"></select></label>
+        <span class="fine">ألصق كل منصّة على حدة: الفارق بينها تشخيصٌ بنفسه.</span>
+      </div>
+      <div class="row">
         <button type="button" class="btn ghost sm" id="btn-parse">تحليل اللصق</button>
+        <button type="button" class="btn ghost sm" id="btn-parse-add">إضافة إلى ما سبق</button>
         <button type="button" class="btn ghost sm" id="btn-clear-reviews">مسح</button>
         <span class="spacer"></span>
         <span id="parse-info" class="badge"></span>
@@ -191,7 +209,10 @@
       <div id="parse-msg"></div>
       <div class="stat-grid" id="parse-stats" hidden></div>
       <div id="recency-box"></div>
+      <div id="sources-box"></div>
       <div id="topics-box"></div>
+      <div id="priority-box"></div>
+      <div id="stars-box"></div>
       <div id="entities-box"></div>
       <div id="replies-box"></div>
     </div>
@@ -316,8 +337,28 @@
       <div id="plan-box"></div>
     </div>
 
+    <details class="card" id="replies-card">
+      <summary style="cursor:pointer;font-weight:700;color:var(--navy);font-size:17px">٩. مسوّدات ردود على الشكاوى (اختياري)</summary>
+      <p class="hint">أقوى ما بيد المالك وأرخصه: الردّ على الناقد. تُقترَح هنا مسوّدات <b>يراجعها هو وينشرها بنفسه</b> — وهي اقتراح لا بيانات، ولا تدخل التقرير.</p>
+      <div class="row">
+        <button type="button" class="btn sm" id="btn-replies-prompt">نسخ رسالة المسوّدات</button>
+        <button type="button" class="btn sm" id="btn-replies-run">▶ شغّل آليًّا</button>
+        <span class="spacer"></span>
+        <span class="badge" id="replies-state"></span>
+      </div>
+      <div id="replies-msg"></div>
+      <div class="field">
+        <label for="d-replies">المسوّدات</label>
+        <textarea id="d-replies" class="tall" placeholder="ألصق هنا ما ردّ به النموذج، أو شغّله آليًّا…"></textarea>
+      </div>
+      <div class="row">
+        <button type="button" class="btn ghost sm" id="btn-replies-copy">نسخ المسوّدات</button>
+        <button type="button" class="btn ghost sm" id="btn-replies-dl">تنزيلها</button>
+      </div>
+    </details>
+
     <details class="card" id="design-card">
-      <summary style="cursor:pointer;font-weight:700;color:var(--navy);font-size:17px">٩. إخراج مصمَّم من نموذج (اختياري)</summary>
+      <summary style="cursor:pointer;font-weight:700;color:var(--navy);font-size:17px">١٠. إخراج مصمَّم من نموذج (اختياري)</summary>
       <p class="hint">التقرير أعلاه يُبنى برمجيًّا ولا يحتاج نموذجًا. وهذا بابٌ لمن أراد تصميمًا من نموذج: انسخ الرسالة، ألصق ما يردّه، واعرضه أو نزّله.</p>
       <div class="msg warn">
         <b>لا يمرّ على المدقّقين.</b>
@@ -342,7 +383,20 @@
     </details>
 
     <div class="card">
-      <h2>١٠. الإرسال</h2>
+      <h2>١١. رابط خاص للعميل (بديلٌ عن الملف)</h2>
+      <p class="hint">يُرفَع التقرير <b>مشفَّرًا بكلمةٍ تختارها</b>، ويفتحه عميلك في جوّاله. ولا يقرؤه الخادم ولا نحن، ومن وجد الرابط بلا الكلمة لم ينل شيئًا.</p>
+      <div class="grid c2">
+        <div class="field"><label for="sh-pass">كلمة سر التقرير</label><input id="sh-pass" placeholder="ستّة أحرف فأكثر"></div>
+        <div class="field"><label for="sh-url">الرابط</label><input id="sh-url" readonly placeholder="يظهر بعد النشر"></div>
+      </div>
+      <div class="row">
+        <button type="button" class="btn" id="btn-share-publish">نشر على رابط</button>
+        <button type="button" class="btn ghost sm" id="btn-share-copy">نسخ الرابط</button>
+        <button type="button" class="btn danger sm" id="btn-share-del">إلغاء الرابط</button>
+      </div>
+      <div id="share-msg"></div>
+
+      <h2>١٢. الإرسال</h2>
       <p class="hint">احفظ الـPDF أولًا ثم أرفقه في القناة التي تختارها؛ النص التمهيدي يُجهَّز لك.</p>
       <div class="grid c2">
         <div class="field"><label for="s-phone">رقم الجوال (واتساب)</label><input id="s-phone" inputmode="tel" placeholder="9665xxxxxxxx"></div>
@@ -406,7 +460,13 @@
 
   <!-- الأرشيف -->
   <section class="view" id="view-archive" hidden>
-    <div class="card" id="safety-card">
+    
+    <div class="card" id="clients-card">
+      <h2>دفتر العملاء</h2>
+      <p class="hint">مبنيٌّ من أرشيفك: مَن لم يُتابَع، وما الذي يُجدَّد قريبًا. ولا يُدخَل يدويًّا إلا ما لا يعرفه الأرشيف.</p>
+      <div id="clients-box"></div>
+    </div>
+<div class="card" id="safety-card">
       <h2>حماية الأرشيف</h2>
       <p class="hint">تقاريرك محفوظة داخل متصفحك وحده. المتصفح قد يمسحها عند ضيق المساحة، و«مسح بيانات التصفح» يمحوها.</p>
       <div id="safety-box"></div>
@@ -474,6 +534,32 @@
     </div>
 
     <div class="card">
+      <h2>المزامنة السحابية (مطفأة ابتداءً)</h2>
+      <p class="hint">أرشيفك اليوم في متصفحٍ واحد: مسحُ بياناته يمحو عملك. وهذه نسخةٌ <b>مشفَّرة بكلمتك</b> تُفتَح على أي جهاز.
+      <b>والثمن مُعلَن:</b> البيانات تغادر جهازك مشفَّرةً بمفتاحٍ لا يصل الخادم — يحمل الصندوق ولا يملك مفتاحه.</p>
+      <div class="grid c2">
+        <div class="field"><label for="cl-pass">كلمة سر المزامنة</label><input id="cl-pass" type="password" placeholder="ثمانية أحرف فأكثر" autocomplete="new-password"></div>
+        <div class="field"><label for="cl-box">معرّف صندوقك</label><input id="cl-box" placeholder="يُولَّد عند أول رفع" readonly></div>
+      </div>
+      <div class="row">
+        <button type="button" class="btn sm" id="btn-cloud-push">رفع نسخة الآن</button>
+        <button type="button" class="btn ghost sm" id="btn-cloud-pull">استعادة من السحابة</button>
+        <button type="button" class="btn ghost sm" id="btn-cloud-copy">نسخ المعرّف</button>
+        <button type="button" class="btn danger sm" id="btn-cloud-del">حذف النسخة</button>
+      </div>
+      <div id="cloud-msg"></div>
+
+      <h2>الرصد الدوري والإنذار المبكر</h2>
+      <p class="hint">بمفتاح المزوّد تُجلَب تعليقات المنشآت المرصودة يوميًّا، ويُنبَّه عند تدهور. و<b>المرفوع أرقامٌ لا نصوص</b>: المتوسط والعدد ونسبة السلبي.</p>
+      <div class="row">
+        <button type="button" class="btn sm" id="btn-watch-sync">رفع قائمة الرصد من أرشيفك</button>
+        <button type="button" class="btn ghost sm" id="btn-watch-run">تشغيل جولة الآن</button>
+        <span class="spacer"></span>
+        <span class="badge" id="watch-state"></span>
+      </div>
+      <div id="watch-msg"></div>
+      <div id="watch-box"></div>
+
       <h2>محرّر القاموس</h2>
       <p class="hint">القاموس أوّليّ بطبعه، ولهجاتنا أوسع من أي قائمة تُكتَب مرة. أضف إليه ممّا يفوته في تعليقاتك الحقيقية، فيتحسّن كلما استعملته.</p>
       <div id="lex-uncovered"></div>

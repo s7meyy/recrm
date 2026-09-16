@@ -88,6 +88,8 @@ tests/reviews.mjs     اختبار موصّل المزوّد (بمزوّدين �
 tests/parse.mjs       اختبار المحلّل على لصقٍ واقعي من صفحة قوقل
 tests/runner.mjs      اختبار التشغيل الآلي (بنموذج مزيّف يبثّ)
 tests/integrity.mjs   اختبار شرط الأمانة: لا يُعدَّل تعليق ولا تقييم
+tests/features.mjs    اختبار الأولويات والنجوم والصوت والأثر والمصادر والرصد
+tests/cloud.mjs       اختبار التشفير والمخزن: هل يُقرأ المسروق؟
 ```
 
 ## النسخة المُسلَّمة
@@ -126,6 +128,8 @@ node tests/parse.mjs
 node tests/reviews.mjs
 node tests/runner.mjs
 node tests/integrity.mjs
+node tests/features.mjs
+node tests/cloud.mjs
 ```
 
 و`integrity.mjs` أوثق ما في المستودع: يفحص شرط الأداة — **لا يُعدَّل تعليق ولا تقييم ولو كان ذمًّا** — بذمٍّ عاميٍّ قاسٍ يمرّ في المسار كلّه، وبتحريفٍ مُفتعَل يجب أن يُكشَف، وبتلطيفٍ لاقتباس يجب أن يُردّ. إن سقط فالأداة فقدت سبب وجودها.

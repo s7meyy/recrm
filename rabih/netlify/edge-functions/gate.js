@@ -110,6 +110,14 @@ export default async (request, context) => {
 
   const url = new URL(request.url);
 
+  /* مسارٌ واحد يُستثنى: رابط التقرير الخاص وما يقرؤه من المخزن.
+     وإلا لطُولب عميلُك بكلمة سرّ موقعك — وهي لك لا له. ولا خطر في الاستثناء:
+     ما وراءه مشفَّرٌ لا يُفكّ إلا بكلمة التقرير، ومعرّفه عشوائيٌّ لا يُخمَّن. */
+  if (url.pathname.startsWith('/r/')
+      || (url.pathname === '/api/store' && request.method === 'GET')) {
+    return context.next();
+  }
+
   if (url.pathname === '/__logout') {
     return new Response(null, {
       status: 302,
