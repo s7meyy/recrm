@@ -220,9 +220,13 @@ for (const route of ROUTES) {
       const target = el.closest('label') || el;
       const r = target.getBoundingClientRect();
       if (!r.width || !r.height) continue;                 // مخفي
-      if (r.height < 30) out.push(`${el.className || el.tagName}:${Math.round(r.height)}`);
+      // **المسطرة ٤٤ لا ٣٠.** كانت ٣٠ والحزمةُ اسمُها «كافية» والقاعدةُ التي التزمها
+      // المشروع ٤٤ — فكلُّ ما بين الثلاثين والثلاثة والأربعين يمرّ أخضر. وقد أخفت هذا
+      // خمسةً وعشرين زرًّا في صفحة المهامّ وحدها، وأُصلح في المرحلة ٤٢ ما هبط دون الثلاثين
+      // فقط. **وعطبٌ في المسطرة يُخفي كلَّ ما بعده** (المرحلة ٤٣).
+      if (r.height < 44) out.push(`${el.className || el.tagName}:${Math.round(r.height)}`);
     }
-    return { small: out.slice(0, 4), scroll: document.documentElement.scrollWidth, inner: window.innerWidth };
+    return { small: out.slice(0, 8), scroll: document.documentElement.scrollWidth, inner: window.innerWidth };
   });
   if (bad.small.length) small.push(`${route} → ${bad.small.join(', ')}`);
   if (bad.scroll > bad.inner + 1) overflow.push(`${route} (${bad.scroll})`);

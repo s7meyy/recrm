@@ -70,11 +70,13 @@ function build(ctx) {
   const fillable = [...ctx.properties]
     .filter((p) => p.captureStatus === 'approved' && Number(p.area) > 0)
     .sort((a, b) => (a.price == null ? 0 : 1) - (b.price == null ? 0 : 1));
-  const fillSelect = selectEl({
-    options: fillable.map((p) => ({
-      value: p.id,
-      label: `${typeLabel(ctx.lists, p.type)} — ${p.district || p.city} — ${formatArea(p.area)}${p.price == null ? ' — بلا سعر' : ''}`,
-    })),
+  /* **تصفيةٌ فوق القائمة لا بدلًا منها** (المرحلة ٤٣): كانت عقاراتُك كلُّها في منسدلةٍ
+     واحدةٍ بلا بحث — تكفي خمسةَ عشرَ ولا تكفي مئةً، والمئاتُ هي الهدف المعلَن. والقائمةُ
+     تبقى قائمةً بقيمِها (فالمعرّف لا يضيع ولا يتبدّل تعاملُ بقيّة الصفحة معها)، ويُضاف
+     فوقها حقلٌ يحذف منها ما لا يوافق ما تكتب. */
+  const fillLabel = (p) => `${typeLabel(ctx.lists, p.type)} — ${p.district || p.city} — ${formatArea(p.area)}${p.price == null ? ' — بلا سعر' : ''}`;
+  const fillSelectEl = selectEl({
+    options: fillable.map((p) => ({ value: p.id, label: fillLabel(p) })),
     placeholder: 'أو املأ من عقار عندك…',
     value: '',
     onChange: (e) => {
@@ -87,6 +89,18 @@ function build(ctx) {
       build(ctx);
     },
   });
+  const fillFilter = el('input', {
+    class: 'input', type: 'search', 'aria-label': 'تصفية قائمة العقارات',
+    placeholder: `صفِّ القائمة… (${formatNumber(fillable.length)})`,
+  });
+  fillFilter.addEventListener('input', () => {
+    const q = fillFilter.value.trim().toLowerCase();
+    for (const opt of fillSelectEl.options) {
+      if (!opt.value) continue; // سطرُ العنوان يبقى دائمًا
+      opt.hidden = !!q && !opt.textContent.toLowerCase().includes(q);
+    }
+  });
+  const fillSelect = el('div', { class: 'row', style: { gap: '6px' } }, fillFilter, fillSelectEl);
 
   ctx.container.append(
     el('div', { class: 'page-head' },

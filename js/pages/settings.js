@@ -34,9 +34,9 @@ import { exportBackup, downloadBlob, markExported, readBackupFile, importBackup 
 import { imagesSummary, formatBytes } from '../data/images.js';
 import { audioSummary } from '../data/audio.js';
 import { seedExists, insertSeed, clearSeed } from '../data/seed.js';
-import { el, clear, labeled, selectEl, checkbox, badge, confirmDialog, openModal, toast, appendChildren } from '../util/dom.js';
+import { el, clear, labeled, selectEl, checkbox, badge, confirmDialog, openModal, toast, appendChildren, debounce } from '../util/dom.js';
 import { clientTagClass } from '../data/schema.js';
-import { formatDate, formatDateTime, relativeDays, setHijriMode, toInputDate, fromInputDate } from '../util/format.js';
+import { formatDate, formatDateTime, relativeDays, setHijriMode, formatNumber, countWord, toInputDate, fromInputDate } from '../util/format.js';
 import { hijriSupported } from '../util/hijri.js';
 
 const dataChanged = () => window.dispatchEvent(new CustomEvent('kassab:data-changed'));
@@ -45,6 +45,9 @@ export async function render(container) {
   clear(container);
   container.append(el('div', { class: 'page-head' }, el('h1', { text: 'الإعدادات' })));
   const grid = el('div', { class: 'settings-grid' });
+  // **فهرسٌ وبحث قبل الشبكة (المرحلة ٤٣):** الصفحةُ واحدٌ وعشرون لوحًا في نحو خمس عشرة
+  // شاشة، وكانت بلا تبويبٍ ولا فهرسٍ ولا بحث — فمن أراد «أوزان المعايير» مرّر بالتخمين.
+  container.append(settingsNav(grid));
   container.append(grid);
   grid.append(
     panel('المستخدم الحالي', 'اسمك يُسجَّل على كل ما تنشئه أو تعدّله (تمهيدًا لتعدد المستخدمين لاحقًا).', userBody),
@@ -73,9 +76,64 @@ export async function render(container) {
   );
 }
 
+/** معرّفٌ ثابت من العنوان — يصلح مرساةً للقفز إليه، ولا يتغيّر ما لم يتغيّر العنوان. */
+const panelId = (title) => 'set-' + String(title).replace(/\s+/g, '-');
+
+/**
+ * شريطُ قفزٍ وبحثٍ في أعلى الإعدادات.
+ *
+ * والبحثُ **يُخفي اللوحات غير الموافقة ولا يحذفها**، فحالتُها الداخلية (ما كتبتَه في حقلٍ
+ * ولم تحفظه) تبقى. ويُبنى من اللوحات نفسها بعد رسمها، فلا قائمةَ ثانيةٌ تُنسى حين تُضاف
+ * لوحةٌ جديدة.
+ */
+function settingsNav(grid) {
+  const chips = el('div', { class: 'chips settings-nav-chips' });
+  const search = el('input', {
+    class: 'input search', type: 'search', placeholder: 'ابحث في الإعدادات… (اسم اللوح أو وصفه)',
+    'aria-label': 'بحث في الإعدادات',
+  });
+  const count = el('span', { class: 'muted small' });
+
+  const panels = () => [...grid.querySelectorAll(':scope > .panel')];
+  const apply = () => {
+    const q = search.value.trim().toLowerCase();
+    let shown = 0;
+    for (const p of panels()) {
+      const hit = !q || (p.dataset.title || '').toLowerCase().includes(q) || p.innerText.toLowerCase().includes(q);
+      p.hidden = !hit;
+      if (hit) shown += 1;
+    }
+    for (const c of chips.children) {
+      const target = grid.querySelector('#' + CSS.escape(c.dataset.target || ''));
+      c.hidden = !!q && !!target && target.hidden;
+    }
+    count.textContent = q ? `${formatNumber(shown)} من ${formatNumber(panels().length)}` : '';
+  };
+  search.addEventListener('input', debounce(apply, 150));
+
+  // تُبنى الرقائق بعد أن تمتلئ الشبكة — والرسم متزامنٌ في `render`، فيكفي تأجيلٌ واحد.
+  setTimeout(() => {
+    clear(chips);
+    for (const p of panels()) {
+      chips.append(el('button', {
+        type: 'button', class: 'chip', text: p.dataset.title || '', 'data-target': p.id,
+        onClick: () => { p.scrollIntoView({ behavior: 'smooth', block: 'start' }); },
+      }));
+    }
+  }, 0);
+
+  // **`<nav>` لا `.panel`**: الفهرس يحمل عناوين اللوحات كلَّها نصًّا، فلو كان `.panel`
+  // أصابه كلُّ بحثٍ عن لوحٍ باسمه قبل اللوح نفسه. والوسمُ الدلاليّ أصحُّ هنا على كلّ حال.
+  return el('nav', { class: 'settings-nav', 'aria-label': 'فهرس الإعدادات' },
+    el('div', { class: 'row', style: { gap: '8px', flexWrap: 'wrap' } }, search, count),
+    chips);
+}
+
 function panel(title, desc, bodyFn, { ownerOnly = false } = {}) {
   const body = el('div');
-  const node = el('section', ownerOnly ? { class: 'panel', 'data-owner-only': '' } : { class: 'panel' },
+  const attrs = { class: 'panel', id: panelId(title), 'data-title': title };
+  if (ownerOnly) attrs['data-owner-only'] = '';
+  const node = el('section', attrs,
     el('h2', { text: title }), el('p', { class: 'panel-desc', text: desc }), body);
   const redraw = async () => {
     clear(body);
@@ -741,7 +799,8 @@ function trashTitle(entry) {
   return `${TRASH_LABELS[entry.store] || entry.store}${name ? ` — ${String(name).slice(0, 40)}` : ''}`;
 }
 
-async function trashBody(redraw) {
+// تُصدَّر ليبنيها المسارُ `#/trash` بلا نسخةٍ ثانيةٍ من الشاشة (المرحلة ٤٣).
+export async function trashBody(redraw) {
   const items = await repo.trash.list();
   if (!items.length) {
     return el('p', { class: 'muted small', text: 'السلة فارغة — لم تحذف شيئًا خلال الثلاثين يومًا الماضية.' });
@@ -772,11 +831,11 @@ async function trashBody(redraw) {
             await redraw();
           },
         }))))),
-    items.length > 40 ? el('p', { class: 'muted small', text: `و${items.length - 40} غيرها.` }) : null,
+    items.length > 40 ? el('p', { class: 'muted small', text: `و${countWord(items.length - 40, ['واحدٌ غيرها', 'اثنان غيرها', 'غيرها', 'غيرها'])}.` }) : null,
     el('div', { style: { marginTop: '10px' } }, el('button', {
       type: 'button', class: 'btn btn-ghost btn-sm', text: 'إفراغ السلة',
       onClick: async () => {
-        const ok = await confirmDialog({ title: 'إفراغ السلة', message: `حذف ${items.length} عنصرًا نهائيًا؟`, confirmText: 'إفراغ', danger: true });
+        const ok = await confirmDialog({ title: 'إفراغ السلة', message: `حذف ${countWord(items.length, ['عنصرٍ واحد', 'عنصرين', 'عناصر', 'عنصرًا'])} نهائيًا؟`, confirmText: 'إفراغ', danger: true });
         if (!ok) return;
         await repo.trash.clear();
         await redraw();

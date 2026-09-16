@@ -78,6 +78,7 @@ const SUITES = [
   ['offer-paste.mjs', OPEN],
   ['tasks-table.mjs', OPEN],
   ['extract.mjs', OPEN],
+  ['deals-router.mjs', OPEN],
   ['gate-and-publish.mjs', LOCKED],
   ['rename-and-vault.mjs', LOCKED],
   ['offer-pwa-push.mjs', LOCKED],

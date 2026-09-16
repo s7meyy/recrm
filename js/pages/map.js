@@ -20,7 +20,7 @@ import { ENUMS } from '../data/schema.js';
 import { LISTING_GROUPS, LISTING_VALUES, listingFilterOptions } from '../util/property-filters.js';
 import { el, clear, badge, checkbox, openModal, toast, appendChildren, allChip } from '../util/dom.js';
 import { orderRoute, routeLength, googleMapsRoute, MAX_STOPS } from '../util/route.js';
-import { formatNumber } from '../util/format.js';
+import { formatNumber, countWord } from '../util/format.js';
 import { MAP_SCHEMES, colorFor, legendFor, schemeValue, SCHEME_FILTER_GROUP, EXTERNAL_COLOR } from '../util/map-colors.js';
 
 const RIYADH_CENTER = [24.7136, 46.6753];
@@ -282,8 +282,10 @@ function renderNotice(ctx) {
   const wrap = ctx.nodes.notice;
   clear(wrap);
   const parts = [];
-  if (ctx.noLocationCount) parts.push(`${formatNumber(ctx.noLocationCount)} عقارًا معتمدًا`);
-  if (ctx.showExternal && ctx.noLocationExternalCount) parts.push(`${formatNumber(ctx.noLocationExternalCount)} عرضًا خارجيًا نشطًا`);
+  // `countWord` لا الرقمُ عاريًا: «٤ عرضًا خارجيًا» ليست عربيّة — وما بين الثلاثة والعشرة
+  // يُجمع. (المرحلة ٤٣)
+  if (ctx.noLocationCount) parts.push(countWord(ctx.noLocationCount, ['عقارٌ معتمدٌ واحد', 'عقاران معتمدان', 'عقارات معتمدة', 'عقارًا معتمدًا']));
+  if (ctx.showExternal && ctx.noLocationExternalCount) parts.push(countWord(ctx.noLocationExternalCount, ['عرضٌ خارجيٌّ نشط', 'عرضان خارجيّان نشطان', 'عروض خارجية نشطة', 'عرضًا خارجيًّا نشطًا']));
   if (!parts.length) return;
   wrap.append(el('div', { class: 'notice' },
     el('span', { text: `${parts.join(' و')} بلا موقع جغرافي محفوظ — لن يظهر هنا حتى تُضيف موقعه من نموذجه.` })));

@@ -1,6 +1,8 @@
 // مساعدات بناء الواجهة: إنشاء العناصر، النوافذ المنبثقة، التأكيد، التنبيهات.
 // لا يُستعمل innerHTML مع بيانات المستخدم أبدًا؛ النصوص تُدرج نصوصًا.
 
+import { formatDate, formatDateTime } from './format.js';
+
 const PROPS = new Set(['value', 'checked', 'disabled', 'selected', 'multiple', 'hidden', 'readOnly', 'required']);
 
 export function el(tag, attrs = null, ...children) {
@@ -78,6 +80,37 @@ export function debounce(fn, ms = 150) {
   };
 }
 
+/* ===== صدى التاريخ: ما اخترتَه مكتوبًا بالعربية ===== */
+
+/**
+ * حقلُ `input[type=date]` يرسمه المتصفّح بلغته هو لا بلغة الصفحة، فيظهر `mm/dd/yyyy`
+ * في واجهةٍ عربيّةٍ كلِّها — ولا يملك الموقع تبديلَ ذلك. واستبدالُ المنتقي الأصليّ بآخرَ
+ * مكتوبٍ بأيدينا يخسر لوحةَ التاريخ في الجوّال، وهي أنفعُ ما فيه. فبدل المنع: **صدًى تحت
+ * الحقل** يكتب ما اخترتَه بالعربية وبالتقويمين.
+ *
+ * **ومكانُها هنا لا في `app.js` (المرحلة ٤٣):** كانت تُستدعى على `#page` بعد كل رسم،
+ * والنوافذ تُرسَم في `#modal-root` **خارجه**. وقِيس: صفرُ حقلِ تاريخٍ في الصفحات، وثمانيةٌ
+ * في النوافذ — فالميزةُ كانت في الكود ولا تصل شيئًا. وهي هنا تُستدعى من `openModal` نفسها.
+ */
+export function echoDates(root) {
+  if (!root) return;
+  for (const input of root.querySelectorAll('input[type="date"], input[type="datetime-local"]')) {
+    if (input.dataset.echo) continue;
+    input.dataset.echo = '1';
+    input.lang = 'ar-SA'; // يُحترم في بعض المتصفّحات، ولا يضرّ حيث لا يُحترم
+    const withTime = input.type === 'datetime-local';
+    const out = el('div', { class: 'muted small date-echo' });
+    const draw = () => {
+      // `formatDateTime` تحتاج زمنًا كاملًا، و`datetime-local` تعطي «…T10:00» بلا منطقة.
+      out.textContent = input.value ? (withTime ? formatDateTime(new Date(input.value).toISOString()) : formatDate(input.value)) : '';
+    };
+    draw();
+    input.addEventListener('change', draw);
+    input.addEventListener('input', draw);
+    input.after(out);
+  }
+}
+
 /* ===== النوافذ المنبثقة ===== */
 
 export function openModal({ title, body, footer = null, size = null, onClose = null }) {
@@ -108,6 +141,7 @@ export function openModal({ title, body, footer = null, size = null, onClose = n
     bodyEl,
     footer ? el('div', { class: 'modal-foot' }, footer) : null,
   ]);
+  echoDates(box); // حقولُ التاريخ كلُّها تقريبًا داخل النوافذ لا الصفحات
   overlay.append(box);
   overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(); });
   document.addEventListener('keydown', onKey);

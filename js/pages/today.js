@@ -689,7 +689,12 @@ function build(container, d) {
   grid.append(section('متابعات اليوم', d.followUps.length,
     d.followUps.length
       ? el('div', {},
-        d.callWindow ? el('p', { class: 'muted small', text: `الفترة الآن: ${labelFor(ENUMS.contactTimes, d.callWindow)} — ومن يفضّلها مقدَّمٌ في الترتيب.` }) : null,
+        // **وخارجُ الفترات يُقال كذلك (المرحلة ٤٣):** كان السطر يختفي بعد العاشرة ليلًا وقبل
+        // السادسة صباحًا، فتظنّ الترتيب اعتباطًا وقد كان يُرتَّب بالفترة نهارًا. والصمتُ هنا
+        // يُفهَم خطأً — والصوابُ أن يُقال إنّ الوقت ليس وقتَ اتصالٍ أصلًا.
+        el('p', { class: 'muted small', text: d.callWindow
+          ? `الفترة الآن: ${labelFor(ENUMS.contactTimes, d.callWindow)} — ومن يفضّلها مقدَّمٌ في الترتيب.`
+          : 'الفترة الآن: خارج أوقات الاتصال (٦ صباحًا – ١٠ مساءً) — فالترتيب بالموعد وحده.' }),
         ...d.followUps.slice(0, 8).map(({ client, at }) => row(
           el('span', {}, clientName(client), ...(client.tags || []).filter(clientTagClass).map((t) => badge(t, clientTagClass(t))), callHints(client, d)),
           `موعد المتابعة: ${formatDate(at)}${new Date(at).getTime() < Date.now() ? ' — فات' : ''}`,

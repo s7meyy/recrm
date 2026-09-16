@@ -111,6 +111,14 @@ input[type="tel"].input, input[type="email"].input, input[type="url"].input {
   display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;
 }
 
+/* ===== فهرس الإعدادات (المرحلة ٤٣) ===== */
+.settings-nav {
+  position: sticky; top: var(--dhad-size-topbar); z-index: 2;
+  display: block; background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: var(--dhad-space-4); margin-bottom: var(--dhad-space-4);
+}
+.settings-nav-chips { margin-top: 8px; max-height: 132px; overflow-y: auto; }
+
 /* ===== شريط الفرز ===== */
 .filters { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
 .filter-row { display: flex; align-items: flex-start; gap: 10px; }
@@ -492,7 +500,10 @@ input[type="tel"].input, input[type="email"].input, input[type="url"].input {
 .task-card.task-done .task-title-btn { text-decoration: line-through; color: var(--muted); }
 .task-card-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
 .task-card-actions { margin-top: 6px; flex-wrap: wrap; }
-.task-card-actions .btn { padding: var(--dhad-space-1) var(--dhad-space-2); min-height: 32px; }
+/* **لا تصغر مساحة اللمس** — والقاعدةُ مكتوبةٌ فوق `.btn-sm` منذ البداية، وهذا السطر كان
+   ينقضها بـ٣٢ بكسلًا على خمسةٍ وعشرين زرًّا في صفحة المهامّ: الأسهمُ والتعديلُ والحذف على
+   كلّ بطاقة، وهي أكثرُ ما يُنقر فيها. مرّت لأنّ مسطرة الفحص كانت عند ٣٠ (المرحلة ٤٣). */
+.task-card-actions .btn { padding: var(--dhad-space-1) var(--dhad-space-2); }
 .task-quick-add { display: flex; gap: 6px; }
 .task-quick-add .input { min-height: 36px; padding: var(--dhad-space-1) var(--dhad-space-2); }
 
@@ -702,8 +713,9 @@ body.client-mode #client-mode-btn { background: var(--accent); color: #fff; }
 .health-group { margin-bottom: 14px; }
 .health-items { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .health-item {
-  display: flex; flex-direction: column; gap: 2px; text-decoration: none; color: inherit;
-  background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 10px;
+  display: flex; flex-direction: column; justify-content: center; gap: 2px; text-decoration: none; color: inherit;
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: var(--dhad-space-2) 10px; min-height: 44px; /* رابطٌ يُنقر ليفتح الصفحة، لا وسمًا يُقرأ */
 }
 .health-item:hover { border-color: var(--accent); background: var(--hover); }
 .health-item:active { background: var(--surface-2); }

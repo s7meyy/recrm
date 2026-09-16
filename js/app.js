@@ -10,11 +10,11 @@ import { startFollowUpAlerts } from './util/follow-up-alerts.js';
 import { initGlobalSearch } from './util/global-search.js';
 import { applySidebarOrder } from './util/sidebar.js';
 import { applyTheme } from './util/theme.js';
-import { setHijriMode, formatNumber, formatDate } from './util/format.js';
+import { setHijriMode, formatNumber } from './util/format.js';
 import { initVoiceBar } from './util/voice-bar.js';
 import { startAutoLock } from './util/auto-lock.js';
 import { initClientMode, applyClientMode, clientModeOn } from './util/client-mode.js';
-import { el, clear, toast } from './util/dom.js';
+import { el, clear, toast, echoDates } from './util/dom.js';
 import { daysWord } from './util/format.js';
 import * as todayPage from './pages/today.js';
 import * as dashboardPage from './pages/dashboard.js';
@@ -30,6 +30,8 @@ import * as pricingPage from './pages/pricing.js';
 import * as calendarPage from './pages/calendar.js';
 import * as invoicesPage from './pages/invoices.js';
 import * as expensesPage from './pages/expenses.js';
+import * as dealsPage from './pages/deals.js';
+import * as trashPage from './pages/trash.js';
 import * as publishPage from './pages/publish.js';
 import * as tasksPage from './pages/tasks.js';
 import * as notesPage from './pages/notes.js';
@@ -65,6 +67,8 @@ const ROUTES = {
   whatsapp: { title: 'واتساب', render: whatsappPage.render },
   invoices: { title: 'الفواتير وعروض الأسعار', render: invoicesPage.render },
   expenses: { title: 'المالية', render: expensesPage.render },
+  deals: { title: 'الصفقات', render: dealsPage.render },
+  trash: { title: 'سلة المحذوفات', render: trashPage.render },
   publish: { title: 'الصفحة العامة للعروض', render: publishPage.render },
   tasks: { title: 'المهام', render: tasksPage.render },
   notes: { title: 'الأفكار والملاحظات', render: notesPage.render },
@@ -101,9 +105,20 @@ async function initSidebarState() {
   });
 }
 
+/**
+ * اسمُ المسار، و`null` لمسارٍ مكتوبٍ لا وجودَ له.
+ *
+ * كان يُعيد الصفحةَ الافتراضية لأيّ شيء، فـ`#/zzz` تعرض «يومي» **والعنوانُ في شريط
+ * المتصفّح يبقى `#/zzz` وعنوانُ الصفحة «يومي»**. فمن حفظ رابطًا قديمًا أو أخطأ حرفًا رأى
+ * صفحةً صحيحةً في مكانٍ خطأ ولا يعرف لماذا. والفراغُ (`#` أو لا شيء) شأنٌ آخر: تلك
+ * صفحتُك الأولى لا خطأً (المرحلة ٤٣).
+ */
 function routeName() {
-  const m = /^#\/([\w-]+)/.exec(location.hash || '');
-  return m && ROUTES[m[1]] ? m[1] : DEFAULT_ROUTE;
+  const raw = location.hash || '';
+  if (!raw || raw === '#' || raw === '#/') return DEFAULT_ROUTE;
+  const m = /^#\/([\w-]+)/.exec(raw);
+  if (!m) return null;
+  return ROUTES[m[1]] ? m[1] : null;
 }
 
 /**
@@ -123,12 +138,24 @@ function markTableHeaders(root) {
 /** مساراتٌ كلّها مال: لا تُفتح بدور المساعد (المرحلة ٣٦). */
 // «واتساب» للمالك وحده (المرحلة ٣٨): الحملة تُرسل باسم المكتب وتُحاسَب عليه،
 // والوارد فيه أرقام العملاء وكلامهم.
-const OWNER_ONLY_ROUTES = new Set(['invoices', 'expenses', 'integrations', 'whatsapp']);
+// الصفقات صفحةُ عمولاتٍ كاملة، فهي كالفواتير والمالية: للمالك وحده (المرحلة ٤٣).
+const OWNER_ONLY_ROUTES = new Set(['invoices', 'expenses', 'deals', 'integrations', 'whatsapp']);
 
 async function navigate() {
   const name = routeName();
-  const route = ROUTES[name];
   const page = document.getElementById('page');
+  if (name === null) {
+    clear(page);
+    document.querySelectorAll('.sidebar-nav a').forEach((a) => { a.classList.remove('active'); a.removeAttribute('aria-current'); });
+    document.title = 'صفحة غير موجودة — كسّاب';
+    page.append(el('div', { class: 'empty' },
+      el('p', { class: 'strong', text: 'لا صفحة بهذا العنوان.' }),
+      el('p', { class: 'muted' }, 'المكتوب في شريط العنوان: ', el('span', { class: 'ltr', text: location.hash })),
+      el('p', { class: 'muted small', text: 'قد يكون رابطًا قديمًا، أو حرفًا سقط. واختر من القائمة الجانبية، أو ارجع إلى «يومي».' }),
+      el('a', { class: 'btn btn-primary', href: '#/today', text: 'إلى «يومي»' })));
+    return;
+  }
+  const route = ROUTES[name];
   // `aria-current="page"` لا الصنف وحده (المرحلة ٣٥): الصنف لونٌ يراه المبصر، والسمة هي
   // ما يقوله قارئ الشاشة — «الصفحة الحالية». وبدونها يسمع تسعة عشر رابطًا متساوية.
   document.querySelectorAll('.sidebar-nav a').forEach((a) => {
@@ -171,30 +198,6 @@ async function navigate() {
     page.append(el('div', { class: 'error-box' },
       el('strong', { text: 'تعذر عرض الصفحة' }),
       el('div', { text: err.message || String(err) })));
-  }
-}
-
-/* ===== صدى التاريخ: ما اخترتَه مكتوبًا بالعربية ===== */
-
-/**
- * حقلُ `input[type=date]` يرسمه المتصفّح بلغته هو لا بلغة الصفحة، فيظهر `mm/dd/yyyy`
- * في واجهةٍ عربيّةٍ كلِّها — ولا يملك الموقع تبديلَ ذلك. واستبدالُ المنتقي الأصليّ بآخرَ
- * مكتوبٍ بأيدينا يخسر لوحةَ التاريخ في الجوّال، وهي أنفعُ ما فيه.
- *
- * فبدل المنع: **صدًى تحت الحقل** يكتب ما اخترتَه بالعربية وبالتقويمين. فمن رأى
- * `09/15/2026` وشكَّ أيُّهما الشهر، قرأ تحته «١٥ سبتمبر ٢٠٢٦ · ٤ ربيع الآخر ١٤٤٨ هـ».
- */
-function echoDates(page) {
-  for (const input of page.querySelectorAll('input[type="date"]')) {
-    if (input.dataset.echo) continue;
-    input.dataset.echo = '1';
-    input.lang = 'ar-SA'; // يُحترم في بعض المتصفّحات، ولا يضرّ حيث لا يُحترم
-    const out = el('div', { class: 'muted small date-echo' });
-    const draw = () => { out.textContent = input.value ? formatDate(input.value) : ''; };
-    draw();
-    input.addEventListener('change', draw);
-    input.addEventListener('input', draw);
-    input.after(out);
   }
 }
 
