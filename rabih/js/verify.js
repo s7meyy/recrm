@@ -109,8 +109,10 @@ export function verify(output, place) {
 
   const coverage = known.size ? Number(((usedIds.length / known.size) * 100).toFixed(1)) : 0;
 
-  const problems = badIds.length + unsupported.length + numberIssues.length;
-  const level = badIds.length || numberIssues.length ? 'err' : (unsupported.length ? 'warn' : 'ok');
+  const misquotes = checkQuotes(text, place);
+
+  const problems = badIds.length + unsupported.length + numberIssues.length + misquotes.length;
+  const level = badIds.length || numberIssues.length || misquotes.length ? 'err' : (unsupported.length ? 'warn' : 'ok');
 
   const summary = problems === 0
     ? `مطابق: ${cited} حكمًا مسنودًا، واستُشهد بـ${usedIds.length} تعليقًا (${coverage}% من العيّنة).`
@@ -118,9 +120,44 @@ export function verify(output, place) {
         badIds.length ? `${badIds.length} معرّفًا لا وجود له` : '',
         unsupported.length ? `${unsupported.length} حكمًا بلا سند` : '',
         numberIssues.length ? `${numberIssues.length} رقمًا يخالف المحسوب` : '',
+        misquotes.length ? `${misquotes.length} اقتباسًا غُيِّر نصُّه` : '',
       ].filter(Boolean).join('، ')}.`;
 
-  return { score, cited, claims: claims.length, badIds, usedIds, unsupported, numberIssues, coverage, summary, level };
+  return { score, cited, claims: claims.length, badIds, usedIds, unsupported, numberIssues, misquotes, coverage, summary, level };
+}
+
+/** يُسوّى النصّ للمقارنة: علامات الاتجاه والفراغات والتنصيص لا تُغيّر الكلام. */
+function plain(t) {
+  return String(t || '')
+    .replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, '')
+    .replace(/[«»"'\u201c\u201d\u2018\u2019]/g, '')
+    .replace(/[…]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * الاقتباسات: هل نُقل كلام العميل كما كتبه؟
+ *
+ * الميثاق يأمر بالنقل الحرفي، والأمر وحده لا يكفي. فكل ما بين قوسي اقتباس
+ * في مخرج النموذج يُبحَث عنه في نصوص التعليقات: فإن لم يوجد فقد أُعيدت صياغته
+ * أو لُطِّف — ومن لطّف ذمًّا فقد زوّر شهادة صاحبه، وهذا خرقٌ لشرط الأداة لا
+ * مجرّد ركاكة. والقصير (أقل من ١٥ حرفًا) يُترك: قد يكون كلمةً عامة لا اقتباسًا.
+ */
+export function checkQuotes(output, place) {
+  const text = String(output || '');
+  const hay = (place?.reviews || []).map((r) => plain(r.text)).join('\n');
+  if (!hay) return [];
+
+  const out = [];
+  const seen = new Set();
+  for (const m of text.matchAll(/[«"\u201c]([^»"\u201d\n]{15,200})[»"\u201d]/g)) {
+    const q = plain(m[1]);
+    if (!q || seen.has(q)) continue;
+    seen.add(q);
+    if (!hay.includes(q)) out.push(q.slice(0, 90));
+  }
+  return out;
 }
 
 /** التعليقات التي لم يستشهد بها المخرج — قد تكون أُهملت. */

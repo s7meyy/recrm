@@ -300,3 +300,6 @@ select.model-pick{width:auto;min-width:150px;padding:6px 10px;font-size:13px}
 .steps .pill { font: inherit; cursor: pointer; }
 .steps .pill:hover:not(.locked) { border-color: var(--navy); }
 .steps .pill.locked { cursor: not-allowed; opacity: .6; }
+
+/* لوحة أمانة النقل في شاشة البيانات. */
+#integrity-box .chips { margin-top: 6px; }

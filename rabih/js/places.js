@@ -80,7 +80,7 @@ export function merge(place, incoming, { overwrite = false, photos = [], photoSi
     const key = `${r.rating}|${(r.text || '').trim()}`;
     if (seen.has(key)) { duplicates += 1; continue; }
     seen.add(key);
-    place.reviews.push({ ...r, id: '' });   // المعرّفات تُعاد كلها لتبقى متسلسلة
+    place.reviews.push({ ...r, id: '', source: r.source || 'places' });   // المعرّفات تُعاد كلها لتبقى متسلسلة
     added += 1;
   }
   if (added) {

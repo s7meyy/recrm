@@ -46,8 +46,11 @@
 
       <div class="grid c2">
         <div class="field">
-          <label for="f-region">المنطقة</label>
-          <select id="f-region"></select>
+          <label for="f-region">المنطقة / الدولة</label>
+          <div class="with-add">
+            <select id="f-region"></select>
+            <button type="button" class="btn ghost sm" id="btn-add-region">+ منطقة</button>
+          </div>
         </div>
         <div class="field">
           <label for="f-city">المدينة</label>
@@ -194,13 +197,19 @@
     </div>
 
     <div class="card">
-      <h2>٤. فحص سلامة العيّنة</h2>
+      <h2>٤. أمانة النقل</h2>
+      <p class="hint">شرطُ هذه الأداة: <b>لا يُعدَّل تعليق ولا تقييم، ولو كان ذمًّا.</b> وهذا فحصٌ يُثبته لا وعدٌ به: يُقارَن نصّ كل تعليق بمصدرك حرفًا بحرف.</p>
+      <div id="integrity-box"></div>
+    </div>
+
+    <div class="card">
+      <h2>٥. فحص سلامة العيّنة</h2>
       <p class="hint">إشارات على تعليقات قد تكون مفتعلة أو ناقصة. لا يُحذف شيء تلقائيًّا — القرار قرارك.</p>
       <div id="anomaly-box"></div>
     </div>
 
     <div class="card">
-      <h2>٥. صور المنشأة (اختياري)</h2>
+      <h2>٦. صور المنشأة (اختياري)</h2>
       <p class="hint">تُضمَّن داخل ملف التقرير نفسه فيبقى يعمل بلا إنترنت. الأفضل ٣ إلى ٦ صور.</p>
       <div class="field">
         <input id="d-photos" type="file" accept="image/*" multiple>

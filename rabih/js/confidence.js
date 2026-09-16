@@ -10,6 +10,7 @@ import { recentVsOlder } from './recency.js';
 import { scan } from './anomaly.js';
 import { verify } from './verify.js';
 import { audit } from './completeness.js';
+import { checkSource, exclusionNote } from './integrity.js';
 
 /** درجة خطّية بين حدّين، مقصوصة في [0,1]. */
 const ramp = (v, lo, hi) => {
@@ -108,6 +109,39 @@ export function score(job) {
 }
 
 /** كتلة تُوضَع في صدر التقرير المطبوع. */
+/**
+ * إقرار أمانة النقل — يُطبَع في التقرير الذي يصل العميل، لا في شاشةٍ عندك.
+ *
+ * فالقارئ من حقّه أن يعرف: هل النصوص كما كُتبت؟ وهل استُبعد شيء؟ وكم تعليقًا
+ * بلا تقييم؟ وإخفاء ذلك — ولو بحسن نيّة — يجعل التقرير أدقّ شكلًا وأكذب معنًى.
+ */
+function honesty(job) {
+  const place = job?.place || {};
+  const reviews = place.reviews || [];
+  const esc2 = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const lines = [];
+
+  const chk = checkSource(place, job?.rawPaste || '');
+  if (chk.checked) {
+    lines.push(chk.ok
+      ? `نصوص التعليقات مطابقة لمصدرها حرفًا بحرف (${chk.verbatim} من ${reviews.length} فُحصت بالمقارنة).`
+      : `<b>تنبيه: ${chk.altered} تعليقًا لا يطابق نصُّه المصدر.</b>`);
+  }
+  if (chk.unverifiable) {
+    lines.push(`${chk.unverifiable} تعليقًا جاء من جلبٍ آلي أو بلا نصّ، فلا مصدر نصّي لمقارنته.`);
+  }
+
+  const unrated = reviews.filter((r) => r.rating === null).length;
+  if (unrated) lines.push(`${unrated} تعليقًا بلا عدد نجوم — نصُّه محلَّل، ولا يدخل متوسط العيّنة ولا توزيعها.`);
+
+  const note = exclusionNote(job?.excluded || []);
+  if (note) lines.push(`<b>${esc2(note)}</b>`);
+
+  lines.push('لم يُعدَّل نصّ تعليق ولا تقييمه، ولم يُحذف شيء تلقائيًّا — والسلبي منقولٌ كما ورد.');
+
+  return `<div class="honesty"><b>أمانة النقل</b><ul>${lines.map((l) => `<li>${l}</li>`).join('')}</ul></div>`;
+}
+
 export function block(job) {
   const c = score(job);
   const esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -130,5 +164,6 @@ export function block(job) {
     ${c.caveats.length ? `<div class="alerts"><b>ما ينبغي أن يُقرأ معه</b><ul>${
       c.caveats.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
     <p class="fine">المقياس محسوب من البيانات نفسها: حجم العيّنة، ونسبتها من إجمالي التقييمات، وتغطية تواريخها، وسلامتها من الإشارات المريبة، ونسبة الأحكام المسنودة بمعرّفات، واكتمال التقرير مقابل ما رُصد.</p>
+    ${honesty(job)}
   </section>`;
 }

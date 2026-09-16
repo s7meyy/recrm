@@ -268,15 +268,18 @@ export function parseReviews(raw) {
   const text = String(raw || '').trim();
   if (!text) return { reviews: [], format: 'loose', dropped: 0 };
 
+  // يُوسَم كل تعليق بمصدره، فيُعرَف ما يمكن فحص نصّه بالمقارنة وما لا يمكن.
+  const tag = (list, src) => list.map((r) => ({ ...r, source: src }));
+
   const asJson = parseJson(text);
-  if (asJson && asJson.length) return { reviews: asJson, format: 'json', dropped: 0 };
+  if (asJson && asJson.length) return { reviews: tag(asJson, 'json'), format: 'json', dropped: 0 };
 
   const structured = parseStructured(text);
-  if (structured.length >= 2) return { reviews: structured, format: 'structured', dropped: 0 };
+  if (structured.length >= 2) return { reviews: tag(structured, 'paste'), format: 'structured', dropped: 0 };
 
   const loose = parseLoose(text);
   const usable = loose.filter((r) => (r.text || '').length > 1 || r.rating !== null);
-  return { reviews: usable, format: 'loose', dropped: loose.length - usable.length };
+  return { reviews: tag(usable, 'paste'), format: 'loose', dropped: loose.length - usable.length };
 }
 
 /** استخلاص بيانات الهوية من كتلة رأس صفحة قوقل مابز إن لُصقت. */

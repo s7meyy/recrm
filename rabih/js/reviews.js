@@ -59,7 +59,7 @@ export function mergeReviews(existing, incoming) {
   let empties = 0;
 
   for (const raw of incoming || []) {
-    const r = { ...emptyReview(), ...raw, id: '' };   // المعرّفات تُمنَح بعد الدمج
+    const r = { ...emptyReview(), ...raw, id: '', source: raw.source || 'provider' };
     if (!r.text && r.rating === null) { empties += 1; continue; }
     const f = fingerprint(r);
     if (seen.has(f)) { duplicates += 1; continue; }

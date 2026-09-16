@@ -3,7 +3,7 @@
 // وعند تفعيل الأتمتة لاحقًا تُرسَل هذه النصوص نفسها عبر الـAPI بلا تغيير.
 
 import { stats } from './schema.js';
-import { topicStats, uncovered } from './lexicon.js';
+import { topicStats, uncovered, topicsOf } from './lexicon.js';
 import { recentVsOlder, topicAges, alerts, monthly } from './recency.js';
 import { entitiesBlock } from './entities.js';
 import { repliesBlock } from './replies.js';
@@ -18,7 +18,9 @@ export const CHARTER = `# قواعد مُلزِمة (اقرأها قبل كل ش
 4. الأرقام المذكورة في قسمَي «الإحصاءات المحسوبة» و«المواضيع المرصودة آليًّا» نهائية ومحسوبة برمجيًا. انقلها كما هي ولا تعد حسابها ولا تقدّر أرقامًا أخرى.
 5. لا تعمّم من حالة واحدة. ميّز بين «تكرّر في عدة تعليقات» و«ورد مرة واحدة»، واذكر عدد المرات.
 6. لا تجامل ولا تبالغ؛ اذكر السلبي كما ورد بنصّه ومعناه.
-7. اكتب بالعربية الفصحى المهنية، ولا تخاطب المستخدم ولا تشرح ما ستفعله؛ ابدأ بالمطلوب مباشرة.`;
+7. **الاقتباس حرفيّ**: إذا نقلت كلام عميل فانقله كما كُتب — لا تصحّح لهجته ولا إملاءه ولا تُلطّف عبارته ولا تختصرها بما يغيّر وقعها. والذمّ يُنقَل كما قيل، ومَن خفّف ذمًّا فقد زوّر شهادة صاحبه.
+8. لا تُسقط شكوى لأنها قاسية، ولا تُرجّح مدحًا لأنه ألطف. الوزن للتكرار والدلالة، لا للطيب.
+9. اكتب بالعربية الفصحى المهنية، ولا تخاطب المستخدم ولا تشرح ما ستفعله؛ ابدأ بالمطلوب مباشرة.`;
 
 /** يبني كتلة البيانات التي تُرفَق بالرسائل. */
 export function buildDataBlock(place, ctx = {}) {
@@ -184,11 +186,42 @@ export const BATCH_REVIEWS = 60;
 /** كم دفعةً يحتاج هذا العدد من التعليقات؟ */
 export const batchCount = (n) => Math.max(1, Math.ceil(n / BATCH_REVIEWS));
 
+/**
+ * ترتيب التعليقات للتقسيم: **بالموضوع لا بترتيب ورودها**.
+ *
+ * الدفعة تُنظَّم وحدها، فإذا تفرّق كلام موضوعٍ واحد على دفعتين لم يرَ النموذج
+ * الصورة كاملة في أيٍّ منهما، فيقول «ورد مرة» عمّا تكرّر خمسًا. فتُجمَع
+ * تعليقات الموضوع الواحد معًا ما أمكن.
+ *
+ * **ولا يسقط تعليق ولا يتكرّر**: كل تعليق يُوضَع في موضوعه الأول فقط، وما لا
+ * موضوع له يُلحَق في الآخر. والمجموع مضمونٌ بفحصٍ دائم في الاختبارات.
+ */
+export function orderedForBatches(place) {
+  const reviews = place?.reviews || [];
+  const placed = new Set();
+  const buckets = new Map();
+
+  for (const r of reviews) {
+    const t = topicsOf(r.text || '')[0] || '';
+    if (!buckets.has(t)) buckets.set(t, []);
+    buckets.get(t).push(r);
+    placed.add(r.id);
+  }
+
+  // الموضوع الأكثر ورودًا أولًا، وبلا موضوعٍ في الآخر.
+  const groups = [...buckets.entries()]
+    .sort((a, b) => (a[0] === '' ? 1 : b[0] === '' ? -1 : b[1].length - a[1].length));
+
+  const out = groups.flatMap(([, list]) => list);
+  // حارسٌ: إن اختلّ شيء رُدَّ الترتيب الأصلي، ولا يُخاطَر بإسقاط تعليق.
+  return out.length === reviews.length ? out : reviews;
+}
+
 /** نسخةٌ من المنشأة بتعليقات دفعةٍ واحدة — والمعرّفات تبقى كما هي عالميًّا. */
 export function sliceForBatch(place, index) {
+  const ordered = orderedForBatches(place);
   const from = index * BATCH_REVIEWS;
-  const reviews = place.reviews.slice(from, from + BATCH_REVIEWS);
-  return { ...place, reviews };
+  return { ...place, reviews: ordered.slice(from, from + BATCH_REVIEWS) };
 }
 
 /**

@@ -294,6 +294,10 @@ code{background:#f3f5f8;padding:0 1mm;border-radius:3px;font-size:10pt}
 .bar-fill{display:block;height:100%;background:linear-gradient(90deg,var(--navy),#3a6ea5)}
 .bar-value{font-size:10pt;color:var(--muted);text-align:left}
 .confidence{break-inside:avoid;margin:0 0 8mm;border:1px solid var(--line);border-radius:8px;padding:5mm 6mm;background:#fbfcfd}
+.honesty{margin-top:4mm;padding-top:3mm;border-top:1px dashed var(--line);font-size:9.5pt;color:#333}
+.honesty b{color:var(--navy)}
+.honesty ul{margin:2mm 0 0;padding-inline-start:5mm}
+.honesty li{margin:1mm 0}
 .conf-head{display:flex;align-items:baseline;gap:4mm;margin:2mm 0 4mm}
 .conf-score{font-size:22pt;font-weight:800;color:var(--navy);line-height:1}
 .conf-level{font-size:11pt;color:var(--muted)}

@@ -1,6 +1,6 @@
 // رابح — منطق الواجهة. ES modules خالصة، بلا مكتبات ولا أداة بناء.
 
-import { REGIONS, citiesOfRegion, cityById, regionById, allCities, addCity } from './data/cities.js';
+import { citiesOfRegion, cityById, regionById, allCities, addCity, allRegions, addRegion } from './data/cities.js';
 import { CATEGORY_GROUPS, categoryById, allCategories, addCategory } from './data/categories.js';
 import { districtsOf, addDistrict } from './data/districts.js';
 import { parseMapsUrl, asciiName } from './maps.js';
@@ -36,6 +36,7 @@ import { fetchPlace, merge as mergePlace } from './places.js';
 import { fetchAllReviews, mergeReviews } from './reviews.js';
 import { runStep, pendingSteps } from './runner.js';
 import { dataStamp, staleSteps } from './stamp.js';
+import { checkSource, exclusionNote } from './integrity.js';
 import { compare as compareOutputs, mergeHint } from './agreement.js';
 import * as history from './history.js';
 import * as tour from './tour.js';
@@ -133,6 +134,7 @@ function blankJob() {
     models: {},
     designHtml: '',
     stamps: {},          // بصمة البيانات وقت إنتاج كل خطوة
+    excluded: [],        // ما استُبعد بقرارك — يُحفَظ ويُقَرّ به، ولا يُمحى
     template: DEFAULT_TEMPLATE,
     font: null,          // { name, dataUrl } خط عربي يرفعه المستخدم
   };
@@ -180,7 +182,9 @@ function renderStepsBar(view) {
     new: !!job?.ctx?.cityId,
     data: (job?.place?.reviews?.length || 0) > 0,
     pipeline: !!job?.out?.am,
-    report: !!job?.reportMd,
+    // التقرير مبلوغٌ متى تمّ الدمج النهائي، لا متى زُرتَ الشاشة: وإلا بقي
+    // الطريق إليه مقفلًا بعد اكتمال التحليل كلّه.
+    report: !!(job?.reportMd || job?.out?.am),
   };
   const idx = STEP_LABELS.findIndex((s) => s.key === view);
   /* الشريط دليلٌ وطريقٌ معًا: كان يُعلِم بالمرحلة ولا يُنقَل به، وشاشة التقرير
@@ -209,10 +213,10 @@ function renderStepsBar(view) {
 
 /* ───────────────────────── ١) شاشة الإدخال ───────────────────────── */
 
-function fillRegions() {
+function fillRegions(selected = '') {
   const sel = $('#f-region');
   sel.innerHTML = '<option value="">— اختر المنطقة —</option>' +
-    REGIONS.map((r) => `<option value="${r.id}">${r.name}</option>`).join('');
+    allRegions().map((r) => `<option value="${esc(r.id)}"${r.id === selected ? ' selected' : ''}>${esc(r.name)}</option>`).join('');
 }
 
 function fillCities(regionId, selected = '') {
@@ -263,6 +267,17 @@ function bindNewView() {
       else if (r.short) message('#new-msg', 'warn', r.reason);
       else message('#new-msg', 'ok', `الرابط صالح${r.data.name ? ` — المنشأة: ${r.data.name}` : ''}.`);
     }, 400);
+  });
+
+  $('#btn-add-region').addEventListener('click', () => {
+    const name = prompt('اسم المنطقة أو الدولة الجديدة:');
+    if (!name) return;
+    const id = addRegion(name);
+    if (!id) { toast('موجودة أصلًا أو الاسم فارغ'); return; }
+    fillRegions(id);
+    fillCities(id);
+    fillDistricts('');
+    toast('أُضيفت — وتظهر في شجرة الأرشيف كغيرها');
   });
 
   $('#btn-add-city').addEventListener('click', () => {
@@ -459,6 +474,7 @@ function loadDataView() {
   renderReplies();
   renderContext();
   renderAnomaly();
+  renderIntegrity();
   renderPhotoChips();
 }
 
@@ -644,6 +660,7 @@ function doParse() {
   renderReplies();
   renderContext();
   renderAnomaly();
+  renderIntegrity();
   scheduleSave();
 }
 
@@ -795,15 +812,63 @@ function renderAnomaly() {
 
   const btn = $('#btn-drop-flagged');
   if (btn) btn.addEventListener('click', () => {
-    const before = job.place.reviews.length;
-    const cleaned = withoutFlagged(job.place, 3);
-    const removed = before - cleaned.reviews.length;
-    if (!removed) { toast('لا تعليق يبلغ هذه الدرجة'); return; }
-    if (!confirm(`استبعاد ${removed} تعليقًا من التحليل؟ يبقى اللصق الأصلي كما هو.`)) return;
-    job.place.reviews = cleaned.reviews;
+    const keep = new Set(withoutFlagged(job.place, 3).reviews.map((x) => x.id));
+    const out = job.place.reviews.filter((x) => !keep.has(x.id));
+    if (!out.length) { toast('لا تعليق يبلغ هذه الدرجة'); return; }
+    if (!confirm(`استبعاد ${out.length} تعليقًا من التحليل؟\n\nلا يُحذف نصُّه: يُنقَل جانبًا، ويُذكَر عددها ومعرّفاتها في التقرير، ويمكنك إعادتها.`)) return;
+    /* الاستبعاد نقلٌ لا محو: عيّنةٌ نُقِّيت من نقدٍ لم يعجب ثم سُلِّمت على أنها
+       كاملة خيانةٌ للقارئ. فتُحفَظ المستبعَدة ويُقَرّ بها في التقرير. */
+    job.excluded = [...(job.excluded || []), ...out];
+    job.place.reviews = job.place.reviews.filter((x) => keep.has(x.id));
     renderParseStats(); renderRecency(); renderTopics(); renderEntities(); renderReplies(); renderAnomaly();
+    renderIntegrity();
     scheduleSave();
-    toast(`استُبعد ${removed} تعليقًا`);
+    toast(`استُبعد ${out.length} تعليقًا — ومُقَرٌّ به في التقرير`);
+  });
+}
+
+/**
+ * لوحة أمانة النقل — تُثبت أن النصوص كما وردت، وتُقرّ بما استُبعد.
+ *
+ * ولا تُجمِّل: إن وُجد نصٌّ لا يطابق مصدره قالت ذلك بالأحمر وسمّت التعليق.
+ */
+function renderIntegrity() {
+  const box = $('#integrity-box');
+  if (!box) return;
+  const total = job.place.reviews.length;
+  const ex = job.excluded || [];
+  if (!total && !ex.length) { box.innerHTML = '<div class="empty">لا تعليقات بعد.</div>'; return; }
+
+  const r = checkSource(job.place, job.rawPaste || '');
+  const srcNames = { paste: 'لصقٌ منك', provider: 'مزوّد وسيط', places: 'قوقل Places', json: 'JSON', 'غير معروف': 'غير معروف' };
+  const chips = Object.entries(r.bySource)
+    .map(([k, n]) => `<span class="chip">${esc(srcNames[k] || k)}: ${n}</span>`).join('');
+
+  const level = r.altered ? 'err' : 'ok';
+  const offenders = r.altered
+    ? `<ul class="fine">${r.offenders.slice(0, 5).map((o) => `<li><span class="rid">${esc(o.id)}</span> ${esc(o.text)}…</li>`).join('')}</ul>`
+    : '';
+
+  const exBlock = ex.length
+    ? `<div class="msg warn"><b>مستبعَدات مُقَرٌّ بها.</b>
+        <p class="fine">${esc(exclusionNote(ex))}</p>
+        <button type="button" class="btn ghost sm" id="btn-restore-excluded">إعادة ${ex.length} تعليقًا إلى التحليل</button></div>`
+    : '';
+
+  box.innerHTML = `<div class="msg ${level}"><b>${esc(r.summary)}</b></div>
+    <div class="chips">${chips}</div>
+    ${offenders}
+    <p class="fine">التقييمات تُنقَل كما وردت، وما لا تقييم له يبقى فارغًا ولا يُخمَّن. ولا تُحذف تعليقات تلقائيًّا بحال.</p>
+    ${exBlock}`;
+
+  const rb = $('#btn-restore-excluded');
+  if (rb) rb.addEventListener('click', () => {
+    job.place.reviews = [...job.place.reviews, ...ex];
+    job.excluded = [];
+    assignReviewIds(job.place);
+    loadDataView();
+    scheduleSave();
+    toast('أُعيدت المستبعَدات');
   });
 }
 
@@ -974,10 +1039,27 @@ function renderPipeline() {
       catch (err) { toast('تعذّر بناء الرسالة: ' + err.message); return ''; }
     };
 
+    /* الرسالة المقسَّمة تُنسَخ دفعةً دفعة: التشغيل الآلي يتولّى التقسيم، ومن
+       ينسخ بيده كان يأخذ الدفعة الأولى وحدها ويظنّها كل شيء. */
+    const parts = step.role === 'normalize' ? batchCount(job.place.reviews.length) : 1;
+    if (parts > 1) {
+      btnCopy.textContent = `نسخ الدفعة ١ من ${parts}`;
+      const arNum = (n) => ['١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩', '١٠'][n - 1] || String(n);
+      for (let bi = 1; bi < parts; bi += 1) {
+        const extra = el('button', 'btn ghost sm', `نسخ الدفعة ${arNum(bi + 1)} من ${parts}`);
+        extra.addEventListener('click', async () => {
+          const t = promptNormalizeBatch(job.place, job.ctx, bi, parts);
+          toast(await copy(t) ? `نُسخت الدفعة ${arNum(bi + 1)} — ألصقها ثم ألحق جوابها بما قبله` : 'تعذّر النسخ');
+        });
+        row.appendChild(extra);
+      }
+    }
+
     btnCopy.addEventListener('click', async () => {
-      const text = buildPrompt();
+      const text = parts > 1 ? promptNormalizeBatch(job.place, job.ctx, 0, parts) : buildPrompt();
       if (!text) return;
-      toast(await copy(text) ? 'نُسخت الرسالة — ألصقها في النموذج' : 'تعذّر النسخ، استعمل «عرض الرسالة»');
+      const note = parts > 1 ? ` (١ من ${parts} — والباقي بالأزرار المجاورة)` : '';
+      toast(await copy(text) ? `نُسخت الرسالة${note} — ألصقها في النموذج` : 'تعذّر النسخ، استعمل «عرض الرسالة»');
     });
     btnShow.addEventListener('click', () => {
       if (pre.hidden) { pre.textContent = buildPrompt(); pre.hidden = false; btnShow.textContent = 'إخفاء الرسالة'; }
@@ -1011,19 +1093,22 @@ function renderPipeline() {
       }
       const bad = v.badIds.length
         ? `<p class="fine err-text">معرّفات لا وجود لها في بياناتك: ${v.badIds.map((i) => `<span class="rid">${i}</span>`).join('، ')} — هذا اختراع صريح، أعد الخطوة بنموذج آخر.</p>` : '';
+      const mis = v.misquotes?.length
+        ? `<p class="fine err-text">اقتباسات غُيِّر نصُّها: ${v.misquotes.map((q) => `«${esc(q)}»`).join('، ')} — الاقتباس يُنقَل حرفيًّا، ومن لطّف ذمًّا فقد زوّر شهادة صاحبه. أعد الخطوة.</p>` : '';
       const nums = v.numberIssues.length
         ? `<ul class="fine">${v.numberIssues.map((n) => `<li>الرقم <b>${esc(n.value)}</b> في «${esc(n.context.slice(0, 60))}» — ${esc(n.why)}.</li>`).join('')}</ul>` : '';
       const uns = v.unsupported.length
         ? `<details class="fine"><summary>${v.unsupported.length} حكمًا بلا سند</summary><ul>${
             v.unsupported.slice(0, 8).map((u) => `<li>${esc(u.text.slice(0, 110))}</li>`).join('')}</ul></details>` : '';
       check.innerHTML = `<div class="msg ${v.level === 'err' ? 'err' : v.level === 'warn' ? 'warn' : 'ok'}">
-        <b>مدقّق السند: ${v.summary}</b>${bad}${nums}${uns}</div>`;
+        <b>مدقّق السند: ${v.summary}</b>${bad}${mis}${nums}${uns}</div>`;
     };
 
     ta.addEventListener('input', () => {
       job.out[step.key] = ta.value;
       job.stamps = job.stamps || {};
       job.stamps[step.key] = dataStamp(job.place);   // على أي بياناتٍ كُتبت
+      job.staleAck = false;                          // إقرارٌ قديم لا يسري على فارقٍ جديد
       scheduleSave();
       updateProgress();
     });
@@ -1766,16 +1851,35 @@ function designHtmlWithPhotos() {
  *
  * وهنا تحديدًا يجب أن يُقال، لا في خط التحليل وحده: من هنا يُطبَع ويُرسَل.
  */
+/** أزرار التسليم: ما يُخرِج التقرير من الشاشة إلى يد عميلك. */
+const DELIVERY_BTNS = ['#btn-print', '#btn-download-html', '#btn-download-md', '#btn-download-xlsx', '#btn-freeze', '#btn-wa', '#btn-tg', '#btn-mail', '#btn-design-print', '#btn-design-dl'];
+
 function renderStaleReport() {
   const box = $('#stale-report');
   if (!box) return;
   const now = dataStamp(job.place);
   const stalies = staleSteps(job.out, job.stamps || {}, now);
+
+  /* لا يُسلَّم تقريرٌ لا يصف بياناته — والمنع هنا لا التنبيه وحده: تنبيهٌ
+     يُتجاوَز بضغطة، والتقرير يخرج إلى يد صاحب المنشأة فلا يُستدرَك. */
+  const lock = stalies.length > 0 && !job.staleAck;
+  DELIVERY_BTNS.forEach((sel) => { const b = $(sel); if (b) b.disabled = lock; });
+
   if (!stalies.length) { box.innerHTML = ''; return; }
   box.innerHTML = `<div class="msg err"><b>هذا التقرير مبنيٌّ على تعليقات غير الحالية.</b>
     <p class="fine">غُيِّرت التعليقات بعد إنتاج ${stalies.length} من خطوات التحليل. والمعرّفات (R001…) تُمنَح بالترتيب،
-    فما استشهد به التحليل القديم يشير الآن إلى تعليقاتٍ أخرى — ولن يكشف ذلك مدقّق السند.
-    <b>لا تُسلّمه</b> حتى تُعيد تشغيل الخطوات المعلَّمة في خط التحليل.</p></div>`;
+    فما استشهد به التحليل القديم يشير الآن إلى تعليقاتٍ أخرى — ولن يكشف ذلك مدقّق السند.</p>
+    ${lock ? `<p class="fine"><b>التسليم موقوف</b> حتى تُعيد تشغيل الخطوات المعلَّمة ⚠ في خط التحليل.</p>
+      <div class="row">
+        <button type="button" class="btn sm" id="btn-go-fix">إلى خط التحليل</button>
+        <label class="inline-field"><input type="checkbox" id="stale-ack"> أُقرّ بالفارق وأتحمّله</label>
+      </div>`
+    : '<p class="fine">أقررتَ بالفارق، فالتسليم مفتوح. والإقرار لا يُغيّر شيئًا في التقرير.</p>'}</div>`;
+
+  const go = $('#btn-go-fix');
+  if (go) go.addEventListener('click', () => { renderPipeline(); show('pipeline'); });
+  const ack = $('#stale-ack');
+  if (ack) ack.addEventListener('change', (e) => { job.staleAck = e.target.checked; scheduleSave(); renderStaleReport(); });
 }
 
 function renderDesignState() {

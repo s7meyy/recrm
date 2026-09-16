@@ -45,6 +45,7 @@ export function emptyReview() {
     ownerReply: '',
     language: '',
     likes: null,
+    source: '',           // من أين جاء: paste | provider | places | json
   };
 }
 

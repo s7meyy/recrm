@@ -180,10 +180,38 @@ export function addCity(regionId, name) {
   return id;
 }
 export const cityById = (id) => allCities().find((c) => c.id === id) || null;
-export const regionById = (id) => REGIONS.find((r) => r.id === id) || null;
+export const regionById = (id) => allRegions().find((r) => r.id === id) || null;
 export const citiesOfRegion = (regionId) => allCities().filter((c) => c.region === regionId);
 
 /** الأصلية ومضافاتك معًا — وهي ما تقرؤه الواجهة والأرشيف. */
 export function allCities() {
   return [...CITIES, ...readCustomCities()];
+}
+
+/* ───── مناطق ودول يضيفها المستخدم ─────
+   المدينة المضافة كانت تُحشَر تحت منطقة سعودية، فظهرت «دبي» تحت «منطقة
+   الرياض» في شجرة الأرشيف — وهو خطأٌ في التصنيف يُفسد الشجرة والمقارنة. */
+
+const CUSTOM_REGIONS_KEY = 'rabih:custom-regions';
+
+const readCustomRegions = () => {
+  try { return JSON.parse(localStorage.getItem(CUSTOM_REGIONS_KEY) || '[]'); }
+  catch { return []; }
+};
+
+export const customRegions = () => readCustomRegions();
+
+export function addRegion(name) {
+  const clean = String(name || '').trim();
+  if (!clean) return null;
+  if (allRegions().some((r) => r.name === clean)) return null;
+  const id = 'xr-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6);
+  const list = [...readCustomRegions(), { id, name: clean, custom: true }];
+  try { localStorage.setItem(CUSTOM_REGIONS_KEY, JSON.stringify(list)); } catch { return null; }
+  return id;
+}
+
+/** المناطق الأصلية ومضافاتك — وهي ما تقرؤه الواجهة. */
+export function allRegions() {
+  return [...REGIONS, ...readCustomRegions()];
 }

@@ -104,10 +104,15 @@ export async function runStep(stepKey, state, { onChunk, onModel, signal } = {})
     }
     if (!r.text) { attempts.push({ model: pick.name, error: 'ردّ فارغ.' }); continue; }
 
-    // الاختراع لا يُقبَل: معرّفٌ لا وجود له في بياناتك يُسقط الإجابة.
+    /* لا يُقبَل اختراعٌ ولا تحريف: معرّفٌ لا وجود له في بياناتك، أو اقتباسٌ
+       غُيِّر نصُّه — ومن لطّف ذمًّا فقد زوّر شهادة صاحبه. */
     const v = verify(r.text, state.place);
     if (v.badIds.length) {
       attempts.push({ model: pick.name, error: `اخترع معرّفات: ${v.badIds.join('، ')}` });
+      continue;
+    }
+    if (v.misquotes?.length) {
+      attempts.push({ model: pick.name, error: `غيّر نصّ اقتباس: «${v.misquotes[0]}»` });
       continue;
     }
 
@@ -115,13 +120,13 @@ export async function runStep(stepKey, state, { onChunk, onModel, signal } = {})
     return { ok: true, text: r.text, model: pick.name, slug: pick.slug, attempts, verdict: v };
   }
 
-  const invented = attempts.every((a) => /اخترع/.test(a.error || ''));
+  const invented = attempts.every((a) => /اخترع|غيّر نصّ/.test(a.error || ''));
   return {
     ok: false,
     attempts,
     invented,
     error: invented
-      ? 'كل النماذج المتاحة اخترعت معرّفات في هذه الخطوة — راجعها بنفسك قبل المضيّ.'
+      ? 'كل النماذج المتاحة اخترعت معرّفًا أو غيّرت نصّ اقتباس — ولا يُقبَل ذلك. راجع الخطوة بنفسك.'
       : 'تعذّرت الخطوة بعد تجربة كل البدائل: ' + attempts.map((a) => `${a.model} (${a.error})`).join('، '),
   };
 }
@@ -161,8 +166,11 @@ async function runBatched(step, state, total, { onChunk, onModel, signal } = {})
       if (!r.text) { attempts.push({ model: pick.name, batch: i + 1, error: 'ردّ فارغ.' }); continue; }
 
       const v = verify(r.text, state.place);
-      if (v.badIds.length) {
-        attempts.push({ model: pick.name, batch: i + 1, error: `اخترع معرّفات: ${v.badIds.join('، ')}` });
+      const wrong = v.badIds.length
+        ? `اخترع معرّفات: ${v.badIds.join('، ')}`
+        : (v.misquotes?.length ? `غيّر نصّ اقتباس: «${v.misquotes[0]}»` : '');
+      if (wrong) {
+        attempts.push({ model: pick.name, batch: i + 1, error: wrong });
         whole = parts.join('');                 // يُمحى ما بثّه المخترِع
         if (onChunk) onChunk('', whole);
         continue;
@@ -232,8 +240,11 @@ async function runMergeBatched(step, state, parts, { onChunk, onModel, signal } 
       if (!r.text) { attempts.push({ model: pick.name, batch: i + 1, error: 'ردّ فارغ.' }); continue; }
 
       const v = verify(r.text, state.place);
-      if (v.badIds.length) {
-        attempts.push({ model: pick.name, batch: i + 1, error: `اخترع معرّفات: ${v.badIds.join('، ')}` });
+      const wrong = v.badIds.length
+        ? `اخترع معرّفات: ${v.badIds.join('، ')}`
+        : (v.misquotes?.length ? `غيّر نصّ اقتباس: «${v.misquotes[0]}»` : '');
+      if (wrong) {
+        attempts.push({ model: pick.name, batch: i + 1, error: wrong });
         whole = out.join('');
         if (onChunk) onChunk('', whole);
         continue;
