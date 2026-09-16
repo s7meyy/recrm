@@ -1,6 +1,29 @@
 // قوالب التقرير — نفس المحتوى في ثلاثة مقاسات، لأن كل مُستقبِل يريد مقاسًا.
 // لا يُحذف معنى ولا يُضاف؛ إنما تُنتقى الأقسام ويُضبط الإخراج.
 
+/**
+ * قوالب القطاعات — العيادة ليست كالمقهى.
+ *
+ * التقرير كان قالبًا واحدًا للجميع، ومحاور `hints` توجّه النموذج ولا تغيّر
+ * **بنية** التقرير. فهذه تُغيّر ما يُعرَض وما يُقدَّم: العيادة يتصدّرها
+ * الانتظار والطاقم، والتوصيل يتصدّره مسار الطلب، والجمعية لا تُقاس بالسعر.
+ *
+ * ولا يُحذف قسمٌ فيه بيانات: الترتيب يتغيّر والإبراز يتغيّر، والمحتوى باقٍ.
+ */
+export const SECTOR_PRESETS = {
+  food:     { name: 'مطاعم ومقاهٍ', lead: ['quality', 'wait', 'price', 'clean'], show: { photos: true, timing: true, sources: true } },
+  health:   { name: 'صحة وعيادات', lead: ['wait', 'service', 'clean', 'money'], show: { photos: false, timing: true, sources: false } },
+  services: { name: 'خدمات مهنية', lead: ['service', 'hygiene_staff', 'price'], show: { photos: false, timing: false, sources: false } },
+  shops:    { name: 'تجزئة ومعارض', lead: ['price', 'quality', 'service', 'parking'], show: { photos: true, timing: true, sources: true } },
+  nonprofit: { name: 'جمعيات وخيرية', lead: ['service', 'hygiene_staff', 'access'], show: { photos: true, timing: false, sources: false } },
+  beauty:   { name: 'تجميل وعناية', lead: ['service', 'clean', 'price', 'wait'], show: { photos: true, timing: true, sources: false } },
+};
+
+/** إعداد القطاع بحسب مجموعة التصنيف، أو الافتراضي. */
+export function sectorFor(groupId) {
+  return SECTOR_PRESETS[groupId] || { name: 'عام', lead: [], show: {} };
+}
+
 export const TEMPLATES = {
   full: {
     id: 'full', name: 'كامل', note: 'كل الأقسام، مع المواضيع وتوزيع النجوم والصور — للأرشفة والعرض الرسمي.',

@@ -451,6 +451,15 @@
     </div>
 
     <div class="card">
+      <h2>منافسٌ بالاسم</h2>
+      <p class="hint">ألصق رابط منافسك من خرائط قوقل فيُجلَب ويُقارَن بك محورًا بمحور. يحتاج مفتاح مزوّد.</p>
+      <div class="row">
+        <input id="rival-url" placeholder="https://maps.app.goo.gl/…" style="flex:1;min-width:220px">
+        <button type="button" class="btn sm" id="btn-rival-fetch">اجلب وقارن</button>
+      </div>
+      <div id="rival-msg"></div>
+      <div id="rival-box"></div>
+
       <h2>مقارنة المنافسين</h2>
       <p class="hint">منشآت في أرشيفك بنفس المدينة والتصنيف. كلما زاد أرشيفك زادت دقّة الصورة.</p>
       <div class="field"><label for="cmp-target">المنشأة محلّ المقارنة</label><select id="cmp-target"></select></div>
@@ -461,6 +470,12 @@
   <!-- الأرشيف -->
   <section class="view" id="view-archive" hidden>
     
+    <div class="card" id="portfolio-card">
+      <h2>نظرة المحفظة</h2>
+      <p class="hint">كل منشآتك في شاشة: اتجاهها، وما يحتاج فعلًا هذا الأسبوع.</p>
+      <div id="portfolio-box"></div>
+    </div>
+
     <div class="card" id="clients-card">
       <h2>دفتر العملاء</h2>
       <p class="hint">مبنيٌّ من أرشيفك: مَن لم يُتابَع، وما الذي يُجدَّد قريبًا. ولا يُدخَل يدويًّا إلا ما لا يعرفه الأرشيف.</p>
@@ -559,6 +574,19 @@
       </div>
       <div id="watch-msg"></div>
       <div id="watch-box"></div>
+
+      <h2>التحقّق من تقرير مُسلَّم</h2>
+      <p class="hint">كل تقرير يُنزَّل أو يُنشَر يحمل بصمةً لمحتواه. ألصق الملف هنا لتعرف: أهو كما صدر أم غُيِّر فيه بعد التسليم؟</p>
+      <div class="row">
+        <input type="file" id="verify-file" accept=".html,text/html">
+        <button type="button" class="btn sm" id="btn-verify-file">تحقّق</button>
+      </div>
+      <div id="verify-msg"></div>
+
+      <h2>إشارات عبر الأرشيف</h2>
+      <p class="hint">ما لا يُرى من منشأةٍ واحدة: كاتبٌ يمدح منشأةً ويذمّ منافستها، أو نصٌّ يتكرّر حرفيًّا في منشأتين. <b>إشارات لا اتهامات.</b></p>
+      <div class="row"><button type="button" class="btn ghost sm" id="btn-network-scan">افحص الأرشيف كلّه</button></div>
+      <div id="network-box"></div>
 
       <h2>محرّر القاموس</h2>
       <p class="hint">القاموس أوّليّ بطبعه، ولهجاتنا أوسع من أي قائمة تُكتَب مرة. أضف إليه ممّا يفوته في تعليقاتك الحقيقية، فيتحسّن كلما استعملته.</p>

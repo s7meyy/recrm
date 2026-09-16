@@ -13,7 +13,7 @@ import { verify } from './verify.js';
 import { scan, withoutFlagged, FLAGS } from './anomaly.js';
 import { comparablePlaces, timeline, competitors, benchmark } from './compare.js';
 import { extractTasks, mergeTasks, progress, planMarkdown, defaultDue, STATUS } from './plan.js';
-import { TEMPLATES, DEFAULT_TEMPLATE, applyTemplate, droppedSections } from './templates.js';
+import { TEMPLATES, DEFAULT_TEMPLATE, applyTemplate, droppedSections, sectorFor } from './templates.js';
 import { buildXlsx, jobSheets, archiveSheet } from './export.js';
 import { recentVsOlder, monthly, alerts as recencyAlerts, topicAges } from './recency.js';
 import * as safe from './persist.js';
@@ -40,6 +40,9 @@ import { checkSource, exclusionNote } from './integrity.js';
 import { priorities } from './priority.js';
 import { PLATFORMS, platformName, compareSources } from './sources.js';
 import { ledger, setClient } from './clients.js';
+import { scanNetwork } from './network.js';
+import { sign, verifyFile, pretty } from './signature.js';
+import { planEffect } from './effect.js';
 import { push as cloudPush, pull as cloudPull, removeBox, newBoxId } from './cloud.js';
 import { publish as sharePublish, unpublish as shareUnpublish } from './share.js';
 import { ladder } from './stars.js';
@@ -1488,9 +1491,18 @@ function loadReportView() {
   renderStepsBar('report');
 }
 
+/** HTML موقَّعًا — لما يخرج من يدك: تنزيلًا أو نشرًا على رابط. */
+async function signedHtml() {
+  const id = identity.load();
+  const out = await sign(currentHtml(), { office: id?.office || '' });
+  if (job.signature !== out.hash) { job.signature = out.hash; job.signedAt = out.at; scheduleSave(); }
+  return out.html;
+}
+
 function currentHtml() {
   const tpl = TEMPLATES[job.template] || TEMPLATES[DEFAULT_TEMPLATE];
   return buildReportHtml({
+    sector: sectorFor(job.ctx?.groupId),
     place: job.place,
     ctx: job.ctx,
     markdown: applyTemplate(reportMarkdown(), tpl.id),
@@ -1646,6 +1658,71 @@ let compareJobs = [];
  *
  * والحقول تُحرَّر في مكانها وتُحفَظ فور تركها، فلا نافذة ولا نموذج منفصل.
  */
+/**
+ * نظرة المحفظة — تحليلية لا إدارية: أين يتحرّك كل عميل، وما يحتاج فعلًا.
+ *
+ * والاتجاه يُقاس بين آخر تقريرين للمنشأة الواحدة، فمن له تقريرٌ واحد لا
+ * يُنسَب إليه اتجاه — ولا يُخمَّن له.
+ */
+async function renderPortfolio() {
+  const box = $('#portfolio-box');
+  if (!box) return;
+  const jobs = await allJobs();
+  const groups = comparablePlaces(jobs);
+  const byPlace = new Map();
+
+  for (const j of jobs) {
+    const k = `${j.ctx?.cityId || ''}::${j.place?.identity?.name || ''}`;
+    if (!byPlace.has(k)) byPlace.set(k, []);
+    byPlace.get(k).push(j);
+  }
+  if (!byPlace.size) { box.innerHTML = '<div class="empty">لا منشآت بعد.</div>'; return; }
+
+  const rows = [...byPlace.values()].map((list) => {
+    list.sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
+    const last = list[list.length - 1];
+    const prev = list.length > 1 ? list[list.length - 2] : null;
+    const s = stats(last.place);
+    const t = prev ? timeline(prev, last) : null;
+    const eff = prev ? planEffect(prev, last) : null;
+    const pr = priorities(last.place, { limit: 1 })[0] || null;
+    return {
+      name: last.place?.identity?.name || 'بلا اسم',
+      city: last.ctx?.cityName || '',
+      reviews: s.total,
+      avg: s.googleAverage ?? s.sampleAverage,
+      neg: s.rated ? Math.round((s.negative / s.rated) * 100) : null,
+      trend: t?.ratings?.googleAverage?.diff ?? null,
+      verdict: t?.verdict || null,
+      top: pr,
+      effect: eff && eff.measured ? `${eff.improved}/${eff.measured}` : null,
+      jobId: last.id,
+      reports: list.length,
+    };
+  }).sort((a, b) => (a.trend ?? 0) - (b.trend ?? 0));
+
+  const arrow = (d) => {
+    if (d === null || d === undefined) return '<span class="fine">—</span>';
+    if (d > 0.05) return `<span class="delta up">▲ ${d.toFixed(2)}</span>`;
+    if (d < -0.05) return `<span class="delta down">▼ ${Math.abs(d).toFixed(2)}</span>`;
+    return '<span class="fine">ثابت</span>';
+  };
+
+  box.innerHTML = `<div class="table-wrap"><table class="mini"><thead><tr>
+      <th>المنشأة</th><th>تقارير</th><th>العيّنة</th><th>المتوسط</th><th>السلبي</th><th>الاتجاه</th><th>أثر الخطة</th><th>الأولوية الآن</th>
+    </tr></thead><tbody>${rows.map((r) => `<tr>
+      <td><b>${esc(r.name)}</b><div class="fine">${esc(r.city)}</div></td>
+      <td>${r.reports}</td>
+      <td>${r.reviews}</td>
+      <td>${r.avg ?? '—'}</td>
+      <td>${r.neg === null ? '—' : r.neg + '%'}</td>
+      <td>${arrow(r.trend)}</td>
+      <td>${r.effect ? `<span class="chip ok">${esc(r.effect)} تحسّنت</span>` : '<span class="fine">—</span>'}</td>
+      <td class="fine">${r.top ? esc(r.top.name) + ` (${r.top.count})` : '—'}</td>
+    </tr>`).join('')}</tbody></table></div>
+    <p class="fine">مرتَّبة بالأسوأ اتجاهًا أولًا. ومن له تقريرٌ واحد لا اتجاه له — ولا يُخمَّن.</p>`;
+}
+
 async function renderClients() {
   const box = $('#clients-box');
   if (!box) return;
@@ -2091,6 +2168,99 @@ function renderRepliesState() {
 
 const CLOUD_BOX = 'rabih:cloud-box';
 
+/**
+ * منافسٌ بالاسم — أقوى ورقةٍ في اجتماع البيع.
+ *
+ * يُجلَب رابطه من المزوّد ويُقارَن محورًا بمحور. ولا يُخزَّن في أرشيفك:
+ * هو بيانات غيرك، تُعرَض للمقارنة ثم تذهب.
+ */
+function bindRival() {
+  $('#btn-rival-fetch').addEventListener('click', async () => {
+    const url = ($('#rival-url')?.value || '').trim();
+    if (!url) { message('#rival-msg', 'err', 'ألصق رابط المنافس أولًا.'); return; }
+
+    const target = compareJobs.find((j) => j.id === $('#cmp-target')?.value) || job;
+    if (!target?.place?.reviews?.length) { message('#rival-msg', 'err', 'اختر منشأةً من أرشيفك للمقارنة.'); return; }
+
+    const btn = $('#btn-rival-fetch');
+    btn.disabled = true;
+    message('#rival-msg', 'warn', 'يُجلَب المنافس من المزوّد…');
+    const r = await fetchAllReviews(url, { limit: 200, sort: 'newest' });
+    btn.disabled = false;
+
+    if (!r.ok) {
+      message('#rival-msg', 'err', r.error, r.needsKey
+        ? ['يحتاج مفتاح مزوّد (OUTSCRAPER_KEY أو APIFY_TOKEN) في بيئة Netlify.'] : []);
+      return;
+    }
+    if (!r.reviews.length) { message('#rival-msg', 'warn', 'لم يُعِد المزوّد تعليقات لهذا الرابط.'); return; }
+
+    const rival = { ...emptyPlace(), identity: { ...emptyPlace().identity, name: r.placeName || 'المنافس' } };
+    rival.ratings = { average: r.average ?? null, count: r.claimed ?? r.fetched, distribution: null };
+    rival.reviews = r.reviews.map((x, i) => ({ ...x, id: `X${String(i + 1).padStart(3, '0')}` }));
+
+    renderRival(target.place, rival, r);
+    message('#rival-msg', 'ok', `جُلب ${r.fetched} تعليقًا من ${esc(rival.identity.name)}.`, [
+      'ولا تُحفَظ تعليقات المنافس في أرشيفك — تُعرَض للمقارنة ثم تذهب.',
+    ]);
+  });
+}
+
+/** جدول المقارنة: محورًا بمحور، ومَن يتفوّق في كلٍّ منها. */
+function renderRival(mine, rival, meta) {
+  const box = $('#rival-box');
+  if (!box) return;
+  const a = stats(mine);
+  const b = stats(rival);
+
+  const mineT = new Map(topicStats(mine).map((t) => [t.id, t]));
+  const rivalT = new Map(topicStats(rival).map((t) => [t.id, t]));
+  const ids = [...new Set([...mineT.keys(), ...rivalT.keys()])];
+
+  const share = (t, total) => (t && total ? Number(((t.neg / total) * 100).toFixed(1)) : 0);
+  const rows = ids.map((id) => {
+    const m = mineT.get(id);
+    const v = rivalT.get(id);
+    const ms = share(m, a.total);
+    const vs = share(v, b.total);
+    return { id, name: (m || v).name, ms, vs, diff: Number((ms - vs).toFixed(1)) };
+  }).filter((r) => r.ms > 0 || r.vs > 0).sort((x, y) => y.diff - x.diff);
+
+  const cmp = (x, y, higherBetter = true) => {
+    if (x === null || y === null) return '<span class="fine">—</span>';
+    if (x === y) return '<span class="fine">تعادل</span>';
+    const better = higherBetter ? x > y : x < y;
+    return better ? '<span class="delta up">أنت</span>' : '<span class="delta down">هو</span>';
+  };
+
+  box.innerHTML = `<div class="table-wrap"><table class="mini"><thead><tr>
+      <th>المحور</th><th>${esc(mine.identity?.name || 'أنت')}</th><th>${esc(rival.identity?.name || 'المنافس')}</th><th>الأفضل</th>
+    </tr></thead><tbody>
+      <tr><td><b>متوسط قوقل</b></td><td>${a.googleAverage ?? '—'}</td><td>${rival.ratings.average ?? '—'}</td><td>${cmp(a.googleAverage, rival.ratings.average)}</td></tr>
+      <tr><td><b>عدد التقييمات</b></td><td>${a.googleCount ?? '—'}</td><td>${rival.ratings.count ?? '—'}</td><td>${cmp(a.googleCount, rival.ratings.count)}</td></tr>
+      <tr><td><b>نسبة السلبي في العيّنة</b></td><td>${a.rated ? Math.round((a.negative / a.rated) * 100) : '—'}%</td><td>${b.rated ? Math.round((b.negative / b.rated) * 100) : '—'}%</td><td>${cmp(a.rated ? a.negative / a.rated : null, b.rated ? b.negative / b.rated : null, false)}</td></tr>
+      ${rows.map((r) => `<tr><td>${esc(r.name)}</td><td>${r.ms}%</td><td>${r.vs}%</td><td>${cmp(r.ms, r.vs, false)}</td></tr>`).join('')}
+    </tbody></table></div>
+    <p class="fine">نسبة الشكاوى في كل محور من عيّنة كلٍّ منكما (${a.total} مقابل ${b.total} تعليقًا).
+    والعيّنتان قد تختلفان حجمًا وحداثةً، فالمقارنة <b>مؤشّر لا حُكم</b>.</p>`;
+}
+
+function bindNetwork() {
+  $('#btn-network-scan').addEventListener('click', async () => {
+    const jobs = await allJobs();
+    const n = scanNetwork(jobs);
+    const box = $('#network-box');
+    if (!n.authors.length && !n.texts.length) {
+      box.innerHTML = `<div class="msg ok">فُحص ${n.checked} تعليقًا في ${jobs.length} منشأة — لا إشارة عابرة بينها.</div>`;
+      return;
+    }
+    box.innerHTML = `<div class="msg warn"><b>فُحص ${n.checked} تعليقًا: ${n.texts.length} نصًّا متكررًا عبر منشآت، و${n.authors.length} كاتبًا مشتركًا.</b>
+      <p class="fine">تشابه الاسم ليس تطابقًا للشخص، والحكم حكمك.</p></div>
+      ${n.texts.slice(0, 5).map((x) => `<p class="fine"><b>نصٌّ متطابق</b> في ${esc(x.places.join('، '))}: «${esc(x.text)}…»</p>`).join('')}
+      ${n.authors.slice(0, 6).map((x) => `<p class="fine"><b>${esc(x.name)}</b> — ${x.count} تعليقًا في ${esc(x.places.join('، '))}${x.mixed ? ' <b class="err-text">(مدحٌ هنا وذمٌّ هناك)</b>' : ''}</p>`).join('')}`;
+  });
+}
+
 function bindCloud() {
   const boxInput = $('#cl-box');
   if (boxInput) boxInput.value = localStorage.getItem(CLOUD_BOX) || '';
@@ -2215,7 +2385,7 @@ function bindShare() {
   $('#btn-share-publish').addEventListener('click', async () => {
     const pass = ($('#sh-pass')?.value || '').trim();
     if (pass.length < 6) { message('#share-msg', 'err', 'كلمة سر التقرير ستّة أحرف فأكثر.'); return; }
-    const html = currentHtml();
+    const html = await signedHtml();
     if (!html) { message('#share-msg', 'err', 'لا تقرير لنشره.'); return; }
 
     message('#share-msg', 'warn', 'يُشفَّر في جهازك ثم يُرفَع…');
@@ -2449,7 +2619,16 @@ function bindReportView() {
     w.addEventListener('load', () => setTimeout(() => w.print(), 400));
   });
 
-  $('#btn-download-html').addEventListener('click', () => download(reportFileName('html'), currentHtml(), 'text/html;charset=utf-8'));
+  // الملف الذي يخرج من يدك موقَّع: من غيّر فيه حرفًا كُشِف.
+  $('#btn-download-html').addEventListener('click', async () => download(reportFileName('html'), await signedHtml(), 'text/html;charset=utf-8'));
+
+  $('#btn-verify-file').addEventListener('click', async () => {
+    const f = $('#verify-file').files?.[0];
+    if (!f) { message('#verify-msg', 'warn', 'اختر ملف التقرير أولًا.'); return; }
+    const v = await verifyFile(await f.text());
+    message('#verify-msg', v.ok ? 'ok' : 'err', v.reason, v.shown
+      ? [`المكتوبة في الملف: ${v.shown}`, `المحسوبة من محتواه: ${v.actual}`] : []);
+  });
   $('#btn-download-md').addEventListener('click', () => download(reportFileName('md'), $('#r-md').value, 'text/markdown;charset=utf-8'));
 
   $('#btn-wa').addEventListener('click', () => {
@@ -2475,6 +2654,7 @@ function bindReportView() {
 /* ───────────────────────── الأرشيف ───────────────────────── */
 
 async function renderArchive(filter = '') {
+  renderPortfolio();
   renderClients();
   const host = $('#archive-tree');
   const jobs = await allJobs();
@@ -2961,6 +3141,8 @@ async function boot() {
   bindReportView();
   bindPlanView();
   bindOutputView();
+  bindRival();
+  bindNetwork();
   bindCloud();
   bindWatch();
   bindShare();

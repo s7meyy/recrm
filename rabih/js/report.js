@@ -14,6 +14,10 @@ import { starsBlock } from './stars.js';
 import { voiceBlock } from './voice.js';
 import { impactBlock } from './impact.js';
 import { sourcesBlock } from './sources.js';
+import { cooccurBlock } from './cooccur.js';
+import { timingBlock } from './timing.js';
+import { promisesBlock } from './promises.js';
+import { effectBlock } from './effect.js';
 
 const esc = (s) => String(s ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -139,9 +143,19 @@ function starBars(place) {
   </section>`;
 }
 
-function topicsBlock(place) {
-  const rows = topicStats(place);
+function topicsBlock(place, lead = []) {
+  let rows = topicStats(place);
   if (!rows.length) return '';
+  /* محاور القطاع تتقدّم: العيادة يتصدّرها الانتظار والطاقم، والمقهى الطعم.
+     ولا يُحذف موضوعٌ فيه بيانات — الترتيب يتغيّر والمحتوى باقٍ. */
+  if (lead.length) {
+    rows = [...rows].sort((a, b) => {
+      const ia = lead.indexOf(a.id);
+      const ib = lead.indexOf(b.id);
+      if (ia !== ib) return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+      return b.total - a.total;
+    });
+  }
   const max = Math.max(...rows.map((r) => r.total), 1);
 
   const bars = rows.slice(0, 10).map((t) => {
@@ -298,7 +312,17 @@ code{background:#f3f5f8;padding:0 1mm;border-radius:3px;font-size:10pt}
 .bar-track{background:#eef1f5;border-radius:3px;height:5mm;overflow:hidden}
 .bar-fill{display:block;height:100%;background:linear-gradient(90deg,var(--navy),#3a6ea5)}
 .bar-value{font-size:10pt;color:var(--muted);text-align:left}
-.priority,.stars-calc,.voice,.impact,.sources{break-inside:avoid;margin:0 0 7mm}
+.priority,.stars-calc,.voice,.impact,.sources,.cooccur,.timing,.promises,.effect,.network,.signature{break-inside:avoid;margin:0 0 7mm}
+.promise{margin:0 0 4mm;padding:3mm 4mm;border:1px solid var(--line);border-radius:6px;break-inside:avoid}
+.promise .q{margin:2mm 0;padding:2mm 3mm;background:#fbfcfd;border-inline-start:3px solid var(--gold);border-radius:4px}
+.promise .q p{margin:0;font-size:10pt;line-height:1.8}
+.promise .after{margin:2mm 0 0;font-size:9.5pt}
+.err-text{color:#c0392b}
+.ok-text{color:#1e8449}
+.signature{border:1px solid var(--line);border-radius:8px;padding:5mm 6mm;background:#fbfcfd}
+.sig-row{display:flex;gap:4mm;margin:2mm 0;font-size:10pt}
+.sig-row b{min-width:26mm;color:var(--navy)}
+.sig-hash{font-family:ui-monospace,Menlo,Consolas,monospace;letter-spacing:.06em;font-size:9.5pt}
 .prio .w-track{display:block;height:7px;background:#eef1f5;border-radius:4px;overflow:hidden;min-width:60px}
 .prio .w-fill{display:block;height:100%;background:var(--gold)}
 .prio .rid-cell{white-space:normal;line-height:1.9}
@@ -381,9 +405,10 @@ figcaption{font-size:9pt;color:var(--muted);margin-top:1mm;text-align:center}
  * @param {Array}  o.photos  [{url, caption}]
  * @returns {string} HTML كامل مكتفٍ بذاته
  */
-export function buildReportHtml({ place, ctx = {}, markdown = '', photos = [], show = {}, font = null, identity = null, job = null }) {
+export function buildReportHtml({ place, ctx = {}, markdown = '', photos = [], show = {}, font = null, identity = null, job = null, sector = null }) {
   const opt = { toc: true, stars: true, topics: true, photos: true, recency: true, entities: true, replies: true, confidence: true,
-    priority: true, calc: true, voice: true, impact: true, sources: true, ...show };
+    priority: true, calc: true, voice: true, impact: true, sources: true,
+    cooccur: true, timing: true, promises: true, effect: true, ...show, ...(sector?.show || {}) };
   const s = stats(place);
   const body = tocFrom(mdToHtml(markdown));
   const date = new Date().toLocaleDateString('ar-SA-u-ca-gregory');
@@ -426,11 +451,15 @@ ${opt.confidence ? confidenceBlock(job || { place, reportMd: markdown }) : ''}
 ${opt.toc ? body.toc : ''}
 ${opt.stars ? starBars(place) : ''}
 ${opt.recency ? recencyBlock(place) : ''}
-${opt.topics ? topicsBlock(place) : ''}
+${opt.topics ? topicsBlock(place, sector?.lead || []) : ''}
 ${opt.sources ? sourcesBlock(place) : ''}
 ${opt.priority ? priorityBlock(place) : ''}
+${opt.cooccur ? cooccurBlock(place) : ''}
+${opt.timing ? timingBlock(place) : ''}
+${opt.effect && job?.prevJob ? effectBlock(job.prevJob, job) : ''}
 ${opt.entities ? entitiesReportBlock(place) : ''}
 ${opt.replies ? repliesReportBlock(place) : ''}
+${opt.promises ? promisesBlock(place) : ''}
 ${opt.voice ? voiceBlock(place) : ''}
 ${body.html}
 ${opt.calc ? starsBlock(place, { perMonth: job?.assume?.perMonth || 0 }) : ''}
