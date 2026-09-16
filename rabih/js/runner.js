@@ -12,7 +12,7 @@
 // 4. **التتابع لا التوازي**: النماذج المجانية تُحدّ بالطلبات في الدقيقة،
 //    والتوازي يستنزف الحدّ فيُفشل ما كان سينجح.
 
-import { STEPS, MODEL_PICKS, batchCount, promptNormalizeBatch } from './prompts.js';
+import { STEPS, MODEL_PICKS, batchCount, promptNormalizeBatch, promptMergeNormalized, splitBatches } from './prompts.js';
 import { verify } from './verify.js';
 
 /** نداءٌ واحد لنموذجٍ واحد، يُسلّم النصّ قطعةً قطعةً كما يصل. */
@@ -58,10 +58,28 @@ export async function runStep(stepKey, state, { onChunk, onModel, signal } = {})
   const step = STEPS.find((s) => s.key === stepKey);
   if (!step) return { ok: false, attempts: [], error: 'خطوة غير معروفة.' };
 
+  /* لا تُشغَّل خطوةٌ ينقص ما تعتمد عليه: رسالتها تُبنى بعبارةٍ نائبة
+     «(يُلصَق هنا)»، فيجيب النموذج عن فراغٍ إجابةً تبدو سليمة. */
+  const missing = STEPS.filter((x) => x.stage < step.stage && !(state.out?.[x.key] || '').trim());
+  if (missing.length) {
+    return {
+      ok: false,
+      attempts: [],
+      error: `تنقص خطواتٌ قبلها: ${missing.map((m) => m.title).join('، ')}. شغّلها أولًا — وإلا حلّل النموذجُ فراغًا.`,
+    };
+  }
+
   /* التوحيد على دفعات حين تكثر التعليقات: نافذة النموذج المجاني تضيق عن مئات
      التعليقات، وتجاوزها صامتٌ — يقتطع ما زاد ويجيب كأنه قرأ الكل. */
   const total = step.role === 'normalize' ? batchCount(state.place?.reviews?.length || 0) : 1;
   if (total > 1) return runBatched(step, state, total, { onChunk, onModel, signal });
+
+  // والدمج يُقسَّم مثلها: مخرجات ثلاثة نماذج مضروبةً في عدد الدفعات لا تسعها
+  // رسالةٌ واحدة — قسّمتُ التوحيد ونسيت الدمج، فكانت رسالته تبلغ ٥٤ ألف حرف.
+  if (step.role === 'mergeNormalized') {
+    const parts = batchCount(state.place?.reviews?.length || 0);
+    if (parts > 1) return runMergeBatched(step, state, parts, { onChunk, onModel, signal });
+  }
 
   let prompt;
   try { prompt = step.build(state); }
@@ -178,6 +196,63 @@ async function runBatched(step, state, total, { onChunk, onModel, signal } = {})
     attempts,
     verdict: v,
   };
+}
+
+/**
+ * دمج التوحيد على دفعات: تُدمَج مخرجات النماذج الثلاثة **لكل دفعة على حدة**،
+ * ثم تُوصَل. فتبقى كل رسالةٍ في حدود ما تحتمله النافذة، ولا يُدمَج ما لا يلتقي.
+ */
+async function runMergeBatched(step, state, parts, { onChunk, onModel, signal } = {}) {
+  const picks = MODEL_PICKS[step.role] || [];
+  const cols = ['n1', 'n2', 'n3'].map((k) => splitBatches(state.out?.[k] || '', parts));
+  const out = [];
+  const attempts = [];
+  let whole = '';
+
+  for (let i = 0; i < parts; i += 1) {
+    if (signal?.aborted) return { ok: false, attempts, error: 'أُوقف بأمرك.' };
+
+    const slice = { ...state.place, reviews: state.place.reviews.slice(i * 60, i * 60 + 60) };
+    const prompt = promptMergeNormalized(slice, state.ctx, cols.map((c) => c[i] || ''));
+    let done = null;
+
+    for (const pick of picks) {
+      if (signal?.aborted) return { ok: false, attempts, error: 'أُوقف بأمرك.' };
+      if (onModel) onModel({ ...pick, name: `${pick.name} — دمج الدفعة ${i + 1} من ${parts}` });
+
+      const r = await callModel(pick.slug, prompt, {
+        signal,
+        onChunk: (piece) => { whole += piece; if (onChunk) onChunk(piece, whole); },
+      });
+      if (!r.ok) {
+        attempts.push({ model: pick.name, batch: i + 1, error: r.error });
+        if (r.needsKey) return { ok: false, attempts, error: r.error, needsKey: true };
+        continue;
+      }
+      if (!r.text) { attempts.push({ model: pick.name, batch: i + 1, error: 'ردّ فارغ.' }); continue; }
+
+      const v = verify(r.text, state.place);
+      if (v.badIds.length) {
+        attempts.push({ model: pick.name, batch: i + 1, error: `اخترع معرّفات: ${v.badIds.join('، ')}` });
+        whole = out.join('');
+        if (onChunk) onChunk('', whole);
+        continue;
+      }
+      done = (i ? `\n\n---\n## دفعة ${i + 1} من ${parts}\n` : '') + r.text;
+      out.push(done);
+      whole = out.join('');
+      if (onChunk) onChunk('', whole);
+      attempts.push({ model: pick.name, batch: i + 1, ok: true, score: v.score });
+      break;
+    }
+    if (!done) {
+      return { ok: false, attempts, error: `سقط دمج الدفعة ${i + 1} من ${parts} بعد تجربة كل النماذج.` };
+    }
+  }
+
+  const text = out.join('');
+  const used = [...new Set(attempts.filter((a) => a.ok).map((a) => a.model))];
+  return { ok: true, text, model: used.join(' + '), batches: parts, attempts, verdict: verify(text, state.place) };
 }
 
 /** ترتيب التشغيل: خطوةٌ خطوة، ولا تبدأ مرحلةٌ قبل تمام ما قبلها. */

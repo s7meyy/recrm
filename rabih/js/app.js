@@ -35,6 +35,7 @@ import { parsePopularTimes, parseQna, peakInsight, tagLanguages, qnaInsight, con
 import { fetchPlace, merge as mergePlace } from './places.js';
 import { fetchAllReviews, mergeReviews } from './reviews.js';
 import { runStep, pendingSteps } from './runner.js';
+import { dataStamp, staleSteps } from './stamp.js';
 import { compare as compareOutputs, mergeHint } from './agreement.js';
 import * as history from './history.js';
 import * as tour from './tour.js';
@@ -131,6 +132,7 @@ function blankJob() {
     planInReport: false,
     models: {},
     designHtml: '',
+    stamps: {},          // بصمة البيانات وقت إنتاج كل خطوة
     template: DEFAULT_TEMPLATE,
     font: null,          // { name, dataUrl } خط عربي يرفعه المستخدم
   };
@@ -181,12 +183,27 @@ function renderStepsBar(view) {
     report: !!job?.reportMd,
   };
   const idx = STEP_LABELS.findIndex((s) => s.key === view);
+  /* الشريط دليلٌ وطريقٌ معًا: كان يُعلِم بالمرحلة ولا يُنقَل به، وشاشة التقرير
+     بلا زرّ رجوع — فمن أراد تصحيح خطوةٍ بعد أن رأى تقريره لم يجد سبيلًا إلا
+     المرور بالأرشيف. والمرحلة التي لم تُبلَغ بعد تبقى غير قابلة للنقر. */
   const html = STEP_LABELS.map((s, i) => {
     const cls = i === idx ? 'active' : (done[s.key] ? 'done' : '');
-    return `<div class="pill ${cls}"><b>${done[s.key] && i !== idx ? '✓' : s.n}</b>${s.t}</div>`;
+    const reachable = i <= idx || done[s.key];
+    return `<button type="button" class="pill ${cls}${reachable ? '' : ' locked'}"
+      data-step-go="${s.key}"${reachable ? '' : ' disabled'}
+      title="${reachable ? 'انتقل إلى: ' + s.t : 'لم تُبلَغ بعد'}"><b>${done[s.key] && i !== idx ? '✓' : s.n}</b>${s.t}</button>`;
   }).join('');
   ['#steps-bar', '#steps-bar-2', '#steps-bar-3', '#steps-bar-4'].forEach((sel) => {
-    const n = $(sel); if (n) n.innerHTML = html;
+    const n = $(sel);
+    if (!n) return;
+    n.innerHTML = html;
+    n.querySelectorAll('[data-step-go]').forEach((btn) => btn.addEventListener('click', () => {
+      const key = btn.dataset.stepGo;
+      if (key === 'data') loadDataView();
+      if (key === 'pipeline') renderPipeline();
+      if (key === 'report') loadReportView();
+      show(key);
+    }));
   });
 }
 
@@ -843,6 +860,7 @@ function renderPhotoChips() {
 
 function renderPipeline() {
   const host = $('#pipeline-steps');
+  const nowStamp = dataStamp(job.place);
   // إعادة الرسم تُفرغ الحاوية فيقصر ارتفاع الصفحة فيقفز التمرير. يُحفَظ موضعه
   // ويُعاد بعد البناء، فلا يفقد المستخدم مكانه كلما عدّل خطوة.
   const scrollY = window.scrollY;
@@ -860,14 +878,16 @@ function renderPipeline() {
     const ready = STEPS.filter((s) => s.stage < step.stage).every((s) => (job.out[s.key] || '').trim());
     const done = !!(job.out[step.key] || '').trim();
 
-    const node = el('div', `step${done ? ' done' : ''}`);
+    const stale = done && job.stamps?.[step.key] && job.stamps[step.key] !== nowStamp;
+    const node = el('div', `step${done ? ' done' : ''}${stale ? ' stale' : ''}`);
     const defaultOpen = (!done && ready) || (done && !job.out.am);
     node.dataset.open = stepOpen.has(step.key) ? (stepOpen.get(step.key) ? '1' : '0') : (defaultOpen ? '1' : '0');
 
     const head = el('header');
-    head.innerHTML = `<b>${done ? '✓' : i + 1}</b>
+    head.innerHTML = `<b>${stale ? '⚠' : (done ? '✓' : i + 1)}</b>
       <div><div class="t">${step.title}</div>
-      <div class="s">${done ? 'مكتملة — اضغط للتعديل' : (ready ? 'جاهزة' : 'تنتظر إكمال المرحلة السابقة')}</div></div>`;
+      <div class="s">${stale ? '<b>قديمة — بُنيت على تعليقات غير الحالية</b>'
+        : (done ? 'مكتملة — اضغط للتعديل' : (ready ? 'جاهزة' : 'تنتظر إكمال المرحلة السابقة'))}</div></div>`;
     head.addEventListener('click', () => {
       const next = node.dataset.open === '1' ? '0' : '1';
       node.dataset.open = next;
@@ -1002,6 +1022,8 @@ function renderPipeline() {
 
     ta.addEventListener('input', () => {
       job.out[step.key] = ta.value;
+      job.stamps = job.stamps || {};
+      job.stamps[step.key] = dataStamp(job.place);   // على أي بياناتٍ كُتبت
       scheduleSave();
       updateProgress();
     });
@@ -1013,6 +1035,25 @@ function renderPipeline() {
     node.appendChild(inner);
     host.appendChild(node);
   });
+
+  /* تحذيرٌ لا يُسكَت عنه: المعرّفات تُمنَح بالترتيب، فتحليلٌ قديم يستشهد بـR001
+     يجتاز مدقّق السند وهو يصف تعليقًا لم يعد موجودًا. */
+  const stalies = staleSteps(job.out, job.stamps || {}, nowStamp);
+  const banner = $('#stale-msg');
+  if (banner) {
+    if (stalies.length) {
+      banner.innerHTML = `<div class="msg err"><b>تغيّرت التعليقات بعد تشغيل ${stalies.length} من الخطوات.</b>
+        <p class="fine">ما بُني عليها لم يعد يصف بياناتك الحالية — والمعرّفات نفسها صارت لتعليقات أخرى، فلن يكشفها مدقّق السند.
+        أعد تشغيل الخطوات المعلَّمة <b>⚠</b>، أو امسح إجاباتها.</p>
+        <button type="button" class="btn sm" id="btn-rerun-stale">إعادة تشغيل الخطوات القديمة</button></div>`;
+      const rr = $('#btn-rerun-stale');
+      if (rr) rr.addEventListener('click', async () => {
+        for (const k of stalies) job.out[k] = '';
+        renderPipeline();
+        await onRunAll();
+      });
+    } else banner.innerHTML = '';
+  }
 
   if (scrollY) window.scrollTo({ top: scrollY });
   if (active && document.getElementById(active)) document.getElementById(active).focus({ preventScroll: true });
@@ -1138,6 +1179,8 @@ async function runOne(key, { quiet = false } = {}) {
 
   job.out[key] = r.text;
   if (ta) ta.value = r.text;
+  job.stamps = job.stamps || {};
+  job.stamps[key] = dataStamp(job.place);
   job.models = job.models || {};
   job.models[key] = r.model;          // النموذج الذي شُغِّل فعلًا، لا الذي طُلب
   scheduleSave();
@@ -1226,6 +1269,7 @@ function loadReportView() {
   renderConfidence();
   $('#d-design').value = job.designHtml || '';
   renderDesignState();
+  renderStaleReport();
   history.reset(job.id, $('#r-md').value);
   renderHistory();
   renderSnapshots();
@@ -1715,6 +1759,23 @@ function designHtmlWithPhotos() {
   }
   // ما بقي من المواضع بلا صورة يُفرَّغ، فلا تظهر صورة مكسورة في تقرير يُسلَّم.
   return html.replace(/<img[^>]*src=["']?__PHOTO_\d+__["']?[^>]*>/g, '');
+}
+
+/**
+ * تنبيهٌ في شاشة التسليم: التقرير الذي تُسلّمه مبنيٌّ على تعليقات غير التي أمامك.
+ *
+ * وهنا تحديدًا يجب أن يُقال، لا في خط التحليل وحده: من هنا يُطبَع ويُرسَل.
+ */
+function renderStaleReport() {
+  const box = $('#stale-report');
+  if (!box) return;
+  const now = dataStamp(job.place);
+  const stalies = staleSteps(job.out, job.stamps || {}, now);
+  if (!stalies.length) { box.innerHTML = ''; return; }
+  box.innerHTML = `<div class="msg err"><b>هذا التقرير مبنيٌّ على تعليقات غير الحالية.</b>
+    <p class="fine">غُيِّرت التعليقات بعد إنتاج ${stalies.length} من خطوات التحليل. والمعرّفات (R001…) تُمنَح بالترتيب،
+    فما استشهد به التحليل القديم يشير الآن إلى تعليقاتٍ أخرى — ولن يكشف ذلك مدقّق السند.
+    <b>لا تُسلّمه</b> حتى تُعيد تشغيل الخطوات المعلَّمة في خط التحليل.</p></div>`;
 }
 
 function renderDesignState() {

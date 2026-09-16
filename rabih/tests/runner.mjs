@@ -138,7 +138,53 @@ try {
   chunks.length > 1 ? ok(`وصل النصّ على ${chunks.length} دفعات لا دفعةً واحدة`) : bad('التدفّق للمستخدم', chunks.length);
   step.model ? ok('اسم النموذج الذي شُغِّل يُعاد: ' + step.model) : bad('اسم النموذج');
 
-  console.log('٦) ترتيب الخطوات');
+  console.log('٦) لا تُشغَّل خطوة ينقص ما قبلها');
+  // رسالتها تُبنى بعبارة نائبة، فيجيب النموذج عن فراغٍ إجابةً تبدو سليمة.
+  const early = await runStep('a1', { ...state, out: {} }, {});
+  !early.ok ? ok('رُفض تشغيل التحليل قبل التوحيد') : bad('تشغيل مبكر', JSON.stringify(early).slice(0, 90));
+  /تنقص خطوات/.test(early.error || '') ? ok('السبب مذكور: ' + early.error.slice(0, 55)) : bad('سبب الرفض', early.error);
+  const ready = await runStep('a1', { ...state, out: { n1: 'x', n2: 'y', n3: 'z', nm: 'موحَّد (R001)' } }, {});
+  ready.ok ? ok('وتمضي حين يكتمل ما قبلها') : bad('بعد الاكتمال', JSON.stringify(ready).slice(0, 90));
+
+console.log('٧) الدفعات: التوحيد والدمج معًا');
+  const { batchCount, splitBatches } = await import('../js/prompts.js');
+  batchCount(150) === 3 ? ok('١٥٠ تعليقًا = ٣ دفعات') : bad('عدد الدفعات', batchCount(150));
+  batchCount(60) === 1 ? ok('٦٠ تعليقًا = دفعة واحدة') : bad('دفعة واحدة', batchCount(60));
+
+  const joined = 'أول\n---\n## دفعة 2 من 3\nثانٍ\n---\n## دفعة 3 من 3\nثالث';
+  const back = splitBatches(joined, 3);
+  back.length === 3 ? ok('المخرج المقسَّم يُفصَل إلى دفعاته') : bad('الفصل', back.length);
+  back[0] === 'أول' ? ok('الدفعة الأولى سليمة') : bad('الأولى', JSON.stringify(back[0]));
+  /ثالث/.test(back[2]) ? ok('والأخيرة سليمة') : bad('الأخيرة', JSON.stringify(back[2]));
+  splitBatches('سطر واحد فقط', 3).length === 3 ? ok('ولصقٌ بلا علامات يُقسَّم بالتساوي') : bad('قسمة بلا علامات');
+
+  // التوحيد المقسَّم يجب أن يُتبَع بدمجٍ مقسَّم: وإلا انفجر حجم رسالة الدمج.
+  const big = { ...state, place: { ...state.place,
+    reviews: Array.from({ length: 150 }, (_, i) => ({ id: 'R' + String(i + 1).padStart(3, '0'), rating: (i % 5) + 1, author: 'ز' + i, date: 'قبل شهر', text: 'تعليق رقم ' + i + ' عن الخدمة والانتظار.', ownerReply: '', language: '', likes: null })) } };
+  calls = []; mode = 'ok';
+  const norm = await runStep('n1', big, {});
+  (norm.ok && norm.batches === 3) ? ok('التوحيد جرى على ٣ دفعات') : bad('دفعات التوحيد', JSON.stringify({ ok: norm.ok, b: norm.batches }));
+  calls.length === 3 ? ok('ثلاثة نداءات لا واحد') : bad('نداءات التوحيد', calls.length);
+
+  calls = [];
+  const merged = await runStep('nm', { ...big, out: { n1: norm.text, n2: norm.text, n3: norm.text } }, {});
+  merged.ok ? ok('الدمج تمّ') : bad('الدمج', JSON.stringify(merged).slice(0, 100));
+  merged.batches === 3 ? ok('والدمج أيضًا على ٣ دفعات') : bad('دفعات الدمج', merged.batches);
+  const maxLen = Math.max(...calls.map((c) => c.promptLen));
+  maxLen < 60000 ? ok(`أكبر رسالة دمج ${Math.round(maxLen / 1000)}ك حرف — دون الحدّ`) : bad('حجم رسالة الدمج', maxLen);
+
+console.log('٨) بصمة البيانات');
+  const { dataStamp, staleSteps } = await import('../js/stamp.js');
+  const p1 = { ...state.place };
+  const s1 = dataStamp(p1);
+  const p2 = { ...state.place, reviews: [{ ...state.place.reviews[0], text: 'نصٌّ آخر تمامًا' }, state.place.reviews[1]] };
+  dataStamp(p2) !== s1 ? ok('تبدّل نصّ تعليق يغيّر البصمة') : bad('البصمة عند التبدّل');
+  dataStamp({ ...state.place }) === s1 ? ok('وتثبت إن لم يتبدّل شيء') : bad('ثبات البصمة');
+  staleSteps({ n1: 'x', n2: '' }, { n1: s1 }, dataStamp(p2)).join() === 'n1'
+    ? ok('الخطوة المبنيّة على بياناتٍ قديمة تُكشَف') : bad('كشف القديم');
+  staleSteps({ n1: 'x' }, { n1: s1 }, s1).length === 0 ? ok('ولا يُنبَّه على ما بُني على الحالية') : bad('إنذار كاذب');
+
+console.log('٩) ترتيب الخطوات');
   pendingSteps({}).length === 8 ? ok('ثماني خطوات معلّقة في البداية') : bad('المعلّق', pendingSteps({}).length);
   pendingSteps({ n1: 'x', n2: 'y' }).length === 6 ? ok('ما تمّ لا يُعاد') : bad('المعلّق بعد خطوتين', pendingSteps({ n1: 'x', n2: 'y' }).length);
   pendingSteps({})[0] === 'n1' ? ok('يبدأ من الأولى') : bad('البداية', pendingSteps({})[0]);

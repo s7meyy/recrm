@@ -291,3 +291,12 @@ select.model-pick{width:auto;min-width:150px;padding:6px 10px;font-size:13px}
 
 /* التاريخ بالحروف تحت حقل التاريخ — يرفع لبس صيغة المتصفح. */
 .due-label { margin-top: 2px; white-space: nowrap; }
+
+/* خطوة بُنيت على تعليقات غير الحالية. */
+.step.stale { border-color: var(--err); }
+.step.stale > header > b { background: var(--err); color: #fff; }
+
+/* شريط المراحل صار أزرارًا: يُنقَل به لا يُعلِم وحده. */
+.steps .pill { font: inherit; cursor: pointer; }
+.steps .pill:hover:not(.locked) { border-color: var(--navy); }
+.steps .pill.locked { cursor: not-allowed; opacity: .6; }

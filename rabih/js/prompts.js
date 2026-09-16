@@ -191,6 +191,22 @@ export function sliceForBatch(place, index) {
   return { ...place, reviews };
 }
 
+/**
+ * يفصل مخرجَ خطوةٍ مقسَّمة إلى دفعاتها، بالعلامة التي كُتبت بها.
+ * وإن لم توجد العلامة (لصقٌ بيد المستخدم) قُسِّم بالتساوي تقريبًا على الفقرات.
+ */
+export function splitBatches(text, parts) {
+  const s = String(text || '');
+  if (parts <= 1) return [s];
+  const marked = s.split(/\n---\n(?=## دفعة \d+ من \d+)/);
+  if (marked.length === parts) return marked;
+
+  // لا علامات: يُقسَّم على حدود الأسطر قسمةً متقاربة، ولا يُقطَع سطرٌ نصفين.
+  const lines = s.split('\n');
+  const per = Math.ceil(lines.length / parts);
+  return Array.from({ length: parts }, (_, i) => lines.slice(i * per, (i + 1) * per).join('\n'));
+}
+
 /** رسالة التوحيد لدفعةٍ واحدة، مُصرَّحٌ فيها بموضعها من الكل. */
 export function promptNormalizeBatch(place, ctx, index, total) {
   const part = sliceForBatch(place, index);
