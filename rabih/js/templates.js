@@ -50,7 +50,7 @@ export const TEMPLATES = {
     sections: [/خلاص|تنفيذي/, /ضعف|شكاو/, /توصي|خطة/, /زمن|اتجاه/],
     show: {
       brief: true, coverage: true, confidence: true, toc: false, quotes: true,
-      priority: true, actions: true, commit: true, checklist: true, drafts: true,
+      priority: false, actions: true, commit: true, checklist: true, drafts: true,
       voice: true, card: true, selfCompare: true, effect: true, promises: true,
       topics: true, cooccur: false, timing: true, recency: true, entities: true,
       replies: true, sources: false, stars: true, calc: true, impact: true,
@@ -62,7 +62,7 @@ export const TEMPLATES = {
     sections: [/خلاص|تنفيذي/, /أرقام|قراءة/, /ضعف|شكاو/, /زمن|اتجاه/, /توصي|خطة/],
     show: {
       brief: true, coverage: true, confidence: true, toc: false, quotes: false,
-      priority: true, actions: true, commit: false, checklist: false, drafts: false,
+      priority: false, actions: true, commit: false, checklist: false, drafts: false,
       voice: false, card: false, selfCompare: true, effect: true, promises: false,
       topics: true, cooccur: false, timing: false, recency: true, entities: true,
       replies: true, sources: false, stars: true, calc: false, impact: true,
@@ -74,7 +74,7 @@ export const TEMPLATES = {
     sections: [/خلاص|تنفيذي/, /توصي|خطة/],
     show: {
       brief: true, coverage: true, confidence: true, toc: false, quotes: false,
-      priority: true, actions: false, commit: false, checklist: false, drafts: false,
+      priority: false, actions: false, commit: false, checklist: false, drafts: false,
       voice: false, card: false, selfCompare: false, effect: false, promises: false,
       topics: false, cooccur: false, timing: false, recency: false, entities: false,
       replies: false, sources: false, stars: true, calc: false, impact: false,
@@ -86,7 +86,7 @@ export const TEMPLATES = {
     sections: [/خلاص|تنفيذي/, /ضعف|شكاو/],
     show: {
       brief: true, coverage: true, confidence: true, toc: false, quotes: false,
-      priority: true, actions: false, commit: false, checklist: false, drafts: false,
+      priority: false, actions: false, commit: false, checklist: false, drafts: false,
       voice: false, card: false, selfCompare: false, effect: false, promises: false,
       topics: true, cooccur: false, timing: false, recency: true, entities: true,
       replies: true, sources: false, stars: true, calc: false, impact: false,

@@ -6,6 +6,8 @@
 import { brief, briefBlock } from '../js/brief.js';
 import { coverage, coverageBlock } from '../js/coverage.js';
 import { actions, actionsBlock, checklistBlock, commitBlock, draftsBlock } from '../js/action.js';
+import { impact } from '../js/impact.js';
+import { topicStats } from '../js/lexicon.js';
 import { selfCompareBlock } from '../js/compare.js';
 import { buildReportHtml } from '../js/report.js';
 import { TEMPLATES, DEFAULT_TEMPLATE } from '../js/templates.js';
@@ -233,6 +235,56 @@ const clear = build([...Array(25)].map(() => mk(1, 'الانتظار طويل ج
   .concat([mk(2, 'مافي مواقف')]).concat([...Array(14)].map(() => mk(5, 'ممتاز'))));
 !priorityBlock(clear).includes('متقاربتان')
   ? ok('ولا يُقال حين تفصل — فلا يُبطَل الترتيب حيث يصحّ') : bad('تحفّظ في غير موضعه');
+
+console.log('١٧) المجموع المالي يُعَدّ بالشاكين لا بالشكاوى');
+/* التعليق الواحد يقع في موضوعين، وجمعُ صفوف الجدول يشحنه مرتين. قِيس
+   فبلغ الضعف في شاكٍ واحد من عشرة — وهو رقمٌ يُبنى عليه قرار إنفاق. */
+const dbl = build([mk(1, 'انتظرت طويلا والموظف وقح')]
+  .concat([...Array(9)].map(() => mk(5, 'ممتاز'))));
+const im = impact(dbl, { ticket: 30, monthly: 900, lossRate: 0.25 });
+im.complainers === 1 ? ok('الشاكون يُعَدّون مرةً واحدة وإن تعدّدت شكاواهم') : bad('عدّ الشاكين', im.complainers);
+im.totalRiyals === 675 ? ok(`والمجموع ${im.totalRiyals} لا ${im.sumOfRows} — وجمعُ الصفوف يضاعفه`) : bad('المجموع', im.totalRiyals);
+im.overlap === 675 ? ok('وقدرُ التقاطع مُعلَنٌ لا مسكوتٌ عنه') : bad('التقاطع', im.overlap);
+im.sumOfRows > im.totalRiyals && !impact(build([mk(1, 'الانتظار طويل')].concat([...Array(9)].map(() => mk(5, 'ممتاز')))), { ticket: 30, monthly: 900 }).overlap
+  ? ok('وبلا تقاطعٍ لا يُذكر تقاطع') : bad('تقاطع موهوم');
+
+console.log('١٨) لا حكمَ على ذكرٍ مفرد، ولا ترتيبَ لا تحمله العيّنة');
+const one = build([mk(1, 'مافي مواقف')].concat([...Array(9)].map(() => mk(5, 'القهوة ممتازة'))));
+const solo = topicStats(one).find((t) => t.id === 'parking');
+solo.verdict === 'ذكرٌ مفرد' && solo.decided === false
+  ? ok('«سلبي» عن تعليقٍ واحد صارت «ذكرٌ مفرد»') : bad('حكم على واحد', solo.verdict);
+solo.sharePct === 10 ? ok(`ونصيبُ الموضوع من العيّنة مذكور: ${solo.sharePct}%`) : bad('بلا نصيب');
+
+const smallPlan = actions(build([mk(1, 'الانتظار طويل'), mk(1, 'مافي مواقف'), mk(5, 'ممتاز'), mk(5, 'رائع')]), {});
+smallPlan.rankable === false && smallPlan.rows.length
+  ? ok('وبعيّنةٍ لا ترتّب: الخطة تبقى ويسقط ترتيبُها وحده') : bad('الخطة سقطت', JSON.stringify(smallPlan.rows.length));
+smallPlan.rows.every((r) => r.rank === null) ? ok('فبطاقاتها بلا أرقام') : bad('أرقام بلا سند');
+actionsBlock(build([mk(1, 'الانتظار طويل'), mk(1, 'مافي مواقف'), mk(5, 'ممتاز')]), {}).includes('وعيّنتك لا ترتّبها')
+  ? ok('ويُقال ذلك صراحةً') : bad('ترتيب صامت');
+
+const bigPlan = actions(build([...Array(6)].map(() => mk(1, 'الانتظار طويل جدا'))
+  .concat([mk(1, 'مافي مواقف')]).concat([...Array(8)].map(() => mk(5, 'ممتاز')))), {});
+bigPlan.rankable && bigPlan.rows[0].rank === 1
+  ? ok('وبعيّنةٍ ترتّب: تُرقَّم') : bad('لم تُرقَّم');
+bigPlan.singles.some((r) => r.id === 'parking')
+  ? ok('والمفردةُ تُفرَد بلا ترقيم — ولا تُهمَل') : bad('أُهملت المفردة');
+
+console.log('١٩) الترقيم والفهرس من مصدرٍ واحد');
+const rep = buildReportHtml({ place: p1, markdown: '## تحليل\nنصّ.', job: jb, ctx: {} });
+const nums = [...rep.matchAll(/<span class="secno">(\d+)<\/span>/g)].map((m) => Number(m[1]));
+nums.length && nums.every((n, i) => n === i + 1)
+  ? ok(`ترقيمٌ متصل بلا قفزات (1…${nums.length})`) : bad('ترقيم مخروم', nums.join());
+const tocItems = (rep.match(/<li><span class="tn">/g) || []).length;
+tocItems === nums.length
+  ? ok(`والفهرس يفهرس ما في التقرير فعلًا (${tocItems} بندًا)`) : bad('فهرس مخالف', `${tocItems}/${nums.length}`);
+tocItems > 1 ? ok('لا بندًا واحدًا يُسمّى «المحتويات»') : bad('فهرس ببند');
+
+console.log('٢٠) المدد تُقرأ');
+const dur = (await import('../js/stars.js')).starsBlock(
+  (() => { const q = emptyPlace(); q.ratings = { average: 4.2, count: 310, distribution: null }; q.reviews = []; return q; })(),
+  { perMonth: 900 });
+!/0 شهرًا|0\.\d+ شهرًا/.test(dur) ? ok('لا «0 شهرًا» ولا «0.1 شهرًا»') : bad('كسورُ شهر', (dur.match(/[\d.]+ شهرًا/g) || []).join());
+/يوم|أيام/.test(dur) ? ok('وما دون الشهرين يُقال بالأيام') : bad('بلا أيام');
 
 console.log('\n' + (fails.length ? `فشل ${fails.length}:\n` + fails.map((f) => ' - ' + f).join('\n') : '✅ نجحت كل الاختبارات'));
 process.exit(fails.length ? 1 : 0);

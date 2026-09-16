@@ -62,7 +62,7 @@ export function ladder(avg, count, { perMonth = 0 } = {}) {
       fives,
       fours,
       // الشهور المتوقَّعة بمعدّل التقييمات الذي يُدخله المالك — لا بتقديرٍ منّا.
-      months: perMonth > 0 && fives ? Number((fives / perMonth).toFixed(1)) : null,
+      months: perMonth > 0 && fives ? fives / perMonth : null,
     };
   });
 
@@ -77,6 +77,30 @@ export function ladder(avg, count, { perMonth = 0 } = {}) {
 }
 
 /** كتلة HTML للتقرير. */
+/**
+ * مدةٌ تُقرأ.
+ *
+ * كان الجدول يقول «0 شهرًا» و«0.1 شهرًا» و«0.8 شهرًا» — وعُشرُ الشهر ثلاثة
+ * أيام، و«صفر شهر» كذبٌ صريح عن واحدٍ وعشرين تقييمًا لا تأتي في يوم.
+ * فما دون الشهر يُقال بالأيام، والشهران فما فوق يُجبَران.
+ */
+function durationLabel(months) {
+  if (months === null || months === undefined) return '—';
+  const days = Math.round(months * 30);
+  if (days <= 0) return 'أقلّ من يوم';
+  if (days === 1) return 'يوم واحد';
+  if (days === 2) return 'يومان';
+  // ما دون الشهرين يُقال بالأيام: «36 يومًا» أوضح من «1.2 أشهر».
+  if (days <= 10) return `${days} أيام`;
+  if (days < 60) return `${days} يومًا`;
+
+  const m = Math.round(months);
+  if (m < 24) return m === 2 ? 'شهران' : (m <= 10 ? `${m} أشهر` : `${m} شهرًا`);
+
+  const y = Math.round(months / 12 * 10) / 10;
+  return y === 2 ? 'سنتان' : `${y} سنة`;
+}
+
 export function starsBlock(place, { perMonth = 0 } = {}) {
   const avg = place?.ratings?.average;
   const count = place?.ratings?.count;
@@ -89,7 +113,7 @@ export function starsBlock(place, { perMonth = 0 } = {}) {
       <td><b>${r.target}</b></td>
       <td>${r.fives === null ? '—' : r.fives.toLocaleString('ar-SA-u-nu-latn')}</td>
       ${showFours ? `<td>${r.fours === null ? '—' : r.fours.toLocaleString('ar-SA-u-nu-latn')}</td>` : ''}
-      ${perMonth > 0 ? `<td>${r.months === null ? '—' : r.months + ' شهرًا'}</td>` : ''}
+      ${perMonth > 0 ? `<td>${durationLabel(r.months)}</td>` : ''}
     </tr>`).join('');
 
   return `<section class="stars-calc">

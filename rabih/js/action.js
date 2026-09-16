@@ -20,6 +20,7 @@
 import { priorities } from './priority.js';
 import { impact } from './impact.js';
 import { stats } from './schema.js';
+import { significant } from './interval.js';
 
 const esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const num = (n) => (Number.isFinite(Number(n)) ? Number(n).toLocaleString('ar-SA-u-nu-latn') : '—');
@@ -149,8 +150,21 @@ const FALLBACK = {
  * @returns {{rows:Array, hasMoney:boolean, assume:object}}
  */
 export function actions(place, job = {}) {
-  const rows = priorities(place, { limit: 6 });
-  if (!rows.length) return { rows: [], hasMoney: false, assume: {} };
+  const all = priorities(place, { limit: 10 });
+  if (!all.length) return { rows: [], singles: [], hasMoney: false, assume: {} };
+
+  /* **ما ذُكر مرةً أو مرتين لا يُرتَّب.**
+     كان الجدول يصفّ ستّ أولويات، أربعٌ منها «شكوى واحدة (10% ±19)» —
+     والهامشُ يبتلع الفرق بينها جميعًا. فصفُّها «3، 4، 5، 6» بشريطِ وزنٍ
+     يُوهِم ترتيبًا لا تحمله العيّنة، ويصرف صاحب المحل إلى الثالثة قبل
+     الخامسة بلا سبب. فتُفرَد بلا ترقيم، وتُذكَر لأنها وقعت. */
+  const ordered = all.filter((r) => r.count >= 3);
+  const singles = all.filter((r) => r.count < 3);
+  /* وإن لم يبلغ شيءٌ ثلاثًا فالخطة لا تسقط — يسقط **ترتيبُها** وحده:
+     تُعرَض البطاقات بلا أرقام، ويُقال إن عيّنتك لا ترتّبها. وحذفُ الخطة
+     لصغر العيّنة يترك صاحب المحل بلا شيء، وهو أسوأ من ترتيبٍ متحفّظ. */
+  const rows = ordered.length ? ordered : all.slice(0, 6);
+  const rankable = ordered.length > 0;
 
   const assume = {
     ticket: job.assume?.ticket, monthly: job.assume?.monthly,
@@ -160,30 +174,42 @@ export function actions(place, job = {}) {
   const hasMoney = Boolean(imp && imp.ticket && imp.monthly);
   const byId = new Map((imp?.rows || []).map((r) => [r.id, r]));
 
+  const shape = (r, i) => {
+    const pb = PLAYBOOK[r.id] || FALLBACK;
+    const money = hasMoney ? (byId.get(r.id)?.riyals ?? 0) : null;
+    return {
+      rank: i === null ? null : i + 1,
+      id: r.id,
+      name: r.name,
+      why: r.why,
+      ids: r.ids,
+      count: r.count,
+      ci: r.ci || null,
+      owner: pb.owner,
+      first: pb.first,
+      then: pb.then,
+      metric: pb.metric,
+      cost: COST[pb.cost],
+      days: pb.days,
+      // الكسب: نصيبُ هذه الشكوى من الخسارة المُقدَّرة على فرض المالك.
+      money,
+      yearly: money === null ? null : money * 12,
+    };
+  };
+
+  /* وهل تفصل العيّنةُ بين الأولى والثانية أصلًا؟ إن لم تفصل قيل ذلك،
+     ولم يُترك الترقيمُ وحده يُفهِم ترتيبًا لا يسنده عدد. */
+  const ranked = rows.map((r, i) => shape(r, rankable ? i : null));
+  const tie = (ranked.length >= 2 && rows[0].ci && rows[1].ci)
+    ? !significant(rows[0].ci, rows[1].ci).decided : false;
+
   return {
     hasMoney,
+    tie,
+    rankable,
     assume: { ticket: imp?.ticket || 0, monthly: imp?.monthly || 0, lossRate: imp?.lossRate ?? 0.25 },
-    rows: rows.map((r, i) => {
-      const pb = PLAYBOOK[r.id] || FALLBACK;
-      const money = hasMoney ? (byId.get(r.id)?.riyals ?? 0) : null;
-      return {
-        rank: i + 1,
-        id: r.id,
-        name: r.name,
-        why: r.why,
-        ids: r.ids,
-        ci: r.ci || null,
-        owner: pb.owner,
-        first: pb.first,
-        then: pb.then,
-        metric: pb.metric,
-        cost: COST[pb.cost],
-        days: pb.days,
-        // الكسب: نصيبُ هذه الشكوى من الخسارة المُقدَّرة على فرض المالك.
-        money,
-        yearly: money === null ? null : money * 12,
-      };
-    }),
+    rows: ranked,
+    singles: rankable ? singles.map((r) => shape(r, null)) : [],
   };
 }
 
@@ -194,7 +220,7 @@ export function actionsBlock(place, job = {}) {
 
   const cards = a.rows.map((r) => `<div class="act">
     <div class="act-head">
-      <span class="act-rank">${r.rank}</span>
+      <span class="act-rank${r.rank === null ? ' none' : ''}">${r.rank === null ? '•' : r.rank}</span>
       <div>
         <b>${esc(r.name)}</b>
         <div class="fine">${esc(r.why)}</div>
@@ -215,11 +241,31 @@ export function actionsBlock(place, job = {}) {
     <div class="act-ids">الشواهد: ${r.ids.slice(0, 8).map((x) => `<span class="rid">${esc(x)}</span>`).join(' ')}</div>
   </div>`).join('');
 
+  const caveat = !a.rankable
+    ? `<div class="msg-tie"><b>هذه الخطة غير مرتّبة — وعيّنتك لا ترتّبها.</b>
+        لم يبلغ موضوعٌ ثلاث شكاوى، والفرق بين واحدةٍ واثنتين لا يُبنى عليه ترتيب.
+        فابدأ بأيسرها عليك أو بأقربها إلى ما تعرفه من محلّك، ولا تقرأ تسلسلها حكمًا.</div>`
+    : (a.tie
+      ? `<div class="msg-tie"><b>الأولى والثانية متقاربتان بقدر لا تفصله عيّنتك</b>
+          (${esc(a.rows[0].name)} · ${esc(a.rows[1].name)}). فابدأ بأيسرهما عليك، أو بهما معًا.</div>`
+      : '');
+
+  const singles = a.singles.length
+    ? `<div class="singles">
+        <b>وشكاوى مفردة — ذُكرت مرةً أو مرتين، فلا تُرتَّب ولا تُهمَل:</b>
+        <ul>${a.singles.map((r) => `<li>${esc(r.name)} <span class="fine">(${r.count})</span>
+          — ${esc(r.first)} ${r.ids.slice(0, 4).map((x) => `<span class="rid">${esc(x)}</span>`).join(' ')}</li>`).join('')}</ul>
+        <p class="fine">واحدةٌ منها قد تكون حادثةً عابرة، وقد تكون أولَ ظهورٍ لعطبٍ يتكرّر. فاقرأها بنصّها بمعرّفاتها.</p>
+      </div>`
+    : '';
+
   return `<section class="actions">
     <h2>خطة العمل — من يفعل ماذا</h2>
-    <p class="note">مرتَّبةٌ بأولويةٍ محسوبةٍ من تعليقاتك. و<b>ما تكسبه</b> محسوبٌ من أرقامك أنت
+    <p class="note">${a.rankable ? 'مرتَّبةٌ بأولويةٍ محسوبةٍ من تعليقاتك. و' : ''}<b>ما تكسبه</b> محسوبٌ من أرقامك أنت
     (متوسط الفاتورة × عدد عملائك × نصيب الشكوى من عيّنتك × نسبة من لا يعود) — فإن غيّرتَ فرضك تغيّر.</p>
+    ${caveat}
     <div class="acts">${cards}</div>
+    ${singles}
     <p class="fine"><b>المدة ومرتبة الكلفة عُرفُ القطاع لا قياسُ محلّك</b>: التعليق لا يذكر أجور فريقك
     ولا أسعار مدينتك، فلا يُستخرَج منه مبلغ. وهي أدلّةٌ للبدء تُصحَّح بمعرفتك بمحلّك.</p>
   </section>`;
@@ -260,10 +306,12 @@ export function commitBlock(place, job = {}) {
   const a = actions(place, job);
   if (!a.rows.length) return '';
   const top = a.rows.slice(0, 3);
+  /* الخانة الفارغة تُقرأ جدولًا لم يُملأ لا دعوةً للكتابة. فيها الآن سطرٌ
+     ظاهر وتلميحٌ باهت يقول ماذا يُكتب فيه. */
   const rows = top.map((r) => `<tr>
       <td>${esc(r.name)}</td>
-      <td class="write"></td>
-      <td class="write"></td>
+      <td class="write"><span class="hint">اسم المسؤول</span></td>
+      <td class="write"><span class="hint">التاريخ</span></td>
     </tr>`).join('');
 
   return `<section class="commit">

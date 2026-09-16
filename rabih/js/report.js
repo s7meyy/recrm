@@ -112,6 +112,37 @@ export function mdToHtml(md) {
   return out.join('\n');
 }
 
+/**
+ * يُرقّم كل قسمٍ في الجسد ويمنحه معرّفًا، ويُرجع بنود الفهرس.
+ *
+ * الترقيم كان بعدّاد CSS يتخطّى كل عنوانٍ وُسم `no-count` — وهي أحدَ عشر
+ * قسمًا من عشرين، متداخلةً مع المرقَّمة. فالقارئ يرى «2. أولويات» ثم قسمًا
+ * بلا رقم ثم «4. صوت العميل»، فيظنّ الثالث سقط من نسخته.
+ *
+ * فصار الترقيم في البناء لا في التنسيق: متسلسلًا على ما يُطبَع فعلًا، ولا
+ * يُخالف الفهرسَ بحال لأن كليهما من مصدرٍ واحد.
+ */
+function numberSections(html) {
+  const items = [];
+  const out = String(html).replace(/<h2(\s[^>]*)?>([\s\S]*?)<\/h2>/g, (m, attrs, inner) => {
+    const n = items.length + 1;
+    const id = `sec${n}`;
+    const title = inner.replace(/<[^>]+>/g, '').trim();
+    items.push({ id, n, title });
+    const cls = /class="/.test(attrs || '') ? (attrs || '').replace(/class="/, 'class="numbered ') : `${attrs || ''} class="numbered"`;
+    return `<h2 id="${id}"${cls}><span class="secno">${n}</span>${inner}</h2>`;
+  });
+  return { html: out, items };
+}
+
+/** فهرسٌ من الأقسام المطبوعة نفسها — لا من عناوين النموذج وحدها. */
+function tocOf(items) {
+  if (items.length < 2) return '';
+  return `<nav class="toc"><h2 class="no-count">المحتويات</h2><ol>${
+    items.map((i) => `<li><span class="tn">${i.n}</span><a href="#${i.id}">${esc(i.title)}</a></li>`).join('')
+  }</ol></nav>`;
+}
+
 /** فهرس محتويات من عناوين h2. */
 function tocFrom(html) {
   const items = [];
@@ -166,20 +197,24 @@ function topicsBlock(place, lead = []) {
   const inferred = rows.reduce((n, t) => n + (t.inferred || 0), 0);
   const judged = rows.reduce((n, t) => n + t.total, 0);
 
-  const bars = rows.slice(0, 10).map((t) => {
+  /* **رسمٌ واحد لا رسمٌ وجدولٌ يقولان الشيء نفسه.**
+     كان الجدول يُعيد الصفوف العشرة التي رسمها الشريط قبله حرفًا بحرف، فيملأ
+     نصف صفحةٍ بلا زيادة معنى. فصار الصفُّ واحدًا: فيه الشريط والأرقام
+     والنصيب والحكم معًا. */
+  const bars = rows.map((t) => {
     const negPct = Math.round((t.neg / max) * 100);
     const posPct = Math.round((t.pos / max) * 100);
     const neuPct = Math.round((t.neu / max) * 100);
-    return `<div class="topic-row">
+    return `<div class="topic-row${t.decided ? '' : ' faint'}">
       <span class="topic-name"><i class="ticon">${topicIcon(t.id)}</i>${esc(t.name)}</span>
       <span class="topic-track">
         <span class="seg pos" style="width:${posPct}%"></span><span class="seg neu" style="width:${neuPct}%"></span><span class="seg neg" style="width:${negPct}%"></span>
       </span>
-      <span class="topic-count">${t.total}</span>
+      <span class="topic-nums">${t.pos ? `<b class="p">${t.pos}+</b>` : ''}${t.neg ? `<b class="n">${t.neg}−</b>` : ''}</span>
+      <span class="topic-count">${t.total} <small>(${t.sharePct}%)</small></span>
+      <span class="topic-verdict${t.decided ? '' : ' fine'}">${esc(t.verdict)}</span>
     </div>`;
   }).join('');
-
-  const table = rows.map((t) => `<tr><td><i class="ticon">${topicIcon(t.id)}</i>${esc(t.name)}</td><td>${t.total}</td><td>${t.pos}</td><td>${t.neg}</td><td>${esc(t.verdict)}</td></tr>`).join('');
 
   return `<section class="topics">
     <h2 class="no-count">المواضيع الواردة في التعليقات</h2>
@@ -187,9 +222,10 @@ function topicsBlock(place, lead = []) {
     ${inferred ? `<p class="fine"><b>${inferred} من ${judged} حكمًا مستنبَطٌ لا منصوص</b>: ذُكر الموضوع في التعليق
     بلا لفظٍ يحسم رأي صاحبه فيه، فأُخذ حكمُه من نجوم التعليق كلّه. وهو أضعفُ من المنصوص، ولم يُطرَح
     لأن طرحه يُخفي ذكرًا وقع.</p>` : ''}
-    <div class="legend"><span><i class="sw pos"></i>إيجابي</span><span><i class="sw neu"></i>محايد</span><span><i class="sw neg"></i>سلبي</span></div>
+    <div class="legend"><span><i class="sw pos"></i>إيجابي</span><span><i class="sw neu"></i>محايد</span><span><i class="sw neg"></i>سلبي</span>
+      <span class="leg-note">والنسبة نصيبُ الموضوع من عيّنتك</span></div>
     <div class="topics-chart">${bars}</div>
-    <table><thead><tr><th>الموضوع</th><th>مرات الورود</th><th>إيجابي</th><th>سلبي</th><th>الاتجاه</th></tr></thead><tbody>${table}</tbody></table>
+    ${rows.some((t) => !t.decided) ? '<p class="fine">الصفوف الباهتة ذُكرت مرةً أو مرتين، فلا يُبنى عليها حكم — وذُكرت لأنها وقعت.</p>' : ''}
   </section>`;
 }
 
@@ -297,14 +333,15 @@ body{margin:0;font-family:"Segoe UI",Tahoma,"Arabic Typesetting",sans-serif;colo
 .cover-grid div{border:1px solid var(--line);border-radius:6px;padding:4mm 5mm}
 .cover-grid b{display:block;font-size:9pt;color:var(--muted);font-weight:600;margin-bottom:1mm}
 .cover-grid span{font-size:12pt;color:var(--navy);font-weight:700}
-.body{counter-reset:h2}
-.body h2{counter-increment:h2;font-size:15pt;color:var(--navy);border-bottom:2px solid var(--gold);padding-bottom:2mm;margin:10mm 0 4mm;break-after:avoid}
-.body h2::before{content:counter(h2) ". ";color:var(--gold)}
-.body h2.no-count{counter-increment:none}
-.body h2.no-count::before{content:none}
+/* الترقيم صار في البناء لا في التنسيق (numberSections)، فالعدّاد أُلغي:
+   كان يتخطّى كل عنوانٍ وُسم no-count فيَخرم التسلسل بلا أن يُرى السبب. */
+.body h2{font-size:15pt;color:var(--navy);border-bottom:2px solid var(--gold);padding-bottom:2mm;margin:10mm 0 4mm;break-after:avoid}
+.body h2 .secno{color:var(--gold);margin-inline-end:2mm}
+.body h2 .secno::after{content:"."}
+.body h2.no-count .secno{display:none}
 .body h3{counter-increment:h3;font-size:12.5pt;color:#24405e;margin:6mm 0 2mm;break-after:avoid}
 .body h2{counter-reset:h3}
-.body h3::before{content:counter(h2) "-" counter(h3) " ";color:var(--gold);font-weight:700}
+.body h3::before{content:counter(h3) ") ";color:var(--gold);font-weight:700}
 .body h4{font-size:11.5pt;color:#2c4a6b;margin:4mm 0 1mm}
 p{margin:0 0 3mm;text-align:start}
 ul,ol{margin:0 0 4mm;padding-inline-start:7mm}
@@ -379,6 +416,10 @@ code{background:#f3f5f8;padding:0 1mm;border-radius:3px;font-size:10pt}
 .act{border:1px solid var(--line);border-radius:8px;padding:4mm 5mm;background:#fff;break-inside:avoid}
 .act-head{display:flex;gap:3mm;align-items:flex-start;margin-bottom:3mm}
 .act-rank{flex:0 0 auto;width:8mm;height:8mm;border-radius:50%;background:var(--navy);color:#fff;
+.act-rank.none{background:none;color:var(--gold);font-size:14pt}
+.singles{margin-top:4mm;padding:4mm 5mm;border:1px dashed var(--line);border-radius:8px;background:#fbfcfd;break-inside:avoid}
+.singles>b{display:block;font-size:10pt;color:var(--navy);margin-bottom:2mm}
+.singles ul{margin:0 0 2mm;padding-inline-start:5mm;font-size:10pt;line-height:1.9}
   display:flex;align-items:center;justify-content:center;font-weight:700;font-size:10pt}
 .act-head b{font-size:11.5pt;color:var(--navy)}
 .act-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:3mm;margin-bottom:3mm}
@@ -389,20 +430,32 @@ code{background:#f3f5f8;padding:0 1mm;border-radius:3px;font-size:10pt}
 .act-steps{margin:0 0 2mm;padding-inline-start:5mm;font-size:10pt;line-height:1.9}
 .act-ids{font-size:8.5pt;color:var(--muted)}
 /* «بماذا ستبدأ؟» — فراغٌ يُكتب فيه بخطّ اليد. */
-.commit td.write{height:11mm;background:repeating-linear-gradient(transparent,transparent 10mm,var(--line) 10mm,var(--line) 10.2mm)}
+.commit td.write{height:13mm;vertical-align:bottom;padding:0 3mm 2mm;position:relative}
+.commit td.write::after{content:"";position:absolute;inset-inline:3mm;bottom:3mm;border-bottom:1px solid var(--navy);opacity:.35}
+.commit td.write .hint{font-size:8.5pt;color:var(--muted);opacity:.7}
 /* قائمة المتابعة — تُطبَع وتُعلَّق، فتبدأ صفحةً جديدة. */
 .checklist{break-before:page;break-inside:avoid}
 .checks{list-style:none;margin:0 0 5mm;padding:0}
-.checks li{display:flex;align-items:center;gap:3mm;padding:3mm 0;border-bottom:1px solid var(--line);font-size:10.5pt}
-.checks .box{flex:0 0 auto;width:5mm;height:5mm;border:1.5px solid var(--navy);border-radius:2px}
-.checks .task{flex:1}
-.checks .who{flex:0 0 auto;font-size:9pt;color:var(--muted)}
-.checks .when{flex:0 0 auto;font-size:9pt;color:var(--muted);letter-spacing:.1em}
+.checks li{display:grid;grid-template-columns:5mm 1fr auto auto;align-items:center;gap:3mm;padding:3mm 0;border-bottom:1px solid var(--line);font-size:10.5pt}
+.checks .box{width:5mm;height:5mm;border:1.5px solid var(--navy);border-radius:2px}
+.checks .task{min-width:0}
+.checks .who{font-size:9pt;color:var(--muted);white-space:nowrap}
+.checks .when{font-size:9pt;color:var(--muted);letter-spacing:.1em;white-space:nowrap}
 .check-foot{display:flex;gap:5mm;padding-top:3mm}
 .check-foot div{flex:1;text-align:center}
 .check-foot b{display:block;font-size:8.5pt;color:var(--muted)}
 .check-foot span{font-size:11pt;font-weight:700;color:var(--navy)}
 /* المسوّدات بنصّها كما وُلِّدت. */
+.toc ol{list-style:none;padding:0;margin:0;columns:2;column-gap:8mm}
+.toc li{display:flex;gap:2mm;align-items:baseline;margin-bottom:1.5mm;font-size:10pt;break-inside:avoid}
+.toc .tn{flex:0 0 auto;min-width:5mm;color:var(--gold);font-weight:700;font-size:9pt}
+.toc a{color:var(--navy);text-decoration:none}
+.topic-row .topic-nums{display:flex;gap:2mm;font-size:9pt;white-space:nowrap}
+.topic-row .topic-nums .p{color:#1e8449}
+.topic-row .topic-nums .n{color:#c0392b}
+.topic-row .topic-verdict{font-size:9pt;color:var(--muted);text-align:start;white-space:nowrap}
+.topic-row.faint{opacity:.62}
+.legend .leg-note{color:var(--muted);font-size:8.5pt}
 .msg-tie{margin:0 0 3mm;padding:3mm 4mm;border-inline-start:3px solid var(--gold);background:#faf7ef;border-radius:6px;font-size:10pt;line-height:1.85}
 .ticon{font-style:normal;display:inline-block;width:5mm;color:var(--gold);font-size:11pt;text-align:center}
 /* بطاقةُ النشر — ثناءُ العميل بنصّه. */
@@ -467,12 +520,12 @@ code{background:#f3f5f8;padding:0 1mm;border-radius:3px;font-size:10pt}
 .entities,.replies{break-inside:avoid;margin:8mm 0}
 .topics{break-inside:avoid;margin:8mm 0}
 .topics-chart{display:flex;flex-direction:column;gap:2mm;margin:4mm 0}
-.topic-row{display:grid;grid-template-columns:52mm 1fr 10mm;align-items:center;gap:3mm}
+.topic-row{display:grid;grid-template-columns:48mm 1fr 16mm 18mm 20mm;align-items:center;gap:2mm;margin-bottom:1mm}
 .topic-name{font-size:10.5pt;color:var(--navy)}
 .topic-track{display:flex;background:#eef1f5;border-radius:3px;height:5mm;overflow:hidden}
 .topic-track .seg{display:block;height:100%}
 .seg.pos{background:#2f7d55}.seg.neu{background:#b9c2ce}.seg.neg{background:#b5462f}
-.topic-count{font-size:10pt;color:var(--muted);text-align:left}
+.topic-count{font-size:10pt;color:var(--muted);text-align:start;white-space:nowrap}
 .legend{display:flex;gap:6mm;font-size:9.5pt;color:var(--muted);margin-top:2mm}
 .legend span{display:flex;align-items:center;gap:1.5mm}
 .legend .sw{width:3mm;height:3mm;border-radius:2px;display:inline-block}
@@ -510,6 +563,15 @@ figcaption{font-size:9pt;color:var(--muted);margin-top:1mm;text-align:center}
   .fine,.note,small,.act-grid small,.mkt figcaption,.foot{font-size:11pt;line-height:1.85}
   .act-grid b,.cover-grid b,.bcard b,.check-foot b,.stat b,.rec-cell b{font-size:10.5pt}
   .month .mv,.month .ml{font-size:9.5pt}
+  /* صفُّ الموضوع خمسةُ أعمدة لا تسع شاشة يد: يصير سطرين — الاسمُ والحكمُ
+     فوق، والشريطُ والأرقام تحت. */
+  .topic-row{grid-template-columns:1fr auto;gap:1mm 2mm;margin-bottom:2.5mm}
+  .topic-row .topic-name{grid-column:1}
+  .topic-row .topic-verdict{grid-column:2;text-align:end}
+  .topic-row .topic-track{grid-column:1;grid-row:2}
+  .topic-row .topic-nums{grid-column:2;grid-row:2}
+  .topic-row .topic-count{grid-column:1/-1;grid-row:3;font-size:9.5pt}
+  .toc ol{columns:1}
   body{font-size:12pt}
 }
 /* ترويسةٌ جارية: لا تظهر على الشاشة، وتتكرّر في كل صفحةٍ مطبوعة.
@@ -620,6 +682,49 @@ export function buildReportHtml({ place: rawPlace, ctx = {}, markdown = '', phot
   </footer>
   ${footerLine(identity)}`;
 
+  /* **الجسدُ يُجمَّع أولًا، ثم يُرقَّم ويُفهرَس مما فيه فعلًا.**
+     كان الفهرس يُبنى من عناوين النموذج وحدها، فيُخرج بندًا واحدًا («تحليل»)
+     ويُسمّى «المحتويات» وفي التقرير عشرون قسمًا. وكان الترقيم يقع على تسعةٍ
+     منها دون أحدَ عشر، متداخلةً، فيرى القارئ 2 ثم 4 فيظنّ قسمًا سقط. */
+  const sectionsRaw = [
+    body.html,
+    opt.priority ? priorityBlock(place) : '',
+    opt.actions ? actionsBlock(place, job || {}) : '',
+    opt.commit ? commitBlock(place, job || {}) : '',
+    opt.voice ? voiceBlock(place) : '',
+    opt.card ? cardBlock(place) : '',
+    opt.selfCompare && job?.prevJob ? selfCompareBlock(job.prevJob, job) : '',
+    opt.effect && job?.prevJob ? effectBlock(job.prevJob, job) : '',
+    opt.promises ? promisesBlock(place) : '',
+    opt.topics ? topicsBlock(place, sector?.lead || []) : '',
+    opt.coverage ? coverageBlock(place, job || {}) : '',
+    opt.cooccur ? cooccurBlock(place) : '',
+    opt.timing ? timingBlock(place) : '',
+    opt.recency ? recencyBlock(place) : '',
+    opt.entities ? entitiesReportBlock(place) : '',
+    opt.replies ? repliesReportBlock(place) : '',
+    opt.sources ? sourcesBlock(place) : '',
+    opt.calc ? starsBlock(place, { perMonth: job?.assume?.perMonth || 0 }) : '',
+    opt.impact ? impactBlock(place, { ...(job?.assume || {}), lossRate: (Number(job?.assume?.loss) || 25) / 100 }) : '',
+    opt.photos ? photosBlock(photos) : '',
+    opt.checklist ? checklistBlock(place, job || {}) : '',
+    opt.drafts ? draftsBlock(job || {}) : '',
+  ].filter(Boolean).join('\n');
+
+  const appendix = [
+    opt.stars ? starBars(place) : '',
+    opt.bias ? biasBlock(place) : '',
+    opt.confidence ? confidenceBlock(job?.place ? job : { place, reportMd: markdown }) : '',
+    methodBlock(place, job, ctx),
+  ].filter(Boolean).join('\n');
+
+  const numbered = numberSections(sectionsRaw);
+  const sections = numbered.html
+    + `<div class="appendix"><p class="appendix-head">ملحق: كيف بُني هذا التقرير</p>
+       <p class="fine">ما بعد هذا الخط مرجعٌ يُراجَع عند الحاجة، لا قراءةٌ تُتابَع: كيف قيست الأرقام وما حدودها.</p>
+       ${appendix}</div>`;
+  const toc = opt.toc ? tocOf(numbered.items) : '';
+
   return `<!doctype html>
 <html dir="rtl" lang="ar">
 <head>
@@ -634,36 +739,8 @@ export function buildReportHtml({ place: rawPlace, ctx = {}, markdown = '', phot
 ${cover}
 <main class="body">
 ${opt.brief ? briefBlock(place, job) : ''}
-${opt.toc ? body.toc : ''}
-${body.html}
-${opt.priority ? priorityBlock(place) : ''}
-${opt.actions ? actionsBlock(place, job || {}) : ''}
-${opt.commit ? commitBlock(place, job || {}) : ''}
-${opt.voice ? voiceBlock(place) : ''}
-${opt.card ? cardBlock(place) : ''}
-${opt.selfCompare && job?.prevJob ? selfCompareBlock(job.prevJob, job) : ''}
-${opt.effect && job?.prevJob ? effectBlock(job.prevJob, job) : ''}
-${opt.promises ? promisesBlock(place) : ''}
-${opt.topics ? topicsBlock(place, sector?.lead || []) : ''}
-${opt.coverage ? coverageBlock(place, job || {}) : ''}
-${opt.cooccur ? cooccurBlock(place) : ''}
-${opt.timing ? timingBlock(place) : ''}
-${opt.recency ? recencyBlock(place) : ''}
-${opt.entities ? entitiesReportBlock(place) : ''}
-${opt.replies ? repliesReportBlock(place) : ''}
-${opt.sources ? sourcesBlock(place) : ''}
-${opt.calc ? starsBlock(place, { perMonth: job?.assume?.perMonth || 0 }) : ''}
-${opt.impact ? impactBlock(place, { ...(job?.assume || {}), lossRate: (Number(job?.assume?.loss) || 25) / 100 }) : ''}
-${opt.photos ? photosBlock(photos) : ''}
-${opt.checklist ? checklistBlock(place, job || {}) : ''}
-${opt.drafts ? draftsBlock(job || {}) : ''}
-<div class="appendix">
-<p class="appendix-head">ملحق: كيف بُني هذا التقرير</p>
-${opt.stars ? starBars(place) : ''}
-${opt.bias ? biasBlock(place) : ''}
-${opt.confidence ? confidenceBlock(job?.place ? job : { place, reportMd: markdown }) : ''}
-${methodBlock(place, job, ctx)}
-</div>
+${toc}
+${sections}
 </main>
 ${footer}
 </div>

@@ -453,7 +453,13 @@ export function topicStats(place) {
     .map((t) => ({
       ...t,
       share: Number(((t.total / total) * 100).toFixed(1)),
-      verdict: t.neg > t.pos ? 'سلبي' : (t.pos > t.neg ? 'إيجابي' : 'مختلط'),
+      /* حكمٌ على ذكرٍ واحد ليس حكمًا: «سلبي» عن تعليقٍ فردٍ يُقرأ صفةً
+         للمنشأة، وهو خبرُ واحدٍ لا غير. فما دون ثلاثة يُقال فيه «ذكرٌ مفرد». */
+      verdict: t.total < 3 ? (t.total === 1 ? 'ذكرٌ مفرد' : 'ذكران')
+        : (t.neg > t.pos ? 'سلبي' : (t.pos > t.neg ? 'إيجابي' : 'مختلط')),
+      decided: t.total >= 3,
+      // نصيبُ الموضوع من العيّنة — محسوبٌ وكان غائبًا عن الجدول.
+      sharePct: total ? Number(((t.total / total) * 100).toFixed(1)) : 0,
     }))
     .sort((a, b) => b.total - a.total || b.neg - a.neg);
 }

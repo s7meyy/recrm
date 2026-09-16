@@ -44,7 +44,19 @@ export function impact(place, assume = {}) {
     })
     .sort((a, b) => b.riyals - a.riyals);
 
-  const totalRiyals = rows.reduce((a, r) => a + r.riyals, 0);
+  /* **المجموع لا يُجمَع من الصفوف.**
+     التعليق الواحد يقع في موضوعين وثلاثة: «انتظرت طويلًا والموظف وقح»
+     يُحسَب في الانتظار وفي التعامل، فيُشحَن مرتين. وجمعُ الصفوف يضاعف
+     الخسارة بقدر تقاطعها — قِيس فبلغ الضعف في شاكٍ واحد من عشرة.
+     والصواب أن يُعَدّ **الشاكون** لا الشكاوى: من اشتكى من ثلاثة أشياء
+     عميلٌ واحد لا ثلاثة، وخسارتُه فاتورةٌ واحدة. */
+  const complainers = new Set();
+  for (const t of topicStats(place)) for (const id of t.negIds) complainers.add(id);
+  const distinct = complainers.size;
+  const distinctShare = total ? distinct / total : 0;
+  const totalRiyals = Math.round(monthly * distinctShare * lossRate * ticket);
+  // وفرقُ الجمعين هو قدرُ التقاطع، ويُعلَن ليُعرَف أن الصفوف لا تُجمَع.
+  const sumOfRows = rows.reduce((a, r) => a + r.riyals, 0);
 
   return {
     ticket,
@@ -52,6 +64,10 @@ export function impact(place, assume = {}) {
     lossRate,
     sample: total,
     rows,
+    complainers: distinct,
+    complainerShare: Number((distinctShare * 100).toFixed(1)),
+    sumOfRows,
+    overlap: sumOfRows - totalRiyals,
     totalRiyals,
     yearly: totalRiyals * 12,
     // العيّنة قد لا تمثّل الإجمالي، فالإسقاط تقديرٌ لا قياس — ويُقال ذلك.
@@ -84,7 +100,11 @@ export function impactBlock(place, assume = {}) {
     <table><thead><tr>
       <th>الموضوع</th><th>نسبة الشاكين في العيّنة</th><th>عملاء متأثّرون شهريًّا</th><th>منهم لا يعود</th><th>الأثر الشهري</th>
     </tr></thead><tbody>${rows}</tbody></table>
-    <p class="total">مجموع التقدير: <b>${num(r.totalRiyals)} ريال شهريًّا</b> — أي نحو <b>${num(r.yearly)} ريال سنويًّا</b>.</p>
+    <p class="total">مجموع التقدير: <b>${num(r.totalRiyals)} ريال شهريًّا</b> — أي نحو <b>${num(r.yearly)} ريال سنويًّا</b>.
+    <span class="fine">محسوبٌ على <b>${num(r.complainers)} شاكيًا</b> من ${num(r.sample)} (${r.complainerShare}%)، لا بجمع الصفوف.</span></p>
+    ${r.overlap > 0 ? `<p class="fine"><b>ولا تُجمَع صفوف الجدول.</b> التعليق الواحد يقع في موضوعين وثلاثة، فمن اشتكى
+    من الانتظار والتعامل معًا عميلٌ واحد لا اثنان، وخسارتُه فاتورةٌ واحدة. وجمعُ الصفوف يعطي
+    ${num(r.sumOfRows)} ريالًا — أكثر من الصواب بـ${num(r.overlap)} ريال، وهو قدرُ تقاطع الشكاوى.</p>` : ''}
     <p class="fine"><b>كيف قُرئ هذا الجدول:</b> نسبة الشاكين محسوبة من عيّنتك (${num(r.sample)} تعليقًا${r.sampleShare ? `، وهي ${r.sampleShare}% من إجمالي تقييماتك` : ''}).
     وما عداها فرضٌ أدخلتَه أنت لا قياسٌ من بياناتك — فالجدول يقيس <b>حجم المشكلة على فرضك</b>، ولا يزعم أنه إيرادٌ ضائع مقيس.</p>
   </section>`;
