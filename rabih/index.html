@@ -31,6 +31,8 @@
   <div id="queue-bar" hidden></div>
 
   <!-- ١) الإدخال -->
+  <main id="main">
+    <h1 class="sr-only">رابح — تقارير المنشآت من خرائط قوقل</h1>
   <section class="view" id="view-new">
     <div class="steps" id="steps-bar"></div>
 
@@ -102,7 +104,7 @@
         <div class="note">تُنشأ التقارير بالمدينة والتصنيف المختارين أعلاه، وتُوضَع في الطابور بالترتيب.</div>
         <div class="row"><button type="button" class="btn sm" id="btn-bulk-create">إنشاء الدفعة</button></div>
       </div>
-      <div id="new-msg"></div>
+      <div id="new-msg" role="status" aria-live="polite"></div>
       <div class="row end">
         <button type="button" class="btn ghost" id="btn-bulk">إنشاء دفعة…</button>
         <button type="button" class="btn gold" id="btn-start">ابدأ →</button>
@@ -135,13 +137,13 @@
           <input id="rv-limit" type="number" min="0" max="2000" step="50" placeholder="0 = الكل"></label>
         <span class="fine">من مزوّد وسيط يعمل على الخادم. يحتاج مفتاحًا (<code>OUTSCRAPER_KEY</code> أو <code>APIFY_TOKEN</code>) في بيئة Netlify، وله تكلفة بحسب عدد التعليقات.</span>
       </div>
-      <div id="reviews-msg"></div>
+      <div id="reviews-msg" role="status" aria-live="polite"></div>
 
       <div class="row" id="places-row">
         <button type="button" class="btn sm" id="btn-places">جلب البطاقة من قوقل</button>
         <span class="fine">يملأ الاسم والعنوان والهاتف والتقييم والصور — و<b>٥ مراجعات كحدٍّ أقصى</b>، وهو حدُّ قوقل الرسمي. التعليقات الباقية تُلصَق أدناه.</span>
       </div>
-      <div id="places-msg"></div>
+      <div id="places-msg" role="status" aria-live="polite"></div>
 
       <div class="grid c2">
         <div class="field"><label for="d-name">اسم المنشأة *</label><input id="d-name" placeholder="مثال: مقهى الدرب"></div>
@@ -150,7 +152,25 @@
       <div class="grid c3">
         <div class="field"><label for="d-avg">متوسط التقييم</label><input id="d-avg" type="number" step="0.1" min="1" max="5" placeholder="4.3"></div>
         <div class="field"><label for="d-count">عدد التقييمات</label><input id="d-count" type="number" min="0" placeholder="1287"></div>
+        <div class="field">
+          <label for="d-withtext">منها بنصّ (اختياري)</label>
+          <input id="d-withtext" type="number" min="0" placeholder="87">
+          <div class="note">أكثر تقييمات قوقل صامتةٌ بلا نصّ فلا تُحلَّل. وهذا هو <b>المقام الصحيح</b> لنسبة عيّنتك.</div>
+        </div>
+      </div>
+      <div class="grid c2">
         <div class="field"><label for="d-price">مستوى الأسعار</label><input id="d-price" placeholder="مثال: ٣٠–٦٠ ريال"></div>
+        <div class="field">
+          <label>توزيع النجوم كما يعرضه قوقل (اختياري)</label>
+          <div class="dist-row">
+            <label>٥<input id="d-d5" type="number" min="0" placeholder="0"></label>
+            <label>٤<input id="d-d4" type="number" min="0" placeholder="0"></label>
+            <label>٣<input id="d-d3" type="number" min="0" placeholder="0"></label>
+            <label>٢<input id="d-d2" type="number" min="0" placeholder="0"></label>
+            <label>١<input id="d-d1" type="number" min="0" placeholder="0"></label>
+          </div>
+          <div class="note">يكشف إن كانت عيّنتك تمثّل منشأتك أم أنها منحازة — وقوقل يقدّم المتطرّف في الترتيب.</div>
+        </div>
       </div>
       <div class="grid c2">
         <div class="field"><label for="d-address">العنوان</label><input id="d-address" placeholder="الحي، الشارع، المدينة"></div>
@@ -192,7 +212,7 @@
       <h2>٣. التعليقات</h2>
       <p class="hint">ألصق هنا. يُقبل أيضًا JSON من أي مزوّد بيانات.</p>
       <div class="field">
-        <textarea id="d-reviews" class="tall" placeholder="ألصق التعليقات هنا…"></textarea>
+        <textarea id="d-reviews" class="tall" aria-label="مربع لصق التعليقات" placeholder="ألصق التعليقات هنا…"></textarea>
       </div>
       <div class="row">
         <label class="inline-field" for="d-platform">مصدر هذا اللصق
@@ -206,9 +226,11 @@
         <span class="spacer"></span>
         <span id="parse-info" class="badge"></span>
       </div>
-      <div id="parse-msg"></div>
+      <div id="parse-msg" role="status" aria-live="polite"></div>
+      <div id="ci-hint"></div>
       <div class="stat-grid" id="parse-stats" hidden></div>
       <div id="recency-box"></div>
+      <div id="bias-box"></div>
       <div id="sources-box"></div>
       <div id="topics-box"></div>
       <div id="priority-box"></div>
@@ -220,7 +242,7 @@
     <div class="card">
       <h2>٤. أمانة النقل</h2>
       <p class="hint">شرطُ هذه الأداة: <b>لا يُعدَّل تعليق ولا تقييم، ولو كان ذمًّا.</b> وهذا فحصٌ يُثبته لا وعدٌ به: يُقارَن نصّ كل تعليق بمصدرك حرفًا بحرف.</p>
-      <div id="integrity-box"></div>
+      <div id="integrity-box" role="status" aria-live="polite"></div>
     </div>
 
     <div class="card">
@@ -233,7 +255,7 @@
       <h2>٦. صور المنشأة (اختياري)</h2>
       <p class="hint">تُضمَّن داخل ملف التقرير نفسه فيبقى يعمل بلا إنترنت. الأفضل ٣ إلى ٦ صور.</p>
       <div class="field">
-        <input id="d-photos" type="file" accept="image/*" multiple>
+        <input id="d-photos" type="file" accept="image/*" multiple aria-label="اختيار صور المنشأة">
       </div>
       <div class="chips" id="photo-chips"></div>
     </div>
@@ -261,7 +283,7 @@
         <span class="spacer"></span>
         <span class="badge" id="pipeline-progress"></span>
       </div>
-      <div id="run-msg"></div>
+      <div id="run-msg" role="status" aria-live="polite"></div>
     </div>
 
     <div class="card" id="agreement-card" hidden>
@@ -306,6 +328,14 @@
           <div class="note" id="tpl-note"></div>
         </div>
         <div class="field">
+          <label for="r-lang">لغة التقرير</label>
+          <select id="r-lang">
+            <option value="ar">العربية</option>
+            <option value="en">English (عناوين وأرقام مترجمة — والاقتباسات بالعربية كما قيلت)</option>
+          </select>
+          <div class="note">لا تُترجَم شهادات العملاء: ترجمة الشهادة إتلافٌ لها، و«المكان زفت» ليست «not good».</div>
+        </div>
+        <div class="field">
           <label for="r-font">خط عربي مضمَّن (اختياري)</label>
           <input id="r-font" type="file" accept=".ttf,.otf,.woff,.woff2,font/*">
           <div class="note" id="font-note">بدونه يُستعمل خط الجهاز. تضمينه يزيد حجم الملف نحو ٣٠٠ كيلوبايت ويثبّت الشكل عند كل مستقبِل.</div>
@@ -317,6 +347,7 @@
         <button type="button" class="btn ghost" id="btn-download-html">تنزيل HTML</button>
         <button type="button" class="btn ghost" id="btn-download-md">تنزيل النص</button>
         <button type="button" class="btn ghost" id="btn-download-xlsx">تنزيل Excel</button>
+        <button type="button" class="btn ghost" id="btn-download-csv">البيانات الخام (CSV)</button>
         <button type="button" class="btn gold" id="btn-freeze">تجميد النسخة المُسلَّمة</button>
       </div>
       <div id="snapshots-box"></div>
@@ -346,7 +377,7 @@
         <span class="spacer"></span>
         <span class="badge" id="replies-state"></span>
       </div>
-      <div id="replies-msg"></div>
+      <div id="replies-msg" role="status" aria-live="polite"></div>
       <div class="field">
         <label for="d-replies">المسوّدات</label>
         <textarea id="d-replies" class="tall" placeholder="ألصق هنا ما ردّ به النموذج، أو شغّله آليًّا…"></textarea>
@@ -394,7 +425,7 @@
         <button type="button" class="btn ghost sm" id="btn-share-copy">نسخ الرابط</button>
         <button type="button" class="btn danger sm" id="btn-share-del">إلغاء الرابط</button>
       </div>
-      <div id="share-msg"></div>
+      <div id="share-msg" role="status" aria-live="polite"></div>
 
       <h2>١٢. الإرسال</h2>
       <p class="hint">احفظ الـPDF أولًا ثم أرفقه في القناة التي تختارها؛ النص التمهيدي يُجهَّز لك.</p>
@@ -454,10 +485,10 @@
       <h2>منافسٌ بالاسم</h2>
       <p class="hint">ألصق رابط منافسك من خرائط قوقل فيُجلَب ويُقارَن بك محورًا بمحور. يحتاج مفتاح مزوّد.</p>
       <div class="row">
-        <input id="rival-url" placeholder="https://maps.app.goo.gl/…" style="flex:1;min-width:220px">
+        <input id="rival-url" aria-label="رابط المنافس في خرائط قوقل" placeholder="https://maps.app.goo.gl/…" style="flex:1;min-width:220px">
         <button type="button" class="btn sm" id="btn-rival-fetch">اجلب وقارن</button>
       </div>
-      <div id="rival-msg"></div>
+      <div id="rival-msg" role="status" aria-live="polite"></div>
       <div id="rival-box"></div>
 
       <h2>مقارنة المنافسين</h2>
@@ -496,7 +527,7 @@
       <h2>الأرشيف</h2>
       <p class="hint">كل التقارير محفوظة في متصفحك، مرتّبة: المنطقة ← المدينة ← التصنيف ← الحي.</p>
       <div class="row">
-        <input id="ar-search" placeholder="بحث باسم المنشأة…" style="flex:1 1 220px">
+        <input aria-label="بحث في الأرشيف باسم المنشأة" id="ar-search" placeholder="بحث باسم المنشأة…" style="flex:1 1 220px">
         <button type="button" class="btn ghost sm" id="btn-export-all">تصدير الكل JSON</button>
         <button type="button" class="btn ghost sm" id="btn-archive-xlsx">تصدير الكل Excel</button>
         <label class="btn ghost sm" style="margin:0;font-weight:600">استيراد<input id="ar-import" type="file" accept="application/json" hidden></label>
@@ -545,7 +576,7 @@
         <button type="button" class="btn ghost sm" id="btn-export-enc">تصدير الأرشيف مشفَّرًا</button>
         <label class="btn ghost sm" style="margin:0;font-weight:600">استيراد مشفَّر<input id="lk-import" type="file" accept="application/json" hidden></label>
       </div>
-      <div id="lock-msg"></div>
+      <div id="lock-msg" role="status" aria-live="polite"></div>
     </div>
 
     <div class="card">
@@ -562,7 +593,7 @@
         <button type="button" class="btn ghost sm" id="btn-cloud-copy">نسخ المعرّف</button>
         <button type="button" class="btn danger sm" id="btn-cloud-del">حذف النسخة</button>
       </div>
-      <div id="cloud-msg"></div>
+      <div id="cloud-msg" role="status" aria-live="polite"></div>
 
       <h2>الرصد الدوري والإنذار المبكر</h2>
       <p class="hint">بمفتاح المزوّد تُجلَب تعليقات المنشآت المرصودة يوميًّا، ويُنبَّه عند تدهور. و<b>المرفوع أرقامٌ لا نصوص</b>: المتوسط والعدد ونسبة السلبي.</p>
@@ -572,16 +603,31 @@
         <span class="spacer"></span>
         <span class="badge" id="watch-state"></span>
       </div>
-      <div id="watch-msg"></div>
+      <div id="watch-msg" role="status" aria-live="polite"></div>
       <div id="watch-box"></div>
+
+      <h2>معيار الرسائل</h2>
+      <p class="hint">حالةٌ ثابتة تمرّ في الخط، وتُقاس إجابات النماذج بمدقّق السند نفسه. <b>فأيّ تعديلٍ في الرسائل يُكشَف أثره بالرقم لا بالظنّ.</b> يحتاج مفتاح OpenRouter.</p>
+      <div class="row">
+        <button type="button" class="btn sm" id="btn-eval-run">شغّل المعيار</button>
+        <span class="spacer"></span>
+        <span class="badge" id="eval-state"></span>
+      </div>
+      <div id="eval-msg" role="status" aria-live="polite"></div>
+      <div id="eval-box"></div>
+
+      <h2>الخصوصية</h2>
+      <p class="hint">تعليقات قوقل منشورةٌ علنًا، لكن جمعها في ملفٍّ وتسليمه لطرفٍ ثالث معالجةٌ لبياناتٍ شخصية يحكمها نظام حماية البيانات الشخصية.</p>
+      <label class="check"><input type="checkbox" id="privacy-on"> <b>وضع الخصوصية</b> — تُستبدَل أسماء الكتّاب بأسماء مستعارة في كل ما يخرج منك (تقريرًا أو Excel أو CSV أو رابطًا)</label>
+      <p class="fine">ولا يُمسّ نصّ تعليقٍ ولا تقييمه، ولا يتغيّر أرشيفك — والمعرّفات تبقى فيظلّ التحقّق ممكنًا.</p>
 
       <h2>التحقّق من تقرير مُسلَّم</h2>
       <p class="hint">كل تقرير يُنزَّل أو يُنشَر يحمل بصمةً لمحتواه. ألصق الملف هنا لتعرف: أهو كما صدر أم غُيِّر فيه بعد التسليم؟</p>
       <div class="row">
-        <input type="file" id="verify-file" accept=".html,text/html">
+        <input type="file" id="verify-file" accept=".html,text/html" aria-label="ملف التقرير للتحقّق من بصمته">
         <button type="button" class="btn sm" id="btn-verify-file">تحقّق</button>
       </div>
-      <div id="verify-msg"></div>
+      <div id="verify-msg" role="status" aria-live="polite"></div>
 
       <h2>إشارات عبر الأرشيف</h2>
       <p class="hint">ما لا يُرى من منشأةٍ واحدة: كاتبٌ يمدح منشأةً ويذمّ منافستها، أو نصٌّ يتكرّر حرفيًّا في منشأتين. <b>إشارات لا اتهامات.</b></p>
@@ -599,7 +645,7 @@
           <button type="button" class="btn ghost sm" id="btn-lex-reset">تصفير إضافاتي</button>
         </div>
       </div>
-      <div id="lex-msg"></div>
+      <div id="lex-msg" role="status" aria-live="polite"></div>
       <div id="lex-custom"></div>
     </div>
 
@@ -664,10 +710,11 @@
       </ul>
     </div>
   </section>
+  </main>
 
 </div>
 
-<div class="toast" id="toast" hidden></div>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 <script type="module" src="js/app.js"></script>
 </body>
 </html>

@@ -15,6 +15,8 @@ import { voiceBlock } from './voice.js';
 import { impactBlock } from './impact.js';
 import { sourcesBlock } from './sources.js';
 import { cooccurBlock } from './cooccur.js';
+import { biasBlock } from './bias.js';
+import { shield, notice as privacyNotice } from './privacy.js';
 import { timingBlock } from './timing.js';
 import { promisesBlock } from './promises.js';
 import { effectBlock } from './effect.js';
@@ -312,12 +314,18 @@ code{background:#f3f5f8;padding:0 1mm;border-radius:3px;font-size:10pt}
 .bar-track{background:#eef1f5;border-radius:3px;height:5mm;overflow:hidden}
 .bar-fill{display:block;height:100%;background:linear-gradient(90deg,var(--navy),#3a6ea5)}
 .bar-value{font-size:10pt;color:var(--muted);text-align:left}
-.priority,.stars-calc,.voice,.impact,.sources,.cooccur,.timing,.promises,.effect,.network,.signature{break-inside:avoid;margin:0 0 7mm}
+.priority,.stars-calc,.voice,.impact,.sources,.cooccur,.timing,.promises,.effect,.network,.signature,.bias,.method{break-inside:avoid;margin:0 0 7mm}
 .promise{margin:0 0 4mm;padding:3mm 4mm;border:1px solid var(--line);border-radius:6px;break-inside:avoid}
 .promise .q{margin:2mm 0;padding:2mm 3mm;background:#fbfcfd;border-inline-start:3px solid var(--gold);border-radius:4px}
 .promise .q p{margin:0;font-size:10pt;line-height:1.8}
 .promise .after{margin:2mm 0 0;font-size:9.5pt}
 .err-text{color:#c0392b}
+.ar-sub{display:block;font-size:.72em;color:var(--muted);font-weight:400;margin-top:1mm}
+.lang-note{margin-top:6mm;padding:3mm 4mm;background:#fbfcfd;border:1px solid var(--line);border-radius:6px;font-size:9.5pt;direction:ltr;text-align:left}
+.bias .verdict{padding:3mm 4mm;border-radius:6px;margin-top:3mm}
+.bias .verdict.err{background:#fdf6f5;border:1px solid #f0c9c4}
+.bias .verdict.warn{background:#fffaf2;border:1px solid #f0dcb8}
+.bias .verdict.ok{background:#f5fbf7;border:1px solid #cfe8d8}
 .ok-text{color:#1e8449}
 .signature{border:1px solid var(--line);border-radius:8px;padding:5mm 6mm;background:#fbfcfd}
 .sig-row{display:flex;gap:4mm;margin:2mm 0;font-size:10pt}
@@ -405,10 +413,38 @@ figcaption{font-size:9pt;color:var(--muted);margin-top:1mm;text-align:center}
  * @param {Array}  o.photos  [{url, caption}]
  * @returns {string} HTML كامل مكتفٍ بذاته
  */
-export function buildReportHtml({ place, ctx = {}, markdown = '', photos = [], show = {}, font = null, identity = null, job = null, sector = null }) {
+/**
+ * صفحة المنهجية وحدود المسؤولية — تحمي مُعِدّ التقرير وتُتمّ صدقه.
+ *
+ * التقرير يصف **ما كُتب في قوقل** لا حقيقة المنشأة: من كتب راضٍ أو غاضب،
+ * ومن سكت لم يُحسَب. وقول ذلك صراحةً ليس تقليلًا من التقرير — بل تحديدٌ
+ * لما يصلح أن يُبنى عليه.
+ */
+function methodBlock(place, job, ctx) {
+  const s = stats(place);
+  const esc2 = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const src = [...new Set((place.reviews || []).map((r) => r.source || 'paste'))]
+    .map((x) => ({ paste: 'لصقٌ يدوي', provider: 'مزوّد وسيط', places: 'واجهة قوقل الرسمية', json: 'ملف JSON' }[x] || x));
+
+  return `<section class="method">
+    <h2>المنهجية وحدود هذا التقرير</h2>
+    <ul>
+      <li><b>المصدر:</b> ${esc2(src.join('، ') || 'غير محدَّد')}${ctx.cityName ? ` — ${esc2(ctx.cityName)}` : ''}.</li>
+      <li><b>العيّنة:</b> ${s.total} تعليقًا${s.declaredWithText ? ` من ${s.declaredWithText} تعليقًا منصوصًا` : ''}${s.googleCount ? `، وإجمالي التقييمات ${s.googleCount}` : ''}.</li>
+      <li><b>التصنيف:</b> المواضيع تُستخرج بقاموس كلماتٍ عربيّ يعمل في المتصفح، والاتجاه يُحسَب على مستوى الجملة لا التعليق كلّه.</li>
+      <li><b>الأرقام:</b> كلها محسوبةٌ برمجيًّا من التعليقات، ولا يُعيد أي نموذجٍ حسابها.</li>
+      <li><b>ما لا يقوله هذا التقرير:</b> يصف <b>ما كُتب في قوقل</b> لا حقيقة المنشأة. ومن كتب غالبًا راضٍ جدًّا أو غاضب جدًّا، ومن سكت لم يُحسَب — فلا يُقاس عليه رضا العملاء كافّة.</li>
+      <li><b>الخصوصية:</b> ${esc2(privacyNotice())}</li>
+    </ul>
+  </section>`;
+}
+
+export function buildReportHtml({ place: rawPlace, ctx = {}, markdown = '', photos = [], show = {}, font = null, identity = null, job = null, sector = null }) {
+  // وضع الخصوصية يعمل على ما يخرج من يدك، ولا يمسّ أرشيفك.
+  const place = shield(rawPlace);
   const opt = { toc: true, stars: true, topics: true, photos: true, recency: true, entities: true, replies: true, confidence: true,
     priority: true, calc: true, voice: true, impact: true, sources: true,
-    cooccur: true, timing: true, promises: true, effect: true, ...show, ...(sector?.show || {}) };
+    cooccur: true, timing: true, promises: true, effect: true, bias: true, ...show, ...(sector?.show || {}) };
   const s = stats(place);
   const body = tocFrom(mdToHtml(markdown));
   const date = new Date().toLocaleDateString('ar-SA-u-ca-gregory');
@@ -450,6 +486,7 @@ ${cover}
 ${opt.confidence ? confidenceBlock(job || { place, reportMd: markdown }) : ''}
 ${opt.toc ? body.toc : ''}
 ${opt.stars ? starBars(place) : ''}
+${opt.bias ? biasBlock(place) : ''}
 ${opt.recency ? recencyBlock(place) : ''}
 ${opt.topics ? topicsBlock(place, sector?.lead || []) : ''}
 ${opt.sources ? sourcesBlock(place) : ''}
@@ -462,6 +499,7 @@ ${opt.replies ? repliesReportBlock(place) : ''}
 ${opt.promises ? promisesBlock(place) : ''}
 ${opt.voice ? voiceBlock(place) : ''}
 ${body.html}
+${methodBlock(place, job, ctx)}
 ${opt.calc ? starsBlock(place, { perMonth: job?.assume?.perMonth || 0 }) : ''}
 ${opt.impact ? impactBlock(place, { ...(job?.assume || {}), lossRate: (Number(job?.assume?.loss) || 25) / 100 }) : ''}
 ${opt.photos ? photosBlock(photos) : ''}

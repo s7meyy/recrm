@@ -11,6 +11,8 @@ import { scan } from './anomaly.js';
 import { verify } from './verify.js';
 import { audit } from './completeness.js';
 import { checkSource, exclusionNote } from './integrity.js';
+import { wilson, pretty as ciPretty } from './interval.js';
+import { sampleBias } from './bias.js';
 
 /** درجة خطّية بين حدّين، مقصوصة في [0,1]. */
 const ramp = (v, lo, hi) => {
@@ -40,13 +42,34 @@ export function score(job) {
   if (s.total < 10) caveats.push(`العيّنة ${s.total} تعليقًا فقط — الاستنتاجات محدودة الدلالة.`);
 
   // ٢) نسبتها من إجمالي تقييمات قوقل.
-  const covScore = s.coverage === null ? null : ramp(s.coverage, 2, 25);
+  // التغطية تُقاس على المنصوصة متى عُرفت: «٤٠ من ٨٧» لا «٤٠ من ٣١٠».
+  const covBase = s.textCoverage ?? s.coverage;
+  const covScore = covBase === null ? null : ramp(covBase, 2, 25);
   parts.push({
     key: 'coverage', name: 'نسبة العيّنة', weight: 2, score: covScore,
-    detail: s.coverage === null ? 'إجمالي التقييمات غير مُدخَل' : `${s.coverage}% من ${s.googleCount}`,
+    // المقام الصحيح المنصوصة إن عُرفت: الصامتة لا تُحلَّل فلا تُحسَب علينا.
+    detail: s.textCoverage !== null
+      ? `${s.textCoverage}% من ${s.declaredWithText} منصوصة`
+      : (s.coverage === null ? 'إجمالي التقييمات غير مُدخَل' : `${s.coverage}% من ${s.googleCount}`),
   });
   if (s.coverage === null) caveats.push('إجمالي تقييمات قوقل غير مُدخَل — لا يُعرف قدر ما فات.');
-  else if (s.coverage < 5) caveats.push(`العيّنة ${s.coverage}% من الإجمالي — قد لا تمثّله.`);
+  else if (s.textCoverage === null) caveats.push(`العيّنة ${s.coverage}% من الإجمالي — وأكثره تقييماتٌ صامتة بلا نصّ لا تُحلَّل، فأدخل عدد المنصوصة ليصحّ المقام.`);
+  else if (covBase < 5) caveats.push(`العيّنة ${covBase}% من التعليقات المنصوصة — قد لا تمثّلها.`);
+
+  /* هامش الخطأ: نسبٌ من عيّنةٍ صغيرة تُقرأ أحكامًا، وبينهما فرق. */
+  const pop = job?.place?.ratings?.withText || s.googleCount || null;
+  const ci = s.total ? wilson(Math.max(1, s.negative), s.total, pop) : null;
+  if (ci) {
+    caveats.push(ci.wide
+      ? `هامش الخطأ واسع: نسبةٌ في هذه العيّنة تحمل ±${ci.margin} نقطة — فالنسب مؤشّرات لا قياسات.`
+      : `هامش الخطأ نحو ±${ci.margin} نقطة لكل نسبة.`);
+  }
+
+  /* الانحياز: عيّنةٌ لا تشبه المُعلَن تُفسد كل نسبةٍ بُنيت عليها. */
+  const bias = sampleBias(job?.place);
+  if (bias && bias.verdict !== 'ممثِّلة') {
+    caveats.push(`عيّنتك ${bias.verdict}: توزيعها يفارق المُعلَن في قوقل بـ${Math.abs(bias.negGap)} نقطة في السلبي.`);
+  }
 
   // ٣) تغطية التواريخ: بلا تواريخ لا قراءة زمنية.
   const rec = recentVsOlder(place);

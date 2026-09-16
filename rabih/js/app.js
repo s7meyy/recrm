@@ -14,7 +14,7 @@ import { scan, withoutFlagged, FLAGS } from './anomaly.js';
 import { comparablePlaces, timeline, competitors, benchmark } from './compare.js';
 import { extractTasks, mergeTasks, progress, planMarkdown, defaultDue, STATUS } from './plan.js';
 import { TEMPLATES, DEFAULT_TEMPLATE, applyTemplate, droppedSections, sectorFor } from './templates.js';
-import { buildXlsx, jobSheets, archiveSheet } from './export.js';
+import { buildXlsx, jobSheets, archiveSheet, reviewsCsv } from './export.js';
 import { recentVsOlder, monthly, alerts as recencyAlerts, topicAges } from './recency.js';
 import * as safe from './persist.js';
 import { brands, analyze, groupPrompt } from './group.js';
@@ -41,6 +41,11 @@ import { priorities } from './priority.js';
 import { PLATFORMS, platformName, compareSources } from './sources.js';
 import { ledger, setClient } from './clients.js';
 import { scanNetwork } from './network.js';
+import { wilson, pretty as ciPretty, significant } from './interval.js';
+import { sampleBias } from './bias.js';
+import { isOn as privacyOn, setOn as setPrivacy } from './privacy.js';
+import { runEval, saveRun, history as evalHistory } from './eval.js';
+import { bilingual } from './i18n.js';
 import { sign, verifyFile, pretty } from './signature.js';
 import { planEffect } from './effect.js';
 import { push as cloudPush, pull as cloudPull, removeBox, newBoxId } from './cloud.js';
@@ -143,6 +148,7 @@ function blankJob() {
     planInReport: false,
     models: {},
     designHtml: '',
+    lang: 'ar',          // لغة التقرير — والاقتباسات بالعربية دائمًا
     replyDrafts: '',     // مسوّدات ردود المالك — اقتراحٌ لا يدخل التقرير
     shareId: '',         // معرّف الرابط الخاص إن نُشر
     stamps: {},          // بصمة البيانات وقت إنتاج كل خطوة
@@ -474,6 +480,11 @@ function loadDataView() {
   $('#d-price').value = p.identity.priceLevel || '';
   $('#d-avg').value = p.ratings.average ?? '';
   $('#d-count').value = p.ratings.count ?? '';
+  $('#d-withtext').value = p.ratings.withText ?? '';
+  for (const star of [5, 4, 3, 2, 1]) {
+    const el2 = $(`#d-d${star}`);
+    if (el2) el2.value = p.ratings.distribution?.[star] ?? '';
+  }
   $('#d-hours').value = (p.identity.hours || []).join('\n');
   $('#d-attrs').value = (p.identity.attributes || []).join('\n');
   $('#d-notes').value = p.notes || '';
@@ -493,6 +504,8 @@ function loadDataView() {
     if (el2) el2.value = job.assume?.[key] ?? '';
   }
   renderSources();
+  renderBias();
+  renderConfidenceHint();
   renderPriority();
   renderStars();
   renderImpactPreview();
@@ -531,6 +544,21 @@ function bindDataView() {
       renderImpactPreview();
       if (key === 'perMonth') renderStars();
       scheduleSave();
+    });
+  }
+
+  // عدد المنصوصة وتوزيع النجوم: يصحّحان مقام التغطية ويكشفان الانحياز.
+  $('#d-withtext').addEventListener('input', (e) => {
+    job.place.ratings.withText = e.target.value === '' ? null : Number(e.target.value);
+    renderParseStats(); renderBias(); renderConfidenceHint(); scheduleSave();
+  });
+  for (const star of [5, 4, 3, 2, 1]) {
+    const el2 = $(`#d-d${star}`);
+    if (!el2) continue;
+    el2.addEventListener('input', (e) => {
+      job.place.ratings.distribution = job.place.ratings.distribution || {};
+      job.place.ratings.distribution[star] = e.target.value === '' ? null : Number(e.target.value);
+      renderBias(); scheduleSave();
     });
   }
 
@@ -736,6 +764,8 @@ function doParse(append = false) {
   renderAnomaly();
   renderIntegrity();
   renderSources();
+  renderBias();
+  renderConfidenceHint();
   renderPriority();
   renderStars();
   renderImpactPreview();
@@ -959,6 +989,37 @@ function renderImpactPreview() {
     <p class="fine">هذا يقيس حجم المشكلة على فرضك، ولا يزعم أنه إيرادٌ ضائع مقيس.</p></div>`;
 }
 
+/** انحياز العيّنة — لا يُدَّعى تمثيلٌ ولا انحياز بلا توزيعٍ معلن. */
+function renderBias() {
+  const box = $('#bias-box');
+  if (!box) return;
+  const b = sampleBias(job.place);
+  if (!b) {
+    box.innerHTML = job.place.reviews.length
+      ? '<p class="fine">أدخل توزيع النجوم المعلن في قوقل أعلاه لتعرف: هل عيّنتك تمثّل منشأتك أم منحازة؟</p>' : '';
+    return;
+  }
+  const cls = b.verdict === 'منحازة' ? 'err' : (b.verdict === 'مائلة' ? 'warn' : 'ok');
+  box.innerHTML = `<h3 class="mini-h">هل عيّنتك تمثّل منشأتك؟</h3>
+    <div class="msg ${cls}"><b>${esc(b.verdict)}</b> — ${esc(b.note).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')}</div>
+    <div class="table-wrap"><table class="mini"><thead><tr><th>النجوم</th><th>المعلَن</th><th>عيّنتك</th><th>الفرق</th></tr></thead>
+    <tbody>${b.rows.map((r) => `<tr><td>${r.star} ★</td><td>${r.declared}%</td><td>${r.sample}%</td>
+      <td class="${Math.abs(r.gap) >= 8 ? 'err-text' : ''}">${r.gap > 0 ? '+' : ''}${r.gap}</td></tr>`).join('')}</tbody></table></div>`;
+}
+
+/** تنبيه الهامش: كم تساوي نسبة واحدة من عيّنتك؟ */
+function renderConfidenceHint() {
+  const box = $('#ci-hint');
+  if (!box) return;
+  const n = job.place.reviews.length;
+  const pop = job.place.ratings?.withText || job.place.ratings?.count || null;
+  if (!n) { box.innerHTML = ''; return; }
+  const ci = wilson(Math.round(n * 0.25), n, pop);
+  if (!ci) { box.innerHTML = ''; return; }
+  box.innerHTML = `<p class="fine">بعيّنةٍ من <b>${n}</b> تعليقًا${pop ? ` من ${pop}` : ''}، أي نسبةٍ تقولها الأداة تحمل هامشًا نحو
+    <b>±${ci.margin}</b> نقطة. ${ci.wide ? '<b>وهامشٌ بهذا الاتّساع يجعل النسبة مؤشّرًا لا قياسًا</b> — وزيادة العيّنة تضيّقه.' : 'وهو هامشٌ مقبول.'}</p>`;
+}
+
 function renderIntegrity() {
   const box = $('#integrity-box');
   if (!box) return;
@@ -1011,7 +1072,10 @@ function renderParseStats() {
     ['محايد', s.neutral],
     ['سلبي', s.negative],
     ['ردود المالك', s.replyRate !== null ? s.replyRate + '%' : '—'],
-    ['نسبة العيّنة', s.coverage !== null ? s.coverage + '%' : '—'],
+    // المقام الصحيح المنصوصة متى عُرفت: «٤٦٪ من ٨٧» لا «١٣٪ من ٣١٠».
+    s.textCoverage !== null
+      ? ['نسبة العيّنة', `${s.textCoverage}% من ${s.declaredWithText} منصوصة`]
+      : ['نسبة العيّنة', s.coverage !== null ? `${s.coverage}% من الإجمالي` : '—'],
   ];
   box.innerHTML = cells.map(([k, v]) => `<div class="stat"><b>${k}</b><span>${v}</span></div>`).join('');
   renderStepsBar('data');
@@ -1479,6 +1543,7 @@ function loadReportView() {
   renderReport();
   renderCompleteness();
   renderConfidence();
+  $('#r-lang').value = job.lang || 'ar';
   $('#d-design').value = job.designHtml || '';
   renderDesignState();
   $('#d-replies').value = job.replyDrafts || '';
@@ -1501,7 +1566,7 @@ async function signedHtml() {
 
 function currentHtml() {
   const tpl = TEMPLATES[job.template] || TEMPLATES[DEFAULT_TEMPLATE];
-  return buildReportHtml({
+  return bilingual(buildReportHtml({
     sector: sectorFor(job.ctx?.groupId),
     place: job.place,
     ctx: job.ctx,
@@ -1511,7 +1576,7 @@ function currentHtml() {
     font: job.font,
     identity: identity.load(),
     job,
-  });
+  }), job.lang || 'ar');
 }
 
 function renderReport() {
@@ -1664,10 +1729,10 @@ let compareJobs = [];
  * والاتجاه يُقاس بين آخر تقريرين للمنشأة الواحدة، فمن له تقريرٌ واحد لا
  * يُنسَب إليه اتجاه — ولا يُخمَّن له.
  */
-async function renderPortfolio() {
+async function renderPortfolio(preloaded = null) {
   const box = $('#portfolio-box');
   if (!box) return;
-  const jobs = await allJobs();
+  const jobs = preloaded || await allJobs();
   const groups = comparablePlaces(jobs);
   const byPlace = new Map();
 
@@ -1685,7 +1750,9 @@ async function renderPortfolio() {
     const s = stats(last.place);
     const t = prev ? timeline(prev, last) : null;
     const eff = prev ? planEffect(prev, last) : null;
-    const pr = priorities(last.place, { limit: 1 })[0] || null;
+    // الأولوية تُحسَب للمعروض وحده: حسابها لخمسمئة منشأة يُبطئ الشاشة بلا فائدة،
+    // فالجدول يعرض أربعين صفًّا ويقول كم بقي.
+    const pr = null;
     return {
       name: last.place?.identity?.name || 'بلا اسم',
       city: last.ctx?.cityName || '',
@@ -1701,6 +1768,13 @@ async function renderPortfolio() {
     };
   }).sort((a, b) => (a.trend ?? 0) - (b.trend ?? 0));
 
+  const LIMIT = 40;
+  const shown = rows.slice(0, LIMIT);
+  for (const r of shown) {
+    const j = jobs.find((x) => x.id === r.jobId);
+    r.top = j ? (priorities(j.place, { limit: 1 })[0] || null) : null;
+  }
+
   const arrow = (d) => {
     if (d === null || d === undefined) return '<span class="fine">—</span>';
     if (d > 0.05) return `<span class="delta up">▲ ${d.toFixed(2)}</span>`;
@@ -1710,7 +1784,7 @@ async function renderPortfolio() {
 
   box.innerHTML = `<div class="table-wrap"><table class="mini"><thead><tr>
       <th>المنشأة</th><th>تقارير</th><th>العيّنة</th><th>المتوسط</th><th>السلبي</th><th>الاتجاه</th><th>أثر الخطة</th><th>الأولوية الآن</th>
-    </tr></thead><tbody>${rows.map((r) => `<tr>
+    </tr></thead><tbody>${shown.map((r) => `<tr>
       <td><b>${esc(r.name)}</b><div class="fine">${esc(r.city)}</div></td>
       <td>${r.reports}</td>
       <td>${r.reviews}</td>
@@ -1720,13 +1794,13 @@ async function renderPortfolio() {
       <td>${r.effect ? `<span class="chip ok">${esc(r.effect)} تحسّنت</span>` : '<span class="fine">—</span>'}</td>
       <td class="fine">${r.top ? esc(r.top.name) + ` (${r.top.count})` : '—'}</td>
     </tr>`).join('')}</tbody></table></div>
-    <p class="fine">مرتَّبة بالأسوأ اتجاهًا أولًا. ومن له تقريرٌ واحد لا اتجاه له — ولا يُخمَّن.</p>`;
+    <p class="fine">مرتَّبة بالأسوأ اتجاهًا أولًا${rows.length > LIMIT ? `، ويُعرَض أوّل ${LIMIT} من ${rows.length}` : ''}. ومن له تقريرٌ واحد لا اتجاه له — ولا يُخمَّن.</p>`;
 }
 
-async function renderClients() {
+async function renderClients(preloaded = null) {
   const box = $('#clients-box');
   if (!box) return;
-  const jobs = await allJobs();
+  const jobs = preloaded || await allJobs();
   const { rows, totals } = ledger(jobs);
   if (!rows.length) { box.innerHTML = '<div class="empty">لا منشآت في أرشيفك بعد.</div>'; return; }
 
@@ -1737,6 +1811,11 @@ async function renderClients() {
     return `بعد ${r.dueInDays} يومًا`;
   };
 
+  /* الدفتر يرسم خلايا قابلة للتحرير لكل صفّ، وخمسمئة صفٍّ منها تُثقل الشاشة.
+     فيُعرَض الأقرب تجديدًا والأحوج متابعةً، ويُقال كم بقي. */
+  const LEDGER_LIMIT = 40;
+  const view = rows.slice(0, LEDGER_LIMIT);
+
   box.innerHTML = `<div class="stat-grid">
       <div class="stat"><b>منشآت</b><span>${totals.places}</span></div>
       <div class="stat"><b>تقارير مُسلَّمة</b><span>${totals.delivered}</span></div>
@@ -1746,7 +1825,7 @@ async function renderClients() {
     </div>
     <div class="table-wrap"><table class="mini clients"><thead><tr>
       <th>المنشأة</th><th>المدينة</th><th>تقارير</th><th>آخر تقرير</th><th>جهة الاتصال</th><th>الجوال</th><th>الأتعاب</th><th>كل (شهر)</th><th>التجديد</th>
-    </tr></thead><tbody>${rows.map((r) => `<tr data-key="${esc(r.key)}"${r.stale ? ' class="stale-row"' : ''}>
+    </tr></thead><tbody>${view.map((r) => `<tr data-key="${esc(r.key)}"${r.stale ? ' class="stale-row"' : ''}>
       <td><b>${esc(r.name)}</b>${r.stale ? ' <span class="chip warn">لم يُتابَع</span>' : ''}</td>
       <td>${esc(r.city)}</td>
       <td>${r.reports}</td>
@@ -1757,7 +1836,8 @@ async function renderClients() {
       <td contenteditable="true" class="c-field" data-f="everyMonths">${r.everyMonths || ''}</td>
       <td>${due(r)}</td>
     </tr>`).join('')}</tbody></table></div>
-    <p class="fine">اكتب في الخلايا مباشرةً — تُحفَظ عند تركها. والأتعاب والدورية عندك وحدك، ولا تدخل أي تقرير.</p>`;
+    <p class="fine">اكتب في الخلايا مباشرةً — تُحفَظ عند تركها. والأتعاب والدورية عندك وحدك، ولا تدخل أي تقرير.${
+      rows.length > LEDGER_LIMIT ? ` ويُعرَض أوّل ${LEDGER_LIMIT} من ${rows.length}، مرتَّبةً بالأقرب تجديدًا.` : ''}</p>`;
 
   box.querySelectorAll('.c-field').forEach((cell) => cell.addEventListener('blur', (e) => {
     const key = e.target.closest('tr')?.dataset.key;
@@ -1768,7 +1848,7 @@ async function renderClients() {
     const val = (f === 'fee' || f === 'everyMonths') ? Number(raw) || 0 : raw;
     // يُربَط بأي وظيفةٍ من وظائف هذه المنشأة: المفتاح واحد لها كلها.
     const any = jobs.find((j) => row.jobIds.includes(j.id));
-    if (any) { setClient(any, { [f]: val }); renderClients(); }
+    if (any) { setClient(any, { [f]: val }); renderClients(jobs); }
   }));
 }
 
@@ -2245,6 +2325,60 @@ function renderRival(mine, rival, meta) {
     والعيّنتان قد تختلفان حجمًا وحداثةً، فالمقارنة <b>مؤشّر لا حُكم</b>.</p>`;
 }
 
+function bindEval() {
+  const render = () => {
+    const hist = evalHistory();
+    const badge = $('#eval-state');
+    if (badge) {
+      badge.textContent = hist.length ? `آخر تشغيل: ${hist[0].average ?? '—'}/100` : 'لم يُشغَّل بعد';
+      badge.className = 'badge' + (hist.length ? (hist[0].average >= 70 ? ' ok' : ' mid') : '');
+    }
+    const box = $('#eval-box');
+    if (!box) return;
+    if (!hist.length) { box.innerHTML = ''; return; }
+    box.innerHTML = `<div class="table-wrap"><table class="mini"><thead><tr><th>التشغيل</th><th>المتوسط</th><th>مرفوض</th><th>الفرق عن السابق</th></tr></thead>
+      <tbody>${hist.slice(0, 8).map((h, i) => {
+        const prev = hist[i + 1];
+        const d = prev && typeof h.average === 'number' && typeof prev.average === 'number' ? h.average - prev.average : null;
+        return `<tr><td>${esc(String(h.at).slice(0, 16).replace('T', ' '))}</td><td><b>${h.average ?? '—'}</b></td>
+          <td>${h.rejected || 0}</td>
+          <td>${d === null ? '—' : `<span class="delta ${d >= 0 ? 'up' : 'down'}">${d > 0 ? '▲ +' : (d < 0 ? '▼ ' : '')}${d}</span>`}</td></tr>`;
+      }).join('')}</tbody></table></div>
+      <p class="fine">الاختراع أو تحريف الاقتباس يُصفّر الدرجة مهما حسُن ما سواه.</p>`;
+  };
+  render();
+
+  $('#btn-eval-run').addEventListener('click', async () => {
+    const btn = $('#btn-eval-run');
+    btn.disabled = true;
+    message('#eval-msg', 'warn', 'يعمل المعيار… ستّ نداءات تقريبًا.');
+    const r = await runEval({ onProgress: (m) => message('#eval-msg', 'warn', m) });
+    btn.disabled = false;
+
+    if (r.needsKey) {
+      message('#eval-msg', 'err', 'لا مفتاح OpenRouter.', ['أضف OPENROUTER_KEY في متغيّرات البيئة على Netlify ثم أعد النشر.']);
+      return;
+    }
+    saveRun(r);
+    render();
+    const lines = r.rows.map((x) => x.error
+      ? `${x.model} · ${x.stage}: ${x.error}`
+      : `${x.model} · ${x.stage}: ${x.verdict} ${x.total}/100 (سند ${x.cited}% · تغطية ${x.coverage}%${x.invented ? ` · اخترع ${x.invented}` : ''}${x.misquoted ? ` · حرّف ${x.misquoted}` : ''})`);
+    message('#eval-msg', r.rejected ? 'warn' : 'ok', `المتوسط ${r.average ?? '—'}/100${r.rejected ? ` — و${r.rejected} مخرجًا مرفوضًا` : ''}.`, lines);
+  });
+}
+
+function bindPrivacy() {
+  const box = $('#privacy-on');
+  if (!box) return;
+  box.checked = privacyOn();
+  box.addEventListener('change', (e) => {
+    setPrivacy(e.target.checked);
+    toast(e.target.checked ? 'وضع الخصوصية مُفعَّل — الأسماء مستعارة فيما يخرج منك' : 'أُطفئ وضع الخصوصية');
+    if (!$('#view-report').hidden) renderReport();
+  });
+}
+
 function bindNetwork() {
   $('#btn-network-scan').addEventListener('click', async () => {
     const jobs = await allJobs();
@@ -2609,6 +2743,12 @@ function bindReportView() {
     histTimer = setTimeout(() => { history.push(job.id, e.target.value); renderHistory(); }, 2000);
   });
   $('#r-md').addEventListener('blur', () => { showTemplateNote(); renderCompleteness(); renderConfidence(); });
+  $('#r-lang').addEventListener('change', (e) => {
+    job.lang = e.target.value;
+    scheduleSave();
+    renderReport();
+  });
+
   $('#btn-render').addEventListener('click', () => { renderReport(); toast('حُدّثت المعاينة'); });
 
   $('#btn-print').addEventListener('click', () => {
@@ -2621,6 +2761,10 @@ function bindReportView() {
 
   // الملف الذي يخرج من يدك موقَّع: من غيّر فيه حرفًا كُشِف.
   $('#btn-download-html').addEventListener('click', async () => download(reportFileName('html'), await signedHtml(), 'text/html;charset=utf-8'));
+
+  $('#btn-download-csv').addEventListener('click', () => {
+    download(reportFileName('reviews.csv'), reviewsCsv(job), 'text/csv;charset=utf-8');
+  });
 
   $('#btn-verify-file').addEventListener('click', async () => {
     const f = $('#verify-file').files?.[0];
@@ -2654,10 +2798,12 @@ function bindReportView() {
 /* ───────────────────────── الأرشيف ───────────────────────── */
 
 async function renderArchive(filter = '') {
-  renderPortfolio();
-  renderClients();
   const host = $('#archive-tree');
+  /* قراءةٌ واحدة تُمرَّر إلى الثلاثة: كانت كل لوحةٍ تقرأ الأرشيف من جديد،
+     فبخمسمئة تقرير صار فتح الشاشة يستغرق نحو ثانية ونصف — قِسته. */
   const jobs = await allJobs();
+  renderPortfolio(jobs);
+  renderClients(jobs);
   const q = filter.trim();
   const list = q ? jobs.filter((j) => (j.place?.identity?.name || '').includes(q)) : jobs;
 
@@ -3141,6 +3287,8 @@ async function boot() {
   bindReportView();
   bindPlanView();
   bindOutputView();
+  bindEval();
+  bindPrivacy();
   bindRival();
   bindNetwork();
   bindCloud();

@@ -25,8 +25,9 @@ export function emptyPlace() {
     },
     ratings: {
       average: null,      // 4.3
-      count: null,        // 1287
-      distribution: { 5: null, 4: null, 3: null, 2: null, 1: null },
+      count: null,        // 1287 — كل التقييمات، وأكثرها صامتٌ بلا نصّ
+      withText: null,     // 87 — المنصوصة وحدها، وهي المقام الصحيح للتغطية
+      distribution: { 5: null, 4: null, 3: null, 2: null, 1: null },  // توزيع قوقل المعلن
     },
     reviews: [],          // انظر emptyReview
     qna: [],              // { question, answer, date }
@@ -114,7 +115,15 @@ export function stats(place) {
     sampleAverage: rated.length ? Number((sum / rated.length).toFixed(2)) : null,
     googleAverage: place.ratings?.average ?? null,
     googleCount: place.ratings?.count ?? null,
+    /* التغطية بمقامها الصحيح: «٤٠ من ٣١٠» مقامٌ خاطئ، لأن أكثر الـ٣١٠
+       تقييماتٌ صامتة لا نصّ لها فلا تُحلَّل أصلًا. فإن عُرف عدد المنصوصة
+       فهو المقام، وإلا فالإجمالي مع التصريح بأنه مقامٌ أوسع من اللازم. */
     coverage: place.ratings?.count ? Number(((reviews.length / place.ratings.count) * 100).toFixed(1)) : null,
+    textCoverage: place.ratings?.withText
+      ? Number(((reviews.length / place.ratings.withText) * 100).toFixed(1)) : null,
+    // اسمٌ مميَّز: `withText` أدناه عددُ المنصوصة **في عيّنتك**، وهذا العدد
+    // المُعلَن في قوقل. وتسميتهما واحدًا أفسد المقام، فصار «٧% من ٥».
+    declaredWithText: place.ratings?.withText ?? null,
     distribution: d ? d.dist : null,
     negative: rated.filter((r) => r.rating <= 2).length,
     neutral: rated.filter((r) => r.rating === 3).length,

@@ -8,6 +8,7 @@ import { stats } from './schema.js';
 import { topicStats, topicSentiment, topicsOf } from './lexicon.js';
 import { scan } from './anomaly.js';
 import { progress, STATUS } from './plan.js';
+import { shield } from './privacy.js';
 
 /* ───────── أدوات ZIP ───────── */
 
@@ -170,7 +171,8 @@ ${valid.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openx
 
 /** يبني أوراق تقرير واحد: التعليقات، المواضيع، الخطة، الملخص، الإشارات. */
 export function jobSheets(job) {
-  const place = job.place || {};
+  // وضع الخصوصية يعمل على ما يخرج من يدك: الأسماء تُستبدَل، والنصوص كما وردت.
+  const place = shield(job.place || {});
   const reviews = place.reviews || [];
   const s = stats(place);
   const c = job.ctx || {};
@@ -237,6 +239,25 @@ export function archiveSheet(jobs) {
 }
 
 /** CSV بعلامة ترتيب البايتات — بدونها تفتح Excel العربية طلاسمَ. */
+/**
+ * البيانات الخام مع التقرير — شفافيةٌ تامة.
+ *
+ * من يسلّم بياناته مع تحليله لا يُتَّهم بانتقائها: يستطيع عميلك أن يتحقّق
+ * من كل استشهادٍ بمعرّفه. والأسماء تتبع وضع الخصوصية.
+ */
+export function reviewsCsv(job) {
+  const place = shield(job.place || {});
+  const rows = [['المعرّف', 'النجوم', 'الكاتب', 'التاريخ', 'المصدر', 'النص', 'ردّ المالك']];
+  for (const r of place.reviews || []) {
+    rows.push([
+      r.id, Number(r.rating) || '', r.author || '', r.date || '',
+      ({ paste: 'لصق', provider: 'مزوّد', places: 'قوقل', json: 'JSON' }[r.source] || r.source || ''),
+      r.text || '', r.ownerReply || '',
+    ]);
+  }
+  return toCsv(rows);
+}
+
 export function toCsv(rows) {
   const esc = (v) => {
     const s = String(v ?? '');
