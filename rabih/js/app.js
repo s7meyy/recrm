@@ -190,10 +190,10 @@ function show(view) {
 }
 
 const STEP_LABELS = [
-  { key: 'new',      n: '١', t: 'المنشأة' },
-  { key: 'data',     n: '٢', t: 'البيانات' },
-  { key: 'pipeline', n: '٣', t: 'خط التحليل' },
-  { key: 'report',   n: '٤', t: 'التقرير' },
+  { key: 'new',      n: '1', t: 'المنشأة' },
+  { key: 'data',     n: '2', t: 'البيانات' },
+  { key: 'pipeline', n: '3', t: 'خط التحليل' },
+  { key: 'report',   n: '4', t: 'التقرير' },
 ];
 
 function renderStepsBar(view) {
@@ -627,7 +627,7 @@ async function onFetchReviews() {
       lines.push('النقص طبيعي: التقييم بلا نصّ لا يُعيده المزوّد، وقوقل يعدّه في الإجمالي.');
     }
   }
-  if (r.truncated) lines.push('بُلغ السقف الأعلى (٢٠٠٠)، فما زاد لم يُجلَب.');
+  if (r.truncated) lines.push('بُلغ السقف الأعلى (2000)، فما زاد لم يُجلَب.');
   if (m.empties) lines.push(`${m.empties} عنصرًا بلا نصّ ولا تقييم أُسقط.`);
   lines.push(`المزوّد: ${r.provider}.`);
 
@@ -841,7 +841,12 @@ function renderEntities() {
   const box = $('#entities-box');
   if (!box) return;
   const { people, products } = extractEntities(job.place);
-  if (!people.length && !products.length) { box.innerHTML = ''; return; }
+  if (!people.length && !products.length) {
+    // الصمتُ هنا يُقرأ عطلًا. والصواب أن يُقال: لم يتكرّر صنفٌ بعينه مرتين فأكثر.
+    box.innerHTML = '<p class="fine">لم تتكرّر عبارةٌ أو اسمٌ بعينه مرتين فأكثر في هذه العيّنة، '
+      + 'فلا أصناف تُرصد. وهذا وصفٌ للعيّنة لا حكمٌ على المنشأة.</p>';
+    return;
+  }
   const chip = (e) => {
     const cls = e.verdict === 'سلبي' ? 'neg' : (e.verdict === 'إيجابي' ? 'pos' : '');
     return `<span class="chip ent ${cls}" title="${esc(e.ids.join('، '))}">${esc(e.name)} <b>${e.total}</b></span>`;
@@ -915,7 +920,7 @@ function renderAnomaly() {
     <div class="msg ${r.level === 'err' ? 'err' : 'warn'}"><b>${r.summary}</b></div>
     ${r.clusters.length ? `<p class="fine">نصوص متشابهة: ${esc(r.clusters.map((c) => c.ids.join(' ≈ ')).join(' · '))}</p>` : ''}
     <div class="table-wrap"><table class="mini"><thead><tr><th>التعليق</th><th>الدرجة</th><th>الإشارات</th><th>مقتطف</th></tr></thead><tbody>${rows}</tbody></table></div>
-    <div class="row"><button type="button" class="btn ghost sm" id="btn-drop-flagged">استبعاد ما درجته ٣ فأعلى</button>
+    <div class="row"><button type="button" class="btn ghost sm" id="btn-drop-flagged">استبعاد ما درجته 3 فأعلى</button>
     <span class="fine">الاستبعاد قرارك أنت؛ لا يُحذف شيء تلقائيًّا.</span></div>`;
 
   const btn = $('#btn-drop-flagged');
@@ -983,7 +988,7 @@ function renderImpactPreview() {
   const a = job.assume || {};
   const r = impact(job.place, { ticket: a.ticket, monthly: a.monthly, lossRate: (Number(a.loss) || 25) / 100 });
   if (!r || !a.ticket || !a.monthly || !r.rows.length) { box.innerHTML = ''; return; }
-  const num = (n) => Number(n).toLocaleString('ar-SA');
+  const num = (n) => Number(n).toLocaleString('ar-SA-u-nu-latn');
   box.innerHTML = `<div class="msg ok"><b>على فرضك: نحو ${num(r.totalRiyals)} ريال شهريًّا</b>
     <p class="fine">${r.rows.slice(0, 3).map((x) => `${esc(x.name)}: ${num(x.riyals)}`).join(' · ')}</p>
     <p class="fine">هذا يقيس حجم المشكلة على فرضك، ولا يزعم أنه إيرادٌ ضائع مقيس.</p></div>`;
@@ -1234,8 +1239,8 @@ function renderPipeline() {
        ينسخ بيده كان يأخذ الدفعة الأولى وحدها ويظنّها كل شيء. */
     const parts = step.role === 'normalize' ? batchCount(job.place.reviews.length) : 1;
     if (parts > 1) {
-      btnCopy.textContent = `نسخ الدفعة ١ من ${parts}`;
-      const arNum = (n) => ['١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩', '١٠'][n - 1] || String(n);
+      btnCopy.textContent = `نسخ الدفعة 1 من ${parts}`;
+      const arNum = (n) => ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'][n - 1] || String(n);
       for (let bi = 1; bi < parts; bi += 1) {
         const extra = el('button', 'btn ghost sm', `نسخ الدفعة ${arNum(bi + 1)} من ${parts}`);
         extra.addEventListener('click', async () => {
@@ -1249,7 +1254,7 @@ function renderPipeline() {
     btnCopy.addEventListener('click', async () => {
       const text = parts > 1 ? promptNormalizeBatch(job.place, job.ctx, 0, parts) : buildPrompt();
       if (!text) return;
-      const note = parts > 1 ? ` (١ من ${parts} — والباقي بالأزرار المجاورة)` : '';
+      const note = parts > 1 ? ` (1 من ${parts} — والباقي بالأزرار المجاورة)` : '';
       toast(await copy(text) ? `نُسخت الرسالة${note} — ألصقها في النموذج` : 'تعذّر النسخ، استعمل «عرض الرسالة»');
     });
     btnShow.addEventListener('click', () => {
@@ -1819,9 +1824,9 @@ async function renderClients(preloaded = null) {
   box.innerHTML = `<div class="stat-grid">
       <div class="stat"><b>منشآت</b><span>${totals.places}</span></div>
       <div class="stat"><b>تقارير مُسلَّمة</b><span>${totals.delivered}</span></div>
-      <div class="stat"><b>إيراد مُقدَّر</b><span>${totals.revenue.toLocaleString('ar-SA')} ريال</span></div>
+      <div class="stat"><b>إيراد مُقدَّر</b><span>${totals.revenue.toLocaleString('ar-SA-u-nu-latn')} ريال</span></div>
       <div class="stat"><b>تجديد خلال أسبوعين</b><span>${totals.dueSoon}</span></div>
-      <div class="stat"><b>متروك (٩٠ يومًا)</b><span>${totals.stale}</span></div>
+      <div class="stat"><b>متروك (90 يومًا)</b><span>${totals.stale}</span></div>
     </div>
     <div class="table-wrap"><table class="mini clients"><thead><tr>
       <th>المنشأة</th><th>المدينة</th><th>تقارير</th><th>آخر تقرير</th><th>جهة الاتصال</th><th>الجوال</th><th>الأتعاب</th><th>كل (شهر)</th><th>التجديد</th>
@@ -2107,7 +2112,7 @@ function showFontState() {
       job.font = null; showFontState(); renderReport(); scheduleSave(); toast('أُزيل الخط');
     });
   } else {
-    note.textContent = 'بدونه يُستعمل خط الجهاز. تضمينه يزيد حجم الملف نحو ٣٠٠ كيلوبايت ويثبّت الشكل عند كل مستقبِل.';
+    note.textContent = 'بدونه يُستعمل خط الجهاز. تضمينه يزيد حجم الملف نحو 300 كيلوبايت ويثبّت الشكل عند كل مستقبِل.';
   }
 }
 
@@ -2644,7 +2649,7 @@ function bindOutputView() {
   $('#r-font').addEventListener('change', (e) => {
     const f = e.target.files?.[0];
     if (!f) return;
-    if (f.size > 2 * 1024 * 1024) { toast('الخط أكبر من ٢ ميغابايت'); e.target.value = ''; return; }
+    if (f.size > 2 * 1024 * 1024) { toast('الخط أكبر من 2 ميغابايت'); e.target.value = ''; return; }
     const fr = new FileReader();
     fr.onload = () => {
       job.font = { name: f.name, dataUrl: fr.result };

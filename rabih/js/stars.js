@@ -87,14 +87,14 @@ export function starsBlock(place, { perMonth = 0 } = {}) {
   const showFours = l.rows.some((r) => r.fours !== null);
   const rows = l.rows.map((r) => `<tr>
       <td><b>${r.target}</b></td>
-      <td>${r.fives === null ? '—' : r.fives.toLocaleString('ar-SA')}</td>
-      ${showFours ? `<td>${r.fours === null ? '—' : r.fours.toLocaleString('ar-SA')}</td>` : ''}
+      <td>${r.fives === null ? '—' : r.fives.toLocaleString('ar-SA-u-nu-latn')}</td>
+      ${showFours ? `<td>${r.fours === null ? '—' : r.fours.toLocaleString('ar-SA-u-nu-latn')}</td>` : ''}
       ${perMonth > 0 ? `<td>${r.months === null ? '—' : r.months + ' شهرًا'}</td>` : ''}
     </tr>`).join('');
 
   return `<section class="stars-calc">
     <h2>ما الذي يلزم لرفع التقييم</h2>
-    <p class="note">حسابٌ مباشر من متوسطك (${l.avg}) وعدد تقييماتك (${l.count.toLocaleString('ar-SA')}): المتوسط مجموعُ النجوم على عددها، فكل رقم أدناه مشتقٌّ منه لا مُقدَّر.</p>
+    <p class="note">حسابٌ مباشر من متوسطك (${l.avg}) وعدد تقييماتك (${l.count.toLocaleString('ar-SA-u-nu-latn')}): المتوسط مجموعُ النجوم على عددها، فكل رقم أدناه مشتقٌّ منه لا مُقدَّر.</p>
     <table><thead><tr>
       <th>الهدف</th><th>تقييمات بخمس نجوم</th>${showFours ? '<th>أو بأربع نجوم</th>' : ''}${perMonth > 0 ? '<th>المدة بمعدّلك</th>' : ''}
     </tr></thead><tbody>${rows}</tbody></table>

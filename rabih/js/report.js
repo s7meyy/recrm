@@ -20,6 +20,7 @@ import { shield, notice as privacyNotice } from './privacy.js';
 import { timingBlock } from './timing.js';
 import { promisesBlock } from './promises.js';
 import { effectBlock } from './effect.js';
+import { briefBlock } from './brief.js';
 
 const esc = (s) => String(s ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -335,6 +336,33 @@ code{background:#f3f5f8;padding:0 1mm;border-radius:3px;font-size:10pt}
 .prio .w-fill{display:block;height:100%;background:var(--gold)}
 .prio .rid-cell{white-space:normal;line-height:1.9}
 .voice-cols{display:grid;grid-template-columns:1fr 1fr;gap:4mm;margin-bottom:4mm}
+.voice-cols.one{grid-template-columns:1fr}
+/* الخلاصة التنفيذية — أول ما تقع عليه عين صاحب المنشأة. */
+.brief{break-inside:avoid;margin:0 0 9mm;border:1px solid var(--line);border-radius:10px;padding:6mm;background:#fbfcfd}
+.brief-hero{display:flex;align-items:center;gap:6mm;margin-bottom:5mm;flex-wrap:wrap}
+.brief-hero .hero-num{display:flex;align-items:baseline;gap:2mm;flex-wrap:wrap}
+.brief-hero .hero-num .n{font-size:32pt;font-weight:700;color:var(--navy);line-height:1}
+.brief-hero .hero-num .of{font-size:12pt;color:var(--muted)}
+.brief-hero .hero-side{font-size:10pt;line-height:1.9;border-inline-start:1px solid var(--line);padding-inline-start:5mm}
+.brief-hero .hero-side b{color:var(--navy)}
+/* الاتجاه وسمٌ قائم بذاته، لا ذيلٌ يلتصق بـ«من 5» فيُقرأ جزءًا منه. */
+.brief-hero .trend{display:block;font-size:9.5pt;font-weight:600;color:var(--muted);
+  border:1px solid var(--line);border-radius:999px;padding:1mm 3mm;margin-top:2mm}
+.brief-hero .trend.down{color:#c0392b;border-color:#e8c4bf;background:#fdf6f5}
+.brief-hero .trend.up{color:#1e8449;border-color:#bfe0cc;background:#f5fbf7}
+.brief-cards{display:grid;grid-template-columns:repeat(2,1fr);gap:3mm}
+.bcard{border:1px solid var(--line);border-radius:8px;padding:4mm;background:#fff;break-inside:avoid}
+.bcard b{display:block;font-size:9pt;color:var(--muted);margin-bottom:1.5mm;font-weight:600}
+.bcard span{font-size:11pt;line-height:1.7}
+.bcard.bad{border-inline-start:3px solid #c0392b}
+.bcard.good{border-inline-start:3px solid #1e8449}
+.bcard.money{border-inline-start:3px solid var(--gold)}
+.bcard.goal{border-inline-start:3px solid var(--navy)}
+.brief-action{margin:4mm 0 0;padding:4mm;border-radius:8px;background:#f3f6fa;font-size:11pt;line-height:1.8}
+.brief-note{margin:2mm 0 0;font-size:9pt;color:var(--muted)}
+/* الملحق: كيف بُني التقرير — يُؤخَّر ولا يُحذف، فالصدق يقتضي بقاءه. */
+.appendix{margin-top:12mm;padding-top:5mm;border-top:2px solid var(--line)}
+.appendix-head{font-size:12pt;font-weight:700;color:var(--navy);margin:0 0 5mm}
 .voice .q{margin:0 0 3mm;padding:3mm 4mm;border-radius:6px;border-inline-start:3px solid var(--line);background:#fafbfc;break-inside:avoid}
 .voice .q.neg{border-inline-start-color:#c0392b;background:#fdf6f5}
 .voice .q.pos{border-inline-start-color:#1e8449;background:#f5fbf7}
@@ -443,7 +471,7 @@ export function buildReportHtml({ place: rawPlace, ctx = {}, markdown = '', phot
   // وضع الخصوصية يعمل على ما يخرج من يدك، ولا يمسّ أرشيفك.
   const place = shield(rawPlace);
   const opt = { toc: true, stars: true, topics: true, photos: true, recency: true, entities: true, replies: true, confidence: true,
-    priority: true, calc: true, voice: true, impact: true, sources: true,
+    priority: true, calc: true, voice: true, impact: true, sources: true, brief: true,
     cooccur: true, timing: true, promises: true, effect: true, bias: true, ...show, ...(sector?.show || {}) };
   const s = stats(place);
   const body = tocFrom(mdToHtml(markdown));
@@ -483,26 +511,30 @@ export function buildReportHtml({ place: rawPlace, ctx = {}, markdown = '', phot
 <div class="page">
 ${cover}
 <main class="body">
-${opt.confidence ? confidenceBlock(job || { place, reportMd: markdown }) : ''}
+${opt.brief ? briefBlock(place, job) : ''}
 ${opt.toc ? body.toc : ''}
-${opt.stars ? starBars(place) : ''}
-${opt.bias ? biasBlock(place) : ''}
-${opt.recency ? recencyBlock(place) : ''}
-${opt.topics ? topicsBlock(place, sector?.lead || []) : ''}
-${opt.sources ? sourcesBlock(place) : ''}
+${body.html}
 ${opt.priority ? priorityBlock(place) : ''}
+${opt.voice ? voiceBlock(place) : ''}
+${opt.effect && job?.prevJob ? effectBlock(job.prevJob, job) : ''}
+${opt.promises ? promisesBlock(place) : ''}
+${opt.topics ? topicsBlock(place, sector?.lead || []) : ''}
 ${opt.cooccur ? cooccurBlock(place) : ''}
 ${opt.timing ? timingBlock(place) : ''}
-${opt.effect && job?.prevJob ? effectBlock(job.prevJob, job) : ''}
+${opt.recency ? recencyBlock(place) : ''}
 ${opt.entities ? entitiesReportBlock(place) : ''}
 ${opt.replies ? repliesReportBlock(place) : ''}
-${opt.promises ? promisesBlock(place) : ''}
-${opt.voice ? voiceBlock(place) : ''}
-${body.html}
-${methodBlock(place, job, ctx)}
+${opt.sources ? sourcesBlock(place) : ''}
 ${opt.calc ? starsBlock(place, { perMonth: job?.assume?.perMonth || 0 }) : ''}
 ${opt.impact ? impactBlock(place, { ...(job?.assume || {}), lossRate: (Number(job?.assume?.loss) || 25) / 100 }) : ''}
 ${opt.photos ? photosBlock(photos) : ''}
+<div class="appendix">
+<p class="appendix-head">ملحق: كيف بُني هذا التقرير</p>
+${opt.stars ? starBars(place) : ''}
+${opt.bias ? biasBlock(place) : ''}
+${opt.confidence ? confidenceBlock(job || { place, reportMd: markdown }) : ''}
+${methodBlock(place, job, ctx)}
+</div>
 </main>
 ${footer}
 </div>

@@ -42,6 +42,16 @@ export function voice(place, { perSide = 3, limit = 6 } = {}) {
   const reviews = place?.reviews || [];
   if (!reviews.length) return [];
 
+  /* **لكل تعليقٍ ظهورٌ واحد**: التعليق يقع في عدة محاور، فكان يتكرّر نصُّه
+     ثلاث مرات في صفحةٍ واحدة — فيملّ القارئ ويظنّ البيانات شحيحة. فيُحجَز
+     لأدلّ محاوره: المحور الأكثر ورودًا يأخذ حاجته أولًا. */
+  const used = new Set();
+  const take = (ids, want, n) => {
+    const out = pick(reviews, ids.filter((id) => !used.has(id)), want, n);
+    for (const r of out) used.add(r.id);
+    return out;
+  };
+
   return topicStats(place)
     .filter((t) => t.total > 0)
     .sort((a, b) => (b.neg + b.pos) - (a.neg + a.pos))
@@ -49,8 +59,8 @@ export function voice(place, { perSide = 3, limit = 6 } = {}) {
     .map((t) => ({
       id: t.id,
       name: t.name,
-      neg: pick(reviews, t.negIds, 'neg', perSide),
-      pos: pick(reviews, t.posIds, 'pos', perSide),
+      neg: take(t.negIds, 'neg', perSide),
+      pos: take(t.posIds, 'pos', perSide),
     }))
     .filter((t) => t.neg.length || t.pos.length);
 }
@@ -63,14 +73,14 @@ export function voiceBlock(place, { maxChars = 220 } = {}) {
 
   const quote = (r, cls) => `<blockquote class="q ${cls}">
       <p>${esc(clip(r.text, maxChars))}</p>
-      <footer><span class="rid">${esc(r.id)}</span>${r.rating ? ` · ${r.rating} من ٥` : ' · بلا تقييم'}${r.date ? ` · ${esc(r.date)}` : ''}</footer>
+      <footer><span class="rid">${esc(r.id)}</span>${r.rating ? ` · ${r.rating} من 5` : ' · بلا تقييم'}${r.date ? ` · ${esc(r.date)}` : ''}</footer>
     </blockquote>`;
 
   const body = groups.map((g) => `<div class="voice-topic">
       <h3 class="no-count">${esc(g.name)}</h3>
-      <div class="voice-cols">
-        <div>${g.neg.length ? g.neg.map((r) => quote(r, 'neg')).join('') : '<p class="fine">لا شكوى في هذا المحور.</p>'}</div>
-        <div>${g.pos.length ? g.pos.map((r) => quote(r, 'pos')).join('') : '<p class="fine">لا ثناء في هذا المحور.</p>'}</div>
+      <div class="voice-cols${g.neg.length && g.pos.length ? '' : ' one'}">
+        ${g.neg.length ? `<div>${g.neg.map((r) => quote(r, 'neg')).join('')}</div>` : ''}
+        ${g.pos.length ? `<div>${g.pos.map((r) => quote(r, 'pos')).join('')}</div>` : ''}
       </div>
     </div>`).join('');
 

@@ -76,8 +76,8 @@ export function priorities(place, { limit = 8 } = {}) {
   // سببٌ مكتوب بلغة صاحب المحل، مبنيّ على الأرقام نفسها لا على رأي.
   for (const r of rows) {
     const bits = [`${r.count} شكوى (${r.share}% من العيّنة)`];
-    if (r.worst !== null) bits.push(`أدناها ${r.worst} من ٥`);
-    if (r.recentCount) bits.push(`${r.recentCount} منها في آخر ٩٠ يومًا`);
+    if (r.worst !== null) bits.push(`أدناها ${r.worst} من 5`);
+    if (r.recentCount) bits.push(`${r.recentCount} منها في آخر 90 يومًا`);
     r.why = bits.join('، ') + '.';
   }
 

@@ -64,7 +64,7 @@ export function impactBlock(place, assume = {}) {
   const r = impact(place, assume);
   if (!r || !r.ticket || !r.monthly || !r.rows.length) return '';
   const esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const num = (n) => Number(n).toLocaleString('ar-SA');
+  const num = (n) => Number(n).toLocaleString('ar-SA-u-nu-latn');
 
   const rows = r.rows.slice(0, 6).map((x) => `<tr>
       <td>${esc(x.name)}</td>

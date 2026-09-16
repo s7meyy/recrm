@@ -34,8 +34,8 @@ export function relativeDays(dateText) {
 const FLAGS = {
   noText:      { label: 'تقييم بلا نص',              weight: 1, note: 'نجوم بلا كلمة واحدة — لا يحمل معلومة، وكثرتها تشوّه المتوسط.' },
   veryShort:   { label: 'نص شديد القِصَر',           weight: 1, note: 'كلمة أو كلمتان لا تكفيان لحكم.' },
-  duplicate:   { label: 'نصّ شبه مكرر',              weight: 3, note: 'يتشابه مع تعليق آخر تشابهًا يفوق ٧٠٪.' },
-  extremeOnly: { label: 'تطرّف في نفس اليوم',        weight: 2, note: 'عدة تعليقات متطرفة (٥ أو ١) في مدى زمني ضيّق.' },
+  duplicate:   { label: 'نصّ شبه مكرر',              weight: 3, note: 'يتشابه مع تعليق آخر تشابهًا يفوق 70٪.' },
+  extremeOnly: { label: 'تطرّف في نفس اليوم',        weight: 2, note: 'عدة تعليقات متطرفة (5 أو 1) في مدى زمني ضيّق.' },
   noName:      { label: 'بلا اسم كاتب',              weight: 1, note: 'قد يكون نقص لصق لا تزويرًا.' },
   genericPraise:{ label: 'مدح عام بلا تفصيل',        weight: 2, note: 'ثناء مطلق لا يذكر منتجًا ولا خدمة ولا موقفًا.' },
 };
