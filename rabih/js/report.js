@@ -23,6 +23,7 @@ import { effectBlock } from './effect.js';
 import { briefBlock } from './brief.js';
 import { coverageBlock } from './coverage.js';
 import { actionsBlock, checklistBlock, commitBlock, draftsBlock } from './action.js';
+import { selfCompareBlock } from './compare.js';
 
 const esc = (s) => String(s ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -285,6 +286,8 @@ body{margin:0;font-family:"Segoe UI",Tahoma,"Arabic Typesetting",sans-serif;colo
 .brand{font-size:13pt;letter-spacing:.3em;color:var(--gold);font-weight:700}
 .cover h1{font-size:26pt;margin:14mm 0 4mm;color:var(--navy);line-height:1.4}
 .cover .sub{font-size:13pt;color:var(--muted);margin:0 0 10mm}
+.cover-photo{margin:0 auto 8mm;max-width:150mm}
+.cover-photo img{width:100%;height:55mm;object-fit:cover;border-radius:8px;border:1px solid var(--line)}
 .cover-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:4mm;max-width:150mm;margin:0 auto;text-align:right}
 .cover-grid div{border:1px solid var(--line);border-radius:6px;padding:4mm 5mm}
 .cover-grid b{display:block;font-size:9pt;color:var(--muted);font-weight:600;margin-bottom:1mm}
@@ -298,7 +301,7 @@ body{margin:0;font-family:"Segoe UI",Tahoma,"Arabic Typesetting",sans-serif;colo
 .body h2{counter-reset:h3}
 .body h3::before{content:counter(h2) "-" counter(h3) " ";color:var(--gold);font-weight:700}
 .body h4{font-size:11.5pt;color:#2c4a6b;margin:4mm 0 1mm}
-p{margin:0 0 3mm;text-align:justify}
+p{margin:0 0 3mm;text-align:start}
 ul,ol{margin:0 0 4mm;padding-inline-start:7mm}
 li{margin-bottom:1.5mm}
 blockquote{margin:3mm 0;padding:2mm 5mm;border-inline-start:3px solid var(--gold);background:#faf7ef;color:#3a3a3a}
@@ -395,6 +398,16 @@ code{background:#f3f5f8;padding:0 1mm;border-radius:3px;font-size:10pt}
 .check-foot b{display:block;font-size:8.5pt;color:var(--muted)}
 .check-foot span{font-size:11pt;font-weight:700;color:var(--navy)}
 /* المسوّدات بنصّها كما وُلِّدت. */
+/* أنت مقابل نفسك. */
+.sc-cols{display:grid;grid-template-columns:repeat(2,1fr);gap:4mm;margin-top:4mm}
+.sc-col{border:1px solid var(--line);border-radius:8px;padding:3mm 4mm;background:#fff}
+.sc-col b{display:block;font-size:9.5pt;margin-bottom:2mm;color:var(--navy)}
+.sc-col.good b{color:#1e8449}
+.sc-col.bad b{color:#c0392b}
+.sc-col ul{margin:0;padding-inline-start:5mm;font-size:10pt;line-height:1.8}
+.delta{font-weight:700;font-size:10.5pt}
+.delta.up{color:#1e8449}
+.delta.down{color:#c0392b}
 .draft-text{white-space:pre-wrap;font-family:inherit;font-size:10pt;line-height:1.9;
   background:#fbfcfd;border:1px solid var(--line);border-radius:8px;padding:4mm 5mm;margin:0}
 .voice .q{margin:0 0 3mm;padding:3mm 4mm;border-radius:6px;border-inline-start:3px solid var(--line);background:#fafbfc;break-inside:avoid}
@@ -457,6 +470,9 @@ figcaption{font-size:9pt;color:var(--muted);margin-top:1mm;text-align:center}
 .fine{font-size:9.5pt;color:var(--muted)}
 .foot{margin-top:12mm;padding-top:4mm;border-top:1px solid var(--line);font-size:9pt;color:var(--muted);display:flex;justify-content:space-between;gap:4mm}
 @page{size:A4;margin:16mm 14mm}
+/* ترويسةٌ جارية: لا تظهر على الشاشة، وتتكرّر في كل صفحةٍ مطبوعة.
+   القارئ يقلّب التقرير بعد أسبوع فلا يعرف لأي فرعٍ هو ولا متى صدر. */
+.running{display:none}
 @media print{
   body{background:#fff}
   .page{max-width:none;margin:0;padding:0}
@@ -465,6 +481,16 @@ figcaption{font-size:9pt;color:var(--muted);margin-top:1mm;text-align:center}
   h2,h3,h4{break-after:avoid}
   p,li,tr{break-inside:avoid}
   a{color:inherit;text-decoration:none}
+  .running{display:block;position:fixed;top:0;inset-inline:0;
+    font-size:8pt;color:var(--muted);padding-bottom:2mm;border-bottom:1px solid var(--line);
+    display:flex;justify-content:space-between;gap:4mm}
+  .body{margin-top:8mm}
+  /* القسم لا يُبتَر: عنوانٌ في آخر الصفحة وجدولُه في التي تليها يُفقد الربط. */
+  section{break-inside:avoid-page}
+  .actions,.voice,.topics,.recency{break-inside:auto}
+  .act,.brief,.bcard,.commit,.coverage{break-inside:avoid}
+  /* والاقتباس لا يُشطَر: نصفُ شكوى في صفحةٍ ونصفُها في أخرى يُقرأ محرَّفًا. */
+  blockquote,.q{break-inside:avoid}
 }`;
 
 /**
@@ -509,26 +535,41 @@ export function buildReportHtml({ place: rawPlace, ctx = {}, markdown = '', phot
   assignReviewIds(place);
   const opt = { toc: true, stars: true, topics: true, photos: true, recency: true, entities: true, replies: true, confidence: true,
     priority: true, calc: true, voice: true, impact: true, sources: true, brief: true, coverage: true,
-    actions: true, checklist: true, commit: true, drafts: true,
+    actions: true, checklist: true, commit: true, drafts: true, selfCompare: true,
     cooccur: true, timing: true, promises: true, effect: true, bias: true, ...show, ...(sector?.show || {}) };
   const s = stats(place);
   const body = tocFrom(mdToHtml(markdown));
   const date = new Date().toLocaleDateString('ar-SA-u-ca-gregory-nu-latn');
   const name = esc(place.identity?.name || 'منشأة غير مسمّاة');
 
+  /* الغلاف كان يطبع «—» في كل حقلٍ لم يُملأ: ثلاثُ شرطاتٍ تُقرأ تقريرًا
+     ناقصًا قبل قراءة سطرٍ منه. فالحقل الفارغ يُحذف، ويُملأ مكانه بما هو
+     معلومٌ دائمًا: حجمُ العيّنة، والمدى الزمني الذي تغطّيه. */
+  const span = monthly(place);
+  const spanLabel = span.length ? `${span[0].label} — ${span[span.length - 1].label}` : '';
+  const coverCells = [
+    ['التصنيف', ctx.categoryName],
+    ['المدينة', ctx.cityName],
+    ['الحي', ctx.districtName],
+    ['متوسط التقييم', (s.googleAverage ?? s.sampleAverage) === null || (s.googleAverage ?? s.sampleAverage) === undefined
+      ? '' : `${s.googleAverage ?? s.sampleAverage} من 5`],
+    ['عدد التقييمات', s.googleCount === null ? '' : String(s.googleCount)],
+    ['التعليقات المحلَّلة', s.total ? String(s.total) : ''],
+    ['الفترة المغطّاة', spanLabel],
+    ['تاريخ التقرير', date],
+  ].filter(([, v]) => v !== '' && v !== null && v !== undefined)
+    .map(([k, v]) => `<div><b>${esc(k)}</b><span>${esc(v)}</span></div>`).join('');
+
+  // صورةُ المنشأة على الغلاف إن رفعها المُعِدّ — وجهُ المحل أقربُ إلى صاحبه من شعارنا.
+  const coverPhoto = photos.find((ph) => ph && ph.url) || null;
+
   const cover = `<header class="cover">
     ${coverHeader(identity)}
     ${identity?.showRabih === false ? '' : '<div class="brand">رابــح</div>'}
     <h1>تقرير تحليلي عن<br>${name}</h1>
     <p class="sub">مبنيّ على تقييمات وتعليقات العملاء المنشورة في خرائط قوقل</p>
-    <div class="cover-grid">
-      <div><b>التصنيف</b><span>${esc(ctx.categoryName || '—')}</span></div>
-      <div><b>المدينة</b><span>${esc(ctx.cityName || '—')}</span></div>
-      <div><b>الحي</b><span>${esc(ctx.districtName || '—')}</span></div>
-      <div><b>متوسط التقييم</b><span>${s.googleAverage ?? s.sampleAverage ?? '—'} من 5</span></div>
-      <div><b>عدد التقييمات</b><span>${s.googleCount ?? '—'}</span></div>
-      <div><b>تاريخ التقرير</b><span>${esc(date)}</span></div>
-    </div>
+    ${coverPhoto ? `<div class="cover-photo"><img src="${esc(coverPhoto.url)}" alt=""></div>` : ''}
+    <div class="cover-grid">${coverCells}</div>
   </header>`;
 
   const footer = `<footer class="foot">
@@ -547,6 +588,7 @@ export function buildReportHtml({ place: rawPlace, ctx = {}, markdown = '', phot
 </head>
 <body>
 <div class="page">
+<div class="running"><span>${name}${identity?.office ? ` — ${esc(identity.office)}` : ''}</span><span>${esc(date)}</span></div>
 ${cover}
 <main class="body">
 ${opt.brief ? briefBlock(place, job) : ''}
@@ -556,6 +598,7 @@ ${opt.priority ? priorityBlock(place) : ''}
 ${opt.actions ? actionsBlock(place, job || {}) : ''}
 ${opt.commit ? commitBlock(place, job || {}) : ''}
 ${opt.voice ? voiceBlock(place) : ''}
+${opt.selfCompare && job?.prevJob ? selfCompareBlock(job.prevJob, job) : ''}
 ${opt.effect && job?.prevJob ? effectBlock(job.prevJob, job) : ''}
 ${opt.promises ? promisesBlock(place) : ''}
 ${opt.topics ? topicsBlock(place, sector?.lead || []) : ''}
@@ -575,7 +618,7 @@ ${opt.drafts ? draftsBlock(job || {}) : ''}
 <p class="appendix-head">ملحق: كيف بُني هذا التقرير</p>
 ${opt.stars ? starBars(place) : ''}
 ${opt.bias ? biasBlock(place) : ''}
-${opt.confidence ? confidenceBlock(job || { place, reportMd: markdown }) : ''}
+${opt.confidence ? confidenceBlock(job?.place ? job : { place, reportMd: markdown }) : ''}
 ${methodBlock(place, job, ctx)}
 </div>
 </main>

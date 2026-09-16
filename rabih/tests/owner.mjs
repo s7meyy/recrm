@@ -6,6 +6,8 @@
 import { brief, briefBlock } from '../js/brief.js';
 import { coverage, coverageBlock } from '../js/coverage.js';
 import { actions, actionsBlock, checklistBlock, commitBlock, draftsBlock } from '../js/action.js';
+import { selfCompareBlock } from '../js/compare.js';
+import { buildReportHtml } from '../js/report.js';
 import { topicCoverage } from '../js/lexicon.js';
 import { priorities } from '../js/priority.js';
 import { recentVsOlder } from '../js/recency.js';
@@ -117,6 +119,31 @@ const dh = draftsBlock({ replyDrafts: 'R002: نعتذر عن الانتظار، 
 dh.includes('مسوّدات تُراجَع لا ردودٌ تُنشَر') ? ok('تُلحَق موسومةً بأنها مسوّدة لا قرار') : bad('وسم المسوّدات');
 dh.includes('R002') ? ok('ومسنودةً إلى معرّف الشكوى') : bad('بلا سند');
 draftsBlock({}) === '' ? ok('وبلا مسوّدات لا ملحق') : bad('ملحق فارغ');
+
+console.log('٩) أنت مقابل نفسك');
+const weak = build([mk(1, 'الانتظار طويل'), mk(1, 'انتظرت كثير'), mk(1, 'مافي مواقف'), mk(2, 'الخدمه بطيئه'),
+  mk(1, 'وسخ'), mk(5, 'ممتاز')], { average: 3.9, count: 280, distribution: null });
+const strongNow = build([...Array(18)].map(() => mk(5, 'القهوة ممتازة والموظفين لطفاء'))
+  .concat([...Array(2)].map(() => mk(1, 'الانتظار طويل'))), { average: 4.6, count: 340, distribution: null });
+const sc = selfCompareBlock({ place: weak, createdAt: '2026-06-01T00:00:00Z', plan: [{ text: 'تقليل الانتظار', status: 'done' }] },
+  { place: strongNow, createdAt: '2026-09-16T00:00:00Z' });
+sc.includes('متوسط قوقل') ? ok('يُقارَن التقرير بسابقه') : bad('بلا مقارنة');
+sc.includes('لا عيّنة فيه ولا هامش')
+  ? ok('ومتوسط قوقل يُقرأ بلا هامش — فهو مُعلَنٌ على التقييمات كلها') : bad('هامش على رقم معلن');
+sc.includes('ولا يُقارَن محلُّك بمحلٍّ آخر')
+  ? ok('ويُصرَّح بالامتناع عن مقارنة المنافسين') : bad('بلا تصريح');
+!/←/.test(sc) ? ok('ولا سهمَ بين رقمين يُقلَب في العربية فيُقرأ ضدّ معناه') : bad('سهم ملتبس');
+selfCompareBlock(null, { place: strongNow }) === '' ? ok('وبلا تقريرٍ سابق لا مقارنة') : bad('مقارنة بلا سابق');
+
+console.log('١٠) الغلاف والطباعة');
+const html = buildReportHtml({ place: p1, markdown: '## تحليل\nنصّ.', job: {}, ctx: {} });
+const coverHtml = html.slice(html.indexOf('<header class="cover">'), html.indexOf('</header>'));
+!coverHtml.includes('<span>—</span>')
+  ? ok('لا حقلَ فارغًا على الغلاف — والشرطةُ تُقرأ تقريرًا ناقصًا') : bad('غلاف بشرطات');
+coverHtml.includes('التعليقات المحلَّلة') ? ok('ويُملأ بما هو معلومٌ دائمًا') : bad('غلاف خالٍ');
+html.includes('class="running"') ? ok('وترويسةٌ جاريةٌ تتكرّر في كل صفحةٍ مطبوعة') : bad('بلا ترويسة');
+!/text-align:justify/.test(html) ? ok('ولا ضبطَ يفتح فجواتٍ بيضاء في العربية') : bad('الضبط باقٍ');
+/break-inside:avoid/.test(html) ? ok('والأقسام لا تنكسر بين صفحتين') : bad('بلا قواعد كسر');
 
 console.log('\n' + (fails.length ? `فشل ${fails.length}:\n` + fails.map((f) => ' - ' + f).join('\n') : '✅ نجحت كل الاختبارات'));
 process.exit(fails.length ? 1 : 0);

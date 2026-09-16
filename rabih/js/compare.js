@@ -3,6 +3,7 @@
 
 import { stats } from './schema.js';
 import { topicStats } from './lexicon.js';
+import { wilson, significant } from './interval.js';
 
 const key = (job) => `${job.mapsUrl || ''}|${(job.place?.identity?.name || '').trim()}`;
 
@@ -226,4 +227,79 @@ export function internalBenchmark(jobs, target) {
   }
 
   return { n: pool.length, byCategory, byCity, target: me, verdicts, scope: byCity ? 'المدينة والتصنيف' : 'التصنيف' };
+}
+
+/**
+ * «أنت مقابل نفسك» — الفارق الوحيد الصادق.
+ *
+ * والمقارنة بالمنافسين ممتنعةٌ هنا: لا تُجمَع تعليقاتهم بإذنٍ منهم، ولا
+ * تُقاس عيّناتهم بمثل ما تُقاس عيّنتك، فالرقم المُخرَج منها يُوهِم تفوّقًا
+ * أو تخلّفًا لا يسنده شيء. وأمّا تقريرُك السابق فمقياسٌ سليم: المنهج واحد
+ * والمصدر واحد، والفرق بينهما يخصّك وحدك.
+ *
+ * ويُفرَّق بين رقمين لا يُقاسان بمقياسٍ واحد:
+ *   • **متوسط قوقل** رقمٌ مُعلَن على تقييماتك كلها، لا عيّنة فيه ولا هامش.
+ *   • **نصيب السلبي** محسوبٌ من عيّنتك، فله هامشٌ ولا يُقال فيه تحسّنٌ
+ *     حتى تنفصل فترتاه.
+ */
+export function selfCompareBlock(oldJob, newJob) {
+  if (!oldJob || !newJob) return '';
+  const t = timeline(oldJob, newJob);
+  const esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  const a = stats(oldJob.place);
+  const b = stats(newJob.place);
+  const negBefore = wilson(a.negative, a.rated);
+  const negNow = wilson(b.negative, b.rated);
+  const negSig = significant(negNow, negBefore);
+
+  const arrow = (diff, goodIsUp) => {
+    if (diff === null || diff === undefined || diff === 0) return '<span class="fine">بلا تغيّر</span>';
+    const good = goodIsUp ? diff > 0 : diff < 0;
+    return `<span class="delta ${good ? 'up' : 'down'}">${diff > 0 ? '▲' : '▼'} ${Math.abs(diff)}</span>`;
+  };
+
+  const rows = [];
+  const r = t.ratings;
+  if (r.googleAverage.before !== null && r.googleAverage.now !== null) {
+    rows.push(`<tr><td>متوسط قوقل</td><td>${r.googleAverage.before}</td><td>${r.googleAverage.now}</td>
+      <td>${arrow(r.googleAverage.diff, true)}</td>
+      <td class="fine">رقمٌ مُعلَن على تقييماتك كلها — لا عيّنة فيه ولا هامش.</td></tr>`);
+  }
+  if (r.negativeShare.before !== null && r.negativeShare.now !== null) {
+    rows.push(`<tr><td>نصيب السلبي من العيّنة</td><td>${r.negativeShare.before}%</td><td>${r.negativeShare.now}%</td>
+      <td>${negSig.decided ? arrow(r.negativeShare.diff, false) : '<span class="fine">لا يُحسم</span>'}</td>
+      <td class="fine">${esc(negSig.reason || '')}</td></tr>`);
+  }
+  if (r.replyRate.before !== null && r.replyRate.now !== null) {
+    rows.push(`<tr><td>نسبة الرد على التعليقات</td><td>${r.replyRate.before}%</td><td>${r.replyRate.now}%</td>
+      <td>${arrow(r.replyRate.diff, true)}</td>
+      <td class="fine">فعلُك أنت، لا رأيُ عميل — فيُقاس بلا هامش.</td></tr>`);
+  }
+  if (!rows.length) return '';
+
+  const list = (items, label, cls) => items.length
+    ? `<div class="sc-col ${cls}"><b>${label}</b><ul>${
+        items.slice(0, 6).map((x) => `<li>${esc(x.name)}${
+          x.from !== undefined ? ` <span class="fine">(من ${x.from} إلى ${x.to})</span>` : ''}${
+          x.neg !== undefined ? ` <span class="fine">(${x.neg} شكوى)</span>` : ''}${
+          x.was !== undefined ? ` <span class="fine">(كانت ${x.was})</span>` : ''}</li>`).join('')
+      }</ul></div>` : '';
+
+  return `<section class="selfcompare">
+    <h2>أنت مقابل نفسك — ما تغيّر منذ التقرير السابق</h2>
+    <p class="note">${t.days !== null ? `بين التقريرين ${t.days} يومًا. ` : ''}${
+      t.plan.total ? `وأُنجز ${t.plan.done} من ${t.plan.total} مهمة في خطة التقرير السابق.` : ''}</p>
+    <table><thead><tr><th>المقياس</th><th>سابقًا</th><th>الآن</th><th>الفرق</th><th>كيف يُقرأ</th></tr></thead>
+    <tbody>${rows.join('')}</tbody></table>
+    <div class="sc-cols">
+      ${list(t.topics.better, 'شكاوى تراجعت', 'good')}
+      ${list(t.topics.worse, 'شكاوى زادت', 'bad')}
+      ${list(t.topics.new, 'شكاوى جديدة لم تكن', 'bad')}
+      ${list(t.topics.gone, 'شكاوى اختفت', 'good')}
+    </div>
+    <p class="fine"><b>ولا يُقارَن محلُّك بمحلٍّ آخر في هذا التقرير</b>: عيّنته لا تُقاس بمثل ما تُقاس
+    عيّنتك، فالفارق المُخرَج منها يُوهِم تفوّقًا أو تخلّفًا لا يسنده شيء. وتقريرُك السابق
+    مقياسٌ سليم: المنهج واحد والمصدر واحد.</p>
+  </section>`;
 }
