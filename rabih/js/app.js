@@ -2212,7 +2212,7 @@ function designHtmlWithPhotos() {
  * وهنا تحديدًا يجب أن يُقال، لا في خط التحليل وحده: من هنا يُطبَع ويُرسَل.
  */
 /** أزرار التسليم: ما يُخرِج التقرير من الشاشة إلى يد عميلك. */
-const DELIVERY_BTNS = ['#btn-print', '#btn-download-html', '#btn-download-md', '#btn-download-xlsx', '#btn-freeze', '#btn-wa', '#btn-tg', '#btn-mail', '#btn-design-print', '#btn-design-dl'];
+const DELIVERY_BTNS = ['#btn-print', '#btn-download-html', '#btn-download-md', '#btn-download-xlsx', '#btn-onepage', '#btn-card-png', '#btn-freeze', '#btn-wa', '#btn-tg', '#btn-mail', '#btn-design-print', '#btn-design-dl'];
 
 function renderStaleReport() {
   const box = $('#stale-report');
@@ -2787,6 +2787,49 @@ function bindReportView() {
 
   // الملف الذي يخرج من يدك موقَّع: من غيّر فيه حرفًا كُشِف.
   $('#btn-download-html').addEventListener('click', async () => download(reportFileName('html'), await signedHtml(), 'text/html;charset=utf-8'));
+
+  /* صفحةُ «في سطور» وحدها — تُرسَل في محادثة وتُقرأ على الجوال في ثانية.
+     والتقريرُ الكامل ثلاثَ عشرةَ صفحة، ولا يُفتَح في واتساب. ولا يسقط منها
+     ما يُقيّد أرقامها: حدودُ التغطية ومقياسُ الثقة معها. */
+  $('#btn-onepage').addEventListener('click', async () => {
+    const one = buildReportHtml({
+      sector: sectorFor(job.ctx?.groupId),
+      place: job.place,
+      ctx: job.ctx,
+      markdown: '',
+      photos: [],
+      show: {
+        brief: true, coverage: true, confidence: true, toc: false, quotes: false,
+        priority: false, actions: false, commit: false, checklist: false, drafts: false,
+        voice: false, card: false, selfCompare: false, effect: false, promises: false,
+        keep: false, unanswered: false,
+        topics: false, cooccur: false, timing: false, recency: false, entities: false,
+        replies: false, sources: false, stars: false, calc: false, impact: false,
+        bias: false, photos: false,
+      },
+      font: job.font,
+      identity: identity.load(),
+      job,
+    });
+    download(reportFileName('one-page.html'), bilingual(one, job.lang || 'ar'), 'text/html;charset=utf-8');
+    toast('صفحةٌ واحدة — ومعها حدود التغطية ومقياس الثقة.');
+  });
+
+  /* بطاقة الثناء صورةً: البطاقةُ في التقرير تُقرأ ولا تُنشَر. */
+  $('#btn-card-png').addEventListener('click', async () => {
+    const { drawCard, bestQuote } = await import('./card.js');
+    const q = bestQuote(job.place);
+    if (!q) { toast('لا ثناءَ بخمس نجومٍ ونصٍّ كافٍ في عيّنتك — ولا تُختلَق بطاقة.'); return; }
+    const blob = await drawCard(q, { placeName: job.place?.identity?.name || '' });
+    if (!blob) { toast('النصّ أطول من أن يُعرَض في بطاقةٍ بلا بتر — ولا يُبتَر كلامُ عميلك.'); return; }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = reportFileName('card.png');
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    toast(`نُزِّلت — بنصّ ${q.id} كما كُتب، بلا تهذيب.`);
+  });
 
   $('#btn-download-csv').addEventListener('click', () => {
     download(reportFileName('reviews.csv'), reviewsCsv(job), 'text/csv;charset=utf-8');

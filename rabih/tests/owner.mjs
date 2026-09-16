@@ -323,5 +323,17 @@ const stamped = buildReportHtml({ place: p1, markdown: '## تحليل\nنصّ.',
 stamped.includes('جُمعت في') ? ok('يُذكر متى جُمعت التعليقات') : bad('بلا تاريخ بيانات');
 /بيانات [^<·]*·/.test(stamped) ? ok('وفي ترويسة كل صفحةٍ مطبوعة') : bad('بلا ترويسة');
 
+console.log('٢٥) الاستيراد الكسول لا يسقط من النسخة الخاصة');
+/* `import('./card.js')` كان يفوت رسمَ التبعيات فتقع وحدته خارج الترتيب:
+   لا تُخزَّن ولا يُستبدَل مُعرِّفها، فتنكسر النسخة الخاصة عند أول استدعاء. */
+const toolSrc = readFileSync(new URL('../tools/build-private.mjs', import.meta.url), 'utf8');
+/import\\s\*\\\(/.test(toolSrc) || toolSrc.includes('import\\s*\\(')
+  ? ok('باني النسخة الخاصة يعرف الاستيراد الكسول') : bad('استيراد كسول مجهول');
+const appSrc = readFileSync(new URL('../js/app.js', import.meta.url), 'utf8');
+const lazy = [...appSrc.matchAll(/import\(['"]\.\/([\w.-]+)['"]\)/g)].map((m) => m[1]);
+const swList = readFileSync(new URL('../sw.js', import.meta.url), 'utf8');
+lazy.every((f) => swList.includes(`./js/${f}`))
+  ? ok(`وكلُّ ما يُستورَد كسولًا مخزَّنٌ للعمل بلا إنترنت (${lazy.length})`) : bad('وحدة كسولة لا تُخزَّن', lazy.join('، '));
+
 console.log('\n' + (fails.length ? `فشل ${fails.length}:\n` + fails.map((f) => ' - ' + f).join('\n') : '✅ نجحت كل الاختبارات'));
 process.exit(fails.length ? 1 : 0);

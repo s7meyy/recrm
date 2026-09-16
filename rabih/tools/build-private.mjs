@@ -40,7 +40,7 @@ const sources = new Map(jsFiles.map((f) => [f, readFileSync(join(ROOT, f), 'utf8
 
 /* ───── رسم التبعيات وترتيبها ───── */
 
-const IMPORT_RE = /(\bfrom\s+|\bimport\s+)(['"])(\.\.?\/[^'"]+)\2/g;
+const IMPORT_RE = /(\bfrom\s+|\bimport\s+|\bimport\s*\(\s*)(['"])(\.\.?\/[^'"]+)\2/g;
 
 /** يحوّل مسارًا نسبيًّا داخل ملف إلى مسار من جذر المشروع. */
 function resolveSpec(fromFile, spec) {
