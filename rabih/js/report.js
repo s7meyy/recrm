@@ -2,7 +2,7 @@
 // لا يعتمد على أي نموذج: النصّ يدخل Markdown ويخرج صفحة A4 عربية جاهزة للطباعة/الـPDF.
 // وإن أراد المستخدم تصميمًا من نموذج (الخطوة الاختيارية التاسعة) فله ذلك، وهذا هو الأساس المضمون.
 
-import { stats } from './schema.js';
+import { stats, assignReviewIds } from './schema.js';
 import { topicStats } from './lexicon.js';
 import { recentVsOlder, monthly, alerts, topicAges } from './recency.js';
 import { themeCss, coverHeader, footerLine, OFFICE_CSS } from './brand.js';
@@ -22,6 +22,7 @@ import { promisesBlock } from './promises.js';
 import { effectBlock } from './effect.js';
 import { briefBlock } from './brief.js';
 import { coverageBlock } from './coverage.js';
+import { actionsBlock, checklistBlock, commitBlock, draftsBlock } from './action.js';
 
 const esc = (s) => String(s ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -365,6 +366,37 @@ code{background:#f3f5f8;padding:0 1mm;border-radius:3px;font-size:10pt}
 /* الملحق: كيف بُني التقرير — يُؤخَّر ولا يُحذف، فالصدق يقتضي بقاءه. */
 .appendix{margin-top:12mm;padding-top:5mm;border-top:2px solid var(--line)}
 .appendix-head{font-size:12pt;font-weight:700;color:var(--navy);margin:0 0 5mm}
+/* خطة العمل — بطاقةٌ لكل أولوية، لا تنكسر بين صفحتين. */
+.acts{display:grid;gap:4mm}
+.act{border:1px solid var(--line);border-radius:8px;padding:4mm 5mm;background:#fff;break-inside:avoid}
+.act-head{display:flex;gap:3mm;align-items:flex-start;margin-bottom:3mm}
+.act-rank{flex:0 0 auto;width:8mm;height:8mm;border-radius:50%;background:var(--navy);color:#fff;
+  display:flex;align-items:center;justify-content:center;font-weight:700;font-size:10pt}
+.act-head b{font-size:11.5pt;color:var(--navy)}
+.act-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:3mm;margin-bottom:3mm}
+.act-grid>div{background:#fbfcfd;border-radius:6px;padding:2.5mm 3mm}
+.act-grid b{display:block;font-size:8.5pt;color:var(--muted);font-weight:600;margin-bottom:1mm}
+.act-grid span{display:block;font-size:10.5pt;font-weight:600;color:var(--navy)}
+.act-grid small{display:block;font-size:8pt;color:var(--muted);margin-top:.5mm;line-height:1.6}
+.act-steps{margin:0 0 2mm;padding-inline-start:5mm;font-size:10pt;line-height:1.9}
+.act-ids{font-size:8.5pt;color:var(--muted)}
+/* «بماذا ستبدأ؟» — فراغٌ يُكتب فيه بخطّ اليد. */
+.commit td.write{height:11mm;background:repeating-linear-gradient(transparent,transparent 10mm,var(--line) 10mm,var(--line) 10.2mm)}
+/* قائمة المتابعة — تُطبَع وتُعلَّق، فتبدأ صفحةً جديدة. */
+.checklist{break-before:page;break-inside:avoid}
+.checks{list-style:none;margin:0 0 5mm;padding:0}
+.checks li{display:flex;align-items:center;gap:3mm;padding:3mm 0;border-bottom:1px solid var(--line);font-size:10.5pt}
+.checks .box{flex:0 0 auto;width:5mm;height:5mm;border:1.5px solid var(--navy);border-radius:2px}
+.checks .task{flex:1}
+.checks .who{flex:0 0 auto;font-size:9pt;color:var(--muted)}
+.checks .when{flex:0 0 auto;font-size:9pt;color:var(--muted);letter-spacing:.1em}
+.check-foot{display:flex;gap:5mm;padding-top:3mm}
+.check-foot div{flex:1;text-align:center}
+.check-foot b{display:block;font-size:8.5pt;color:var(--muted)}
+.check-foot span{font-size:11pt;font-weight:700;color:var(--navy)}
+/* المسوّدات بنصّها كما وُلِّدت. */
+.draft-text{white-space:pre-wrap;font-family:inherit;font-size:10pt;line-height:1.9;
+  background:#fbfcfd;border:1px solid var(--line);border-radius:8px;padding:4mm 5mm;margin:0}
 .voice .q{margin:0 0 3mm;padding:3mm 4mm;border-radius:6px;border-inline-start:3px solid var(--line);background:#fafbfc;break-inside:avoid}
 .voice .q.neg{border-inline-start-color:#c0392b;background:#fdf6f5}
 .voice .q.pos{border-inline-start-color:#1e8449;background:#f5fbf7}
@@ -472,12 +504,16 @@ function methodBlock(place, job, ctx) {
 export function buildReportHtml({ place: rawPlace, ctx = {}, markdown = '', photos = [], show = {}, font = null, identity = null, job = null, sector = null }) {
   // وضع الخصوصية يعمل على ما يخرج من يدك، ولا يمسّ أرشيفك.
   const place = shield(rawPlace);
+  /* سندُ كل حكمٍ معرّفُ تعليقه، فتعليقٌ بلا معرّف يُخرج «الشواهد:» فارغة
+     ويسقط وعدُ التقرير كلُّه صامتًا. والإسناد يُضمَن هنا لا يُفترَض. */
+  assignReviewIds(place);
   const opt = { toc: true, stars: true, topics: true, photos: true, recency: true, entities: true, replies: true, confidence: true,
     priority: true, calc: true, voice: true, impact: true, sources: true, brief: true, coverage: true,
+    actions: true, checklist: true, commit: true, drafts: true,
     cooccur: true, timing: true, promises: true, effect: true, bias: true, ...show, ...(sector?.show || {}) };
   const s = stats(place);
   const body = tocFrom(mdToHtml(markdown));
-  const date = new Date().toLocaleDateString('ar-SA-u-ca-gregory');
+  const date = new Date().toLocaleDateString('ar-SA-u-ca-gregory-nu-latn');
   const name = esc(place.identity?.name || 'منشأة غير مسمّاة');
 
   const cover = `<header class="cover">
@@ -517,6 +553,8 @@ ${opt.brief ? briefBlock(place, job) : ''}
 ${opt.toc ? body.toc : ''}
 ${body.html}
 ${opt.priority ? priorityBlock(place) : ''}
+${opt.actions ? actionsBlock(place, job || {}) : ''}
+${opt.commit ? commitBlock(place, job || {}) : ''}
 ${opt.voice ? voiceBlock(place) : ''}
 ${opt.effect && job?.prevJob ? effectBlock(job.prevJob, job) : ''}
 ${opt.promises ? promisesBlock(place) : ''}
@@ -531,6 +569,8 @@ ${opt.sources ? sourcesBlock(place) : ''}
 ${opt.calc ? starsBlock(place, { perMonth: job?.assume?.perMonth || 0 }) : ''}
 ${opt.impact ? impactBlock(place, { ...(job?.assume || {}), lossRate: (Number(job?.assume?.loss) || 25) / 100 }) : ''}
 ${opt.photos ? photosBlock(photos) : ''}
+${opt.checklist ? checklistBlock(place, job || {}) : ''}
+${opt.drafts ? draftsBlock(job || {}) : ''}
 <div class="appendix">
 <p class="appendix-head">ملحق: كيف بُني هذا التقرير</p>
 ${opt.stars ? starBars(place) : ''}
@@ -548,7 +588,7 @@ ${footer}
 /** تقرير المجموعة — نفس هوية التقرير الفردي، بجداول الفروع بدل بطاقة منشأة. */
 export function buildGroupReportHtml({ brand, analysis, markdown = '', font = null, identity = null }) {
   const a = analysis;
-  const date = new Date().toLocaleDateString('ar-SA-u-ca-gregory');
+  const date = new Date().toLocaleDateString('ar-SA-u-ca-gregory-nu-latn');
   const body = tocFrom(mdToHtml(markdown));
 
   const rows = a.ranking.length ? a.ranking : a.branches.map((b, i) => ({ ...b, rank: i + 1 }));

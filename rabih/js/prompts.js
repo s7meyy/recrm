@@ -390,7 +390,7 @@ export function promptDesign(finalReport, place, ctx) {
 - المدينة والحي: ${ctx.cityName || 'غير متوفّر'}${ctx.districtName ? ' — ' + ctx.districtName : ''}
 - متوسط التقييم: ${place.ratings?.average ?? 'غير متوفّر'} من 5
 - عدد التقييمات: ${place.ratings?.count ?? 'غير متوفّر'}
-- تاريخ التقرير: ${new Date().toLocaleDateString('ar-SA-u-ca-gregory')}
+- تاريخ التقرير: ${new Date().toLocaleDateString('ar-SA-u-ca-gregory-nu-latn')}
 
 ---
 ## التقرير المطلوب إخراجه

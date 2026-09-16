@@ -5,6 +5,7 @@
 
 import { brief, briefBlock } from '../js/brief.js';
 import { coverage, coverageBlock } from '../js/coverage.js';
+import { actions, actionsBlock, checklistBlock, commitBlock, draftsBlock } from '../js/action.js';
 import { topicCoverage } from '../js/lexicon.js';
 import { priorities } from '../js/priority.js';
 import { recentVsOlder } from '../js/recency.js';
@@ -86,6 +87,36 @@ quotes.some((q) => q.text === HARSH) ? ok('والذمّ بنصّه لم يُهذ
 const pe = build([mk(5, 'طلبت اللاتيه صباحا وكان ممتازا', 'قبل شهر'), mk(4, 'طلبت اللاتيه مساء وكان جيدا', 'قبل شهر')]);
 const ents = extract(pe).products.map((x) => x.name);
 !ents.includes('صباحا') && !ents.includes('مساء') ? ok('وظرفُ الزمان ليس صنفًا') : bad('ضجيج الكيانات', ents.join('، '));
+
+console.log('٦) خطة العمل — الفعل ومن يفعله');
+const jb = { assume: { ticket: 30, monthly: 900, loss: 25 } };
+const act = actions(p1, jb);
+act.rows.length ? ok(`${act.rows.length} خطوات مرتَّبة`) : bad('بلا خطوات');
+act.rows[0].owner && act.rows[0].first && act.rows[0].metric
+  ? ok(`ولكلٍّ مسؤولٌ وأول فعلٍ ومؤشّر: ${act.rows[0].owner}`) : bad('بيانات ناقصة', JSON.stringify(act.rows[0]));
+act.rows[0].money > 0 && act.rows[0].yearly === act.rows[0].money * 12
+  ? ok(`والكسب محسوبٌ من فرض المالك: ${act.rows[0].money} ريال/شهر`) : bad('الكسب', act.rows[0].money);
+act.rows.every((r) => r.ids.length) ? ok('ولكل خطوةٍ شواهدُها بمعرّفاتها') : bad('خطوة بلا سند');
+
+// بلا أرقام المالك لا يُخترَع مبلغ.
+actions(p1, {}).rows.every((r) => r.money === null)
+  ? ok('وبلا فرضك لا يُقدَّر كسبٌ — ولا يُخمَّن') : bad('مبلغ بلا فرض');
+
+const ah = actionsBlock(p1, jb);
+ah.includes('عُرفُ القطاع لا قياسُ محلّك')
+  ? ok('والكلفة والمدة موسومتان بأنهما عُرفٌ لا قياس — فلا تُخلَطان بالمحسوب') : bad('بلا وسم');
+!/كلفة الإصلاح [0-9,]+ ريال/.test(ah) ? ok('ولا مبلغَ كلفةٍ مخترَع بجوار مبلغٍ محسوب') : bad('كلفة مخترعة');
+
+console.log('٧) ما يُطبَع ويُكتَب فيه');
+checklistBlock(p1, jb).includes('class="box"') ? ok('قائمةُ متابعةٍ بمربّعاتٍ تُؤشَّر') : bad('بلا قائمة');
+commitBlock(p1, jb).includes('class="write"') ? ok('وفراغٌ يكتب فيه المالك بيده') : bad('بلا فراغ');
+checklistBlock(build([]), jb) === '' ? ok('وبلا أولويات لا قائمة' ) : bad('قائمة فارغة');
+
+console.log('٨) مسوّدات الردود ملحقًا');
+const dh = draftsBlock({ replyDrafts: 'R002: نعتذر عن الانتظار، وقد أضفنا موظفًا في الذروة.' });
+dh.includes('مسوّدات تُراجَع لا ردودٌ تُنشَر') ? ok('تُلحَق موسومةً بأنها مسوّدة لا قرار') : bad('وسم المسوّدات');
+dh.includes('R002') ? ok('ومسنودةً إلى معرّف الشكوى') : bad('بلا سند');
+draftsBlock({}) === '' ? ok('وبلا مسوّدات لا ملحق') : bad('ملحق فارغ');
 
 console.log('\n' + (fails.length ? `فشل ${fails.length}:\n` + fails.map((f) => ' - ' + f).join('\n') : '✅ نجحت كل الاختبارات'));
 process.exit(fails.length ? 1 : 0);
