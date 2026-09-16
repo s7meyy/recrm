@@ -269,6 +269,30 @@ export const isIntense = (text) => {
  * إحصاء المواضيع عبر كل التعليقات.
  * @returns {Array<{id,name,total,pos,neg,neu,ids:string[],negIds:string[],share:number,verdict:string}>}
  */
+/**
+ * ما لم يقع تحت أي موضوع.
+ *
+ * كان `topicStats` يتخطّى التعليق الذي لا يطابق كلمةً من القاموس بلا أثر،
+ * فيقرأ صاحبُ المحل جدول المواضيع ويحسبه وصفًا لتعليقاته كلّها — وهو وصفٌ
+ * لما عرفه القاموس منها وحده. والصدق أن يُقال كم تعليقًا لم يُصنَّف.
+ *
+ * @returns {{classified:number, unclassified:number, ids:string[], share:number}}
+ */
+export function topicCoverage(place) {
+  const reviews = place?.reviews || [];
+  const ids = [];
+  for (const r of reviews) {
+    if (!topicsOf(r.text).length) ids.push(r.id);
+  }
+  const total = reviews.length;
+  return {
+    classified: total - ids.length,
+    unclassified: ids.length,
+    ids,
+    share: total ? Number(((ids.length / total) * 100).toFixed(1)) : 0,
+  };
+}
+
 export function topicStats(place) {
   const reviews = place?.reviews || [];
   const map = new Map(TOPICS.map((t) => [t.id, {

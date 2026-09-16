@@ -21,6 +21,7 @@ import { timingBlock } from './timing.js';
 import { promisesBlock } from './promises.js';
 import { effectBlock } from './effect.js';
 import { briefBlock } from './brief.js';
+import { coverageBlock } from './coverage.js';
 
 const esc = (s) => String(s ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -215,6 +216,7 @@ function recencyBlock(place) {
       <div class="rec-cell"><b>ما قبلها</b><span>${r.older.avg ?? '—'}</span><small>${r.older.n} تعليقًا${r.older.neg !== null ? ` · سلبي ${r.older.neg}%` : ''}</small></div>
       <div class="rec-cell ${cls}"><b>الحكم</b><span>${esc(r.verdict)}</span><small>${r.diff !== null ? `فرق ${r.diff}` : 'العيّنة الزمنية غير كافية'}</small></div>
     </div>
+    ${r.note ? `<p class="fine">${esc(r.note)}</p>` : ''}
     ${chart}
     ${warn.length ? `<div class="alerts"><b>إنذارات</b><ul>${warn.map((a) => `<li>${esc(a)}</li>`).join('')}</ul></div>` : ''}
     ${ageRows}
@@ -471,7 +473,7 @@ export function buildReportHtml({ place: rawPlace, ctx = {}, markdown = '', phot
   // وضع الخصوصية يعمل على ما يخرج من يدك، ولا يمسّ أرشيفك.
   const place = shield(rawPlace);
   const opt = { toc: true, stars: true, topics: true, photos: true, recency: true, entities: true, replies: true, confidence: true,
-    priority: true, calc: true, voice: true, impact: true, sources: true, brief: true,
+    priority: true, calc: true, voice: true, impact: true, sources: true, brief: true, coverage: true,
     cooccur: true, timing: true, promises: true, effect: true, bias: true, ...show, ...(sector?.show || {}) };
   const s = stats(place);
   const body = tocFrom(mdToHtml(markdown));
@@ -519,6 +521,7 @@ ${opt.voice ? voiceBlock(place) : ''}
 ${opt.effect && job?.prevJob ? effectBlock(job.prevJob, job) : ''}
 ${opt.promises ? promisesBlock(place) : ''}
 ${opt.topics ? topicsBlock(place, sector?.lead || []) : ''}
+${opt.coverage ? coverageBlock(place, job || {}) : ''}
 ${opt.cooccur ? cooccurBlock(place) : ''}
 ${opt.timing ? timingBlock(place) : ''}
 ${opt.recency ? recencyBlock(place) : ''}

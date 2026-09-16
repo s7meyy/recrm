@@ -11,6 +11,7 @@
 // **ولا يُدَّعى سبب**: تحسّنٌ بعد المهمة اقترانٌ لا برهان، ويُقال كذلك.
 
 import { topicsOf, topicSentiment, TOPICS } from './lexicon.js';
+import { wilson, significant } from './interval.js';
 
 const nameOf = (id) => TOPICS.find((t) => t.id === id)?.name || id;
 
@@ -55,6 +56,24 @@ export function planEffect(oldJob, newJob) {
     const aShare = after.total ? a2 / after.total : null;
     const deltaShare = (bShare !== null && aShare !== null) ? Number(((aShare - bShare) * 100).toFixed(1)) : null;
 
+    /* الحكم بعتبةٍ ثابتة (نقطة مئوية) كان يُسمّي الضجيج تحسّنًا: عيّنةٌ من
+       ثمانية تعليقات تتحرّك نقطتين بتعليقٍ واحد. فالفرق لا يُسمّى تحسّنًا
+       ولا تراجعًا حتى تنفصل فترتا الثقة؛ وما دونهما يُقال «لا يُحسم». */
+    const dir = (() => {
+      if (deltaShare === null) return { label: null, decided: false, note: '' };
+      const bi = wilson(b, before.total);
+      const ai = wilson(a2, after.total);
+      const sig = significant(bi, ai);
+      if (!sig.decided) {
+        return { label: 'لا يُحسم', decided: false, note: sig.reason };
+      }
+      return {
+        label: deltaShare < 0 ? 'تحسّن' : 'تراجع',
+        decided: true,
+        note: sig.reason,
+      };
+    })();
+
     return {
       text: t.text,
       status: t.status,
@@ -65,7 +84,9 @@ export function planEffect(oldJob, newJob) {
       beforeShare: bShare === null ? null : Number((bShare * 100).toFixed(1)),
       afterShare: aShare === null ? null : Number((aShare * 100).toFixed(1)),
       deltaShare,
-      direction: deltaShare === null ? null : (deltaShare < -1 ? 'تحسّن' : (deltaShare > 1 ? 'تراجع' : 'ثبات')),
+      direction: dir.label,
+      decided: dir.decided,
+      note: dir.note,
     };
   });
 
@@ -75,6 +96,7 @@ export function planEffect(oldJob, newJob) {
     measured,
     improved: rows.filter((r) => r.measurable && r.direction === 'تحسّن').length,
     worsened: rows.filter((r) => r.measurable && r.direction === 'تراجع').length,
+    undecided: rows.filter((r) => r.measurable && r.direction === 'لا يُحسم').length,
     beforeTotal: before.total,
     afterTotal: after.total,
   };
@@ -89,21 +111,23 @@ export function effectBlock(oldJob, newJob) {
     if (!r.measurable) return '<span class="fine">لا يُقاس من التعليقات</span>';
     if (r.direction === 'تحسّن') return `<span class="delta up">▼ ${Math.abs(r.deltaShare)}٪</span>`;
     if (r.direction === 'تراجع') return `<span class="delta down">▲ ${r.deltaShare}٪</span>`;
-    return '<span class="fine">بلا تغيّر</span>';
+    // فرقٌ داخل الهامش: يُعرَض رقمًا ولا يُعطى سهمًا ولا اسمًا، كي لا يُقرأ حكمًا.
+    return `<span class="fine">لا يُحسم${r.deltaShare === null ? '' : ` (${r.deltaShare > 0 ? '+' : ''}${r.deltaShare}٪)`}</span>`;
   };
 
   const rows = e.rows.map((r) => `<tr>
       <td>${esc(r.text)}<div class="fine">${esc(r.topics.join('، ') || '—')}</div></td>
       <td>${r.before} <span class="fine">(${r.beforeShare ?? '—'}٪)</span></td>
       <td>${r.after} <span class="fine">(${r.afterShare ?? '—'}٪)</span></td>
-      <td>${arrow(r)}</td>
+      <td>${arrow(r)}<div class="fine">${esc(r.note || '')}</div></td>
     </tr>`).join('');
 
   return `<section class="effect">
     <h2>أثر الخطة السابقة — مقيسًا</h2>
     <p class="note">لكل مهمة من خطة التقرير السابق: كم شكوى كانت في موضوعها، وكم صارت. والمقارنة <b>بالنصيب من العيّنة</b> لا بالعدد المجرّد، لأن العيّنتين تختلفان حجمًا (${e.beforeTotal} ← ${e.afterTotal}).</p>
     <table><thead><tr><th>المهمة</th><th>شكاوى قبل</th><th>شكاوى بعد</th><th>الفرق</th></tr></thead><tbody>${rows}</tbody></table>
-    <p class="fine">قِيست ${e.measured} مهمة من ${e.rows.length}${e.improved ? `، تحسّن ${e.improved}` : ''}${e.worsened ? `، وتراجع ${e.worsened}` : ''}.
+    <p class="fine">قِيست ${e.measured} مهمة من ${e.rows.length}${e.improved ? `، تحسّن ${e.improved}` : ''}${e.worsened ? `، وتراجع ${e.worsened}` : ''}${e.undecided ? `، و${e.undecided} لم يُحسم فرقُها لصغر العيّنة` : ''}.
+    ولا يُسمّى الفرق تحسّنًا ولا تراجعًا حتى يتجاوز هامش الخطأ؛ وما دونه ضجيجُ عيّنةٍ لا أثرُ عمل.
     <b>والتحسّن بعد المهمة اقترانٌ لا برهان</b>: قد يكون للمهمة، وقد يكون لغيرها.</p>
   </section>`;
 }

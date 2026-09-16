@@ -15,6 +15,7 @@
 
 import { topicStats } from './lexicon.js';
 import { relativeDays } from './anomaly.js';
+import { wilson } from './interval.js';
 
 /** حدّةٌ من التقييم: النجمة الواحدة ضعف الأربع في الأثر. */
 function severityOf(rating) {
@@ -43,6 +44,9 @@ export function priorities(place, { limit = 8 } = {}) {
   if (!reviews.length) return [];
 
   const byId = new Map(reviews.map((r) => [r.id, r]));
+  // مقام الهامش: العيّنة، ومجتمعُها المنصوصةُ متى عُرفت وإلا فإجمالي قوقل.
+  const sampleSize = reviews.length;
+  const pop = place?.ratings?.withText || place?.ratings?.count || null;
   const rows = [];
 
   for (const t of topicStats(place)) {
@@ -75,7 +79,11 @@ export function priorities(place, { limit = 8 } = {}) {
 
   // سببٌ مكتوب بلغة صاحب المحل، مبنيّ على الأرقام نفسها لا على رأي.
   for (const r of rows) {
-    const bits = [`${r.count} شكوى (${r.share}% من العيّنة)`];
+    /* النسبة وحدها تُقرأ حكمًا قاطعًا على المنشأة، وهي وصفٌ للعيّنة له هامش.
+       فيُذكر الهامش معها حيثما ذُكرت، لا في قسمٍ منفصل يُقرأ بعدها أو لا يُقرأ. */
+    r.ci = wilson(r.count, sampleSize, pop);
+    const share = r.ci ? `${r.share}% من العيّنة ±${r.ci.margin}` : `${r.share}% من العيّنة`;
+    const bits = [`${r.count} شكوى (${share})`];
     if (r.worst !== null) bits.push(`أدناها ${r.worst} من 5`);
     if (r.recentCount) bits.push(`${r.recentCount} منها في آخر 90 يومًا`);
     r.why = bits.join('، ') + '.';

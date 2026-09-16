@@ -80,8 +80,19 @@ const eff = planEffect({ place: before, plan: [
   { text: 'مراجعة الخطة الإدارية', status: 'done' },
 ] }, { place: after });
 eff.rows.length === 3 ? ok('ثلاث مهام') : bad('المهام', eff.rows.length);
-eff.rows[0].direction === 'تحسّن' ? ok(`الانتظار تحسّن: ${eff.rows[0].beforeShare}٪ ← ${eff.rows[0].afterShare}٪`) : bad('الاتجاه', JSON.stringify(eff.rows[0]));
-eff.rows[1].direction === 'ثبات' ? ok('والمواقف ثابتة — ولم تُنجَز أصلًا') : bad('المواقف', eff.rows[1].direction);
+/* خمسةُ تعليقاتٍ في كل فترة لا تحسم ٨٠٪ ← ٢٠٪: فترتا الثقة متداخلتان،
+   واختبار فيشر يعطيها ٠٫٢١. فكان الجدول يقول «تحسّن» عن فرقٍ لا يُثبته
+   العدد، ويُبنى عليه تجديدُ اشتراكٍ أو إغلاقُ مهمة. */
+eff.rows[0].direction === 'لا يُحسم' && eff.rows[0].deltaShare === -60
+  ? ok(`الانتظار: ${eff.rows[0].beforeShare}٪ ← ${eff.rows[0].afterShare}٪ ولا يُحسم لصغر العيّنة`) : bad('الاتجاه', JSON.stringify(eff.rows[0]));
+eff.rows[1].direction === 'لا يُحسم' ? ok('والمواقف لم تتغيّر — ولم تُنجَز أصلًا') : bad('المواقف', eff.rows[1].direction);
+
+// وعيّنةٌ تكفي تُحسَم: أربعون تعليقًا في كل فترة.
+const bigBefore = build([...Array(20)].map(() => mk(1, 'الانتظار طويل')).concat([...Array(20)].map(() => mk(5, 'ممتاز'))));
+const bigAfter = build([...Array(2)].map(() => mk(1, 'الانتظار طويل')).concat([...Array(38)].map(() => mk(5, 'ممتاز'))));
+const bigEff = planEffect({ place: bigBefore, plan: [{ text: 'تقليل زمن الانتظار', status: 'done' }] }, { place: bigAfter });
+bigEff.rows[0].direction === 'تحسّن'
+  ? ok(`وبأربعين تعليقًا يُحسَم: ${bigEff.rows[0].beforeShare}٪ ← ${bigEff.rows[0].afterShare}٪ تحسّن`) : bad('العيّنة الكافية', JSON.stringify(bigEff.rows[0]));
 eff.rows[2].measurable === false ? ok('ومهمةٌ لا تُقاس من التعليقات يُقال ذلك فيها') : bad('غير القابلة للقياس');
 taskTopics({ text: 'تقليل الانتظار' }).includes('wait') ? ok('ومواضيع المهمة تُستخرج من نصّها') : bad('مواضيع المهمة');
 planEffect({ place: before, plan: [] }, { place: after }).rows.length === 0 ? ok('وبلا خطة لا جدول') : bad('بلا خطة');

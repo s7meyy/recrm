@@ -2,6 +2,7 @@
 // كل ما هنا محسوب من تواريخ التعليقات نفسها، بلا نموذج ولا تقدير.
 
 import { relativeDays } from './anomaly.js';
+import { wilson, significant } from './interval.js';
 import { topicsOf, topicSentiment, TOPICS } from './lexicon.js';
 
 export const WINDOW_DAYS = 90;
@@ -42,10 +43,26 @@ export function recentVsOlder(place, windowDays = WINDOW_DAYS) {
   const enough = a.n >= 3 && b.n >= 3;
   const diff = enough && a.avg !== null && b.avg !== null ? Number((a.avg - b.avg).toFixed(2)) : null;
 
-  let verdict = 'غير كافٍ';
-  if (diff !== null) verdict = diff <= -0.3 ? 'انحدار' : (diff >= 0.3 ? 'تحسّن' : 'ثبات');
+  /* الحكم بعتبةٍ ثابتة (٠٫٣ نجمة) عند ثلاثة تعليقات يُسمّي الصدفة انحدارًا:
+     تعليقٌ واحد بنجمة يهوي بمتوسط الثلاثة نصفَ نجمة. فيُشترط مع فرقِ النجوم
+     أن تنفصل فترتا الثقة في نصيب السلبي بين الفترتين؛ وإلا فالقول: غير كافٍ.
+     وهذا يُسقط أحكامًا كانت تُقال، وإسقاطُها أصدق من قولها. */
+  const negRecent = wilson(recent.filter((r) => Number(r.rating) >= 1 && r.rating <= 2).length,
+    recent.filter((r) => Number(r.rating) >= 1 && Number(r.rating) <= 5).length);
+  const negOlder = wilson(older.filter((r) => Number(r.rating) >= 1 && r.rating <= 2).length,
+    older.filter((r) => Number(r.rating) >= 1 && Number(r.rating) <= 5).length);
+  const sig = significant(negRecent, negOlder);
 
-  return { window: windowDays, recent: a, older: b, diff, undated, verdict };
+  let verdict = 'غير كافٍ';
+  let note = enough ? '' : 'يلزم ثلاثة تعليقات مؤرَّخة في كل فترة على الأقل.';
+  if (diff !== null) {
+    const moved = diff <= -0.3 ? 'انحدار' : (diff >= 0.3 ? 'تحسّن' : 'ثبات');
+    if (moved === 'ثبات') { verdict = 'ثبات'; note = 'فرق المتوسط دون ثلاثة أعشار النجمة.'; }
+    else if (sig.decided) { verdict = moved; note = sig.reason; }
+    else { verdict = 'غير كافٍ'; note = `فرق المتوسط ${diff} نجمة، غير أنه ${sig.reason || 'لا يتجاوز هامش العيّنة'}`; }
+  }
+
+  return { window: windowDays, recent: a, older: b, diff, undated, verdict, note, decided: sig.decided };
 }
 
 /** تسمية عربية سليمة العدد: شهرين لا «2 أشهر»، وشهرًا لا «أشهر» بعد العشرة. */
