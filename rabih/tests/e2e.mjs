@@ -821,6 +821,38 @@ try {
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   overflow <= 1 ? ok('لا فيض أفقي') : bad('فيض أفقي', overflow + 'px');
 
+  /* والتقرير نفسه يُفتَح على الهاتف أكثر مما يُطبَع: يصل بواتساب فيُقرأ على
+     الفور. وكان يفيض عرضًا (جداولُ من خمسة أعمدة داخل هوامش A4) ويُقرأ بخطٍّ
+     دون اثني عشر بكسلًا. فيُقاس على الجهاز لا يُفترَض. */
+  const rep = await page.evaluate(async () => {
+    const m = await import('/js/report.js');
+    const { emptyPlace, emptyReview, assignReviewIds } = await import('/js/schema.js');
+    const place = emptyPlace();
+    place.identity.name = 'مقهى الاختبار';
+    place.ratings = { average: 4.2, count: 310, distribution: null };
+    place.reviews = [
+      { ...emptyReview(), rating: 1, text: 'الانتظار طويل جدا ووقفت نص ساعة', date: 'قبل أسبوع' },
+      { ...emptyReview(), rating: 2, text: 'الخدمه بطيئه والموظف ما اعتذر', date: 'قبل شهر' },
+      { ...emptyReview(), rating: 5, text: 'القهوة ممتازة والباريستا محترف والمكان هادئ للعمل', date: 'قبل شهر' },
+      { ...emptyReview(), rating: 4, text: 'المكان جميل والاسعار معقولة', date: 'قبل شهرين' },
+    ];
+    assignReviewIds(place);
+    return m.buildReportHtml({ place, markdown: '## تحليل\nنصّ التقرير.', job: {}, ctx: {} });
+  });
+  const rp = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  await rp.setContent(rep);
+  await rp.waitForTimeout(200);
+  const rm = await rp.evaluate(() => {
+    const d = document.documentElement;
+    const tiny = [...document.querySelectorAll('.body *')]
+      .filter((el) => !el.children.length && el.textContent.trim())
+      .map((el) => parseFloat(getComputedStyle(el).fontSize)).filter((f) => f < 11);
+    return { over: d.scrollWidth - d.clientWidth, tiny: tiny.length };
+  });
+  rm.over <= 1 ? ok('والتقرير لا يفيض على الهاتف') : bad('فيض التقرير', rm.over + 'px');
+  rm.tiny === 0 ? ok('ولا نصَّ دون 11 بكسلًا فيه') : bad('خطٌّ دقيق في التقرير', rm.tiny + ' عنصرًا');
+  await rp.close();
+
 } catch (e) {
   bad('استثناء', e.message);
 }

@@ -478,6 +478,34 @@ figcaption{font-size:9pt;color:var(--muted);margin-top:1mm;text-align:center}
 .fine{font-size:9.5pt;color:var(--muted)}
 .foot{margin-top:12mm;padding-top:4mm;border-top:1px solid var(--line);font-size:9pt;color:var(--muted);display:flex;justify-content:space-between;gap:4mm}
 @page{size:A4;margin:16mm 14mm}
+/* ───── الهاتف ─────
+   التقرير مقاسه A4 بالمليمترات، ويُفتَح على الهاتف أكثر مما يُطبَع: يصل
+   بواتساب فيُقرأ على الفور. وكان يفيض عرضًا خمسة عشر بكسلًا (جداولُ من
+   خمسة أعمدة في عرضٍ صافٍ لا يبلغ ٢٨٠ بكسلًا بعد هوامش الطباعة)، فيُسحَب
+   يمينًا وشمالًا في كل تمرير. */
+@media screen and (max-width:560px){
+  .page{padding:8mm 5mm}
+  /* الجدول يُمرَّر في حدّ ذاته، فلا يدفع الصفحة كلها. */
+  table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch;font-size:11pt}
+  th,td{white-space:nowrap}
+  .cover{padding:14mm 0 8mm}
+  .cover h1{font-size:19pt;margin:6mm 0 3mm}
+  .cover .sub{font-size:11pt;margin-bottom:6mm}
+  .cover-grid,.brief-cards,.act-grid,.sc-cols,.voice-cols,.photo-grid{grid-template-columns:1fr}
+  .cover-grid{gap:2mm}
+  /* البطاقة على الهاتف سطرٌ واحد: اسمٌ وقيمة، لا مربّعٌ يملأ الشاشة. */
+  .cover-grid div{display:flex;justify-content:space-between;align-items:baseline;gap:3mm;padding:2.5mm 3mm}
+  .cover-grid b{margin-bottom:0}
+  .rec-grid{grid-template-columns:1fr}
+  .brief-hero{gap:3mm}
+  .brief-hero .hero-side{border-inline-start:0;padding-inline-start:0}
+  .checks li{flex-wrap:wrap}
+  /* ولا يُقرأ نصٌّ دون اثني عشر بكسلًا على شاشةٍ في اليد. */
+  .fine,.note,small,.act-grid small,.mkt figcaption,.foot{font-size:11pt;line-height:1.85}
+  .act-grid b,.cover-grid b,.bcard b,.check-foot b,.stat b,.rec-cell b{font-size:10.5pt}
+  .month .mv,.month .ml{font-size:9.5pt}
+  body{font-size:12pt}
+}
 /* ترويسةٌ جارية: لا تظهر على الشاشة، وتتكرّر في كل صفحةٍ مطبوعة.
    القارئ يقلّب التقرير بعد أسبوع فلا يعرف لأي فرعٍ هو ولا متى صدر. */
 .running{display:none}
