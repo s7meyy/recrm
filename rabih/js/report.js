@@ -163,6 +163,8 @@ function topicsBlock(place, lead = []) {
     });
   }
   const max = Math.max(...rows.map((r) => r.total), 1);
+  const inferred = rows.reduce((n, t) => n + (t.inferred || 0), 0);
+  const judged = rows.reduce((n, t) => n + t.total, 0);
 
   const bars = rows.slice(0, 10).map((t) => {
     const negPct = Math.round((t.neg / max) * 100);
@@ -182,6 +184,9 @@ function topicsBlock(place, lead = []) {
   return `<section class="topics">
     <h2 class="no-count">المواضيع الواردة في التعليقات</h2>
     <p class="fine">مُستخرَجة آليًّا من نصوص التعليقات، لا من تقدير نموذج.</p>
+    ${inferred ? `<p class="fine"><b>${inferred} من ${judged} حكمًا مستنبَطٌ لا منصوص</b>: ذُكر الموضوع في التعليق
+    بلا لفظٍ يحسم رأي صاحبه فيه، فأُخذ حكمُه من نجوم التعليق كلّه. وهو أضعفُ من المنصوص، ولم يُطرَح
+    لأن طرحه يُخفي ذكرًا وقع.</p>` : ''}
     <div class="legend"><span><i class="sw pos"></i>إيجابي</span><span><i class="sw neu"></i>محايد</span><span><i class="sw neg"></i>سلبي</span></div>
     <div class="topics-chart">${bars}</div>
     <table><thead><tr><th>الموضوع</th><th>مرات الورود</th><th>إيجابي</th><th>سلبي</th><th>الاتجاه</th></tr></thead><tbody>${table}</tbody></table>

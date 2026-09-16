@@ -23,59 +23,87 @@ export const TOPICS = [
   { id: 'wait',      name: 'الانتظار وسرعة الخدمة',
     keys: ['انتظار','انتظرت','تاخير','تاخر','متاخر','بطيء','بطيئه','بطء','بطي','طال','طولوا','ساعه','دقيقه','دقيقة','سريع','سريعه','سرعه','فوري','ما تاخرو','الطابور','طابور','ينتظر','استنيت','استنينا',
       // الإنجليزية: تعليقات الوافدين والزوّار تُصنَّف كما تُصنَّف العربية.
-      'wait','waited','waiting','slow','delay','delayed','late','queue','line','quick','fast','prompt','minutes','hour'] },
+      'wait','waited','waiting','slow','delay','delayed','late','queue','line','quick','fast','prompt','minutes','hour'],
+    neg: ['طويل','طويله','طول','يطول','بطي','بطيء','بطيئه','بطء','تاخير','تاخر','متاخر','استنيت','استنينا','طابور','نص ساعه','ساعه كامله','long','slow','forever'],
+    pos: ['سريع','سريعه','سرعه','فوري','فوريه','ما تاخرو','مباشره','quick','fast','prompt','instant'] },
   { id: 'quality',   name: 'جودة المنتج والطعم',
     keys: ['طعم','الطعم','لذيذ','لذيذه','طيب','ممتاز','ممتازه','رائع','زاكي','حلو','جوده','جودة','طازج','طازه','بايت','قديم','محروق','ني','مالح','سكر','باهت','خفيف','ثقيل','نكهه','نكهة','مقادير','وصفه',
       // الإنجليزية: تعليقات الوافدين والزوّار تُصنَّف كما تُصنَّف العربية.
-      'taste','tasty','delicious','flavor','flavour','fresh','stale','burnt','undercooked','overcooked','bland','quality','food','coffee','drink','dessert'] },
+      'taste','tasty','delicious','flavor','flavour','fresh','stale','burnt','undercooked','overcooked','bland','quality','food','coffee','drink','dessert'],
+    neg: ['بايت','قديم','محروق','ني','مالح','باهت','بارد','مقرف','رديء','stale','burnt','bland','cold','undercooked'],
+    pos: ['لذيذ','لذيذه','طازج','طازه','طيب','ممتاز','زاكي','delicious','fresh','tasty','excellent'] },
   { id: 'price',     name: 'الأسعار والقيمة',
     keys: ['سعر','اسعار','غالي','غاليه','مرتفع','رخيص','مناسب','معقول','مبالغ','يستاهل','ما يستاهل','قيمه','قيمة','فاتوره','فاتورة','ريال','تسعير','عرض','خصم','حرامي',
       // الإنجليزية: تعليقات الوافدين والزوّار تُصنَّف كما تُصنَّف العربية.
-      'price','prices','expensive','pricey','cheap','affordable','overpriced','value','worth','bill','cost'] },
+      'price','prices','expensive','pricey','cheap','affordable','overpriced','value','worth','bill','cost'],
+    neg: ['غالي','غاليه','غاليه','مبالغ','مرتفع','مرتفعه','ما يستاهل','حرامي','مبالغه','فوق سعره','expensive','pricey','overpriced','rip off'],
+    pos: ['رخيص','رخيصه','مناسب','مناسبه','معقول','معقوله','يستاهل','قيمه ممتازه','affordable','cheap','worth','value'] },
   { id: 'service',   name: 'تعامل الموظفين',
     keys: ['موظف','موظفه','موظفين','عامل','عمال','خدمه','خدمة','تعامل','معامله','معاملة','لطيف','لطفاء','محترم','محترمين','ذوق','بشوش','عبوس','قليل الادب','وقح','ما رحب','رحب','ابتسامه','متعاون','اهمال','تجاهل','صراخ','باريستا','كاشير','النادل','نادل','مدير',
       // الإنجليزية: تعليقات الوافدين والزوّار تُصنَّف كما تُصنَّف العربية.
-      'staff','waiter','waitress','employee','service','rude','polite','friendly','helpful','manager','barista','cashier','attitude','ignored'] },
+      'staff','waiter','waitress','employee','service','rude','polite','friendly','helpful','manager','barista','cashier','attitude','ignored'],
+    neg: ['وقح','قليل الادب','عبوس','ما رحب','اهمال','تجاهل','صراخ','سيء','بارد','متعجرف','rude','ignored','unfriendly','careless'],
+    pos: ['لطيف','لطفاء','محترم','محترمين','ذوق','بشوش','متعاون','راقي','friendly','polite','helpful','attentive'] },
   { id: 'clean',     name: 'النظافة',
     keys: ['نظافه','نظافة','نظيف','نظيفه','وسخ','متسخ','قذر','رائحه','رائحة','ريحه','ذباب','صراصير','حشرات','دورات المياه','الحمام','الحمامات','معقم','تعقيم','اوساخ','بقع',
       // الإنجليزية: تعليقات الوافدين والزوّار تُصنَّف كما تُصنَّف العربية.
-      'clean','cleanliness','dirty','filthy','smell','smelly','hygiene','restroom','toilet','bathroom','flies','insects'] },
+      'clean','cleanliness','dirty','filthy','smell','smelly','hygiene','restroom','toilet','bathroom','flies','insects'],
+    neg: ['وسخ','متسخ','قذر','اوساخ','بقع','ذباب','صراصير','حشرات','ريحه','رائحه','كريهه','dirty','filthy','smelly','flies'],
+    pos: ['نظيف','نظيفه','نظافه','معقم','مرتب','clean','spotless','hygienic'] },
   { id: 'place',     name: 'المكان والأجواء',
     keys: ['المكان','اجواء','جو','جلسات','جلسه','كراسي','طاوله','طاولات','ديكور','اضاءه','اضاءة','هادي','هادئ','هدوء','ضوضاء','صوت عالي','موسيقى','مريح','ضيق','واسع','تكييف','رايق','رايقه','عائلي','عوائل','خاص','قسم النساء',
       // الإنجليزية: تعليقات الوافدين والزوّار تُصنَّف كما تُصنَّف العربية.
-      'place','ambience','ambiance','atmosphere','decor','seating','seats','cozy','comfortable','noisy','noise','quiet','music','lighting','crowded space','spacious'] },
+      'place','ambience','ambiance','atmosphere','decor','seating','seats','cozy','comfortable','noisy','noise','quiet','music','lighting','crowded space','spacious'],
+    neg: ['ضيق','ضيقه','ضوضاء','صوت عالي','مزعج','حار','بارد','اضاءه ضعيفه','noisy','cramped','uncomfortable'],
+    pos: ['هادي','هادئ','هدوء','مريح','مريحه','واسع','رايق','جميل','cozy','comfortable','quiet','spacious'] },
   { id: 'crowd',     name: 'الازدحام',
     keys: ['زحمه','زحمة','مزدحم','زحام','ازدحام','مليان','فاضي','ماكو مكان','ما في مكان','حجز','موعد','الذروه','الذروة','ناس واجد','طفشت من الزحمه',
       // الإنجليزية: تعليقات الوافدين والزوّار تُصنَّف كما تُصنَّف العربية.
-      'crowded','busy','packed','full','rush','peak','no seats','reservation','booking'] },
+      'crowded','busy','packed','full','rush','peak','no seats','reservation','booking'],
+    neg: ['زحمه','مزدحم','زحام','ازدحام','مليان','ما في مكان','ماكو مكان','طفشت','crowded','packed','busy','full'],
+    pos: ['فاضي','هادي','واسع','ما فيه زحمه','quiet','empty','spacious'] },
   { id: 'parking',   name: 'المواقف',
     keys: ['مواقف','موقف','باركنق','ركن','اركن','صف السياره','مكان للسياره','ممنوع الوقوف','ساهر','ضيق المواقف',
       // الإنجليزية: تعليقات الوافدين والزوّار تُصنَّف كما تُصنَّف العربية.
-      'parking','park','valet','car park','no parking'] },
+      'parking','park','valet','car park','no parking'],
+    neg: ['مافي','ما في','ماكو','ضيق','ضيقه','قليل','قليله','صعب','بعيد','ممنوع','مزدحم','no parking','hard to park','far'],
+    pos: ['واسع','واسعه','متوفر','متوفره','كثيره','قريب','سهل','plenty','easy','free'] },
   { id: 'delivery',  name: 'الطلبات الخارجية والتوصيل',
     keys: ['توصيل','دليفري','طلب خارجي','سفري','تيك اواي','التطبيق','هنقرستيشن','جاهز','ناقص','نسوا','الطلب خطا','خطا في الطلب','التغليف','تغليف','كيس','وصل بارد',
       // الإنجليزية: تعليقات الوافدين والزوّار تُصنَّف كما تُصنَّف العربية.
-      'delivery','deliver','takeaway','take away','takeout','pickup','order','app','packaging','cold when it arrived','missing items','wrong order'] },
+      'delivery','deliver','takeaway','take away','takeout','pickup','order','app','packaging','cold when it arrived','missing items','wrong order'],
+    neg: ['ناقص','نسوا','بارد','متاخر','خطا','تالف','مسكوب','cold','missing','wrong','late'],
+    pos: ['كامل','سريع','مغلف','ساخن','مرتب','hot','complete','fast','well packed'] },
   { id: 'wifi',      name: 'الإنترنت والمرافق التقنية',
     keys: ['انترنت','واي فاي','وايفاي','شبكه','شبكة','نت','بطء النت','كهرباء','قابس','شاحن','فيش','مقبس',
       // الإنجليزية: تعليقات الوافدين والزوّار تُصنَّف كما تُصنَّف العربية.
-      'wifi','wi-fi','internet','network','connection','charger','socket','outlet','plug'] },
+      'wifi','wi-fi','internet','network','connection','charger','socket','outlet','plug'],
+    neg: ['ضعيف','ضعيفه','بطي','منقطع','ما يشتغل','مقطوع','سيء','weak','slow','down','not working'],
+    pos: ['قوي','قويه','سريع','ممتاز','متوفر','strong','fast','reliable'] },
   { id: 'hygiene_staff', name: 'الالتزام والانضباط',
     keys: ['مواعيد','الدوام','مفتوح','مغلق','سكروا','ما فتحو','التزام','وعدوني','ما التزمو','اخلفوا','موعد التسليم',
       // الإنجليزية: تعليقات الوافدين والزوّار تُصنَّف كما تُصنَّف العربية.
-      'opening hours','closed','opened','hours','schedule','on time','promised'] },
+      'opening hours','closed','opened','hours','schedule','on time','promised'],
+    neg: ['ما التزمو','اخلفوا','مغلق','سكروا','ما فتحو','تاخروا','closed','late','broke the promise'],
+    pos: ['التزام','في الموعد','مفتوح','on time','punctual'] },
   { id: 'money',     name: 'الدفع والفوترة',
     keys: ['الدفع','كاش','شبكه بنكيه','مدى','ابل باي','فيزا','فاتوره غلط','ما عطوني فاتوره','ضريبه','الضريبة','باقي','الباقي','خصم زايد',
       // الإنجليزية: تعليقات الوافدين والزوّار تُصنَّف كما تُصنَّف العربية.
-      'payment','cash','card','apple pay','visa','mastercard','receipt','invoice','vat','tax','change'] },
+      'payment','cash','card','apple pay','visa','mastercard','receipt','invoice','vat','tax','change'],
+    neg: ['ما عطوني فاتوره','فاتوره غلط','خصم زايد','ما فيه شبكه','معطل','wrong bill','no receipt'],
+    pos: ['فاتوره واضحه','كل الطرق','سهل','clear receipt'] },
   { id: 'kids',      name: 'الأطفال والعائلات',
     keys: ['اطفال','طفل','العاب','منطقه العاب','كرسي اطفال','عائله','عوائل','مناسب للعائله','حضانه',
       // الإنجليزية: تعليقات الوافدين والزوّار تُصنَّف كما تُصنَّف العربية.
-      'kids','children','child','family','families','play area','high chair'] },
+      'kids','children','child','family','families','play area','high chair'],
+    neg: ['ما فيه','مافي','ضيق','غير مناسب','no kids area','not family friendly'],
+    pos: ['مناسب للعائله','فيه العاب','كرسي اطفال','family friendly','play area'] },
   { id: 'access',    name: 'الوصول وذوو الاحتياجات',
     keys: ['الموقع','صعب الوصول','سهل الوصول','لوحه','لوحة','ما لقيته','الخرايط','المدخل','درج','منحدر','كرسي متحرك','ذوي الاعاقه','مصعد',
       // الإنجليزية: تعليقات الوافدين والزوّار تُصنَّف كما تُصنَّف العربية.
-      'location','hard to find','easy to find','entrance','stairs','ramp','wheelchair','accessible','elevator','lift','sign'] },
+      'location','hard to find','easy to find','entrance','stairs','ramp','wheelchair','accessible','elevator','lift','sign'],
+    neg: ['صعب الوصول','ما لقيته','بعيد','مخفي','بلا لوحه','hard to find','hidden','far'],
+    pos: ['سهل الوصول','واضح','قريب','easy to find','clear','close'] },
 ];
 
 // كلمات القطبية العامة — تُستعمل حين لا يحسم عدد النجوم الاتجاه.
@@ -160,6 +188,8 @@ function rebuild() {
   INDEX = TOPICS.map((t) => ({
     ...t,
     normKeys: [...new Set([...t.keys.map(normalizeAr), ...(custom[t.id] || [])])].filter(Boolean),
+    negN: (t.neg || []).map(normalizeAr).filter(Boolean),
+    posN: (t.pos || []).map(normalizeAr).filter(Boolean),
   }));
 }
 rebuild();
@@ -220,12 +250,95 @@ function clauseSentiment(clause) {
   return null;
 }
 
+/* ألفاظُ نقصٍ وغياب: لا تُعَدّ ذمًّا للمنشأة كلها فتبقى خارج NEG_WORDS،
+   وهي حاسمةٌ إذا جاورت موضوعًا: «مافي مواقف»، «المواقف ضيّقة»، «النت ضعيف».
+   وكانت تسقط كلُّها، فيُؤخَذ حكمُ الموضوع من نجوم التعليق: «المواقف ضيّقة»
+   في تعليقٍ بخمس نجوم كانت تُسجَّل ثناءً على المواقف. */
+const LACK_N = ['مافي', 'ما في', 'مافيه', 'ما فيه', 'ماكو', 'بدون', 'ينقص', 'ناقص', 'مفقود',
+  'ضيق', 'ضيقه', 'قليل', 'قليله', 'شحيح', 'ضعيف', 'ضعيفه', 'محدود', 'محدوده', 'صعب', 'صعبه',
+  'مزعج', 'مزعجه', 'عالي', 'عاليه', 'مرتفع', 'مرتفعه', 'بعيد', 'بعيده', 'مغلق', 'معطل'].map(normalizeAr);
+
+/* الكلمةُ الحاسمة تخصّ الموضوعَ إن جاورته. و«و» في العربية تصل الجملتين
+   بلا فاصل («القهوة ممتازة وفيه مواقف»)، فتقطيعُ الجُمل وحده يُسرِّب ثناءَ
+   القهوة إلى المواقف. والجوارُ أضبط: ما بَعُد عن الموضوع لا يصفه. */
+const NEAR = 4;
+
+function nearbyPolarity(tokens, stripped, keyIdx, topic) {
+  /* ألفاظُ الموضوع نفسِه تتقدّم العامَّ: «طويل» ذمٌّ للانتظار ومدحٌ للجلسة،
+     و«غالي» ذمٌّ للسعر لا لسواه. والحقلان `neg`/`pos` كانا موصوفين في رأس
+     هذا الملف منذ كُتب ولم يملأهما أحد، فكان حكمُ كل موضوعٍ يُؤخَذ من ألفاظ
+     الذمّ العامة وحدها — و«الاسعار غالية» ليس فيها لفظُ ذمٍّ عام. */
+  const clause = (from, to) => {
+    const wide = [];
+    for (let i = Math.max(0, from); i <= Math.min(tokens.length - 1, to); i += 1) wide.push(tokens[i]);
+    return wide.join(' ');
+  };
+  const window = clause(keyIdx - NEAR, keyIdx + NEAR);
+  const own = (list) => list.some((x) => x && window.includes(x));
+  if (topic) {
+    const n = own(topic.negN);
+    const p = own(topic.posN);
+    if (n && !p) return 'neg';
+    if (p && !n) return 'pos';
+  }
+
+  let neg = 0;
+  let pos = 0;
+  for (let i = 0; i < tokens.length; i += 1) {
+    if (Math.abs(i - keyIdx) > NEAR) continue;
+    const w = tokens[i];
+    const b = stripped[i];
+    const hit = (list) => list.some((x) => x && (w === x || b === x || w.startsWith(x) || b.startsWith(x)));
+    if (hit(NEG_N) || hit(LACK_N)) neg += 1;
+    else if (hit(POS_N)) pos += 1;
+  }
+  if (neg > pos) return 'neg';
+  if (pos > neg) return 'pos';
+  return null;
+}
+
+/** موضعُ أول مطابقةٍ لمفتاحٍ من مفاتيح الموضوع في الجملة، أو -1. */
+function keyIndex(tokens, stripped, normKeys) {
+  for (let i = 0; i < tokens.length; i += 1) {
+    if (normKeys.some((k) => !k.includes(' ') && (tokens[i] === k || stripped[i] === k
+      || (k.length >= 4 && stripped[i].startsWith(k) && stripped[i].length - k.length <= 3)))) return i;
+  }
+  /* والمفتاحُ المركّب يُطابَق نصًّا لا كلمةً («وصل بارد»، «طلب خارجي»)،
+     فكان لا يُعرَف موضعُه فيسقط الجوارُ كلُّه ويُؤخَذ الحكم من النجوم. */
+  for (const k of normKeys) {
+    if (!k.includes(' ')) continue;
+    const parts = k.split(' ');
+    for (let i = 0; i + parts.length <= tokens.length; i += 1) {
+      if (parts.every((w, j) => tokens[i + j] === w || stripped[i + j] === w)) return i;
+    }
+  }
+  return -1;
+}
+
 /**
  * قطبية موضوع بعينه داخل تعليق.
  * تُحسم من الجملة التي ورد فيها الموضوع أولًا — فتعليقٌ بأربع نجوم يشكو المواقف
  * تُسجَّل مواقفُه سلبيةً كما هي، لا إيجابيةً تبعًا لنجومه.
  */
 export function topicSentiment(review, topicId) {
+  return topicSentimentDetail(review, topicId).s;
+}
+
+/**
+ * القطبية ومصدرُها — وبينهما فرقٌ يُغيّر قراءة الجدول.
+ *
+ * «stated»: في جملة الموضوع نفسها لفظٌ يحسمه — «المواقف ضيّقة»، «القهوة لذيذة».
+ * «inferred»: لا لفظ فيها، فأُخذت من نجوم التعليق كلّه. وهذا موضع الوهم:
+ * تعليقٌ بخمس نجوم يقول «القهوة ممتازة وفيه مواقف» كان يُسجَّل ثناءً على
+ * المواقف، وصاحبُه إنما ذكر واقعًا. فيتضخّم عمود «إيجابي» بذكرٍ مجرَّد،
+ * ويقرأ صاحب المحل قوّةً ليست له.
+ *
+ * ولا يُطرَح المستنبَط من العدّ — طرحُه يُخفي ذكرًا وقع فعلًا — بل يُفصَل
+ * ويُعلَن، ويُبنى ما يُبنى على المنصوص وحده.
+ *
+ * @returns {{s:'pos'|'neg'|'neu', stated:boolean}}
+ */
+export function topicSentimentDetail(review, topicId) {
   const t = INDEX.find((x) => x.id === topicId);
   const n = normalizeAr(review?.text);
   if (t && n) {
@@ -233,11 +346,16 @@ export function topicSentiment(review, topicId) {
       const tokens = tokenize(clause);
       const stripped = tokens.map(stripPrefix);
       if (!t.normKeys.some((k) => matchesKey(tokens, stripped, clause, k))) continue;
+      /* الجوارُ أولًا: ما لاصق الموضوع يصفه. فإن لم يكن حوله شيء فالجملةُ
+         كلها — وهي جملةٌ واحدة قُطِعت عند الاستدراك، فحكمُها يخصّ ما فيها. */
+      const idx = keyIndex(tokens, stripped, t.normKeys);
+      const near = idx >= 0 ? nearbyPolarity(tokens, stripped, idx, t) : null;
+      if (near) return { s: near, stated: true };
       const s = clauseSentiment(clause);
-      if (s) return s;
+      if (s) return { s, stated: true };
     }
   }
-  return sentimentOf(review);
+  return { s: sentimentOf(review), stated: false };
 }
 
 /**
@@ -309,6 +427,7 @@ export function topicStats(place) {
   const reviews = place?.reviews || [];
   const map = new Map(TOPICS.map((t) => [t.id, {
     id: t.id, name: t.name, total: 0, pos: 0, neg: 0, neu: 0, ids: [], negIds: [], posIds: [],
+    posStated: 0, negStated: 0, neuStated: 0, inferred: 0,
   }]));
 
   for (const r of reviews) {
@@ -317,10 +436,12 @@ export function topicStats(place) {
     for (const id of hits) {
       const row = map.get(id);
       if (!row) continue;
-      const ts = topicSentiment(r, id);   // قطبية هذا الموضوع تحديدًا، لا قطبية التعليق كلّه
+      // قطبية هذا الموضوع تحديدًا، لا قطبية التعليق كلّه — ومعها: أمنصوصةٌ أم مستنبَطة؟
+      const { s: ts, stated } = topicSentimentDetail(r, id);
       row.total += 1;
       row.ids.push(r.id);
       row[ts] += 1;
+      if (stated) row[`${ts}Stated`] += 1; else row.inferred += 1;
       if (ts === 'neg') row.negIds.push(r.id);
       if (ts === 'pos') row.posIds.push(r.id);
     }

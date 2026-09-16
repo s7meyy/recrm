@@ -39,7 +39,11 @@ export function brief(place, job = {}) {
   const pop = place.ratings?.withText || s.googleCount || null;
   const worst = priorities(place, { limit: 1 })[0] || null;
   const topics = topicStats(place);
-  const best = [...topics].sort((a, b) => b.pos - a.pos)[0] || null;
+  /* «أكبر قوة» كانت تُرتَّب بعمود `pos`، وفيه ذكرٌ مجرَّد أُخذت قطبيّته من
+     نجوم التعليق: «القهوة ممتازة وفيه مواقف» بخمس نجوم كانت تجعل المواقف
+     قوّةً. فيُرتَّب بالثناء المنصوص وحده، ويُرجَع إلى العام إن لم يكن. */
+  const stated = [...topics].filter((t) => t.posStated > 0).sort((a, b) => b.posStated - a.posStated);
+  const best = stated[0] || [...topics].sort((a, b) => b.pos - a.pos)[0] || null;
 
   const ci = worst ? wilson(worst.count, s.total, pop) : null;
 
@@ -91,7 +95,9 @@ export function briefBlock(place, job = {}) {
       <div class="bcard good">
         <b>أكبر قوة</b>
         <span class="big">${b.best && b.best.pos ? esc(b.best.name) : '—'}</span>
-        <span class="fine">${b.best && b.best.pos ? `${b.best.pos} ثناءً في العيّنة` : 'لا ثناء متكرّر'}</span>
+        <span class="fine">${b.best && b.best.pos
+          ? `${b.best.posStated || b.best.pos} ثناءً في العيّنة${b.best.posStated ? '' : ' (مستنبَطًا من النجوم)'}`
+          : 'لا ثناء متكرّر'}</span>
       </div>
       ${b.money ? `<div class="bcard money">
         <b>على فرضك</b>

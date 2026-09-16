@@ -8,7 +8,7 @@ import { coverage, coverageBlock } from '../js/coverage.js';
 import { actions, actionsBlock, checklistBlock, commitBlock, draftsBlock } from '../js/action.js';
 import { selfCompareBlock } from '../js/compare.js';
 import { buildReportHtml } from '../js/report.js';
-import { topicCoverage } from '../js/lexicon.js';
+import { topicCoverage, topicSentimentDetail } from '../js/lexicon.js';
 import { priorities } from '../js/priority.js';
 import { recentVsOlder } from '../js/recency.js';
 import { voice, cardBlock } from '../js/voice.js';
@@ -157,6 +157,26 @@ cardBlock(build([mk(1, 'سيء جدا والخدمة بطيئة ولا انصح 
   ? ok('وبلا ثناءٍ لا تُختلَق بطاقة') : bad('بطاقة من لا شيء');
 topicIcon('wait') !== topicIcon('clean') && topicIcon('لا يوجد') === '•'
   ? ok('ولكل موضوعٍ رمزُه، والمجهولُ نقطةٌ محايدة') : bad('الرموز');
+
+console.log('١٢) الحكم المنصوص والحكم المستنبَط');
+const judge = (t, r, id) => topicSentimentDetail({ rating: r, text: t }, id);
+// ألفاظٌ قطبيّتها تابعةٌ لموضوعها — والحقلان neg/pos كانا موصوفين ولم يملآ.
+judge('الاسعار غالية جدا', 5, 'price').s === 'neg'
+  ? ok('«الأسعار غالية» شكوى — وإن كانت النجوم خمسًا') : bad('الغلاء ثناءً');
+judge('الانتظار طويل', 4, 'wait').s === 'neg' ? ok('و«الانتظار طويل» شكوى') : bad('الطول ثناءً');
+judge('الجلسات ضيقة', 5, 'place').s === 'neg' ? ok('و«الجلسات ضيقة» شكوى') : bad('الضيق ثناءً');
+judge('المواقف واسعة ومريحة', 5, 'parking').s === 'pos' ? ok('و«المواقف واسعة» ثناء') : bad('السعة شكوى');
+judge('الطلب وصل بارد', 1, 'delivery').stated
+  ? ok('والمفتاح المركّب يُعرَف موضعُه فيُقرأ جوارُه') : bad('المفتاح المركّب');
+
+// والمصدر يُعلَن: أمن لفظ صاحبه أم من نجومه؟
+judge('المواقف ضيقة', 5, 'parking').stated ? ok('ما نصّ عليه صاحبه: منصوص') : bad('وسم المنصوص');
+!judge('القهوة ممتازة', 5, 'parking').stated
+  ? ok('وما لم يُذكر فيه لفظٌ يحسمه: مستنبَطٌ من النجوم، ويُعلَن') : bad('وسم المستنبَط');
+
+const pin = build([mk(5, 'القهوة ممتازة وفيه مواقف'), mk(5, 'المواقف واسعة ومريحة')]);
+const park = (await import('../js/lexicon.js')).topicStats(pin).find((t) => t.id === 'parking');
+park.posStated <= park.pos ? ok(`والمنصوص جزءٌ من الكل: ${park.posStated} من ${park.pos}`) : bad('عدٌّ مختلّ');
 
 console.log('\n' + (fails.length ? `فشل ${fails.length}:\n` + fails.map((f) => ' - ' + f).join('\n') : '✅ نجحت كل الاختبارات'));
 process.exit(fails.length ? 1 : 0);
