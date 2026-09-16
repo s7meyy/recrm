@@ -172,6 +172,40 @@ ${OUTPUT_RULES}
 ${buildDataBlock(place, ctx)}`;
 }
 
+/**
+ * حدُّ التعليقات في الدفعة الواحدة.
+ *
+ * نوافذ النماذج المجانية تضيق عن مئات التعليقات، والأسوأ أن التجاوز **صامت**:
+ * النموذج يقتطع ما زاد ويجيبك إجابةً تبدو سليمة، وقد بُنيت على نصف بياناتك
+ * وأنت لا تدري. فتُقسَّم الدفعات، ويُقال لك أنها قُسِّمت وكم دفعة.
+ */
+export const BATCH_REVIEWS = 60;
+
+/** كم دفعةً يحتاج هذا العدد من التعليقات؟ */
+export const batchCount = (n) => Math.max(1, Math.ceil(n / BATCH_REVIEWS));
+
+/** نسخةٌ من المنشأة بتعليقات دفعةٍ واحدة — والمعرّفات تبقى كما هي عالميًّا. */
+export function sliceForBatch(place, index) {
+  const from = index * BATCH_REVIEWS;
+  const reviews = place.reviews.slice(from, from + BATCH_REVIEWS);
+  return { ...place, reviews };
+}
+
+/** رسالة التوحيد لدفعةٍ واحدة، مُصرَّحٌ فيها بموضعها من الكل. */
+export function promptNormalizeBatch(place, ctx, index, total) {
+  const part = sliceForBatch(place, index);
+  const ids = part.reviews.length
+    ? `${part.reviews[0].id} إلى ${part.reviews[part.reviews.length - 1].id}`
+    : 'لا شيء';
+  return promptNormalize(part, ctx).replace(
+    '# مهمتك: تنظيم البيانات الخام لا تحليلها',
+    `# مهمتك: تنظيم البيانات الخام لا تحليلها
+
+> **هذه الدفعة ${index + 1} من ${total}** — تعليقاتها ${ids} من أصل ${place.reviews.length}.
+> نظّم ما فيها وحدها، ولا تُشِر إلى تعليقٍ ليس فيها، ولا تستنتج عن المنشأة كلها.`,
+  );
+}
+
 /** المرحلة 1-ب — دمج مخرجات النماذج الثلاثة. */
 export function promptMergeNormalized(place, ctx, outputs = ['', '', '']) {
   return `${CHARTER}

@@ -1,0 +1,186 @@
+// تشغيل خطوات خط التحليل آليًّا عبر OpenRouter.
+//
+// والقواعد التي يقوم عليها:
+//
+// 1. **لا يُبتلَع خطأ**: كل خطوة تُعيد ما جرى — أي نموذجٍ شُغِّل، وكم حاول،
+//    ولماذا فشل. ولا تُكتب إجابةٌ فارغة على أنها نجاح.
+// 2. **البديل عند الحدّ**: النماذج المجانية لها حدّ يومي، فإذا ردّ النموذج
+//    بـ٤٢٩ جُرِّب الذي يليه في `MODEL_PICKS` — وهي مرتّبة بالأفضلية أصلًا.
+// 3. **الاختراع يوقف الخطوة**: إن جاء في الإجابة معرّفٌ لا وجود له في بياناتك
+//    أُعيدت بنموذجٍ آخر مرّةً واحدة، فإن تكرّر وقف ورُفع الأمر إليك. وقبول
+//    إجابةٍ مخترِعة آليًّا يهدم الميثاق كلّه.
+// 4. **التتابع لا التوازي**: النماذج المجانية تُحدّ بالطلبات في الدقيقة،
+//    والتوازي يستنزف الحدّ فيُفشل ما كان سينجح.
+
+import { STEPS, MODEL_PICKS, batchCount, promptNormalizeBatch } from './prompts.js';
+import { verify } from './verify.js';
+
+/** نداءٌ واحد لنموذجٍ واحد، يُسلّم النصّ قطعةً قطعةً كما يصل. */
+export async function callModel(model, prompt, { onChunk, signal } = {}) {
+  const res = await fetch('/api/model', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model, prompt }),
+    signal,
+  });
+
+  if (!res.ok) {
+    let data = {};
+    try { data = await res.json(); } catch { /* ليس JSON */ }
+    return {
+      ok: false,
+      status: res.status,
+      rateLimited: res.status === 429 || !!data.rateLimited,
+      needsKey: !!data.needsKey,
+      error: data.error || `تعذّر النداء (${res.status}).`,
+    };
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let text = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const piece = decoder.decode(value, { stream: true });
+    text += piece;
+    if (onChunk) onChunk(piece, text);
+  }
+  return { ok: true, text: text.trim(), model: res.headers.get('x-rabih-model') || model };
+}
+
+/**
+ * خطوة واحدة: يُجرَّب لها نموذجٌ بعد نموذج حتى تنجح أو تنفد البدائل.
+ *
+ * @returns {{ok, text?, model?, attempts, error?, needsKey?, invented?}}
+ */
+export async function runStep(stepKey, state, { onChunk, onModel, signal } = {}) {
+  const step = STEPS.find((s) => s.key === stepKey);
+  if (!step) return { ok: false, attempts: [], error: 'خطوة غير معروفة.' };
+
+  /* التوحيد على دفعات حين تكثر التعليقات: نافذة النموذج المجاني تضيق عن مئات
+     التعليقات، وتجاوزها صامتٌ — يقتطع ما زاد ويجيب كأنه قرأ الكل. */
+  const total = step.role === 'normalize' ? batchCount(state.place?.reviews?.length || 0) : 1;
+  if (total > 1) return runBatched(step, state, total, { onChunk, onModel, signal });
+
+  let prompt;
+  try { prompt = step.build(state); }
+  catch (e) { return { ok: false, attempts: [], error: 'تعذّر بناء الرسالة: ' + e.message }; }
+  if (!prompt || !prompt.trim()) return { ok: false, attempts: [], error: 'الرسالة فارغة — أكمل ما قبلها.' };
+
+  const picks = MODEL_PICKS[step.role] || [];
+  const attempts = [];
+
+  for (const pick of picks) {
+    if (signal?.aborted) return { ok: false, attempts, error: 'أُوقف بأمرك.' };
+    if (onModel) onModel(pick);
+
+    const r = await callModel(pick.slug, prompt, { onChunk, signal });
+
+    if (!r.ok) {
+      attempts.push({ model: pick.name, error: r.error });
+      if (r.needsKey) return { ok: false, attempts, error: r.error, needsKey: true };
+      if (r.rateLimited) continue;             // البديل
+      if (signal?.aborted) return { ok: false, attempts, error: 'أُوقف بأمرك.' };
+      continue;                                 // خطأ عابر: يُجرَّب البديل أيضًا
+    }
+    if (!r.text) { attempts.push({ model: pick.name, error: 'ردّ فارغ.' }); continue; }
+
+    // الاختراع لا يُقبَل: معرّفٌ لا وجود له في بياناتك يُسقط الإجابة.
+    const v = verify(r.text, state.place);
+    if (v.badIds.length) {
+      attempts.push({ model: pick.name, error: `اخترع معرّفات: ${v.badIds.join('، ')}` });
+      continue;
+    }
+
+    attempts.push({ model: pick.name, ok: true, score: v.score, level: v.level });
+    return { ok: true, text: r.text, model: pick.name, slug: pick.slug, attempts, verdict: v };
+  }
+
+  const invented = attempts.every((a) => /اخترع/.test(a.error || ''));
+  return {
+    ok: false,
+    attempts,
+    invented,
+    error: invented
+      ? 'كل النماذج المتاحة اخترعت معرّفات في هذه الخطوة — راجعها بنفسك قبل المضيّ.'
+      : 'تعذّرت الخطوة بعد تجربة كل البدائل: ' + attempts.map((a) => `${a.model} (${a.error})`).join('، '),
+  };
+}
+
+/**
+ * خطوة توحيدٍ مقسَّمة على دفعات: تُشغَّل كلٌّ على حدة ثم تُوصَل مخرجاتها.
+ *
+ * ولا تُبتَر النتيجة عند فشل دفعة: الخطوة كلها تفشل ويُقال أي دفعةٍ سقطت،
+ * لأن توحيدًا ناقصًا يبدو تامًّا أخطرُ من توحيدٍ لم يتمّ.
+ */
+async function runBatched(step, state, total, { onChunk, onModel, signal } = {}) {
+  const picks = MODEL_PICKS[step.role] || [];
+  const parts = [];
+  const attempts = [];
+  let whole = '';
+
+  for (let i = 0; i < total; i += 1) {
+    if (signal?.aborted) return { ok: false, attempts, error: 'أُوقف بأمرك.' };
+    const prompt = promptNormalizeBatch(state.place, state.ctx, i, total);
+    let done = null;
+
+    for (const pick of picks) {
+      if (signal?.aborted) return { ok: false, attempts, error: 'أُوقف بأمرك.' };
+      if (onModel) onModel({ ...pick, name: `${pick.name} — دفعة ${i + 1} من ${total}` });
+
+      const head = `\n\n---\n## دفعة ${i + 1} من ${total}\n`;
+      const r = await callModel(pick.slug, prompt, {
+        signal,
+        onChunk: (piece) => { whole += piece; if (onChunk) onChunk(piece, whole); },
+      });
+
+      if (!r.ok) {
+        attempts.push({ model: pick.name, batch: i + 1, error: r.error });
+        if (r.needsKey) return { ok: false, attempts, error: r.error, needsKey: true };
+        continue;
+      }
+      if (!r.text) { attempts.push({ model: pick.name, batch: i + 1, error: 'ردّ فارغ.' }); continue; }
+
+      const v = verify(r.text, state.place);
+      if (v.badIds.length) {
+        attempts.push({ model: pick.name, batch: i + 1, error: `اخترع معرّفات: ${v.badIds.join('، ')}` });
+        whole = parts.join('');                 // يُمحى ما بثّه المخترِع
+        if (onChunk) onChunk('', whole);
+        continue;
+      }
+      done = (i ? head : '') + r.text;
+      parts.push(done);
+      whole = parts.join('');
+      if (onChunk) onChunk('', whole);
+      attempts.push({ model: pick.name, batch: i + 1, ok: true, score: v.score });
+      break;
+    }
+
+    if (!done) {
+      return {
+        ok: false,
+        attempts,
+        invented: attempts.some((a) => /اخترع/.test(a.error || '')),
+        error: `سقطت الدفعة ${i + 1} من ${total} بعد تجربة كل النماذج — والتوحيد الناقص لا يُقبَل.`,
+      };
+    }
+  }
+
+  const text = parts.join('');
+  const v = verify(text, state.place);
+  const used = attempts.filter((a) => a.ok).map((a) => a.model);
+  return {
+    ok: true,
+    text,
+    model: [...new Set(used)].join(' + '),
+    batches: total,
+    attempts,
+    verdict: v,
+  };
+}
+
+/** ترتيب التشغيل: خطوةٌ خطوة، ولا تبدأ مرحلةٌ قبل تمام ما قبلها. */
+export function pendingSteps(out) {
+  return STEPS.filter((s) => !(out?.[s.key] || '').trim()).map((s) => s.key);
+}

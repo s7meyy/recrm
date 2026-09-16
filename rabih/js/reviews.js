@@ -4,6 +4,7 @@
 // تعرف المفتاح. وما يعود تعليقاتٌ موحَّدة على عقد البيانات.
 
 import { emptyReview } from './schema.js';
+import { fetchHint } from './places.js';
 
 /**
  * @returns {{ok:boolean, reviews?:Array, fetched?:number, claimed?:number|null,
@@ -21,7 +22,7 @@ export async function fetchAllReviews(mapsUrl, { limit = 0, sort = '', provider 
     const res = await fetch(`/api/reviews?${q}`);
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      return { ok: false, error: data.error || `تعذّر الجلب (${res.status}).`, needsKey: !!data.needsKey };
+      return { ok: false, error: data.error || fetchHint(res.status), needsKey: !!data.needsKey };
     }
     return {
       ok: true,

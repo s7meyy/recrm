@@ -151,6 +151,39 @@ export const CITIES = [
   { id: 'dumat-jandal',  name: 'دومة الجندل',      region: 'jawf' },
 ];
 
-export const cityById = (id) => CITIES.find((c) => c.id === id) || null;
+
+
+/* ───── مدن يضيفها المستخدم ─────
+   القائمة تغطّي السعودية، والأداة قد تُستعمل لمحلٍّ خارجها أو لمدينةٍ صغيرة
+   لم تَرِد. فتُضاف وتُحفَظ في المتصفح، وتدخل شجرة الأرشيف كغيرها. */
+
+const CUSTOM_CITIES_KEY = 'rabih:custom-cities';
+
+const readCustomCities = () => {
+  try { return JSON.parse(localStorage.getItem(CUSTOM_CITIES_KEY) || '[]'); }
+  catch { return []; }
+};
+
+/** مدنٌ مضافة: لها المنطقة التي أُضيفت تحتها، ومعرّفٌ لا يصطدم بالمعرّفات الأصلية. */
+export const customCities = () => readCustomCities();
+
+export function addCity(regionId, name) {
+  const clean = String(name || '').trim();
+  if (!clean || !regionId) return null;
+  const all = [...CITIES, ...readCustomCities()];
+  const exists = all.find((c) => c.name === clean && c.region === regionId);
+  if (exists) return null;
+
+  const id = 'x-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6);
+  const list = [...readCustomCities(), { id, name: clean, region: regionId, custom: true }];
+  try { localStorage.setItem(CUSTOM_CITIES_KEY, JSON.stringify(list)); } catch { return null; }
+  return id;
+}
+export const cityById = (id) => allCities().find((c) => c.id === id) || null;
 export const regionById = (id) => REGIONS.find((r) => r.id === id) || null;
-export const citiesOfRegion = (regionId) => CITIES.filter((c) => c.region === regionId);
+export const citiesOfRegion = (regionId) => allCities().filter((c) => c.region === regionId);
+
+/** الأصلية ومضافاتك معًا — وهي ما تقرؤه الواجهة والأرشيف. */
+export function allCities() {
+  return [...CITIES, ...readCustomCities()];
+}

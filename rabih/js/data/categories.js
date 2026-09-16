@@ -205,4 +205,40 @@ export const ALL_CATEGORIES = CATEGORY_GROUPS.flatMap((g) =>
   g.items.map((it) => ({ ...it, group: g.id, groupName: g.name, hints: g.hints })),
 );
 
-export const categoryById = (id) => ALL_CATEGORIES.find((c) => c.id === id) || null;
+
+
+/* ───── تصنيفات يضيفها المستخدم ─────
+   مئةٌ واثنا عشر تصنيفًا لا تستوعب كل نشاط، والمحلّ الذي لا تصنيف له لا يدخل
+   الأداة أصلًا. فيُضاف تحت أقرب مجموعة، ويرث محاورها في التحليل. */
+
+const CUSTOM_CATS_KEY = 'rabih:custom-categories';
+
+const readCustomCats = () => {
+  try { return JSON.parse(localStorage.getItem(CUSTOM_CATS_KEY) || '[]'); }
+  catch { return []; }
+};
+
+export const customCategories = () => readCustomCats();
+
+export function addCategory(groupId, name) {
+  const clean = String(name || '').trim();
+  const group = CATEGORY_GROUPS.find((g) => g.id === groupId);
+  if (!clean || !group) return null;
+  if (allCategories().some((c) => c.name === clean && c.group === groupId)) return null;
+
+  const id = 'x-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6);
+  const list = [...readCustomCats(), { id, name: clean, group: groupId, custom: true }];
+  try { localStorage.setItem(CUSTOM_CATS_KEY, JSON.stringify(list)); } catch { return null; }
+  return id;
+}
+
+/** الأصلية ومضافاتك — والمضاف يرث محاور مجموعته فيُحلَّل كما تُحلَّل أخواته. */
+export function allCategories() {
+  const extra = readCustomCats().map((c) => {
+    const g = CATEGORY_GROUPS.find((x) => x.id === c.group);
+    return { ...c, groupName: g?.name || '', hints: g?.hints || [] };
+  });
+  return [...ALL_CATEGORIES, ...extra];
+}
+
+export const categoryById = (id) => allCategories().find((c) => c.id === id) || null;

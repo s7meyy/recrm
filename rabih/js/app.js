@@ -1,7 +1,7 @@
 // رابح — منطق الواجهة. ES modules خالصة، بلا مكتبات ولا أداة بناء.
 
-import { REGIONS, CITIES, citiesOfRegion, cityById, regionById } from './data/cities.js';
-import { CATEGORY_GROUPS, ALL_CATEGORIES, categoryById } from './data/categories.js';
+import { REGIONS, citiesOfRegion, cityById, regionById, allCities, addCity } from './data/cities.js';
+import { CATEGORY_GROUPS, categoryById, allCategories, addCategory } from './data/categories.js';
 import { districtsOf, addDistrict } from './data/districts.js';
 import { parseMapsUrl, asciiName } from './maps.js';
 import { emptyPlace, assignReviewIds, validate, stats } from './schema.js';
@@ -19,7 +19,7 @@ import { recentVsOlder, monthly, alerts as recencyAlerts, topicAges } from './re
 import * as safe from './persist.js';
 import { brands, analyze, groupPrompt } from './group.js';
 import { buildGroupReportHtml } from './report.js';
-import { CHARTER, promptDesign } from './prompts.js';
+import { CHARTER, promptDesign, batchCount, promptNormalizeBatch } from './prompts.js';
 import * as identity from './brand.js';
 import * as lock from './lock.js';
 import * as queue from './queue.js';
@@ -34,6 +34,7 @@ import { TOPICS, addKeyword, removeKeyword, customKeywords, resetCustom } from '
 import { parsePopularTimes, parseQna, peakInsight, tagLanguages, qnaInsight, contextBlock } from './peak.js';
 import { fetchPlace, merge as mergePlace } from './places.js';
 import { fetchAllReviews, mergeReviews } from './reviews.js';
+import { runStep, pendingSteps } from './runner.js';
 import { compare as compareOutputs, mergeHint } from './agreement.js';
 import * as history from './history.js';
 import * as tour from './tour.js';
@@ -51,6 +52,15 @@ const el = (tag, cls, html) => { const n = document.createElement(tag); if (cls)
  * أصل الموقع — حيث يقبع أرشيف العملاء كله في IndexedDB. والطريق واقعي: تعليقٌ خبيث
  * على قوقل، يُلصَق، فيردّده النموذج في مخرجه، فيُلصَق مخرجه.
  */
+/** تاريخٌ ميلادي بالحروف العربية: يرفع لبس 10/15 عن 15/10. */
+const arDate = (iso) => {
+  if (!iso) return '';
+  const d = new Date(iso + 'T00:00:00');
+  if (Number.isNaN(d.getTime())) return '';
+  try { return d.toLocaleDateString('ar-SA-u-ca-gregory', { day: 'numeric', month: 'long', year: 'numeric' }); }
+  catch { return iso; }
+};
+
 const esc = (v) => String(v ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -190,7 +200,7 @@ function fillRegions() {
 
 function fillCities(regionId, selected = '') {
   const sel = $('#f-city');
-  const list = regionId ? citiesOfRegion(regionId) : CITIES;
+  const list = regionId ? citiesOfRegion(regionId) : allCities();
   sel.innerHTML = '<option value="">— اختر المدينة —</option>' +
     list.map((c) => `<option value="${c.id}"${c.id === selected ? ' selected' : ''}>${c.name}</option>`).join('');
 }
@@ -202,7 +212,7 @@ function fillGroups() {
 
 function fillCategories(groupId, selected = '') {
   const sel = $('#f-category');
-  const list = groupId ? (CATEGORY_GROUPS.find((g) => g.id === groupId)?.items || []) : ALL_CATEGORIES;
+  const list = groupId ? allCategories().filter((c) => c.group === groupId) : allCategories();
   sel.innerHTML = '<option value="">— اختر التصنيف —</option>' +
     list.map((c) => `<option value="${c.id}"${c.id === selected ? ' selected' : ''}>${c.name}</option>`).join('');
 }
@@ -236,6 +246,29 @@ function bindNewView() {
       else if (r.short) message('#new-msg', 'warn', r.reason);
       else message('#new-msg', 'ok', `الرابط صالح${r.data.name ? ` — المنشأة: ${r.data.name}` : ''}.`);
     }, 400);
+  });
+
+  $('#btn-add-city').addEventListener('click', () => {
+    const regionId = $('#f-region').value;
+    if (!regionId) { toast('اختر المنطقة أولًا'); return; }
+    const name = prompt('اسم المدينة الجديدة:');
+    if (!name) return;
+    const id = addCity(regionId, name);
+    if (!id) { toast('المدينة موجودة أصلًا أو الاسم فارغ'); return; }
+    fillCities(regionId, id);
+    fillDistricts(id);
+    toast('أُضيفت المدينة');
+  });
+
+  $('#btn-add-category').addEventListener('click', () => {
+    const groupId = $('#f-group').value;
+    if (!groupId) { toast('اختر مجال النشاط أولًا'); return; }
+    const name = prompt('اسم التصنيف الجديد:');
+    if (!name) return;
+    const id = addCategory(groupId, name);
+    if (!id) { toast('التصنيف موجود أصلًا أو الاسم فارغ'); return; }
+    fillCategories(groupId, id);
+    toast('أُضيف التصنيف — ويرث محاور مجموعته في التحليل');
   });
 
   $('#btn-add-district').addEventListener('click', () => {
@@ -810,6 +843,10 @@ function renderPhotoChips() {
 
 function renderPipeline() {
   const host = $('#pipeline-steps');
+  // إعادة الرسم تُفرغ الحاوية فيقصر ارتفاع الصفحة فيقفز التمرير. يُحفَظ موضعه
+  // ويُعاد بعد البناء، فلا يفقد المستخدم مكانه كلما عدّل خطوة.
+  const scrollY = window.scrollY;
+  const active = document.activeElement?.id || '';
   host.innerHTML = '';
   let lastStage = 0;
 
@@ -861,6 +898,25 @@ function renderPipeline() {
 
     const row = el('div', 'row');
     row.appendChild(pick);
+    // تشغيلٌ آلي لهذه الخطوة وحدها: لإعادة واحدة دون هدم ما بعدها.
+    const btnRun = el('button', 'btn sm', '▶ شغّل');
+    btnRun.title = 'يُشغّل هذه الخطوة عبر OpenRouter (يحتاج مفتاحًا)';
+    btnRun.addEventListener('click', async () => {
+      btnRun.disabled = true;
+      const prev = btnRun.textContent;
+      btnRun.textContent = '…';
+      const r = await runOne(step.key);
+      btnRun.disabled = false;
+      btnRun.textContent = prev;
+      if (r.ok) {
+        message('#run-msg', 'ok', `${step.title}: ${r.model} — ${r.verdict.summary}`);
+        renderPipeline();
+      } else {
+        message('#run-msg', 'err', `${step.title}: ${r.error}`, r.needsKey
+          ? ['أضف OPENROUTER_KEY في متغيّرات البيئة على Netlify ثم أعد النشر.'] : []);
+      }
+    });
+    row.appendChild(btnRun);
     const btnCopy = el('button', 'btn sm', 'نسخ الرسالة');
     const btnShow = el('button', 'btn ghost sm', 'عرض الرسالة');
     const btnDl   = el('button', 'btn ghost sm', 'تنزيلها');
@@ -870,6 +926,28 @@ function renderPipeline() {
     const pre = el('pre', 'prompt');
     pre.hidden = true;
     inner.appendChild(pre);
+
+    /* حجم الرسالة يُقال قبل الضغط: تجاوز نافذة النموذج صامتٌ — يقتطع ما زاد
+       ويجيب كأنه قرأ الكل. والتوحيد يُقسَّم على دفعات فيُعلَن عددها. */
+    const size = el('div', 'fine size-note');
+    try {
+      const n = job.place.reviews.length;
+      const parts = step.role === 'normalize' ? batchCount(n) : 1;
+      const len = parts > 1
+        ? promptNormalizeBatch(job.place, job.ctx, 0, parts).length
+        : (step.build({ place: job.place, ctx: job.ctx, out: job.out }) || '').length;
+      const k = Math.round(len / 1000);
+      if (parts > 1) {
+        size.innerHTML = `حجم الرسالة ~<b>${k}</b> ألف حرف للدفعة الواحدة — و<b>${parts} دفعات</b>، لأن ${n} تعليقًا لا تسعها نافذة النموذج المجاني دفعةً واحدة. التشغيل الآلي يتولّى التقسيم؛ ويدويًّا انسخ كل دفعة على حدة.`;
+        size.classList.add('warn-text');
+      } else if (k >= 25) {
+        size.innerHTML = `حجم الرسالة ~<b>${k}</b> ألف حرف — <b>كبيرة</b>. بعض واجهات الدردشة تقتطع ما زاد بلا تنبيه، فتأتي الإجابة ناقصةً وهي تبدو تامّة. التشغيل الآلي أسلم هنا.`;
+        size.classList.add('warn-text');
+      } else {
+        size.textContent = `حجم الرسالة ~${k} ألف حرف.`;
+      }
+    } catch { size.textContent = ''; }
+    inner.appendChild(size);
 
     const buildPrompt = () => {
       try { return step.build({ place: job.place, ctx: job.ctx, out: job.out }); }
@@ -935,6 +1013,9 @@ function renderPipeline() {
     node.appendChild(inner);
     host.appendChild(node);
   });
+
+  if (scrollY) window.scrollTo({ top: scrollY });
+  if (active && document.getElementById(active)) document.getElementById(active).focus({ preventScroll: true });
 
   updateProgress();
   renderAgreement();
@@ -1009,7 +1090,113 @@ function updateProgress() {
   badge.className = 'badge ' + (done === STEPS.length ? 'ok' : done ? 'mid' : '');
 }
 
+/* ───────────── التشغيل الآلي لخط التحليل عبر OpenRouter ───────────── */
+
+let runAbort = null;
+
+/** الحالة التي يبني عليها المُشغِّل رسائله — نفسها التي تبني بها الواجهة. */
+const runState = () => ({ place: job.place, ctx: job.ctx, out: job.out });
+
+function setRunning(on) {
+  $('#btn-run-all').disabled = on;
+  $('#btn-stop-run').hidden = !on;
+  $('#btn-run-all').textContent = on ? '… يعمل' : '▶ شغّل الخطوات الثماني آليًّا';
+}
+
+/**
+ * يشغّل خطوةً واحدة ويكتب ردّ النموذج في مربعها حيًّا.
+ *
+ * والكتابة في `job.out` تتمّ أولًا بأول: لو انقطع الاتصال في المنتصف بقي ما وصل
+ * ولم يضع عمل النموذج. وإعادة الرسم تُؤجَّل إلى النهاية كي لا يُقتلع المربع
+ * من تحت النصّ وهو يُكتب.
+ */
+async function runOne(key, { quiet = false } = {}) {
+  const ta = $(`#out-${key}`);
+  const step = STEPS.find((x) => x.key === key);
+  if (ta) { ta.value = ''; ta.disabled = true; }
+  job.out[key] = '';
+
+  const r = await runStep(key, runState(), {
+    signal: runAbort?.signal,
+    onModel: (pick) => {
+      if (!quiet) message('#run-msg', 'warn', `${step.title} — يُشغَّل ${pick.name}…`);
+      if (ta) ta.placeholder = `يكتب ${pick.name}…`;
+    },
+    onChunk: (_piece, whole) => {
+      if (ta) { ta.value = whole; ta.scrollTop = ta.scrollHeight; }
+      job.out[key] = whole;
+    },
+  });
+
+  if (ta) { ta.disabled = false; ta.placeholder = 'ألصق هنا ما ردّ به النموذج…'; }
+
+  if (!r.ok) {
+    job.out[key] = '';
+    if (ta) ta.value = '';
+    return r;
+  }
+
+  job.out[key] = r.text;
+  if (ta) ta.value = r.text;
+  job.models = job.models || {};
+  job.models[key] = r.model;          // النموذج الذي شُغِّل فعلًا، لا الذي طُلب
+  scheduleSave();
+  return r;
+}
+
+async function onRunAll() {
+  const v = validate(job.place);
+  if (!v.ok) { message('#run-msg', 'err', 'لا يمكن التشغيل:', v.errors); return; }
+
+  const pending = pendingSteps(job.out);
+  if (!pending.length) { message('#run-msg', 'ok', 'الخطوات الثماني مكتملة. امسح خطوةً لإعادتها.'); return; }
+
+  runAbort = new AbortController();
+  setRunning(true);
+  const started = Date.now();
+  const log = [];
+
+  for (const [i, key] of pending.entries()) {
+    if (runAbort.signal.aborted) break;
+    const step = STEPS.find((x) => x.key === key);
+    message('#run-msg', 'warn', `(${i + 1} من ${pending.length}) ${step.title}…`, log.slice(-3));
+
+    const r = await runOne(key, { quiet: true });
+
+    if (!r.ok) {
+      renderPipeline();
+      setRunning(false);
+      runAbort = null;
+      message('#run-msg', 'err', `توقّف عند: ${step.title}`, [
+        r.error,
+        ...(r.needsKey ? [
+          'أنشئ مفتاحًا من openrouter.ai/keys (مجاني).',
+          'ضعه في Netlify → Site settings → Environment variables باسم OPENROUTER_KEY، ثم أعد النشر.',
+        ] : []),
+        ...(r.invented ? ['ما قبلها محفوظ. شغّل هذه الخطوة يدويًّا أو أعد المحاولة لاحقًا.'] : []),
+        ...log,
+      ]);
+      return;
+    }
+    log.push(`${step.title}: ${r.model} — ${r.verdict.summary}`);
+  }
+
+  renderPipeline();
+  setRunning(false);
+  const stopped = runAbort?.signal.aborted;
+  runAbort = null;
+  const secs = Math.round((Date.now() - started) / 1000);
+  message('#run-msg', stopped ? 'warn' : 'ok',
+    stopped ? 'أُوقف بأمرك — وما تمّ محفوظ.' : `تمّت الخطوات في ${secs} ثانية.`, log);
+  if (!stopped) toast('اكتمل خط التحليل — انتقل إلى التقرير');
+}
+
 function bindPipelineView() {
+  $('#btn-run-all').addEventListener('click', onRunAll);
+  $('#btn-stop-run').addEventListener('click', () => {
+    runAbort?.abort();
+    message('#run-msg', 'warn', 'يُوقَف بعد انتهاء الخطوة الجارية…');
+  });
   $('#btn-open-openrouter').addEventListener('click', () => window.open('https://openrouter.ai/chat', '_blank', 'noopener'));
   $('#btn-export-job').addEventListener('click', () => {
     download(`rabih-state-${asciiName(job.place.identity.name)}.json`, JSON.stringify(job, null, 2), 'application/json');
@@ -1112,7 +1299,8 @@ function renderPlan() {
     <td class="task-text" contenteditable="true">${esc(t.text)}</td>
     <td class="task-metric" contenteditable="true">${esc(t.metric || '')}</td>
     <td>${t.ids.map((x) => `<span class="rid">${esc(x)}</span>`).join(' ') || '—'}</td>
-    <td><input type="date" class="task-due" value="${t.due || ''}"></td>
+    <td><input type="date" class="task-due" value="${t.due || ''}">
+      <div class="fine due-label">${esc(arDate(t.due))}</div></td>
     <td><select class="task-status">${
       Object.entries(STATUS).map(([k, v]) => `<option value="${k}"${t.status === k ? ' selected' : ''}>${v.label}</option>`).join('')
     }</select></td>
@@ -1128,7 +1316,12 @@ function renderPlan() {
     job.plan[idx(e)].status = e.target.value; renderPlan(); scheduleSave(); syncPlanIntoReport();
   }));
   box.querySelectorAll('.task-due').forEach((el2) => el2.addEventListener('change', (e) => {
-    job.plan[idx(e)].due = e.target.value; scheduleSave(); syncPlanIntoReport();
+    job.plan[idx(e)].due = e.target.value;
+    // حقل التاريخ يعرض بصيغة لغة المتصفح (10/15/2026 غالبًا)، وهي ملتبسة على
+    // قارئ عربي: أهو اليوم أم الشهر؟ فيُكتب التاريخ بجانبه بالحروف.
+    const lab = e.target.parentElement.querySelector('.due-label');
+    if (lab) lab.textContent = arDate(e.target.value);
+    scheduleSave(); syncPlanIntoReport();
   }));
   box.querySelectorAll('.task-text').forEach((el2) => el2.addEventListener('blur', (e) => {
     job.plan[idx(e)].text = e.target.textContent.trim(); scheduleSave(); syncPlanIntoReport();

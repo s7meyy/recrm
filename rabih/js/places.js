@@ -15,12 +15,28 @@ export async function fetchPlace(mapsUrl, { photos = true } = {}) {
     const res = await fetch(`/api/places?url=${encodeURIComponent(mapsUrl)}&photos=${photos ? 1 : 0}`);
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      return { ok: false, error: data.error || `تعذّر الجلب (${res.status}).`, needsKey: !!data.needsKey };
+      return { ok: false, error: data.error || fetchHint(res.status), needsKey: !!data.needsKey };
     }
     return { ok: true, place: data.place, photos: data.photos || [] };
   } catch (e) {
     return { ok: false, error: 'تعذّر الاتصال بالدالة — هل المنصّة تعمل على Netlify؟' };
   }
+}
+
+/**
+ * رسالةٌ تقول للمستخدم ما العطب وما يفعل — لا رقمًا مجرّدًا.
+ *
+ * «تعذّر الجلب (404)» لا يدلّ على شيء: لا يعرف صاحبه أهي مشكلة مفتاح أم رابط
+ * أم أن الموقع يعمل خارج Netlify أصلًا فلا دوالّ فيه.
+ */
+export function fetchHint(status) {
+  if (status === 404) {
+    return 'الدالّة الخادمية غير موجودة (404) — غالبًا لأن المنصّة تعمل محليًّا أو على استضافة ثابتة بلا دوالّ. الجلب التلقائي يعمل على Netlify وحدها.';
+  }
+  if (status === 401 || status === 403) return 'المفتاح مرفوض (' + status + ') — راجع صلاحيته في لوحة المزوّد.';
+  if (status === 429) return 'بلغت حدّ الطلبات (429) — انتظر قليلًا ثم أعد المحاولة.';
+  if (status >= 500) return 'عطلٌ عند المزوّد أو الخادم (' + status + ') — أعد المحاولة بعد قليل.';
+  return `تعذّر الجلب (${status}).`;
 }
 
 /** حقل فارغ فعلًا: لا يُعدّ الصفر ولا القيمة المُدخَلة فراغًا. */

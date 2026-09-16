@@ -86,6 +86,7 @@ tests/e2e.mjs         اختبار شامل في متصفح حقيقي
 tests/build-private.mjs  اختبار النسخة المشفَّرة (بلا متصفح)
 tests/reviews.mjs     اختبار موصّل المزوّد (بمزوّدين مزيّفين)
 tests/parse.mjs       اختبار المحلّل على لصقٍ واقعي من صفحة قوقل
+tests/runner.mjs      اختبار التشغيل الآلي (بنموذج مزيّف يبثّ)
 ```
 
 ## النسخة المُسلَّمة
@@ -122,6 +123,7 @@ CHROME_PATH=/path/to/chrome node tests/e2e.mjs
 ```
 node tests/parse.mjs
 node tests/reviews.mjs
+node tests/runner.mjs
 ```
 
 واختبار المحلّل مبنيٌّ على **ما يُنسَخ فعلًا** من صفحة قوقل — بلا نجوم، وفيه «أعجبني» و«المزيد» و«الرد من المالك» — لا على لصقٍ مثاليّ نتمنّاه.

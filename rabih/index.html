@@ -51,7 +51,10 @@
         </div>
         <div class="field">
           <label for="f-city">المدينة</label>
-          <select id="f-city"></select>
+          <div class="with-add">
+            <select id="f-city"></select>
+            <button type="button" class="btn ghost sm" id="btn-add-city">+ مدينة</button>
+          </div>
         </div>
       </div>
 
@@ -62,7 +65,10 @@
         </div>
         <div class="field">
           <label for="f-category">التصنيف</label>
-          <select id="f-category"></select>
+          <div class="with-add">
+            <select id="f-category"></select>
+            <button type="button" class="btn ghost sm" id="btn-add-category">+ تصنيف</button>
+          </div>
         </div>
       </div>
 
@@ -218,11 +224,14 @@
         في كل خطوة: انسخ الرسالة، افتح النموذج المقترح، ألصقها، ثم أعد إجابته إلى المربع. تُحفظ كل خطوة تلقائيًا فيمكنك التوقف والعودة.
       </p>
       <div class="row">
+        <button type="button" class="btn gold" id="btn-run-all">▶ شغّل الخطوات الثماني آليًّا</button>
+        <button type="button" class="btn ghost sm" id="btn-stop-run" hidden>إيقاف</button>
         <button type="button" class="btn ghost sm" id="btn-open-openrouter">فتح OpenRouter</button>
         <button type="button" class="btn ghost sm" id="btn-export-job">تصدير الحالة JSON</button>
         <span class="spacer"></span>
         <span class="badge" id="pipeline-progress"></span>
       </div>
+      <div id="run-msg"></div>
     </div>
 
     <div class="card" id="agreement-card" hidden>
@@ -497,7 +506,13 @@
       <p class="hint">أربع مراحل، ثماني خطوات، ومخرج واحد.</p>
       <ol>
         <li><b>الإدخال:</b> رابط المنشأة + المدينة والتصنيف والحي.</li>
-        <li><b>الاستخراج:</b> في هذه المرحلة يدويًّا باللصق. البنية مهيّأة لاستبداله بمصدر آلي دون تغيير شيء بعده.</li>
+        <li><b>الاستخراج:</b> ثلاثة طرق، والأداة تقبلها جميعًا وتوحّدها في عقدٍ واحد:
+          <ul>
+            <li><b>جلب كل التعليقات تلقائيًّا</b> من مزوّد وسيط — الطريق الكامل، ويحتاج مفتاحًا.</li>
+            <li><b>جلب البطاقة من قوقل</b> — الاسم والصور وساعات العمل، و<b>خمس مراجعات كحدٍّ أقصى</b> وهو حدُّ قوقل الرسمي لا نقصٌ عندنا.</li>
+            <li><b>اللصق اليدوي</b> — دائمًا متاح. و<b>نجوم قوقل صورةٌ لا تُنسَخ</b>، فالتعليقات تُقرأ ويبقى التقييم فارغًا، والأداة تقول لك ذلك ولا تخمّنه.</li>
+          </ul>
+        </li>
         <li><b>التوحيد:</b> ثلاثة نماذج تنظّم البيانات، ورابع يدمج مخرجاتها في واحد بلا تكرار ولا اختراع.</li>
         <li><b>التحليل:</b> ثلاثة نماذج تكتب تقريرًا تفصيليًّا، ورابع يوحّدها في تقرير واحد.</li>
         <li><b>الإخراج:</b> تقرير A4 مرقّم مع توزيع النجوم والصور، جاهز للطباعة والمشاركة.</li>
@@ -511,9 +526,16 @@
       </ul>
       <h3 style="margin-top:18px;font-size:15px;color:var(--navy)">ماذا ينتظر التفعيل لاحقًا؟</h3>
       <ul>
-        <li><b>مفتاح OpenRouter:</b> يجعل الخطوات الثماني آلية بلا نسخ ولصق.</li>
-        <li><b>مفتاح Google Places:</b> يملأ بطاقة المنشأة والصور تلقائيًّا من الرابط.</li>
-        <li><b>مزوّد بيانات وسيط:</b> يجلب مئات التعليقات بدل اللصق اليدوي.</li>
+        <li><b>مفتاح OpenRouter</b> (<code>OPENROUTER_KEY</code>): يجعل الخطوات الثماني آلية بزرٍّ واحد — الموصّل <b>مبنيّ وجاهز</b>، والنماذج المقترحة مجانية.</li>
+        <li><b>مفتاح مزوّد وسيط</b> (<code>OUTSCRAPER_KEY</code> أو <code>APIFY_TOKEN</code>): يجلب التعليقات كاملةً بتقييماتها من الرابط — <b>مبنيّ وجاهز</b>.</li>
+        <li><b>مفتاح Google Places</b> (<code>GOOGLE_PLACES_KEY</code>): يملأ بطاقة المنشأة والصور — <b>مبنيّ وجاهز</b>.</li>
+      </ul>
+      <p class="hint">كلها تُوضَع في <b>Netlify ← Site settings ← Environment variables</b>، ولا يصل أيٌّ منها إلى المتصفح: النداء يقع في دالّة خادمية.</p>
+      <h3 style="margin-top:18px;font-size:15px;color:var(--navy)">حدودٌ يجب أن تعرفها</h3>
+      <ul>
+        <li><b>قوقل لا يعطي إلا خمس مراجعات</b> عبر واجهته الرسمية — والباقي إمّا بمزوّد وسيط أو لصقًا.</li>
+        <li><b>ولا نكشط صفحته</b>: مخالفٌ لشروطه، ويُحظَر عند اكتشافه، وينكسر كلما غيّرها.</li>
+        <li><b>نافذة النماذج المجانية تضيق</b> عن مئات التعليقات، فيُقسَّم التوحيد على دفعات ويُعلَن عددها.</li>
       </ul>
     </div>
   </section>

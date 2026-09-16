@@ -279,3 +279,15 @@ select.model-pick{width:auto;min-width:150px;padding:6px 10px;font-size:13px}
   margin: 0; font-weight: 500; font-size: 13px; color: var(--muted);
 }
 .inline-field input { width: 110px; }
+
+/* تنبيه حجم الرسالة في خطوات خط التحليل. */
+.size-note { margin: 4px 0 8px; }
+.size-note.warn-text { color: var(--gold); }
+
+/* حقلٌ ومعه زرّ إضافة — للمدينة والتصنيف، كما للحي. */
+.with-add { display: flex; gap: 6px; align-items: center; }
+.with-add select { flex: 1; min-width: 0; }
+.with-add .btn { white-space: nowrap; }
+
+/* التاريخ بالحروف تحت حقل التاريخ — يرفع لبس صيغة المتصفح. */
+.due-label { margin-top: 2px; white-space: nowrap; }
