@@ -173,17 +173,29 @@ function parseLoose(raw) {
   for (const line of lines) {
     const t = line.trim();
     if (!t) { prevLine = ''; replyOpen = false; continue; }   // الفراغ يفصل بين تعليقين
+
+    // فاصل الصيغة الصريحة قد يرد في لصقٍ مختلط: يُنهي التعليق ولا يدخل نصّه.
+    if (SEPARATOR.test(t)) { flush(); replyOpen = false; prevLine = ''; continue; }
     if (isNoise(t)) continue;  // لا يُحدَّث prevLine: اسم الكاتب قد يسبق سطر الضجيج.
 
-    const rating = extractRating(t);
-    const ratingHeader = rating !== null && t.replace(STAR_CHARS, '').replace(/[\d\s\/.,]/g, '').length < 40;
+    // رأسٌ بالصيغة الصريحة «4 | الاسم | قبل شهر» قد يرد داخل لصقٍ خام حين
+    // يُكمل المستخدم بيده ما نقص. وكان يُقرأ نصًّا فيضيع تعليقُه صامتًا.
+    const explicit = t.match(/^\s*([1-5])\s*\|\s*([^|\n]{0,40}?)\s*(?:\|\s*([^|\n]{0,30}?)\s*)?$/);
+
+    const rating = explicit ? Number(explicit[1]) : extractRating(t);
+    const ratingHeader = explicit !== null
+      || (rating !== null && t.replace(STAR_CHARS, '').replace(/[\d\s\/.,]/g, '').length < 40);
 
     // سطرُ تاريخٍ قائم بذاته: مرساة التعليق حين لا نجوم — وهي الحال الغالبة.
     const dateOnly = (() => {
       if (ratingHeader || t.length > 30) return false;
       const d = extractDate(t);
       if (!d) return false;
-      return t.replace(d, '').replace(/[|·•\-—,،\s]/g, '').length === 0;
+      // يُقارَن بالسطر مُطبَّع الأرقام: extractDate يُعيد «قبل 3 أيام» بأرقام
+      // لاتينية، والسطر «قبل ٣ أيام» بأرقام عربية، فلا يُحذف منه شيء فيُظنّ
+      // السطرُ كلامًا لا تاريخًا — فيسقط التعليق كلّه ومعه ردّ المالك عليه.
+      // وأكثر ما يقع في أحدث التعليقات («قبل ٣ أيام»، «قبل ٢٠ ساعة»).
+      return normalizeDigits(t).replace(d, '').replace(/[|·•\-—,،\s]/g, '').length === 0;
     })();
 
     // ويبدأ تعليقًا جديدًا إن لم يكن تاريخَ التعليق المفتوح نفسه.
@@ -191,15 +203,17 @@ function parseLoose(raw) {
 
     if (ratingHeader || dateHeader) {
       // اسم الكاتب غالبًا السطر السابق مباشرةً، وقد يكون التُقط خطأً في نصّ التعليق السابق.
-      const author = (prevLine && prevLine.length <= 40 && extractRating(prevLine) === null) ? prevLine : '';
-      if (author && current && current.text.trimEnd().endsWith(author)) {
+      const author = explicit
+        ? (explicit[2] || '').trim()
+        : ((prevLine && prevLine.length <= 40 && extractRating(prevLine) === null) ? prevLine : '');
+      if (!explicit && author && current && current.text.trimEnd().endsWith(author)) {
         current.text = current.text.trimEnd().slice(0, -author.length).trimEnd();
       }
       flush();
       replyOpen = false;
       current = emptyReview();
       current.rating = rating;          // يبقى null إن لم يرد — ولا يُخمَّن
-      current.date = extractDate(t);
+      current.date = explicit ? extractDate(explicit[3] || '') : extractDate(t);
       current.author = author;
       prevLine = t;
       continue;
