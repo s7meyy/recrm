@@ -89,4 +89,6 @@ jobs:
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID || '8fab1119-ac3c-4473-8fea-ea61abab8ab6' }}
           COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
-          netlify deploy --prod --no-build --message "${COMMIT_MESSAGE:-نشر يدوي}"
+          # رسالةٌ طويلة تُسقط النشر بـ«Request URI Too Long»: تُمرَّر في العنوان.
+          SHORT_MESSAGE=$(printf '%s' "$COMMIT_MESSAGE" | python3 -c 'import sys;print(sys.stdin.read().split(chr(10))[0][:110])')
+          netlify deploy --prod --no-build --message "${SHORT_MESSAGE:-نشر يدوي}"

@@ -111,7 +111,11 @@ jobs:
           COMMIT_MESSAGE: ${{ github.event.head_commit.message || 'نشر يدوي' }}
         run: |
           cd "$RUNNER_TEMP/site"
-          netlify deploy --prod --no-build --message "${COMMIT_MESSAGE}" --json > deploy.json
+          # الرسالة تُمرَّر في عنوان الطلب، ورسالةٌ طويلة تُسقط النشر بـ«Request URI
+          # Too Long». فيُؤخَذ سطرها الأول وحده ويُقصَّر — والرسالة كاملةً في Git.
+          # بالبايت لا بالحرف يُقطَع نصفُ حرفٍ عربي، فيُقصَّر بـpython.
+          SHORT_MESSAGE=$(printf '%s' "$COMMIT_MESSAGE" | python3 -c 'import sys;print(sys.stdin.read().split(chr(10))[0][:110])')
+          netlify deploy --prod --no-build --message "${SHORT_MESSAGE:-نشر}" --json > deploy.json
           python3 -c "import json;print('deploy_id='+json.load(open('deploy.json'))['deploy_id'])" >> "$GITHUB_OUTPUT"
           python3 -c "import json;d=json.load(open('deploy.json'));print('الرابط:',d.get('url') or d.get('deploy_url'))"
 
