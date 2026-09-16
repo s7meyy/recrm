@@ -1,7 +1,7 @@
 // عامل الخدمة — رابح يعمل بلا إنترنت. لا شيء يُرسَل إلى أي خادم أصلًا،
 // فالاتصال إنما يلزم لتحميل الملفات أول مرة.
 
-const CACHE = 'rabih-v16';
+const CACHE = 'rabih-v17';
 const ASSETS = [
   './', './index.html', './manifest.webmanifest', './icon.svg',
   './css/rabih.css',
@@ -12,6 +12,7 @@ const ASSETS = [
   './js/messages.js', './js/lock.js', './js/queue.js',
   './js/completeness.js', './js/entities.js', './js/replies.js', './js/models.js',
   './js/peak.js', './js/agreement.js', './js/history.js', './js/tour.js', './js/places.js', './js/confidence.js', './js/reviews.js', './js/runner.js', './js/stamp.js', './js/integrity.js', './js/priority.js', './js/stars.js', './js/voice.js', './js/impact.js', './js/sources.js', './js/clients.js', './js/cloud.js', './js/share.js', './js/cooccur.js', './js/timing.js', './js/promises.js', './js/effect.js', './js/network.js', './js/signature.js', './js/interval.js', './js/bias.js', './js/privacy.js', './js/eval.js', './js/i18n.js',
+  './js/action.js', './js/brief.js', './js/coverage.js',
   './js/data/cities.js', './js/data/categories.js', './js/data/districts.js',
 ];
 

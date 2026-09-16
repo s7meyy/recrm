@@ -28,19 +28,36 @@ const PAGE = (id) => `<!doctype html>
   button{width:100%;margin-top:12px;font:inherit;font-weight:600;padding:12px;border:0;
     border-radius:10px;background:var(--navy);color:#fff;cursor:pointer}
   .msg{min-height:20px;font-size:13px;color:var(--err);margin-top:10px}
+  .foot{font-size:11.5px;color:var(--muted);margin:14px 0 0;line-height:1.7}
+  .sub b{color:var(--navy)}
 </style>
 </head>
 <body>
 <form class="gate" id="gate">
-  <div class="logo">تقرير</div>
-  <p class="sub">هذا التقرير مشفَّر. اكتب كلمة السر التي وصلتك ليُفتَح في جهازك.</p>
+  <div class="logo" id="label">تقرير</div>
+  <p class="sub">تقريرٌ عن تعليقات عملائك، مشفَّرٌ بكلمةٍ اختارها مُعِدّه.
+  اكتب الكلمة التي وصلتك — يُفكّ التقرير <b>في جهازك أنت</b>، ولا يمرّ نصُّه بخادمنا مفكوكًا.</p>
   <input id="pass" type="password" placeholder="كلمة السر" autocomplete="current-password" autofocus>
-  <button type="submit">فتح</button>
+  <button type="submit">فتح التقرير</button>
   <div class="msg" id="msg"></div>
+  <p class="foot">لا يُفهرَس هذا الرابط في محركات البحث، ويُلغيه مُعِدّه متى شاء.</p>
 </form>
 <script>
 const ID = ${JSON.stringify(id)};
 const unb64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+
+/* عنوانٌ يختاره المُعِدّ ليعرف المستقبِل ممّن جاءه التقرير.
+   ويُخزَّن **خارج التشفير** فيراه كل من بلغه الرابط، ولذلك لا يُوضَع إلا
+   بطلبه، ولا يُوضَع فيه اسمُ المنشأة: من وجد الرابط عرف عمّن التقرير قبل
+   أن يعرف كلمته. فهو اسم المكتب لا اسم العميل. */
+fetch('/api/store?key=' + encodeURIComponent(ID) + '&slot=report')
+  .then((r) => r.json())
+  .then((d) => {
+    if (!d.found) return;
+    const label = (JSON.parse(d.data) || {}).label;
+    if (label) document.getElementById('label').textContent = label;
+  })
+  .catch(() => {});
 document.getElementById('gate').addEventListener('submit', async (e) => {
   e.preventDefault();
   const msg = document.getElementById('msg');

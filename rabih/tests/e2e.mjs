@@ -374,8 +374,13 @@ try {
   h1.includes('مقهى الدرب') ? ok('غلاف التقرير: ' + h1.replace(/\s+/g,' ').trim()) : bad('الغلاف', h1);
   const bars = await frame.locator('.bar-row').count();
   bars === 5 ? ok('أشرطة توزيع النجوم') : bad('الأشرطة', bars);
+  // الفهرس مطفأٌ في قالب المالك عمدًا — «في سطور» تتصدّره فتُغني عنه.
+  (await frame.locator('.brief').count()) === 1
+    ? ok('قالب المالك يتصدّره «في سطور» بدل الفهرس') : bad('الخلاصة الأولى');
+  await page.selectOption('#r-template', 'full');
+  await page.waitForTimeout(600);
   const toc = await frame.locator('.toc li').count();
-  toc >= 2 ? ok(`الفهرس (${toc} عناصر)`) : bad('الفهرس', toc);
+  toc >= 2 ? ok(`والقالب الكامل فيه الفهرس (${toc} عناصر)`) : bad('الفهرس', toc);
   const h3 = await frame.locator('.body h3').count();
   h3 >= 1 ? ok('العناوين الفرعية مرقّمة') : bad('العناوين الفرعية', h3);
   const tp = await frame.locator('.topics .topic-row').count();
@@ -416,7 +421,10 @@ try {
 
   console.log('٧-ج) القوالب والتصدير');
   const tplOpts = await page.$$eval('#r-template option', o => o.map(x => x.textContent));
-  tplOpts.length === 4 ? ok('أربعة قوالب: ' + tplOpts.join('، ')) : bad('القوالب', tplOpts.join('|'));
+  tplOpts.length === 5 ? ok('خمسة قوالب: ' + tplOpts.join('، ')) : bad('القوالب', tplOpts.join('|'));
+  // الافتراضي «لصاحب المنشأة»، فيُنتقى الكامل صراحةً ليكون الأساس معلومًا.
+  await page.selectOption('#r-template', 'full');
+  await page.waitForTimeout(600);
   const fullHeads = await page.frameLocator('#r-frame').locator('.body h2').count();
   await page.selectOption('#r-template', 'brief');
   await page.waitForTimeout(600);

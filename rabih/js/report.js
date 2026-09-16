@@ -577,7 +577,7 @@ export function buildReportHtml({ place: rawPlace, ctx = {}, markdown = '', phot
   const opt = { toc: true, stars: true, topics: true, photos: true, recency: true, entities: true, replies: true, confidence: true,
     priority: true, calc: true, voice: true, impact: true, sources: true, brief: true, coverage: true,
     actions: true, checklist: true, commit: true, drafts: true, selfCompare: true, card: true,
-    cooccur: true, timing: true, promises: true, effect: true, bias: true, ...show, ...(sector?.show || {}) };
+    cooccur: true, timing: true, promises: true, effect: true, bias: true, ...(sector?.show || {}), ...show };
   const s = stats(place);
   const body = tocFrom(mdToHtml(markdown));
   const date = new Date().toLocaleDateString('ar-SA-u-ca-gregory-nu-latn');

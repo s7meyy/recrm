@@ -8,6 +8,8 @@ import { coverage, coverageBlock } from '../js/coverage.js';
 import { actions, actionsBlock, checklistBlock, commitBlock, draftsBlock } from '../js/action.js';
 import { selfCompareBlock } from '../js/compare.js';
 import { buildReportHtml } from '../js/report.js';
+import { TEMPLATES, DEFAULT_TEMPLATE } from '../js/templates.js';
+import { build as buildMessage } from '../js/messages.js';
 import { topicCoverage, topicSentimentDetail } from '../js/lexicon.js';
 import { priorities } from '../js/priority.js';
 import { recentVsOlder } from '../js/recency.js';
@@ -15,6 +17,7 @@ import { voice, cardBlock } from '../js/voice.js';
 import { topicIcon } from '../js/lexicon.js';
 import { extract } from '../js/entities.js';
 import { emptyPlace, emptyReview, assignReviewIds } from '../js/schema.js';
+import { readFileSync, readdirSync } from 'node:fs';
 
 const fails = [];
 const ok = (t) => console.log('  ✓', t);
@@ -177,6 +180,46 @@ judge('المواقف ضيقة', 5, 'parking').stated ? ok('ما نصّ عليه
 const pin = build([mk(5, 'القهوة ممتازة وفيه مواقف'), mk(5, 'المواقف واسعة ومريحة')]);
 const park = (await import('../js/lexicon.js')).topicStats(pin).find((t) => t.id === 'parking');
 park.posStated <= park.pos ? ok(`والمنصوص جزءٌ من الكل: ${park.posStated} من ${park.pos}`) : bad('عدٌّ مختلّ');
+
+console.log('١٣) القوالب تضبط الطول، ولا تُسقط ما يُقيّد الأرقام');
+DEFAULT_TEMPLATE === 'owner' ? ok('الافتراضي قالبُ صاحب المنشأة') : bad('الافتراضي', DEFAULT_TEMPLATE);
+const keys = [...new Set(Object.values(TEMPLATES).flatMap((t) => Object.keys(t.show)))];
+Object.values(TEMPLATES).every((t) => keys.every((k) => k in t.show))
+  ? ok(`ولكل قالبٍ خريطةٌ كاملة (${keys.length} قسمًا) — وما لم يُذكر كان يرث «نعم» فيفيض`) : bad('خريطة ناقصة');
+// أربعةٌ لا تسقط: الخلاصة، وحدود التغطية، ومقياس الثقة، والمنهجية.
+Object.entries(TEMPLATES).every(([, t]) => t.show.brief && t.show.coverage && t.show.confidence)
+  ? ok('ولا يسقط من قالبٍ: «في سطور» ولا حدودُ التغطية ولا مقياسُ الثقة') : bad('قالبٌ بلا حدود');
+
+const sizeOf = (tpl) => (buildReportHtml({ place: p1, markdown: '## تحليل\nنصّ.', job: jb, ctx: {}, show: tpl.show })
+  .match(/<h2/g) || []).length;
+sizeOf(TEMPLATES.full) > sizeOf(TEMPLATES.owner) && sizeOf(TEMPLATES.owner) > sizeOf(TEMPLATES.brief)
+  ? ok(`والطول يتدرّج: كامل ${sizeOf(TEMPLATES.full)} ← مالك ${sizeOf(TEMPLATES.owner)} ← صفحة ${sizeOf(TEMPLATES.brief)}`)
+  : bad('لا تدرّج', [TEMPLATES.full, TEMPLATES.owner, TEMPLATES.brief].map(sizeOf).join('/'));
+
+// والقالبُ المختار يغلب تفضيل القطاع، لا العكس.
+const sectored = buildReportHtml({ place: p1, markdown: '## تحليل\nنصّ.', job: jb, ctx: {},
+  show: TEMPLATES.brief.show, sector: { show: { photos: true, sources: true, timing: true } } });
+!sectored.includes('class="sources"') && !/class="timing"/.test(sectored)
+  ? ok('واختيارُك أولى من تفضيلِ قطاعك — وكان القطاع يُعيد ما حذفتَه') : bad('القطاع يغلب القالب');
+
+console.log('١٤) سطرُ التسليم يتبع وسيلته');
+const jm = { place: p1, plan: [] };
+buildMessage(jm, 'short').includes('مرفق بصيغة PDF') ? ok('بلا رابط: مرفق') : bad('سطر المرفق');
+const withLink = buildMessage(jm, 'short', 'https://x.test/r/abc');
+withLink.includes('https://x.test/r/abc') && !withLink.includes('مرفق بصيغة PDF')
+  ? ok('وبرابط: الرابط — ولا يُقال «مرفق» فيُبحَث عن مرفقٍ لا وجود له') : bad('سطر الرابط', withLink);
+
+console.log('١٥) عاملُ الخدمة يعرف كل وحدة');
+/* رابح يعمل بلا إنترنت، والوحدةُ التي لا يسردها عامل الخدمة لا تُخزَّن،
+   فيسقط التطبيق عند أول انقطاع. وثلاثُ وحداتٍ أُضيفت اليوم سقطت من قائمته
+   صامتةً — وهذا عيبٌ لا يظهر إلا عند من لا إنترنت عنده. */
+const swSrc = readFileSync(new URL('../sw.js', import.meta.url), 'utf8');
+const listed = [...swSrc.matchAll(/'\.\/js\/([\w.-]+\.js)'/g)].map((m) => m[1]);
+const onDisk = readdirSync(new URL('../js', import.meta.url)).filter((f) => f.endsWith('.js'));
+const gone = onDisk.filter((f) => !listed.includes(f));
+gone.length === 0 ? ok(`كل وحدات js مسرودةٌ في عامل الخدمة (${onDisk.length})`) : bad('وحدات لا تُخزَّن', gone.join('، '));
+const dupes = listed.filter((f, i) => listed.indexOf(f) !== i);
+dupes.length === 0 ? ok('ولا تكرار في القائمة') : bad('تكرار', dupes.join('، '));
 
 console.log('\n' + (fails.length ? `فشل ${fails.length}:\n` + fails.map((f) => ' - ' + f).join('\n') : '✅ نجحت كل الاختبارات'));
 process.exit(fails.length ? 1 : 0);

@@ -1594,13 +1594,16 @@ function reportFileName(ext) {
   return `rabih-${asciiName(job.place.identity.name)}-${asciiName(c.cityName, 'ksa')}-${new Date().toISOString().slice(0, 10)}.${ext}`;
 }
 
+/** رابط النسخة المنشورة إن نُشرت — وسطرُ التسليم يتبعه. */
+const shareLink = () => (job.shareId ? `${location.origin}/r/${job.shareId}` : '');
+
 /** نص الإرسال: ما حرّره المستخدم، وإلا القالب المناسب لحال التقرير. */
 function shareText(channel = 'whatsapp') {
   const typed = $('#s-msg')?.value?.trim();
   if (typed) return typed;
   const id = identity.load();
   const sign = id.office ? `\n— ${id.office}${id.phone ? ` · ${id.phone}` : ''}` : '';
-  return buildMessage(job, channel) + sign;
+  return buildMessage(job, channel, shareLink()) + sign;
 }
 
 function renderShareMessage() {
@@ -1611,7 +1614,7 @@ function renderShareMessage() {
   if (!box.value.trim() || box.dataset.auto === '1') {
     const id = identity.load();
     const sign = id.office ? `\n— ${id.office}${id.phone ? ` · ${id.phone}` : ''}` : '';
-    box.value = buildMessage(job, 'whatsapp') + sign;
+    box.value = buildMessage(job, 'whatsapp', shareLink()) + sign;
     box.dataset.auto = '1';
   }
 }
@@ -2528,9 +2531,13 @@ function bindShare() {
     if (!html) { message('#share-msg', 'err', 'لا تقرير لنشره.'); return; }
 
     message('#share-msg', 'warn', 'يُشفَّر في جهازك ثم يُرفَع…');
+    /* اسمُ المكتب يتصدّر صفحة الاستقبال قبل كلمة السر — واسمُ المنشأة لا،
+       فمن وجد الرابط يعرف حينها عمّن التقرير قبل أن يملك فتحه. */
+    const office = (identity.load().office || '').trim();
     const r = await sharePublish(html, pass, {
       id: job.shareId || '',
       meta: { name: job.place.identity.name, at: new Date().toISOString() },
+      label: office,
     });
     if (!r.ok) {
       message('#share-msg', 'err', r.error, r.needsStore ? ['يعمل على Netlify وحدها.'] : []);
@@ -2539,7 +2546,7 @@ function bindShare() {
     job.shareId = r.id;
     scheduleSave();
     $('#sh-url').value = r.url;
-    message('#share-msg', 'ok', 'نُشر.', [
+    message('#share-msg', 'ok', `نُشر.${office ? ` وصفحة الاستقبال تحمل «${office}» قبل كلمة السر — واسم المنشأة لا يظهر فيها.` : ''}`, [
       'أرسل الرابط لعميلك، و<b>أرسل الكلمة في قناةٍ أخرى</b> — لا في الرسالة نفسها.',
       'وإعادة النشر تُحدّث الرابط نفسه.',
     ]);

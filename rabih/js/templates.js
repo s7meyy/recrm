@@ -24,31 +24,79 @@ export function sectorFor(groupId) {
   return SECTOR_PRESETS[groupId] || { name: 'عام', lead: [], show: {} };
 }
 
+/* لكل قالبٍ خريطةُ عرضٍ **كاملة**: كل قسمٍ مذكورٌ فيها بنعم أو لا.
+   وكانت تذكر بعضها فيرث الباقي قيمته الافتراضية (وهي «نعم»)، فقالبُ
+   «صفحة واحدة» يُخرج خطة العمل وقائمة المتابعة وبطاقة النشر وملحقَ
+   المسوّدات — فيصير عشر صفحات. والقالبُ الذي لا يضبط طولَه لا يضبط شيئًا.
+
+   وأربعةُ أقسامٍ لا تسقط من أي قالبٍ فيه بيانات: «في سطور»، وحدودُ
+   التغطية، ومقياسُ الثقة، والمنهجية. فالإيجازُ يكون باختصار التفصيل، لا
+   بحذف ما يُقيّد الأرقام — وتقريرٌ موجزٌ بلا حدودِ تغطيته يُقرأ أوسع مما هو. */
 export const TEMPLATES = {
   full: {
     id: 'full', name: 'كامل', note: 'كل الأقسام، مع المواضيع وتوزيع النجوم والصور — للأرشفة والعرض الرسمي.',
     sections: null,            // null = كل شيء
-    show: { toc: true, stars: true, topics: true, photos: true, recency: true, entities: true, replies: true, confidence: true, quotes: true },
+    show: {
+      brief: true, coverage: true, confidence: true, toc: true, quotes: true,
+      priority: true, actions: true, commit: true, checklist: true, drafts: true,
+      voice: true, card: true, selfCompare: true, effect: true, promises: true,
+      topics: true, cooccur: true, timing: true, recency: true, entities: true,
+      replies: true, sources: true, stars: true, calc: true, impact: true,
+      bias: true, photos: true,
+    },
+  },
+  owner: {
+    id: 'owner', name: 'لصاحب المنشأة', note: 'ما يُعمَل به: الخلاصة، والأولويات، وخطة العمل، وصوت العميل، وقائمة المتابعة. والتفصيلُ المنهجيّ يُختصَر ولا يُحذَف.',
+    sections: [/خلاص|تنفيذي/, /ضعف|شكاو/, /توصي|خطة/, /زمن|اتجاه/],
+    show: {
+      brief: true, coverage: true, confidence: true, toc: false, quotes: true,
+      priority: true, actions: true, commit: true, checklist: true, drafts: true,
+      voice: true, card: true, selfCompare: true, effect: true, promises: true,
+      topics: true, cooccur: false, timing: true, recency: true, entities: true,
+      replies: true, sources: false, stars: true, calc: true, impact: true,
+      bias: false, photos: false,
+    },
   },
   exec: {
     id: 'exec', name: 'تنفيذي', note: 'الخلاصة والأرقام والشكاوى والتوصيات فقط — صفحتان لصاحب القرار.',
     sections: [/خلاص|تنفيذي/, /أرقام|قراءة/, /ضعف|شكاو/, /زمن|اتجاه/, /توصي|خطة/],
-    show: { toc: false, stars: true, topics: true, photos: false, recency: true, entities: true, replies: true, confidence: true, quotes: false },
+    show: {
+      brief: true, coverage: true, confidence: true, toc: false, quotes: false,
+      priority: true, actions: true, commit: false, checklist: false, drafts: false,
+      voice: false, card: false, selfCompare: true, effect: true, promises: false,
+      topics: true, cooccur: false, timing: false, recency: true, entities: true,
+      replies: true, sources: false, stars: true, calc: false, impact: true,
+      bias: false, photos: false,
+    },
   },
   brief: {
     id: 'brief', name: 'صفحة واحدة', note: 'الخلاصة وأبرز الشكاوى والتوصيات — صالح للإرسال في محادثة.',
     sections: [/خلاص|تنفيذي/, /توصي|خطة/],
-    show: { toc: false, stars: true, topics: false, photos: false, recency: true, entities: false, replies: false, confidence: true, quotes: false },
+    show: {
+      brief: true, coverage: true, confidence: true, toc: false, quotes: false,
+      priority: true, actions: false, commit: false, checklist: false, drafts: false,
+      voice: false, card: false, selfCompare: false, effect: false, promises: false,
+      topics: false, cooccur: false, timing: false, recency: false, entities: false,
+      replies: false, sources: false, stars: true, calc: false, impact: false,
+      bias: false, photos: false,
+    },
   },
   teaser: {
     id: 'teaser', name: 'عيّنة مجانية', note: 'صفحة واحدة تُرسَل لعميل محتمل: الأرقام وأبرز الشكاوى فقط، بلا توصيات — أداة بيع لا أداة تحليل.',
     sections: [/خلاص|تنفيذي/, /ضعف|شكاو/],
-    show: { toc: false, stars: true, topics: true, photos: false, recency: true, entities: true, replies: true, confidence: true, quotes: false },
+    show: {
+      brief: true, coverage: true, confidence: true, toc: false, quotes: false,
+      priority: true, actions: false, commit: false, checklist: false, drafts: false,
+      voice: false, card: false, selfCompare: false, effect: false, promises: false,
+      topics: true, cooccur: false, timing: false, recency: true, entities: true,
+      replies: true, sources: false, stars: true, calc: false, impact: false,
+      bias: false, photos: false,
+    },
     teaser: true,
   },
 };
 
-export const DEFAULT_TEMPLATE = 'full';
+export const DEFAULT_TEMPLATE = 'owner';
 
 /** يقصّ التقرير على أقسام القالب، محافظًا على ترتيبها الأصلي ونصّها كما هو. */
 export function applyTemplate(markdown, templateId) {

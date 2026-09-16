@@ -29,7 +29,7 @@ const LABELS = {
  * @param {object} job
  * @param {'whatsapp'|'email'|'short'} channel
  */
-export function build(job, channel = 'whatsapp') {
+export function build(job, channel = 'whatsapp', link = '') {
   const s = stats(job.place);
   const r = recentVsOlder(job.place);
   const p = progress(job.plan || []);
@@ -64,11 +64,17 @@ export function build(job, channel = 'whatsapp') {
     declining: 'التقرير يبيّن متى بدأ التغيّر وفي أي جانب تحديدًا.',
   }[sit];
 
+  /* سطرُ التسليم يتبع وسيلته: كانت الرسالة تقول «مرفق بصيغة PDF» ولو
+     سُلِّم برابط، فيبحث المستقبِل عن مرفقٍ لا وجود له. */
+  const deliver = link
+    ? `التقرير على هذا الرابط: ${link}\nيُفتَح في المتصفّح بلا تنزيل، ويصلح للطباعة وحفظه PDF.`
+    : 'التقرير الكامل مرفق بصيغة PDF.';
+
   if (channel === 'short') {
-    return [head, body[0], 'التقرير الكامل مرفق بصيغة PDF.'].join('\n');
+    return [head, body[0], deliver].join('\n');
   }
 
-  const lines = [head, '', ...body.map((b) => `• ${b}`), '', tail, '', 'التقرير الكامل مرفق بصيغة PDF.'];
+  const lines = [head, '', ...body.map((b) => `• ${b}`), '', tail, '', deliver];
   if (channel === 'email') {
     lines.push('', 'وفي خدمتك لأي استفسار أو توضيح.');
   }

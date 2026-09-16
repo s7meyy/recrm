@@ -8,12 +8,16 @@
 import { encryptPayload, newBoxId } from './cloud.js';
 
 /** يرفع HTML التقرير ويُعيد الرابط. */
-export async function publish(html, password, { id = '', meta = {} } = {}) {
+export async function publish(html, password, { id = '', meta = {}, label = '' } = {}) {
   if (!html || !html.trim()) return { ok: false, error: 'لا تقرير.' };
   if (!password || password.length < 6) return { ok: false, error: 'كلمة السر ستّة أحرف فأكثر.' };
 
   const boxId = id || newBoxId();
   const payload = await encryptPayload({ html, meta, at: new Date().toISOString() }, password);
+  /* عنوانُ صفحة الاستقبال يُخزَّن خارج الصندوق المشفَّر ليُقرأ قبل الكلمة،
+     فيراه كل من بلغه الرابط. ولذلك لا يُرسَل إلا إن كتبه المُعِدّ بنفسه،
+     ويُقصَر على اسم مكتبه: لو حمل اسم المنشأة لعُرف عمّن التقرير قبل فتحه. */
+  if (label.trim()) payload.label = label.trim().slice(0, 60);
 
   const res = await fetch(`/api/store?key=${encodeURIComponent(boxId)}&slot=report`, {
     method: 'PUT',
