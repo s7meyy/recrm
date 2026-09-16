@@ -20,7 +20,7 @@
 import { priorities } from './priority.js';
 import { impact } from './impact.js';
 import { stats } from './schema.js';
-import { topicStats } from './lexicon.js';
+import { topicStats, topicIcon, topicColor } from './lexicon.js';
 import { analyze as analyzeReplies } from './replies.js';
 import { significant } from './interval.js';
 
@@ -220,7 +220,7 @@ export function actionsBlock(place, job = {}) {
   const a = actions(place, job);
   if (!a.rows.length) return '';
 
-  const cards = a.rows.map((r) => `<div class="act">
+  const cards = a.rows.map((r) => `<div class="act" style="--tc:${topicColor(r.id)}">
     <div class="act-head">
       <span class="act-rank${r.rank === null ? ' none' : ''}">${r.rank === null ? '•' : r.rank}</span>
       <div>
@@ -374,8 +374,8 @@ export function keepBlock(place) {
     .slice(0, 5);
   if (!rows.length) return '';
 
-  const items = rows.map((t) => `<li>
-    <b>${esc(t.name)}</b>
+  const items = rows.map((t) => `<li style="--tc:${topicColor(t.id)}">
+    <b><i class="ticon" style="color:${topicColor(t.id)}">${topicIcon(t.id)}</i>${esc(t.name)}</b>
     <span class="fine">${t.posStated} ثناءً منصوصًا${t.neg ? ` · وشكوى واحدة أو أكثر (${t.neg})` : ''}</span>
     ${t.posIds.slice(0, 5).map((x) => `<span class="rid">${esc(x)}</span>`).join(' ')}
   </li>`).join('');

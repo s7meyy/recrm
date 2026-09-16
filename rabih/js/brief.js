@@ -16,6 +16,7 @@ import { recentVsOlder } from './recency.js';
 import { impact } from './impact.js';
 import { wilson } from './interval.js';
 import { needed } from './stars.js';
+import { monthly } from './recency.js';
 
 const esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const num = (n) => (Number.isFinite(Number(n)) ? Number(n).toLocaleString('ar-SA-u-nu-latn') : '—');
@@ -61,6 +62,50 @@ export function brief(place, job = {}) {
   return { stats: s, worst, best, action, money, trend: trendOf(place), ci, pop };
 }
 
+/**
+ * خطُّ مسار التقييم — رسمٌ متّجهٌ صغير، بلا مكتبة.
+ *
+ * المسار كان مدفونًا في «القراءة الزمنية» بعد اثني عشر قسمًا، وهو أول ما
+ * تسأل عنه العين: أصاعدٌ أنا أم هابط؟ فيتصدّر. والنقاط شهورٌ فيها تعليقات،
+ * ومن لا تعليق له لا نقطة له — ولا يُوصَل الخطُّ عبر فراغٍ لا يُعلَم.
+ */
+function sparkline(place) {
+  const months = monthly(place).filter((m) => m.avg !== null);
+  if (months.length < 3) return '';
+  const W = 100;
+  const H = 28;
+  const lo = Math.min(...months.map((m) => m.avg), 5);
+  const hi = Math.max(...months.map((m) => m.avg), lo + 0.5);
+  const x = (i) => W - (i / (months.length - 1)) * W;
+  const y = (v) => H - ((v - lo) / (hi - lo || 1)) * H;
+  const pts = months.map((m, i) => `${x(i).toFixed(1)},${y(m.avg).toFixed(1)}`).join(' ');
+  const last = months[months.length - 1];
+  return `<div class="spark">
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img"
+      aria-label="مسار متوسط التعليقات من ${esc(months[0].label)} إلى ${esc(last.label)}">
+      <polyline points="${pts}" fill="none" stroke="currentColor" stroke-width="1.6"
+        stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>
+      <circle cx="${x(months.length - 1).toFixed(1)}" cy="${y(last.avg).toFixed(1)}" r="2.2" fill="currentColor"/>
+    </svg>
+    <div class="spark-ends"><span>${esc(months[0].label)}</span><span>${esc(last.label)}</span></div>
+  </div>`;
+}
+
+/** حلقةُ نصيب السلبي — الرقم وحده لا يُرى، والشكل يُرى. */
+function negRing(s) {
+  if (!s.rated) return '';
+  const pct = Math.round((s.negative / s.rated) * 100);
+  const R = 15.9155;                       // محيطها 100، فالنسبة طولٌ مباشر
+  return `<div class="ring" role="img" aria-label="نصيب التعليقات السلبية ${pct} بالمئة">
+    <svg viewBox="0 0 40 40">
+      <circle cx="20" cy="20" r="${R}" fill="none" stroke="#eef1f5" stroke-width="5"/>
+      <circle cx="20" cy="20" r="${R}" fill="none" stroke="#c0392b" stroke-width="5"
+        stroke-dasharray="${pct} ${100 - pct}" stroke-dashoffset="25" stroke-linecap="butt"/>
+    </svg>
+    <div class="ring-val"><b>${pct}%</b><span>سلبي</span></div>
+  </div>`;
+}
+
 /** لوحة الصفحة الأولى. */
 export function briefBlock(place, job = {}) {
   const b = brief(place, job);
@@ -79,6 +124,8 @@ export function briefBlock(place, job = {}) {
         <span class="of">من 5</span>
         <span class="trend ${b.trend.cls}">${esc(b.trend.label)}</span>
       </div>
+      ${negRing(s)}
+      ${sparkline(place)}
       <div class="hero-side">
         <div><b>${num(s.googleCount ?? '—')}</b> تقييمًا على قوقل</div>
         <div><b>${num(s.total)}</b> تعليقًا حُلِّل${s.declaredWithText ? ` من ${num(s.declaredWithText)} منصوصًا` : ''}</div>

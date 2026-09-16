@@ -3,7 +3,7 @@
 // وإن أراد المستخدم تصميمًا من نموذج (الخطوة الاختيارية التاسعة) فله ذلك، وهذا هو الأساس المضمون.
 
 import { stats, assignReviewIds } from './schema.js';
-import { topicStats, topicIcon } from './lexicon.js';
+import { topicStats, topicIcon, topicColor } from './lexicon.js';
 import { recentVsOlder, monthly, alerts, topicAges } from './recency.js';
 import { themeCss, coverHeader, footerLine, OFFICE_CSS } from './brand.js';
 import { extract as extractEntities } from './entities.js';
@@ -206,7 +206,7 @@ function topicsBlock(place, lead = []) {
     const posPct = Math.round((t.pos / max) * 100);
     const neuPct = Math.round((t.neu / max) * 100);
     return `<div class="topic-row${t.decided ? '' : ' faint'}">
-      <span class="topic-name"><i class="ticon">${topicIcon(t.id)}</i>${esc(t.name)}</span>
+      <span class="topic-name"><i class="ticon" style="color:${topicColor(t.id)}">${topicIcon(t.id)}</i>${esc(t.name)}</span>
       <span class="topic-track">
         <span class="seg pos" style="width:${posPct}%"></span><span class="seg neu" style="width:${neuPct}%"></span><span class="seg neg" style="width:${negPct}%"></span>
       </span>
@@ -398,6 +398,14 @@ code{background:#f3f5f8;padding:0 1mm;border-radius:3px;font-size:10pt}
   border:1px solid var(--line);border-radius:999px;padding:1mm 3mm;margin-top:2mm}
 .brief-hero .trend.down{color:#c0392b;border-color:#e8c4bf;background:#fdf6f5}
 .brief-hero .trend.up{color:#1e8449;border-color:#bfe0cc;background:#f5fbf7}
+.spark{flex:1 1 40mm;min-width:32mm;color:var(--navy)}
+.spark svg{display:block;width:100%;height:12mm}
+.spark-ends{display:flex;justify-content:space-between;font-size:8pt;color:var(--muted);margin-top:.5mm}
+.ring{position:relative;width:18mm;height:18mm;flex:0 0 auto}
+.ring svg{width:100%;height:100%;transform:rotate(0deg)}
+.ring-val{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.1}
+.ring-val b{font-size:10pt;color:var(--navy)}
+.ring-val span{font-size:7pt;color:var(--muted)}
 .brief-cards{display:grid;grid-template-columns:repeat(2,1fr);gap:3mm}
 .bcard{border:1px solid var(--line);border-radius:8px;padding:4mm;background:#fff;break-inside:avoid}
 .bcard b{display:block;font-size:9pt;color:var(--muted);margin-bottom:1.5mm;font-weight:600}
@@ -415,7 +423,9 @@ code{background:#f3f5f8;padding:0 1mm;border-radius:3px;font-size:10pt}
 .acts{display:grid;gap:4mm}
 .act{border:1px solid var(--line);border-radius:8px;padding:4mm 5mm;background:#fff;break-inside:avoid}
 .act-head{display:flex;gap:3mm;align-items:flex-start;margin-bottom:3mm}
+.act{border-inline-start:3px solid var(--tc,var(--line))}
 .act-rank{flex:0 0 auto;width:8mm;height:8mm;border-radius:50%;background:var(--navy);color:#fff;
+.act-rank{background:var(--tc,var(--navy))}
 .act-rank.none{background:none;color:var(--gold);font-size:14pt}
 .notrandom{margin:4mm 0;padding:4mm 5mm;border:1px solid #e0cfa0;border-radius:8px;background:#fdfaf2;break-inside:avoid}
 .notrandom>b{display:block;font-size:10.5pt;color:#7a5f14;margin-bottom:2mm}
@@ -587,6 +597,9 @@ figcaption{font-size:9pt;color:var(--muted);margin-top:1mm;text-align:center}
   .fine,.note,small,.act-grid small,.mkt figcaption,.foot{font-size:11pt;line-height:1.85}
   .act-grid b,.cover-grid b,.bcard b,.check-foot b,.stat b,.rec-cell b{font-size:10.5pt}
   .month .mv,.month .ml{font-size:9.5pt}
+  .spark-ends{font-size:9pt}
+  .ring-val span{font-size:8.5pt}
+  .ring{width:22mm;height:22mm}
   /* صفُّ الموضوع خمسةُ أعمدة لا تسع شاشة يد: يصير سطرين — الاسمُ والحكمُ
      فوق، والشريطُ والأرقام تحت. */
   .topic-row{grid-template-columns:1fr auto;gap:1mm 2mm;margin-bottom:2.5mm}

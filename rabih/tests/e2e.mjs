@@ -34,8 +34,17 @@ try {
   await page.goto('http://localhost:8099/', { waitUntil: 'networkidle' });
   console.log('١) الإقلاع');
   await page.waitForTimeout(1100);
-  const tourUp = await page.isVisible('#tour').catch(() => false);
-  tourUp ? ok('الجولة تظهر لأول زائر') : bad('ظهور الجولة');
+  /* الجولة تُعرَض ولا تُفرَض: كانت تفتح نفسها بثلاث عشرة خطوة تحجب الشاشة
+     قبل أن يرى الوافدُ شيئًا. فصارت دعوةً في سطر، والشاشة تعمل من أول لحظة. */
+  !(await page.isVisible('#tour').catch(() => false))
+    ? ok('لا جولة تحجب الشاشة على الوافد') : bad('جولة تقتحم');
+  (await page.isVisible('.tour-offer'))
+    ? ok('بل دعوةٌ في سطر يقبلها من شاء') : bad('بلا دعوة');
+  (await page.isVisible('#f-url'))
+    ? ok('والحقول تعمل من أول لحظة') : bad('حقول محجوبة');
+  await page.click('#offer-tour');
+  await page.waitForTimeout(500);
+  (await page.isVisible('#tour')) ? ok('ومن طلبها فُتحت له') : bad('الجولة لا تُفتَح');
   const tourSteps = await page.textContent('#tour .tour-step');
   /1 من \d+/.test(tourSteps) ? ok('عدّاد الجولة: ' + tourSteps) : bad('عدّاد الجولة', tourSteps);
   await page.click('#tour [data-act="next"]');
@@ -822,6 +831,22 @@ try {
   bulkMsg.includes('كوفي فاسد') ? ok('الرابط الفاسد مرفوض ومُبلَّغ عنه') : bad('رفض الفاسد', bulkMsg.slice(0,120));
   const qsize = await page.textContent('#queue-bar');
   /الطابور \d+\/[3-9]/.test(qsize) ? ok('الدفعة دخلت الطابور: ' + qsize.trim().slice(0,22)) : bad('الطابور بعد الدفعة', qsize.slice(0,40));
+
+  /* والرابطُ وحده يبدأ: كانت المدينةُ والتصنيفُ والحيُّ شروطًا للبدء، فيقف
+     صاحب المحل أمام ثمانية حقولٍ وهو جاء يسأل «كيف حال محلّي؟».
+     ويُفحَص في صفحةٍ مستقلة كي لا يلوّث حالةَ ما قبله. */
+  console.log('٨-ب) الرابط وحده يبدأ');
+  const fresh = await browser.newPage({ viewport: { width: 1200, height: 900 } });
+  await fresh.goto('http://localhost:8099/', { waitUntil: 'networkidle' });
+  await fresh.waitForTimeout(900);
+  await fresh.click('#offer-close').catch(() => {});
+  await fresh.fill('#f-url', 'https://www.google.com/maps/place/%D9%85%D9%82%D9%87%D9%89/@24.7,46.6,17z');
+  await fresh.click('#btn-start');
+  await fresh.waitForTimeout(700);
+  (await fresh.isVisible('#view-data')) ? ok('الرابط وحده يكفي للبدء') : bad('حقول تحجب البدء');
+  (await fresh.textContent('#parse-msg')).includes('يُستكمَل')
+    ? ok('ويُنبَّه إلى ما ينقص حيث صار لا حيث كان') : bad('بلا تنبيه');
+  await fresh.close();
 
   console.log('٩) الجوال (390px)');
   await page.setViewportSize({ width: 390, height: 844 });

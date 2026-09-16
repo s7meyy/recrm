@@ -336,3 +336,10 @@ select.model-pick{width:auto;min-width:150px;padding:6px 10px;font-size:13px}
   outline-offset: 2px;
   border-radius: 4px;
 }
+
+/* دعوةُ الوافد الجديد — شريطٌ لا يحجب حقلًا ولا يوقف عملًا.
+   وكانت جولةٌ من ثلاث عشرة خطوة تفتح نفسها فوق الشاشة قبل أن يرى شيئًا. */
+.tour-offer{position:sticky;top:0;z-index:60;display:flex;flex-wrap:wrap;gap:10px;align-items:center;
+  padding:10px 16px;background:#fdfaf2;border-bottom:1px solid #e0cfa0;font-size:14px;color:#4a3c14}
+.tour-offer span{flex:1 1 260px;line-height:1.7}
+@media (max-width:560px){ .tour-offer{font-size:13px;padding:8px 12px} }

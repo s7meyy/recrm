@@ -417,14 +417,20 @@ async function onStart() {
   const categoryId = $('#f-category').value;
   const districtName = $('#f-district').value;
 
+  /* **الرابط وحده يبدأ.**
+     كانت المدينةُ والتصنيفُ والحيُّ شروطًا للبدء، فيقف صاحب المحل أمام ثمانية
+     حقولٍ وهو جاء يسأل «كيف حال محلّي؟». وهذه الثلاثة تنفع الأرشيف وقالبَ
+     القطاع، ولا يتوقّف عليها تحليلُ تعليقاته. فصارت تُطلَب ولا تَحجِب:
+     يُنبَّه إلى ما ينقص ويُمضى، وتُستكمَل من شاشة البيانات متى شاء. */
   const errors = [];
   if (!url) errors.push('رابط قوقل مابز مطلوب.');
   else { const r = parseMapsUrl(url); if (!r.ok) errors.push(r.reason); }
-  if (!cityId) errors.push('اختر المدينة.');
-  if (!categoryId) errors.push('اختر التصنيف.');
-  if (!districtName) errors.push('اختر الحي أو أضفه.');
-
   if (errors.length) { message('#new-msg', 'err', 'أكمل ما يلي قبل البدء:', errors); return; }
+
+  const missing = [];
+  if (!cityId) missing.push('المدينة');
+  if (!categoryId) missing.push('التصنيف');
+  if (!districtName) missing.push('الحي');
 
   const parsed = parseMapsUrl(url);
   const city = cityById(cityId);
@@ -451,6 +457,14 @@ async function onStart() {
   await persist();
   loadDataView();
   show('data');
+  /* والتنبيه يقع حيث صار المستخدم لا حيث كان: وُضع أولًا في شاشة الإدخال
+     فاختفى معها قبل أن يُقرأ. */
+  if (missing.length) {
+    message('#parse-msg', 'warn', `بدأنا بالرابط وحده. وما ينقص (${missing.join('، ')}) يُستكمَل متى شئت:`, [
+      'التصنيف يختار قالب القطاع — وبدونه يُستعمل العام.',
+      'المدينة والحي يجمعان تقاريرك في الأرشيف ولا يمسّان تحليل تعليقاتك.',
+    ]);
+  }
   toast('ابدأ بلصق التعليقات');
 }
 
@@ -3362,12 +3376,65 @@ async function boot() {
 
   $('#btn-tour').addEventListener('click', () => { tour.reset(); tour.start(show); });
 
+  /**
+   * تقريرٌ نموذجيّ يُفتَح في ثانية.
+   *
+   * كان على الوافد أن يملأ ثمانية حقولٍ ويلصق تعليقاتٍ ويُشغّل خط النماذج
+   * قبل أن يرى شكل ما اشترى. ورؤيةُ تقريرٍ واحدٍ كاملًا تُغني عن جولةٍ من
+   * ثلاث عشرة خطوة. والبيانات فيه **مصرَّحٌ بأنها تجريبية** في كل موضع،
+   * فلا تُحسَب منشأةً حقيقية.
+   */
+  async function loadDemo() {
+    const { fixture, CTX } = await import('./eval.js');
+    const demo = fixture();
+    job.place = demo;
+    job.ctx = { ...CTX, groupId: 'food' };
+    job.mapsUrl = '';
+    job.assume = { ticket: 30, monthly: 900, loss: 25 };
+    job.rawPaste = demo.reviews.map((r) => `${r.rating} | ${r.author || 'عميل'} | ${r.date}\n${r.text}`).join('\n---\n');
+    $('#r-md').value = [
+      '## الخلاصة التنفيذية',
+      'هذا **تقريرٌ نموذجيّ ببياناتٍ تجريبية** — أُعِدّ ليُرى شكلُ التقرير لا ليوصف محلٌّ حقيقي.',
+      'مقهى المعيار متوسطه 4.2 من 5 على 240 تقييمًا، وحُلِّل منها 8 تعليقات منصوصة.',
+      '',
+      '## أبرز ما يتكرّر',
+      'الانتظار وسرعة الخدمة أكثر ما يُشتكى منه (R002، R007)، والقهوة والأجواء أكثر ما يُثنى عليه (R001، R005، R008).',
+      '',
+      '## توصيات تنفيذية',
+      '1. قياس زمن التحضير في ساعة الذروة ثلاثة أيام، وتدوين متوسطه.',
+      '2. الردّ على الشكاوى التي بلا ردّ — R002 و R004.',
+    ].join('\n');
+    renderParseStats(); renderRecency(); renderTopics(); renderEntities(); renderReplies();
+    renderContext(); renderAnomaly(); renderIntegrity(); renderSources(); renderBias();
+    renderConfidenceHint(); renderPriority(); renderStars(); renderImpactPreview();
+    renderReport();
+    show('report');
+    toast('تقريرٌ نموذجيّ ببياناتٍ تجريبية — لتَرى الشكل قبل أن تُدخل بياناتك.');
+  }
+
+  /** دعوةٌ لا مقاطعة: شريطٌ أعلى الشاشة لا يحجب حقلًا ولا يوقف عملًا. */
+  function showTourOffer() {
+    const bar = document.createElement('div');
+    bar.className = 'tour-offer';
+    bar.innerHTML = `<span>أول مرة هنا؟ ألصق رابط منشأتك واضغط «ابدأ» — وهذا كل ما يلزم للبداية.</span>
+      <button type="button" class="btn sm" id="offer-tour">أرِني جولة</button>
+      <button type="button" class="btn ghost sm" id="offer-demo">افتح تقريرًا نموذجيًّا</button>
+      <button type="button" class="btn ghost sm" id="offer-close" aria-label="إخفاء">إخفاء</button>`;
+    document.body.prepend(bar);
+    const close = () => { tour.markDone(); bar.remove(); };
+    bar.querySelector('#offer-tour').addEventListener('click', () => { close(); tour.reset(); tour.start(show); });
+    bar.querySelector('#offer-demo').addEventListener('click', () => { close(); loadDemo(); });
+    bar.querySelector('#offer-close').addEventListener('click', close);
+  }
+
   renderQueue();
 
-  // الجولة تُعرَض مرة واحدة لمن لم يرها، ولا تقتحم من عنده عمل قائم.
-  if (!tour.isDone() && !restored) {
-    setTimeout(() => tour.start(show), 700);
-  }
+  /* **الجولة تُعرَض ولا تُفرَض.**
+     كانت تفتح نفسها على الوافد الجديد بثلاث عشرة خطوة تحجب الشاشة قبل أن
+     يرى شيئًا — وهو جاء ليعرف حال محلّه لا ليتعلّم أداة. فصارت دعوةً في
+     سطرٍ يقبلها من شاء، وتُخفى لمن ردّها فلا تُلحّ عليه. والزرّ باقٍ أعلى
+     الصفحة لمن أرادها بعدُ. */
+  if (!tour.isDone() && !restored) showTourOffer();
 
   window.addEventListener('beforeunload', (e) => {
     if (!dirty) return;

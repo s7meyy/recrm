@@ -423,6 +423,19 @@ const TOPIC_ICONS = {
 /** @returns {string} رمز الموضوع، أو نقطةٌ محايدة إن لم يُعرَف. */
 export const topicIcon = (id) => TOPIC_ICONS[id] || '•';
 
+/* لونٌ ثابت لكل موضوع، يتبعه في الرسم والخطة و«ما ينجح» — فتُتَتبَّع الشكوى
+   بالعين عبر التقرير بلا قراءةِ اسمها في كل موضع. وهي ألوانٌ خافتة تصلح
+   للطباعة، ولا تحمل معنى القطبية: الأخضر والأحمر محجوزان لها وحدها. */
+const TOPIC_COLORS = {
+  wait: '#8c6d1f', quality: '#7d5ba6', price: '#1f6f8b', service: '#a34a28',
+  clean: '#2d7d6f', place: '#4a6fa5', crowd: '#8b5a3c', parking: '#5c6b73',
+  delivery: '#96622d', wifi: '#3f7d8c', hygiene_staff: '#6b5b95',
+  money: '#4a7c59', kids: '#a8577e', access: '#556b2f',
+};
+
+/** @returns {string} لون الموضوع. */
+export const topicColor = (id) => TOPIC_COLORS[id] || '#6b7683';
+
 export function topicStats(place) {
   const reviews = place?.reviews || [];
   const map = new Map(TOPICS.map((t) => [t.id, {
