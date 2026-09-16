@@ -328,10 +328,10 @@ const CSS = `
 *{box-sizing:border-box}
 body{margin:0;font-family:"Segoe UI",Tahoma,"Arabic Typesetting",sans-serif;color:var(--ink);background:#eef1f5;line-height:1.85}
 .page{background:var(--bg);max-width:210mm;margin:0 auto;padding:18mm 15mm}
-.cover{text-align:center;padding:38mm 15mm 20mm;border-bottom:3px double var(--gold)}
+.cover{text-align:center;padding:16mm 15mm 12mm;border-bottom:3px double var(--gold)}
 .brand{font-size:13pt;letter-spacing:.3em;color:var(--gold);font-weight:700}
-.cover h1{font-size:26pt;margin:14mm 0 4mm;color:var(--navy);line-height:1.4}
-.cover .sub{font-size:13pt;color:var(--muted);margin:0 0 10mm}
+.cover h1{font-size:26pt;margin:6mm 0 3mm;color:var(--navy);line-height:1.4}
+.cover .sub{font-size:13pt;color:var(--muted);margin:0 0 7mm}
 .cover-photo{margin:0 auto 8mm;max-width:150mm}
 .cover-photo img{width:100%;height:55mm;object-fit:cover;border-radius:8px;border:1px solid var(--line)}
 .cover-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:4mm;max-width:150mm;margin:0 auto;text-align:right}

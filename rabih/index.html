@@ -343,17 +343,28 @@
           <div class="note" id="font-note">بدونه يُستعمل خط الجهاز. تضمينه يزيد حجم الملف نحو ٣٠٠ كيلوبايت ويثبّت الشكل عند كل مستقبِل.</div>
         </div>
       </div>
-      <div class="row">
-        <button type="button" class="btn" id="btn-render">تحديث المعاينة</button>
-        <button type="button" class="btn ghost" id="btn-print">طباعة / حفظ PDF</button>
-        <button type="button" class="btn ghost" id="btn-download-html">تنزيل HTML</button>
-        <button type="button" class="btn ghost" id="btn-download-md">تنزيل النص</button>
-        <button type="button" class="btn ghost" id="btn-download-xlsx">تنزيل Excel</button>
-        <button type="button" class="btn ghost" id="btn-onepage">صفحة «في سطور» وحدها</button>
-        <button type="button" class="btn ghost" id="btn-card-png">بطاقة الثناء صورةً</button>
-        <button type="button" class="btn ghost" id="btn-download-csv">البيانات الخام (CSV)</button>
-        <button type="button" class="btn gold" id="btn-freeze">تجميد النسخة المُسلَّمة</button>
+      <!-- لحظةُ التسليم هي التي تُقرِّر تجربة المالك كلَّها، وكانت أزرارُها
+           الأربعة ضائعةً بين اثنين وثلاثين زرًّا. فتُقدَّم وتُسمّى. -->
+      <div class="deliver">
+        <b class="deliver-head">سلِّم لعميلك</b>
+        <div class="row">
+          <button type="button" class="btn gold" id="btn-print">طباعة / حفظ PDF</button>
+          <button type="button" class="btn" id="btn-onepage">صفحة «في سطور» — تُرسَل في محادثة</button>
+          <button type="button" class="btn" id="btn-card-png">بطاقة الثناء صورةً</button>
+          <button type="button" class="btn" id="btn-preview-owner">كيف يراه عميلك على جوّاله</button>
+        </div>
       </div>
+      <details class="more-tools">
+        <summary>أدوات أخرى</summary>
+        <div class="row">
+          <button type="button" class="btn ghost" id="btn-render">تحديث المعاينة</button>
+          <button type="button" class="btn ghost" id="btn-download-html">تنزيل HTML</button>
+          <button type="button" class="btn ghost" id="btn-download-md">تنزيل النص</button>
+          <button type="button" class="btn ghost" id="btn-download-xlsx">تنزيل Excel</button>
+          <button type="button" class="btn ghost" id="btn-download-csv">البيانات الخام (CSV)</button>
+          <button type="button" class="btn ghost" id="btn-freeze">تجميد النسخة المُسلَّمة</button>
+        </div>
+      </details>
       <div id="snapshots-box"></div>
     </div>
 

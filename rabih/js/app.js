@@ -2212,7 +2212,7 @@ function designHtmlWithPhotos() {
  * وهنا تحديدًا يجب أن يُقال، لا في خط التحليل وحده: من هنا يُطبَع ويُرسَل.
  */
 /** أزرار التسليم: ما يُخرِج التقرير من الشاشة إلى يد عميلك. */
-const DELIVERY_BTNS = ['#btn-print', '#btn-download-html', '#btn-download-md', '#btn-download-xlsx', '#btn-onepage', '#btn-card-png', '#btn-freeze', '#btn-wa', '#btn-tg', '#btn-mail', '#btn-design-print', '#btn-design-dl'];
+const DELIVERY_BTNS = ['#btn-print', '#btn-download-html', '#btn-download-md', '#btn-download-xlsx', '#btn-onepage', '#btn-card-png', '#btn-preview-owner', '#btn-freeze', '#btn-wa', '#btn-tg', '#btn-mail', '#btn-design-print', '#btn-design-dl'];
 
 function renderStaleReport() {
   const box = $('#stale-report');
@@ -2787,6 +2787,29 @@ function bindReportView() {
 
   // الملف الذي يخرج من يدك موقَّع: من غيّر فيه حرفًا كُشِف.
   $('#btn-download-html').addEventListener('click', async () => download(reportFileName('html'), await signedHtml(), 'text/html;charset=utf-8'));
+
+  /* **معاينةٌ بعين المستقبِل.**
+     المُعِدّ يراجع التقرير على شاشةٍ عريضة ويُسلّمه إلى من يفتحه بإبهامه في
+     واتساب. فيرى هنا ما سيراه عميلُه: العرضُ نفسه، والخطُّ نفسه، والقطعُ
+     نفسه — قبل أن يُسلّم لا بعده. */
+  $('#btn-preview-owner').addEventListener('click', async () => {
+    const html = currentHtml();
+    const wrap = document.createElement('div');
+    wrap.className = 'owner-preview';
+    wrap.innerHTML = `<div>
+      <div class="bar"><span>هكذا يراه عميلك على جوّاله (390 بكسل)</span>
+        <button type="button" class="btn sm" id="op-close">إغلاق</button></div>
+      <div class="frame"><iframe title="معاينة بعين العميل"></iframe></div>
+    </div>`;
+    document.body.appendChild(wrap);
+    wrap.querySelector('iframe').srcdoc = html;
+    const close = () => wrap.remove();
+    wrap.querySelector('#op-close').addEventListener('click', close);
+    wrap.addEventListener('click', (e) => { if (e.target === wrap) close(); });
+    document.addEventListener('keydown', function esc(e) {
+      if (e.key === 'Escape') { close(); document.removeEventListener('keydown', esc); }
+    });
+  });
 
   /* صفحةُ «في سطور» وحدها — تُرسَل في محادثة وتُقرأ على الجوال في ثانية.
      والتقريرُ الكامل ثلاثَ عشرةَ صفحة، ولا يُفتَح في واتساب. ولا يسقط منها

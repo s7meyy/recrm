@@ -448,6 +448,28 @@ try {
   const back = await page.frameLocator('#r-frame').locator('.body h2').count();
   back === fullHeads ? ok('العودة للقالب الكامل تستعيد كل الأقسام') : bad('استعادة الأقسام', `${back}/${fullHeads}`);
 
+  /* أزرارُ التسليم الأربعة تتقدّم، وأدواتُ المُعِدّ تُطوى خلف «أدوات أخرى» —
+     فكانت اثنين وثلاثين زرًّا تضيع بينها لحظةُ التسليم. */
+  const seen = (sel) => page.$eval(sel, (b) => b.checkVisibility({ contentVisibilityAuto: true }));
+  (await seen('#btn-print')) && (await seen('#btn-onepage')) && (await seen('#btn-preview-owner'))
+    ? ok('أزرار التسليم ظاهرةٌ مجموعة') : bad('التسليم مبعثر');
+  !(await seen('#btn-download-xlsx')) ? ok('وأدوات المُعِدّ مطويّة') : bad('الأدوات لم تُطوَ');
+  await page.click('.more-tools summary');
+  await page.waitForTimeout(300);
+  (await seen('#btn-download-xlsx')) ? ok('وتُفتَح بضغطة') : bad('لا تُفتَح');
+
+  /* ومعاينةٌ بعين المستقبِل: المُعِدّ يراجع على شاشةٍ عريضة ويُسلّم إلى من
+     يفتحه بإبهامه، فيرى ما سيراه عميلُه قبل أن يُسلّم لا بعده. */
+  await page.click('#btn-preview-owner');
+  await page.waitForTimeout(900);
+  (await page.locator('.owner-preview iframe').count()) === 1
+    ? ok('ومعاينةٌ بعين العميل تُفتَح') : bad('بلا معاينة');
+  const pw = await page.$eval('.owner-preview iframe', (f) => Math.round(f.getBoundingClientRect().width));
+  pw <= 400 ? ok(`بعرض جوّال (${pw}px)`) : bad('عرض غير جوّال', pw);
+  await page.click('#op-close');
+  await page.waitForTimeout(300);
+  (await page.locator('.owner-preview').count()) === 0 ? ok('وتُغلَق') : bad('لا تُغلَق');
+
   const dl = page.waitForEvent('download', { timeout: 8000 });
   await page.click('#btn-download-xlsx');
   const file = await dl;
