@@ -20,6 +20,8 @@
 import { priorities } from './priority.js';
 import { impact } from './impact.js';
 import { stats } from './schema.js';
+import { topicStats } from './lexicon.js';
+import { analyze as analyzeReplies } from './replies.js';
 import { significant } from './interval.js';
 
 const esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -287,12 +289,27 @@ export function checklistBlock(place, job = {}) {
   return `<section class="checklist">
     <h2 class="no-count">قائمةُ المتابعة — تُطبَع وتُعلَّق</h2>
     <p class="fine">أول فعلٍ في كل أولوية. أشِّر على ما أنجزتَه، واكتب تاريخه.</p>
+    ${a.rows.length ? `<div class="week"><b>أسبوعك الأول — لا تبدأ بالستّ معًا:</b>
+      <ol>${a.rows.slice(0, 3).map((r, i) => `<li><span class="wd">${['اليوم', 'هذا الأسبوع', 'الأسبوع القادم'][i]}</span>
+        ${esc(r.name)} — ${esc(r.first)}</li>`).join('')}</ol>
+      <p class="fine">وما بعدها في الشهر الذي يليه. ومهمّةٌ تُنجَز خيرٌ من ستٍّ تُفتَح.</p></div>` : ''}
     <ul class="checks">${items}</ul>
     <div class="check-foot">
       <div><b>متوسطك اليوم</b><span>${s.googleAverage ?? s.sampleAverage ?? '—'}</span></div>
       <div><b>تاريخ التقرير</b><span>${new Date().toLocaleDateString('ar-SA-u-ca-gregory-nu-latn')}</span></div>
       <div><b>المراجعة بعد</b><span>30 يومًا</span></div>
     </div>
+
+    <!-- **ما يُقاس بعد شهر.** التقرير كان يُعطي مؤشّرًا لكل مهمة ولا يُعطي
+         موضعًا تُكتب فيه قراءتُه، فيبقى المؤشّر كلامًا. -->
+    <table class="measure"><caption>واكتب بعد شهرٍ ما صار — بيدك، ليُقارَن</caption>
+      <thead><tr><th>المؤشّر</th><th>اليوم</th><th>بعد 30 يومًا</th></tr></thead>
+      <tbody>
+        <tr><td>متوسطك في قوقل</td><td>${s.googleAverage ?? s.sampleAverage ?? '—'}</td><td class="write"></td></tr>
+        <tr><td>عدد تقييماتك</td><td>${s.googleCount ?? '—'}</td><td class="write"></td></tr>
+        <tr><td>نسبة الرد على الشكاوى</td><td>${s.replyRate === null ? '—' : `${s.replyRate}%`}</td><td class="write"></td></tr>
+        ${a.rows.slice(0, 3).map((r) => `<tr><td>${esc(r.metric)}</td><td class="write"></td><td class="write"></td></tr>`).join('')}
+      </tbody></table>
   </section>`;
 }
 
@@ -337,5 +354,73 @@ export function draftsBlock(job = {}) {
     <p class="fine"><b>مسوّدات تُراجَع لا ردودٌ تُنشَر.</b> اقرأها وعدِّل ما شئت قبل نشرها،
     فالردّ باسمك ومسؤوليتك. وكلُّ مسوّدةٍ مسنودةٌ إلى معرّف الشكوى التي تردّ عليها.</p>
     <pre class="draft-text">${esc(raw)}</pre>
+  </section>`;
+}
+
+/**
+ * ما ينجح عندك — ولا تمسّه وأنت تُصلح ما يفشل.
+ *
+ * التقرير كلّه شكاوى وترتيبُ شكاوى، وفيه بطاقةُ «أكبر قوة» واحدة. وصاحب
+ * المحل يقرؤه فيخرج بأن محلّه معطوبٌ من كل وجه، فيُغيّر ما كان يُحمَد له
+ * وهو يطارد ما يُذَمّ. وكثيرٌ من المحلات تُفسد ما ينجح وهي تُصلح ما يفشل.
+ *
+ * فهذا يعدّ ما أثنى عليه عملاؤه بألفاظهم — **المنصوصَ وحده**، لا ما استُنبط
+ * من نجومهم — ويسنده بمعرّفاته، ويقول صراحةً: هذه لا تُمَسّ.
+ */
+export function keepBlock(place) {
+  const rows = topicStats(place)
+    .filter((t) => t.posStated >= 2 && t.posStated > t.neg)
+    .sort((a, b) => b.posStated - a.posStated)
+    .slice(0, 5);
+  if (!rows.length) return '';
+
+  const items = rows.map((t) => `<li>
+    <b>${esc(t.name)}</b>
+    <span class="fine">${t.posStated} ثناءً منصوصًا${t.neg ? ` · وشكوى واحدة أو أكثر (${t.neg})` : ''}</span>
+    ${t.posIds.slice(0, 5).map((x) => `<span class="rid">${esc(x)}</span>`).join(' ')}
+  </li>`).join('');
+
+  return `<section class="keep">
+    <h2>ما ينجح عندك — لا تمسّه</h2>
+    <p class="note">أثنى عليه عملاؤك <b>بألفاظهم</b> لا بنجومهم. وهو رأس مالك الذي تُبنى عليه السمعة،
+    وأسهلُ ما يُفقَد وأنت تُصلح غيره.</p>
+    <ul class="keeps">${items}</ul>
+    <p class="fine">فقبل أي تغييرٍ في هذه المواضع، اسأل: هل يمسّ ما يُحمَد لي؟
+    والمعرّفات بجانبها لتقرأ بنصّها ما قاله عملاؤك.</p>
+  </section>`;
+}
+
+/**
+ * الشكاوى بلا ردّ — أسرعُ فعلٍ وأرخصُه وأظهرُه للناس.
+ *
+ * كانت تُذكر سطرًا عابرًا في ذيل قسم الردود. وهي الفعل الوحيد في التقرير
+ * الذي يتمّ اليوم بلا كلفة، ويراه **كل من يقرأ صفحتك في قوقل** بعدُ — لا
+ * صاحب الشكوى وحده.
+ */
+export function unansweredBlock(place) {
+  const a = analyzeReplies(place);
+  if (!a.unanswered.length) return '';
+  const byId = new Map((place?.reviews || []).map((r) => [r.id, r]));
+  const rows = a.unanswered.slice(0, 8).map((id) => {
+    const r = byId.get(id);
+    if (!r) return '';
+    const text = String(r.text || '').trim();
+    const cut = text.length > 150 ? `${text.slice(0, 150)}…` : text;
+    return `<li>
+      <span class="rid">${esc(id)}</span>
+      ${r.rating ? `<span class="uw-stars">${'★'.repeat(Math.round(r.rating))}</span>` : ''}
+      ${r.date ? `<span class="fine">${esc(r.date)}</span>` : ''}
+      <p>${esc(cut)}</p>
+    </li>`;
+  }).join('');
+
+  return `<section class="unanswered">
+    <h2>شكاوى تنتظر ردًّا منك</h2>
+    <p class="note"><b>${a.negTotal - a.negReplied} من ${a.negTotal}</b> شكوى في عيّنتك بلا ردّ.
+    والردّ أسرعُ ما في هذا التقرير وأرخصُه: لا يكلّف شيئًا، ويتمّ اليوم،
+    ويراه <b>كل من يقرأ صفحتك في قوقل</b> بعدُ — لا صاحب الشكوى وحده.</p>
+    <ul class="unans">${rows}</ul>
+    <p class="fine">وردٌّ يعالج خيرٌ من اعتذارٍ مجرَّد: اذكر ما ستفعله، لا أنك «تأسف للإزعاج».
+    ${'' /* المسوّدات في ملحق التقرير إن وُلِّدت */}</p>
   </section>`;
 }

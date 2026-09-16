@@ -4,6 +4,7 @@
 import { stats } from './schema.js';
 import { topicStats } from './lexicon.js';
 import { wilson, significant } from './interval.js';
+import { recentVsOlder, topicAges } from './recency.js';
 
 const key = (job) => `${job.mapsUrl || ''}|${(job.place?.identity?.name || '').trim()}`;
 
@@ -301,5 +302,49 @@ export function selfCompareBlock(oldJob, newJob) {
     <p class="fine"><b>ولا يُقارَن محلُّك بمحلٍّ آخر في هذا التقرير</b>: عيّنته لا تُقاس بمثل ما تُقاس
     عيّنتك، فالفارق المُخرَج منها يُوهِم تفوّقًا أو تخلّفًا لا يسنده شيء. وتقريرُك السابق
     مقياسٌ سليم: المنهج واحد والمصدر واحد.</p>
+  </section>`;
+}
+
+/**
+ * «أنت مقابل نفسك» بلا تقريرٍ سابق.
+ *
+ * القسم كان يختفي كليًّا عند أول تقرير — وهو أول تقريرٍ لكل عميل، فلا يراه
+ * أحدٌ إلا في الثاني. والمقارنة ممكنةٌ من العيّنة نفسها: آخر تسعين يومًا
+ * مقابل ما قبلها. وهي أضعفُ من مقارنة تقريرين (العيّنتان من مصدرٍ واحد
+ * ومتداخلتان في الزمن لا في الأفراد)، فتُقال بوصفها كذلك.
+ */
+export function trendWithinBlock(place) {
+  const r = recentVsOlder(place);
+  if (!r.recent.n || !r.older.n) return '';
+  const esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  const negNow = wilson(r.recent.neg === null ? 0 : Math.round((r.recent.neg / 100) * r.recent.n), r.recent.n);
+  const negOld = wilson(r.older.neg === null ? 0 : Math.round((r.older.neg / 100) * r.older.n), r.older.n);
+  const sig = significant(negNow, negOld);
+
+  const ages = topicAges(place).filter((t) => t.state === 'ناشئة' || t.state === 'متفاقمة');
+  const fresh = ages.length
+    ? `<div class="sc-col bad"><b>شكاوى ناشئة أو متفاقمة</b><ul>${
+        ages.slice(0, 5).map((t) => `<li>${esc(t.name)} <span class="fine">(${t.state} — ${t.recentNeg} حديثة مقابل ${t.olderNeg} قديمة)</span></li>`).join('')
+      }</ul></div>` : '';
+
+  return `<section class="selfcompare">
+    <h2>أنت مقابل نفسك — من داخل هذه العيّنة</h2>
+    <p class="note">لا تقرير سابق يُقارَن به بعد، فالمقارنة من عيّنتك نفسها:
+    آخر ${r.window} يومًا مقابل ما قبلها.</p>
+    <table><thead><tr><th>المقياس</th><th>ما قبل ${r.window} يومًا</th><th>آخر ${r.window} يومًا</th><th>كيف يُقرأ</th></tr></thead>
+    <tbody>
+      <tr><td>متوسط التعليقات</td><td>${r.older.avg ?? '—'}</td><td>${r.recent.avg ?? '—'}</td>
+        <td class="fine">${esc(r.note || (r.diff === null ? 'لا يُقاس' : `فرق ${r.diff} نجمة`))}</td></tr>
+      <tr><td>نصيب السلبي</td><td>${r.older.neg === null ? '—' : `${r.older.neg}%`}</td>
+        <td>${r.recent.neg === null ? '—' : `${r.recent.neg}%`}</td>
+        <td class="fine">${esc(sig.reason || '')}</td></tr>
+      <tr><td>عدد التعليقات</td><td>${r.older.n}</td><td>${r.recent.n}</td>
+        <td class="fine">عددٌ مرصود لا عيّنة منه.</td></tr>
+    </tbody></table>
+    ${fresh ? `<div class="sc-cols">${fresh}</div>` : ''}
+    <p class="fine"><b>وهذه أضعفُ من مقارنة تقريرين</b>: الفترتان من عيّنةٍ واحدة جُمعت مرةً واحدة،
+    فما وصل منها عن الأشهر القديمة أقلُّ مما وصل عن القريبة — والقديم يُنسى ولا يُكتَب.
+    ${r.undated ? `و${r.undated} تعليقًا بلا تاريخ لم يدخل هذه المقارنة.` : ''}</p>
   </section>`;
 }

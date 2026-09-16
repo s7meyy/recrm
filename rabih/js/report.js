@@ -22,8 +22,8 @@ import { promisesBlock } from './promises.js';
 import { effectBlock } from './effect.js';
 import { briefBlock } from './brief.js';
 import { coverageBlock } from './coverage.js';
-import { actionsBlock, checklistBlock, commitBlock, draftsBlock } from './action.js';
-import { selfCompareBlock } from './compare.js';
+import { actionsBlock, checklistBlock, commitBlock, draftsBlock, keepBlock, unansweredBlock } from './action.js';
+import { selfCompareBlock, trendWithinBlock } from './compare.js';
 
 const esc = (s) => String(s ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -417,6 +417,30 @@ code{background:#f3f5f8;padding:0 1mm;border-radius:3px;font-size:10pt}
 .act-head{display:flex;gap:3mm;align-items:flex-start;margin-bottom:3mm}
 .act-rank{flex:0 0 auto;width:8mm;height:8mm;border-radius:50%;background:var(--navy);color:#fff;
 .act-rank.none{background:none;color:var(--gold);font-size:14pt}
+.notrandom{margin:4mm 0;padding:4mm 5mm;border:1px solid #e0cfa0;border-radius:8px;background:#fdfaf2;break-inside:avoid}
+.notrandom>b{display:block;font-size:10.5pt;color:#7a5f14;margin-bottom:2mm}
+.notrandom p{margin:0 0 2mm;font-size:10pt;line-height:1.9}
+.fixit{margin:4mm 0 0;padding:4mm 5mm;border:1px dashed var(--line);border-radius:8px;break-inside:avoid}
+.fixit>b{display:block;font-size:10.5pt;color:var(--navy);margin-bottom:2mm}
+.fixit p{margin:0;font-size:10pt;line-height:1.9}
+/* ما ينجح، وما ينتظر ردًّا. */
+.keep{break-inside:avoid}
+.keeps{list-style:none;margin:0;padding:0}
+.keeps li{padding:3mm 4mm;margin-bottom:2mm;border-inline-start:3px solid #1e8449;background:#f5fbf7;border-radius:6px}
+.keeps b{color:#14532d;margin-inline-end:2mm}
+.unans{list-style:none;margin:0;padding:0}
+.unans li{padding:3mm 4mm;margin-bottom:2mm;border:1px solid var(--line);border-inline-start:3px solid #c0392b;border-radius:6px;background:#fdf6f5;break-inside:avoid}
+.unans p{margin:1.5mm 0 0;font-size:10pt;line-height:1.85}
+.uw-stars{color:var(--gold);font-size:9pt;margin-inline:2mm}
+/* الأسبوع الأول، وجدول ما يُقاس بعد شهر. */
+.week{margin:3mm 0 4mm;padding:4mm 5mm;background:#f3f6fa;border-radius:8px;break-inside:avoid}
+.week>b{display:block;margin-bottom:2mm;font-size:10.5pt;color:var(--navy)}
+.week ol{margin:0 0 2mm;padding-inline-start:5mm;font-size:10pt;line-height:1.95}
+.week .wd{display:inline-block;min-width:22mm;font-weight:700;color:var(--gold)}
+.measure{margin-top:5mm}
+.measure caption{caption-side:top;text-align:start;font-size:10pt;color:var(--navy);font-weight:700;margin-bottom:2mm}
+.measure td.write{height:9mm;position:relative}
+.measure td.write::after{content:"";position:absolute;inset-inline:3mm;bottom:2.5mm;border-bottom:1px solid var(--navy);opacity:.3}
 .singles{margin-top:4mm;padding:4mm 5mm;border:1px dashed var(--line);border-radius:8px;background:#fbfcfd;break-inside:avoid}
 .singles>b{display:block;font-size:10pt;color:var(--navy);margin-bottom:2mm}
 .singles ul{margin:0 0 2mm;padding-inline-start:5mm;font-size:10pt;line-height:1.9}
@@ -640,11 +664,20 @@ export function buildReportHtml({ place: rawPlace, ctx = {}, markdown = '', phot
   const opt = { toc: true, stars: true, topics: true, photos: true, recency: true, entities: true, replies: true, confidence: true,
     priority: true, calc: true, voice: true, impact: true, sources: true, brief: true, coverage: true,
     actions: true, checklist: true, commit: true, drafts: true, selfCompare: true, card: true,
+    keep: true, unanswered: true,
     cooccur: true, timing: true, promises: true, effect: true, bias: true, ...(sector?.show || {}), ...show };
   const s = stats(place);
   const body = tocFrom(mdToHtml(markdown));
   const date = new Date().toLocaleDateString('ar-SA-u-ca-gregory-nu-latn');
   const name = esc(place.identity?.name || 'منشأة غير مسمّاة');
+
+  /* **تاريخ البيانات لا تاريخ الطبع.** التقرير يُفتَح بعد شهرين فيُقرأ كأنه
+     اليوم: «متوسطك 4.2» صار 3.9 ولا شيء ينبّه. فيُذكر متى جُمعت التعليقات
+     في ترويسة كل صفحة وعلى الغلاف. */
+  const dataDate = (() => {
+    const t = Date.parse(job?.fetchedAt || job?.createdAt || '');
+    return Number.isFinite(t) ? new Date(t).toLocaleDateString('ar-SA-u-ca-gregory-nu-latn') : date;
+  })();
 
   /* الغلاف كان يطبع «—» في كل حقلٍ لم يُملأ: ثلاثُ شرطاتٍ تُقرأ تقريرًا
      ناقصًا قبل قراءة سطرٍ منه. فالحقل الفارغ يُحذف، ويُملأ مكانه بما هو
@@ -661,6 +694,7 @@ export function buildReportHtml({ place: rawPlace, ctx = {}, markdown = '', phot
     ['التعليقات المحلَّلة', s.total ? String(s.total) : ''],
     ['الفترة المغطّاة', spanLabel],
     ['تاريخ التقرير', date],
+    ['التعليقات جُمعت في', dataDate === date ? '' : dataDate],
   ].filter(([, v]) => v !== '' && v !== null && v !== undefined)
     .map(([k, v]) => `<div><b>${esc(k)}</b><span>${esc(v)}</span></div>`).join('');
 
@@ -678,7 +712,7 @@ export function buildReportHtml({ place: rawPlace, ctx = {}, markdown = '', phot
 
   const footer = `<footer class="foot">
     <span>${name}${identity?.office ? ` — ${esc(identity.office)}` : (identity?.showRabih === false ? '' : ' — تقرير رابح')}</span>
-    <span>${esc(date)}</span>
+    <span>تعليقاتٌ جُمعت في ${esc(dataDate)} · صدر في ${esc(date)}</span>
   </footer>
   ${footerLine(identity)}`;
 
@@ -690,10 +724,12 @@ export function buildReportHtml({ place: rawPlace, ctx = {}, markdown = '', phot
     body.html,
     opt.priority ? priorityBlock(place) : '',
     opt.actions ? actionsBlock(place, job || {}) : '',
+    opt.unanswered ? unansweredBlock(place) : '',
+    opt.keep ? keepBlock(place) : '',
     opt.commit ? commitBlock(place, job || {}) : '',
     opt.voice ? voiceBlock(place) : '',
     opt.card ? cardBlock(place) : '',
-    opt.selfCompare && job?.prevJob ? selfCompareBlock(job.prevJob, job) : '',
+    opt.selfCompare ? (job?.prevJob ? selfCompareBlock(job.prevJob, job) : trendWithinBlock(place)) : '',
     opt.effect && job?.prevJob ? effectBlock(job.prevJob, job) : '',
     opt.promises ? promisesBlock(place) : '',
     opt.topics ? topicsBlock(place, sector?.lead || []) : '',
@@ -735,7 +771,7 @@ export function buildReportHtml({ place: rawPlace, ctx = {}, markdown = '', phot
 </head>
 <body>
 <div class="page">
-<div class="running"><span>${name}${identity?.office ? ` — ${esc(identity.office)}` : ''}</span><span>${esc(date)}</span></div>
+<div class="running"><span>${name}${identity?.office ? ` — ${esc(identity.office)}` : ''}</span><span>بيانات ${esc(dataDate)} · ${esc(date)}</span></div>
 ${cover}
 <main class="body">
 ${opt.brief ? briefBlock(place, job) : ''}

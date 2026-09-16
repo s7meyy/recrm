@@ -5,10 +5,10 @@
 
 import { brief, briefBlock } from '../js/brief.js';
 import { coverage, coverageBlock } from '../js/coverage.js';
-import { actions, actionsBlock, checklistBlock, commitBlock, draftsBlock } from '../js/action.js';
+import { actions, actionsBlock, checklistBlock, commitBlock, draftsBlock, keepBlock, unansweredBlock } from '../js/action.js';
 import { impact } from '../js/impact.js';
 import { topicStats } from '../js/lexicon.js';
-import { selfCompareBlock } from '../js/compare.js';
+import { selfCompareBlock, trendWithinBlock } from '../js/compare.js';
 import { buildReportHtml } from '../js/report.js';
 import { TEMPLATES, DEFAULT_TEMPLATE } from '../js/templates.js';
 import { build as buildMessage } from '../js/messages.js';
@@ -285,6 +285,43 @@ const dur = (await import('../js/stars.js')).starsBlock(
   { perMonth: 900 });
 !/0 شهرًا|0\.\d+ شهرًا/.test(dur) ? ok('لا «0 شهرًا» ولا «0.1 شهرًا»') : bad('كسورُ شهر', (dur.match(/[\d.]+ شهرًا/g) || []).join());
 /يوم|أيام/.test(dur) ? ok('وما دون الشهرين يُقال بالأيام') : bad('بلا أيام');
+
+console.log('٢١) ما ينجح، وما ينتظر ردًّا');
+const mixed = build([mk(5, 'القهوة ممتازة والباريستا محترف'), mk(5, 'القهوة لذيذة جدا'),
+  mk(4, 'القهوة طيبة والمكان هادئ'), mk(1, 'الانتظار طويل')]);
+const keep = keepBlock(mixed);
+keep.includes('لا تمسّه') ? ok('يُقال لصاحب المحل ما ينجح عنده') : bad('بلا قسم قوّة');
+keep.includes('بألفاظهم') ? ok('ومبنيٌّ على الثناء المنصوص لا المستنبَط من النجوم') : bad('ثناء مستنبَط');
+keepBlock(build([mk(1, 'سيء'), mk(1, 'رديء جدا والخدمة بطيئة')])) === ''
+  ? ok('وبلا ثناءٍ متكرّر لا يُختلَق قسم') : bad('قوّة من لا شيء');
+
+const noReply = build([mk(1, 'الانتظار طويل جدا ولا احد يعتذر'), mk(5, 'ممتاز')]);
+const un = unansweredBlock(noReply);
+un.includes('تنتظر ردًّا') && /R\d{3}/.test(un)
+  ? ok('والشكاوى بلا ردّ تُفرَد بمعرّفاتها — أسرعُ فعلٍ وأرخصُه') : bad('بلا قسم ردود');
+un.includes('يراه <b>كل من يقرأ صفحتك في قوقل</b>') ? ok('ويُقال لماذا يستحقّ العجلة') : bad('بلا سبب');
+const allReplied = build([{ ...mk(1, 'الانتظار طويل'), ownerReply: 'نعتذر، وأضفنا موظفًا' }]);
+unansweredBlock(allReplied) === '' ? ok('وإن رُدّ على الكلّ لا يُعرَض القسم') : bad('قسم بلا حاجة');
+
+console.log('٢٢) المقارنة بالنفس لا تنتظر تقريرًا ثانيًا');
+const dated = build([...Array(6)].map(() => mk(1, 'الانتظار طويل', 'قبل أسبوع'))
+  .concat([...Array(6)].map(() => mk(5, 'ممتاز', 'قبل سنة'))));
+const tw = trendWithinBlock(dated);
+tw.includes('من داخل هذه العيّنة') ? ok('تُقارَن العيّنة بنفسها في أول تقرير') : bad('بلا مقارنة داخلية');
+tw.includes('أضعفُ من مقارنة تقريرين') ? ok('ويُقال إنها أضعفُ من مقارنة تقريرين وسببُ ضعفها') : bad('بلا تحفّظ');
+
+console.log('٢٣) أهمّ تحفّظ: العيّنة ليست عشوائية');
+const cov = coverageBlock(p2, {});
+cov.includes('ليست عشوائية') ? ok('يُقال صراحةً أن العيّنة ليست عشوائية') : bad('تحفّظ غائب');
+cov.includes('<b>من كتب</b> لا <b>من زار</b>') ? ok('وأن النسب تصف من كتب لا من زار') : bad('بلا تفريق');
+cov.includes('لا يُصلح هذا حسابٌ ولا هامش') ? ok('وأنه لا يُصلَح بحسابٍ ولا هامش') : bad('وهمُ الإصلاح');
+cov.includes('تراه مزيَّفًا') ? ok('ويُدَلّ المالك كيف يُصحّح ما أخطأنا فيه') : bad('بلا تصحيح');
+
+console.log('٢٤) تاريخ البيانات لا تاريخ الطبع');
+const stamped = buildReportHtml({ place: p1, markdown: '## تحليل\nنصّ.', ctx: {},
+  job: { place: p1, fetchedAt: '2026-01-15T00:00:00Z' } });
+stamped.includes('جُمعت في') ? ok('يُذكر متى جُمعت التعليقات') : bad('بلا تاريخ بيانات');
+/بيانات [^<·]*·/.test(stamped) ? ok('وفي ترويسة كل صفحةٍ مطبوعة') : bad('بلا ترويسة');
 
 console.log('\n' + (fails.length ? `فشل ${fails.length}:\n` + fails.map((f) => ' - ' + f).join('\n') : '✅ نجحت كل الاختبارات'));
 process.exit(fails.length ? 1 : 0);
