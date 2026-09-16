@@ -71,10 +71,17 @@ export function voiceBlock(place, { maxChars = 220 } = {}) {
   if (!groups.length) return '';
   const esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-  const quote = (r, cls) => `<blockquote class="q ${cls}">
+  /* شكوى رُدَّ عليها ليست كشكوى قائمة، وكانتا تُعرَضان بلونٍ واحد — فيقرأ
+     المالك ذمًّا عالجه قبل أشهر كأنه حاضر، ويَحسب على نفسه ما فرغ منه.
+     والوسمُ وصفٌ لا حكم: الردّ لا يعني أن العطب زال، بل أنه لم يُهمَل. */
+  const quote = (r, cls) => {
+    const answered = Boolean((r.ownerReply || '').trim());
+    return `<blockquote class="q ${cls}${answered ? ' answered' : ''}">
       <p>${esc(clip(r.text, maxChars))}</p>
-      <footer><span class="rid">${esc(r.id)}</span>${r.rating ? ` · ${r.rating} من 5` : ' · بلا تقييم'}${r.date ? ` · ${esc(r.date)}` : ''}</footer>
+      <footer><span class="rid">${esc(r.id)}</span>${r.rating ? ` · ${r.rating} من 5` : ' · بلا تقييم'}${r.date ? ` · ${esc(r.date)}` : ''}${
+        answered ? ' · <span class="ans">رُدَّ عليها</span>' : ''}</footer>
     </blockquote>`;
+  };
 
   const body = groups.map((g) => `<div class="voice-topic">
       <h3 class="no-count">${esc(g.name)}</h3>
@@ -86,7 +93,8 @@ export function voiceBlock(place, { maxChars = 220 } = {}) {
 
   return `<section class="voice">
     <h2>صوت العميل — بنصّه</h2>
-    <p class="note">منقولٌ حرفًا بحرف كما كتبه أصحابه: بلهجتهم وإملائهم، بلا تهذيب ولا تلخيص. وما جاوز ${maxChars} حرفًا قُطِع وعُلِّم بـ«…»، ولم يُغيَّر منه شيء.</p>
+    <p class="note">منقولٌ حرفًا بحرف كما كتبه أصحابه: بلهجتهم وإملائهم، بلا تهذيب ولا تلخيص. وما جاوز ${maxChars} حرفًا قُطِع وعُلِّم بـ«…»، ولم يُغيَّر منه شيء.
+    و<b>«رُدَّ عليها»</b> تعني أن المنشأة أجابت صاحبها، <b>لا أن العطب زال</b> — والردُّ ليس إصلاحًا.</p>
     ${body}
   </section>`;
 }
@@ -115,7 +123,7 @@ export function cardBlock(place) {
   const who = name ? esc(name) : 'عميل';
 
   return `<section class="card-mkt">
-    <h2 class="no-count">بطاقةٌ تصلح للنشر</h2>
+    <h2>بطاقةٌ تصلح للنشر</h2>
     <p class="fine">ثناءُ عميلك بنصّه كما كتبه. انشرها كما هي إن شئت.</p>
     <figure class="mkt">
       <div class="mkt-stars">★★★★★</div>

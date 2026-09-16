@@ -21,6 +21,7 @@ import { priorities } from './priority.js';
 import { impact } from './impact.js';
 import { stats } from './schema.js';
 import { topicStats, topicIcon, topicColor } from './lexicon.js';
+import { timing } from './timing.js';
 import { analyze as analyzeReplies } from './replies.js';
 import { significant } from './interval.js';
 
@@ -176,6 +177,12 @@ export function actions(place, job = {}) {
   const hasMoney = Boolean(imp && imp.ticket && imp.monthly);
   const byId = new Map((imp?.rows || []).map((r) => [r.id, r]));
 
+  /* **وقتُ الشكوى يدخل بطاقتَها.**
+     التقرير يعرف أن الشكاوى تقع مساءً، ويعرف أن الانتظار أكبرها، وكانا في
+     قسمين متباعدين فلا يلتقيان. والجملةُ التي تُنتج قرار توظيفٍ هي جمعُهما:
+     «شكاوى الانتظار كلُّها بين المساء والذروة». */
+  const when = new Map(timing(place).byTopic.map((t) => [t.id, t]));
+
   const shape = (r, i) => {
     const pb = PLAYBOOK[r.id] || FALLBACK;
     const money = hasMoney ? (byId.get(r.id)?.riyals ?? 0) : null;
@@ -191,6 +198,14 @@ export function actions(place, job = {}) {
       first: pb.first,
       then: pb.then,
       metric: pb.metric,
+      when: (() => {
+        const w = when.get(r.id);
+        if (!w) return null;
+        const bits = [];
+        if (w.topSlot?.name) bits.push(w.topSlot.name);
+        if (w.topDay?.name) bits.push(w.topDay.name);
+        return bits.length ? { label: bits.join(' · '), n: w.total, ids: w.ids } : null;
+      })(),
       cost: COST[pb.cost],
       days: pb.days,
       // الكسب: نصيبُ هذه الشكوى من الخسارة المُقدَّرة على فرض المالك.
@@ -209,6 +224,9 @@ export function actions(place, job = {}) {
     hasMoney,
     tie,
     rankable,
+    // مجموعُ البطاقات ومجموعُ الشاكين المتمايزين — والفرقُ بينهما قدرُ التقاطع.
+    sumOfCards: ranked.reduce((n, r) => n + (r.money || 0), 0),
+    totalRiyals: imp?.totalRiyals ?? 0,
     assume: { ticket: imp?.ticket || 0, monthly: imp?.monthly || 0, lossRate: imp?.lossRate ?? 0.25 },
     rows: ranked,
     singles: rankable ? singles.map((r) => shape(r, null)) : [],
@@ -230,7 +248,10 @@ export function actionsBlock(place, job = {}) {
     </div>
     <div class="act-grid">
       <div><b>من ينفّذه</b><span>${esc(r.owner)}</span></div>
-      <div><b>المدة المتوقّعة</b><span>${r.days[0]}–${r.days[1]} يومًا</span></div>
+      <div><b>${r.when ? 'متى تقع' : 'المدة المتوقّعة'}</b><span>${
+        r.when ? esc(r.when.label) : `${r.days[0]}–${r.days[1]} يومًا`}</span><small>${
+        r.when ? `${r.when.n} من شكاوى هذا الموضوع ذكرت وقتها · والإصلاح ${r.days[0]}–${r.days[1]} يومًا`
+               : 'عُرفُ القطاع لا قياسُ محلّك'}</small></div>
       <div><b>مرتبة الكلفة</b><span>${esc(r.cost.label)}</span><small>${esc(r.cost.hint)}</small></div>
       <div><b>ما تكسبه إن عولجت</b><span>${r.money === null ? '—' : `${num(r.money)} ريال/شهر`}</span><small>${
         r.money === null ? 'أدخِل متوسط فاتورتك وعدد عملائك ليُحسب' : `${num(r.yearly)} ريال في السنة، على فرضك`}</small></div>
@@ -267,6 +288,10 @@ export function actionsBlock(place, job = {}) {
     (متوسط الفاتورة × عدد عملائك × نصيب الشكوى من عيّنتك × نسبة من لا يعود) — فإن غيّرتَ فرضك تغيّر.</p>
     ${caveat}
     <div class="acts">${cards}</div>
+    ${a.hasMoney && a.rows.length > 1 ? `<p class="fine"><b>ولا تُجمَع أرقام «ما تكسبه».</b>
+      التعليقُ الواحد يشتكي من موضوعين، فيُحسَب في بطاقتين — ومن اشتكى من الانتظار
+      والتعامل معًا عميلٌ واحد لا اثنان. وجمعُ البطاقات يعطي ${num(a.sumOfCards)} ريالًا،
+      والصوابُ على الشاكين المتمايزين <b>${num(a.totalRiyals)} ريال</b> شهريًّا.</p>` : ''}
     ${singles}
     <p class="fine"><b>المدة ومرتبة الكلفة عُرفُ القطاع لا قياسُ محلّك</b>: التعليق لا يذكر أجور فريقك
     ولا أسعار مدينتك، فلا يُستخرَج منه مبلغ. وهي أدلّةٌ للبدء تُصحَّح بمعرفتك بمحلّك.</p>
@@ -287,7 +312,7 @@ export function checklistBlock(place, job = {}) {
   </li>`).join('');
 
   return `<section class="checklist">
-    <h2 class="no-count">قائمةُ المتابعة — تُطبَع وتُعلَّق</h2>
+    <h2>قائمةُ المتابعة — تُطبَع وتُعلَّق</h2>
     <p class="fine">أول فعلٍ في كل أولوية. أشِّر على ما أنجزتَه، واكتب تاريخه.</p>
     ${a.rows.length ? `<div class="week"><b>أسبوعك الأول — لا تبدأ بالستّ معًا:</b>
       <ol>${a.rows.slice(0, 3).map((r, i) => `<li><span class="wd">${['اليوم', 'هذا الأسبوع', 'الأسبوع القادم'][i]}</span>
@@ -332,7 +357,7 @@ export function commitBlock(place, job = {}) {
     </tr>`).join('');
 
   return `<section class="commit">
-    <h2 class="no-count">بماذا ستبدأ؟</h2>
+    <h2>بماذا ستبدأ؟</h2>
     <p class="fine">اكتب بخطّ يدك: من يتولّاها ومتى تُراجَع. وما لم يُكتب لا يُتابَع.</p>
     <table><thead><tr><th>الأولوية</th><th>من يتولّاها</th><th>تُراجَع في</th></tr></thead><tbody>${rows}</tbody></table>
   </section>`;
@@ -376,7 +401,8 @@ export function keepBlock(place) {
 
   const items = rows.map((t) => `<li style="--tc:${topicColor(t.id)}">
     <b><i class="ticon" style="color:${topicColor(t.id)}">${topicIcon(t.id)}</i>${esc(t.name)}</b>
-    <span class="fine">${t.posStated} ثناءً منصوصًا${t.neg ? ` · وشكوى واحدة أو أكثر (${t.neg})` : ''}</span>
+    <span class="fine">${countWord(t.posStated, 'ثناءٌ منصوص', 'ثناءان منصوصان', 'ثناءات منصوصة', 'ثناءً منصوصًا')}${
+      t.neg ? ` · ومعه ${countWord(t.neg, 'شكوى', 'شكويان', 'شكاوى', 'شكوى')}` : ''}</span>
     ${t.posIds.slice(0, 5).map((x) => `<span class="rid">${esc(x)}</span>`).join(' ')}
   </li>`).join('');
 
@@ -397,6 +423,14 @@ export function keepBlock(place) {
  * الذي يتمّ اليوم بلا كلفة، ويراه **كل من يقرأ صفحتك في قوقل** بعدُ — لا
  * صاحب الشكوى وحده.
  */
+/** تمييزٌ عربيّ سليم: «شكوى» و«شكويان» و«3 شكاوى» و«12 شكوى». */
+function countWord(n, one, two, few, many) {
+  if (n === 1) return one;
+  if (n === 2) return two;
+  if (n >= 3 && n <= 10) return `${n} ${few}`;
+  return `${n} ${many}`;
+}
+
 export function unansweredBlock(place) {
   const a = analyzeReplies(place);
   if (!a.unanswered.length) return '';
@@ -416,11 +450,66 @@ export function unansweredBlock(place) {
 
   return `<section class="unanswered">
     <h2>شكاوى تنتظر ردًّا منك</h2>
-    <p class="note"><b>${a.negTotal - a.negReplied} من ${a.negTotal}</b> شكوى في عيّنتك بلا ردّ.
+    <p class="note"><b>${(() => {
+      const open = a.negTotal - a.negReplied;
+      const word = countWord(open, 'شكوى واحدة', 'شكويان', 'شكاوى', 'شكوى');
+      if (open !== a.negTotal) return `${word} من ${a.negTotal} في عيّنتك بلا ردّ`;
+      if (open === 1) return 'شكوى واحدة في عيّنتك، ولا ردّ عليها';
+      if (open === 2) return 'شكويان في عيّنتك، ولا ردّ عليهما';
+      return `${word} في عيّنتك، وكلُّها بلا ردّ`;
+    })()}</b>.
     والردّ أسرعُ ما في هذا التقرير وأرخصُه: لا يكلّف شيئًا، ويتمّ اليوم،
     ويراه <b>كل من يقرأ صفحتك في قوقل</b> بعدُ — لا صاحب الشكوى وحده.</p>
     <ul class="unans">${rows}</ul>
     <p class="fine">وردٌّ يعالج خيرٌ من اعتذارٍ مجرَّد: اذكر ما ستفعله، لا أنك «تأسف للإزعاج».
     ${'' /* المسوّدات في ملحق التقرير إن وُلِّدت */}</p>
+  </section>`;
+}
+
+/**
+ * خاتمةُ التقرير — ما بعده.
+ *
+ * كان ينتهي بملحقٍ منهجيّ، فتنقطع العلاقةُ عند آخر صفحة: لا يُقال متى
+ * التقرير القادم، ولا ما الذي يلزم لإعداده، ولا ما الذي لا تستطيع
+ * التعليقاتُ الإجابةَ عنه بحال.
+ *
+ * والأخيرُ أنفعُ ما فيه: حدودُ الأداة تُقال للعميل فيبحث عن جوابه في مكانه،
+ * لا يظنّ التقرير أحاط بكل شيء فيقنع بنصفِ صورة.
+ */
+export function nextBlock(place, job = {}) {
+  const s = stats(place);
+  const silent = (s.googleCount !== null && s.declaredWithText !== null)
+    ? Math.max(0, s.googleCount - s.declaredWithText) : null;
+
+  const asks = [
+    silent
+      ? `لماذا يسكت ${num(silent)} ممّن قيّموك؟ نجومُهم في متوسطك وكلماتُهم غير موجودة.`
+      : 'لماذا يسكت أكثرُ من يزورك؟ التعليقُ يكتبه الغاضبُ والراضي جدًّا، والوسطُ يمرّ صامتًا.',
+    'من جرّبك مرةً ولم يعد — لم يعد؟ وهو لا يكتب غالبًا، فلا يظهر في أي تقرير.',
+    'ما الذي يقوله فريقُك ولا يقوله عميلك؟ من يقف في الصالة يرى ما لا تراه التعليقات.',
+  ];
+
+  return `<section class="next">
+    <h2>ما بعد هذا التقرير</h2>
+    <div class="next-grid">
+      <div>
+        <b>المراجعة القادمة</b>
+        <p>بعد <b>30 يومًا</b> — وهي مدّةٌ تكفي لأثر أول مهمّة أن يظهر في التعليقات، ولا تطول فتضيع.
+        ويلزم حينها التعليقاتُ الجديدة وحدها؛ وما في هذا التقرير محفوظ، فيُقارَن به.</p>
+      </div>
+      <div>
+        <b>ما يجعل التقرير القادم أدقّ</b>
+        <ul>
+          <li>ردَّ على الشكاوى التي بلا ردّ — يُقاس ذلك ويظهر.</li>
+          <li>أدخِل متوسط فاتورتك وعدد عملائك إن لم تكن أدخلتَهما، فتُحسَب الأرقام بفرضك.</li>
+          ${s.declaredWithText === null ? '<li>أدخِل عدد التعليقات <b>المنصوصة</b> في قوقل، فتُقاس التغطية بمقامها الصحيح.</li>' : ''}
+        </ul>
+      </div>
+    </div>
+    <div class="asks">
+      <b>وأسئلةٌ لا تجيب عنها تعليقاتك — اسألها بنفسك:</b>
+      <ul>${asks.map((a) => `<li>${esc(a)}</li>`).join('')}</ul>
+      <p class="fine">وليست هذه اعتذارًا عن التقرير: هي حدودُه، وقولُها يدلّك أين تبحث عن بقيّة الصورة.</p>
+    </div>
   </section>`;
 }

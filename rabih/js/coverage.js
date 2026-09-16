@@ -81,7 +81,7 @@ export function coverageBlock(place, job = {}) {
     </tr>`).join('');
 
   return `<section class="coverage">
-    <h2 class="no-count">ما لا يغطّيه هذا التقرير</h2>
+    <h2>ما لا يغطّيه هذا التقرير</h2>
     <p class="fine">أرقام التقرير محسوبةٌ على ${num(c.sample)} تعليقًا في عيّنتك. وما دونها لم يدخلها، وهذا بيانه.</p>
     <table><thead><tr><th>ما لم يدخل</th><th>العدد</th><th>وأثره في القراءة</th></tr></thead><tbody>${rows}</tbody></table>
     <!-- **أهمّ تحفّظٍ في التقرير كلّه، وكان غائبًا**: العيّنة ليست عشوائية.

@@ -5,7 +5,7 @@
 
 import { brief, briefBlock } from '../js/brief.js';
 import { coverage, coverageBlock } from '../js/coverage.js';
-import { actions, actionsBlock, checklistBlock, commitBlock, draftsBlock, keepBlock, unansweredBlock } from '../js/action.js';
+import { actions, actionsBlock, checklistBlock, commitBlock, draftsBlock, keepBlock, unansweredBlock, nextBlock } from '../js/action.js';
 import { impact } from '../js/impact.js';
 import { topicStats } from '../js/lexicon.js';
 import { selfCompareBlock, trendWithinBlock } from '../js/compare.js';
@@ -15,7 +15,7 @@ import { build as buildMessage } from '../js/messages.js';
 import { topicCoverage, topicSentimentDetail } from '../js/lexicon.js';
 import { priorities, priorityBlock } from '../js/priority.js';
 import { recentVsOlder } from '../js/recency.js';
-import { voice, cardBlock } from '../js/voice.js';
+import { voice, cardBlock, voiceBlock } from '../js/voice.js';
 import { topicIcon } from '../js/lexicon.js';
 import { extract } from '../js/entities.js';
 import { emptyPlace, emptyReview, assignReviewIds } from '../js/schema.js';
@@ -334,6 +334,76 @@ const lazy = [...appSrc.matchAll(/import\(['"]\.\/([\w.-]+)['"]\)/g)].map((m) =>
 const swList = readFileSync(new URL('../sw.js', import.meta.url), 'utf8');
 lazy.every((f) => swList.includes(`./js/${f}`))
   ? ok(`وكلُّ ما يُستورَد كسولًا مخزَّنٌ للعمل بلا إنترنت (${lazy.length})`) : bad('وحدة كسولة لا تُخزَّن', lazy.join('، '));
+
+console.log('٢٦) لا رقمَ يُخصَّص ثم يُخفى');
+/* العنوان الموسوم no-count كان يأخذ رقمَه ثم يُخفيه التنسيق، فيرى القارئ
+   5 ثم 7 ثم 9، ويذكر الفهرسُ أرقامًا لا يجد لها أثرًا في المتن. */
+const rep2 = buildReportHtml({ place: p1, markdown: '## تحليل\nنصّ.', job: jb, ctx: {} });
+const body2 = rep2.slice(rep2.indexOf('<main'));
+const hidden = [...body2.matchAll(/<h2([^>]*)>(?:<span class="secno">(\d+)<\/span>)?/g)]
+  .filter((m) => m[2] && /no-count/.test(m[1]));
+hidden.length === 0 ? ok('لا عنوانَ يأخذ رقمًا ثم يُخفيه') : bad('أرقام مخفيّة', hidden.length);
+const shown = [...body2.matchAll(/<span class="secno">(\d+)<\/span>/g)].map((m) => Number(m[1]));
+shown.every((n, i) => n === i + 1) ? ok(`وأرقامٌ متصلة (1…${shown.length})`) : bad('قفزات', shown.join());
+const tocNums = [...body2.matchAll(/<li><span class="tn">(\d+)<\/span>/g)].map((m) => Number(m[1]));
+JSON.stringify(tocNums) === JSON.stringify(shown)
+  ? ok('والفهرس لا يذكر رقمًا لا يجده القارئ') : bad('فهرس مخالف', `${tocNums.length}/${shown.length}`);
+
+console.log('٢٧) لا ترتيبَ يناقض تحفّظَه');
+!rep2.includes('class="priority"')
+  ? ok('جدول الأولويات مطفأٌ افتراضًا — وكان يرقّم سبعًا بينما تقول الخطة إنها لا تُرتَّب') : bad('تناقض باقٍ');
+
+console.log('٢٨) بطاقاتُ الكسب لا تُجمَع');
+const ah2 = actionsBlock(p1, jb);
+ah2.includes('ولا تُجمَع أرقام')
+  ? ok('يُقال إن أرقام البطاقات تتقاطع') : bad('دعوةٌ إلى جمعٍ خاطئ');
+const a2 = actions(p1, jb);
+a2.sumOfCards >= a2.totalRiyals
+  ? ok(`ويُذكَر الصوابُ معها: ${a2.totalRiyals} لا ${a2.sumOfCards}`) : bad('حساب مقلوب');
+
+console.log('٢٩) الرسمُ لا يكذب بمقياسه');
+const flat = build([...Array(4)].map(() => mk(4, 'جيد', 'قبل شهر'))
+  .concat([...Array(4)].map(() => mk(4, 'جيد جدا', 'قبل 3 أشهر')))
+  .concat([...Array(4)].map(() => mk(4, 'ممتاز', 'قبل 5 أشهر'))));
+const bf = briefBlock(flat, jb);
+!bf.includes('<div class="spark">') || /spark-scale/.test(bf)
+  ? ok('الخطُّ يحمل مداه مكتوبًا، فلا تُقرأ الهزّةُ انهيارًا') : bad('رسمٌ بلا مقياس');
+bf.includes('الاتجاه لم يُحسَم') || bf.includes('انحدار') || bf.includes('تحسّن') || bf.includes('ثابت')
+  ? ok('والشارة تُسمّى بما هي — لا «لا يُقاس» بجوار خطٍّ يرسم خمسة أشهر') : bad('تناقض الشارة');
+
+console.log('٣٠) حارسُ معدّل التقييمات');
+const q = emptyPlace(); q.ratings = { average: 4.2, count: 310, distribution: null }; q.reviews = [];
+const st = await import('../js/stars.js');
+st.starsBlock(q, { perMonth: 900 }).includes('راجع «معدّل')
+  ? ok('رقمٌ محال في معدّل التقييمات يُنبَّه إليه — وكان يُنتج «تبلغ 4.25 في يوم واحد»') : bad('بلا حارس');
+!st.starsBlock(q, { perMonth: 8 }).includes('راجع «معدّل')
+  ? ok('ومعدّلٌ معقول يمضي بلا إزعاج') : bad('تنبيه في غير موضعه');
+
+console.log('٣١) الصياغة تتبع العدد');
+const un1 = unansweredBlock(build([mk(1, 'الانتظار طويل ولا احد يعتذر')]));
+un1.includes('ولا ردّ عليها') && !un1.includes('كلُّها')
+  ? ok('الواحدة: «ولا ردّ عليها» لا «كلُّها»') : bad('صياغة المفرد');
+unansweredBlock(build([mk(1, 'الانتظار طويل'), mk(1, 'الخدمه بطيئه')])).includes('شكويان')
+  ? ok('والاثنتان: «شكويان»') : bad('صياغة المثنّى');
+unansweredBlock(build([...Array(4)].map(() => mk(1, 'الانتظار طويل')))).includes('4 شكاوى')
+  ? ok('وجمعُ القلّة: «4 شكاوى»') : bad('صياغة الجمع');
+
+console.log('٣٢) الشكوى المُجاب عنها تُميَّز، ووقتُها يدخل بطاقتها');
+const answered = build([
+  { ...mk(1, 'الانتظار طويل جدا في المساء'), ownerReply: 'نعتذر، وقد أضفنا موظفًا' },
+  mk(1, 'الخدمه بطيئه مساء'), mk(1, 'انتظرت كثير في المساء'), mk(5, 'ممتاز')]);
+voiceBlock(answered).includes('رُدَّ عليها')
+  ? ok('شكوى رُدَّ عليها تُوسَم — ولا تُقرأ كشكوى الأمس') : bad('بلا تمييز');
+voiceBlock(answered).includes('لا أن العطب زال')
+  ? ok('والوسمُ وصفٌ لا حكم: الردُّ ليس إصلاحًا') : bad('وسمٌ يُوهِم الإصلاح');
+const withWhen = actions(answered, {}).rows.find((r) => r.when);
+withWhen ? ok(`ووقتُ الشكوى في بطاقتها: ${withWhen.when.label}`) : bad('الوقت منفصل');
+
+console.log('٣٣) ما بعد التقرير');
+const nb = nextBlock(p2, {});
+nb.includes('30 يومًا') ? ok('يُقال متى المراجعة القادمة') : bad('بلا موعد');
+nb.includes('ما يجعل التقرير القادم أدقّ') ? ok('وما يلزم لإعدادها') : bad('بلا تهيئة');
+nb.includes('لا تجيب عنها تعليقاتك') ? ok('وأسئلةٌ لا تجيب عنها التعليقات — حدودُ الأداة لا اعتذارُها') : bad('بلا حدود');
 
 console.log('\n' + (fails.length ? `فشل ${fails.length}:\n` + fails.map((f) => ' - ' + f).join('\n') : '✅ نجحت كل الاختبارات'));
 process.exit(fails.length ? 1 : 0);

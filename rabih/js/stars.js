@@ -107,6 +107,18 @@ export function starsBlock(place, { perMonth = 0 } = {}) {
   const l = ladder(avg, count, { perMonth });
   if (!l || !l.rows.length) return '';
 
+  /* **حارسٌ على معدّل التقييمات.**
+     الحقلان متجاوران في الشاشة: «عدد العملاء شهريًّا» و«كم تقييمًا جديدًا
+     تتلقّى شهريًّا». فإن كُتب في الثاني عددُ العملاء (900 بدل 8) قال الجدول
+     بثقة: «تبلغ 4.25 في يوم واحد» — ورقمٌ سخيفٌ واحد يُسقط الثقة بما حوله.
+     والمحال بيّنٌ: لا يأتيك في شهرٍ تقييماتٌ أكثر مما جمعتَه في عمر محلّك. */
+  const implausible = perMonth > 0 && Number.isFinite(count) && count > 0 && perMonth > count / 3;
+  const rateNote = implausible
+    ? `<div class="msg warn"><b>راجع «معدّل التقييمات الجديدة»: ${perMonth.toLocaleString('ar-SA-u-nu-latn')} شهريًّا</b>
+        — وعندك ${count.toLocaleString('ar-SA-u-nu-latn')} تقييمًا في عمر محلّك كلِّه، فهذا المعدّل يجمعها في أقلّ من ثلاثة أشهر.
+        ولعلّه عددُ عملائك لا عددُ تقييماتك؛ والحقلان متجاوران. وعمودُ «المدة» أدناه مبنيٌّ عليه، فصحِّحه ليصحّ.</div>`
+    : '';
+
   // عمود الأربع نجوم لا يُعرَض إلا إن كان يبلغ هدفًا: فوق أربعٍ لا يرفعها شيء دونها.
   const showFours = l.rows.some((r) => r.fours !== null);
   const rows = l.rows.map((r) => `<tr>
@@ -118,6 +130,7 @@ export function starsBlock(place, { perMonth = 0 } = {}) {
 
   return `<section class="stars-calc">
     <h2>ما الذي يلزم لرفع التقييم</h2>
+    ${rateNote}
     <p class="note">حسابٌ مباشر من متوسطك (${l.avg}) وعدد تقييماتك (${l.count.toLocaleString('ar-SA-u-nu-latn')}): المتوسط مجموعُ النجوم على عددها، فكل رقم أدناه مشتقٌّ منه لا مُقدَّر.</p>
     <table><thead><tr>
       <th>الهدف</th><th>تقييمات بخمس نجوم</th>${showFours ? '<th>أو بأربع نجوم</th>' : ''}${perMonth > 0 ? '<th>المدة بمعدّلك</th>' : ''}

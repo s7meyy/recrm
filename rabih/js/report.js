@@ -22,7 +22,7 @@ import { promisesBlock } from './promises.js';
 import { effectBlock } from './effect.js';
 import { briefBlock } from './brief.js';
 import { coverageBlock } from './coverage.js';
-import { actionsBlock, checklistBlock, commitBlock, draftsBlock, keepBlock, unansweredBlock } from './action.js';
+import { actionsBlock, checklistBlock, commitBlock, draftsBlock, keepBlock, unansweredBlock, nextBlock } from './action.js';
 import { selfCompareBlock, trendWithinBlock } from './compare.js';
 
 const esc = (s) => String(s ?? '')
@@ -125,6 +125,11 @@ export function mdToHtml(md) {
 function numberSections(html) {
   const items = [];
   const out = String(html).replace(/<h2(\s[^>]*)?>([\s\S]*?)<\/h2>/g, (m, attrs, inner) => {
+    /* **ما لا يُعرَض رقمُه لا يستهلك رقمًا.**
+       كان العنوان الموسوم `no-count` يأخذ رقمَه في البناء ثم يُخفيه التنسيق،
+       فيرى القارئ 5 ثم 7 ثم 9 — ستَّ قفزاتٍ في تقريرٍ واحد — ويذكر الفهرسُ
+       أرقامًا لا يجد لها أثرًا في المتن. فالعدّ يتخطّاه أصلًا. */
+    if (/\bno-count\b/.test(attrs || '')) return m;
     const n = items.length + 1;
     const id = `sec${n}`;
     const title = inner.replace(/<[^>]+>/g, '').trim();
@@ -217,7 +222,7 @@ function topicsBlock(place, lead = []) {
   }).join('');
 
   return `<section class="topics">
-    <h2 class="no-count">المواضيع الواردة في التعليقات</h2>
+    <h2>المواضيع الواردة في التعليقات</h2>
     <p class="fine">مُستخرَجة آليًّا من نصوص التعليقات، لا من تقدير نموذج.</p>
     ${inferred ? `<p class="fine"><b>${inferred} من ${judged} حكمًا مستنبَطٌ لا منصوص</b>: ذُكر الموضوع في التعليق
     بلا لفظٍ يحسم رأي صاحبه فيه، فأُخذ حكمُه من نجوم التعليق كلّه. وهو أضعفُ من المنصوص، ولم يُطرَح
@@ -253,7 +258,7 @@ function recencyBlock(place) {
   }</tbody></table>` : '';
 
   return `<section class="recency">
-    <h2 class="no-count">القراءة الزمنية</h2>
+    <h2>القراءة الزمنية</h2>
     <div class="rec-grid">
       <div class="rec-cell"><b>آخر ${r.window} يومًا</b><span>${r.recent.avg ?? '—'}</span><small>${r.recent.n} تعليقًا${r.recent.neg !== null ? ` · سلبي ${r.recent.neg}%` : ''}</small></div>
       <div class="rec-cell"><b>ما قبلها</b><span>${r.older.avg ?? '—'}</span><small>${r.older.n} تعليقًا${r.older.neg !== null ? ` · سلبي ${r.older.neg}%` : ''}</small></div>
@@ -272,7 +277,7 @@ function entitiesReportBlock(place) {
   if (!people.length && !products.length) return '';
   const row = (e) => `<tr><td>${esc(e.name)}</td><td>${e.total}</td><td>${e.pos}</td><td>${e.neg}</td><td>${esc(e.verdict)}</td></tr>`;
   return `<section class="entities">
-    <h2 class="no-count">الأصناف والأسماء المتكررة</h2>
+    <h2>الأصناف والأسماء المتكررة</h2>
     <p class="fine">مستخرجة من نصوص التعليقات مباشرة — تدلّ على ما يُذكر بعينه لا على المحاور العامة.</p>
     ${products.length ? `<table><thead><tr><th>الصنف أو العبارة</th><th>مرات</th><th>إيجابي</th><th>سلبي</th><th>الاتجاه</th></tr></thead><tbody>${products.map(row).join('')}</tbody></table>` : ''}
     ${people.length ? `<p class="fine"><b>أشخاص ذُكروا بالاسم:</b> ${people.map((p) => `${esc(p.name)} (${p.total} — ${esc(p.verdict)})`).join(' · ')}</p>` : ''}
@@ -283,7 +288,7 @@ function repliesReportBlock(place) {
   const a = analyzeReplies(place);
   if (!a.total || (!a.replied && !a.negTotal)) return '';
   return `<section class="replies">
-    <h2 class="no-count">تعامل المنشأة مع التعليقات</h2>
+    <h2>تعامل المنشأة مع التعليقات</h2>
     <div class="rec-grid">
       <div class="rec-cell"><b>نسبة الرد</b><span>${a.rate ?? '—'}%</span><small>${a.replied} من ${a.total}</small></div>
       <div class="rec-cell ${a.negRate !== null && a.negRate < 50 ? 'down' : ''}"><b>الرد على الشكاوى</b><span>${a.negRate ?? '—'}%</span><small>${a.negReplied} من ${a.negTotal}</small></div>
@@ -299,7 +304,7 @@ function photosBlock(photos = []) {
   const valid = photos.filter((p) => p?.url);
   if (!valid.length) return '';
   return `<section class="photos">
-    <h2 class="no-count">صور المنشأة</h2>
+    <h2>صور المنشأة</h2>
     <div class="photo-grid">${
       valid.slice(0, 6).map((p) => `<figure><img src="${esc(p.url)}" alt="${esc(p.caption || 'صورة المنشأة')}">${
         p.caption ? `<figcaption>${esc(p.caption)}</figcaption>` : ''
@@ -401,6 +406,9 @@ code{background:#f3f5f8;padding:0 1mm;border-radius:3px;font-size:10pt}
 .spark{flex:1 1 40mm;min-width:32mm;color:var(--navy)}
 .spark svg{display:block;width:100%;height:12mm}
 .spark-ends{display:flex;justify-content:space-between;font-size:8pt;color:var(--muted);margin-top:.5mm}
+.spark-scale{opacity:.75;letter-spacing:.02em}
+.ring-of{position:absolute;inset-inline:0;bottom:-4mm;text-align:center;font-size:7.5pt;color:var(--muted);white-space:nowrap}
+.ring{margin-bottom:4mm}
 .ring{position:relative;width:18mm;height:18mm;flex:0 0 auto}
 .ring svg{width:100%;height:100%;transform:rotate(0deg)}
 .ring-val{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.1}
@@ -435,6 +443,15 @@ code{background:#f3f5f8;padding:0 1mm;border-radius:3px;font-size:10pt}
 .fixit p{margin:0;font-size:10pt;line-height:1.9}
 /* ما ينجح، وما ينتظر ردًّا. */
 .keep{break-inside:avoid}
+.next{break-inside:avoid}
+.next-grid{display:grid;grid-template-columns:1fr 1fr;gap:4mm;margin-bottom:4mm}
+.next-grid>div{border:1px solid var(--line);border-radius:8px;padding:4mm 5mm;background:#fbfcfd}
+.next-grid b{display:block;color:var(--navy);margin-bottom:2mm;font-size:10.5pt}
+.next-grid p,.next-grid li{font-size:10pt;line-height:1.9;margin:0}
+.next-grid ul{margin:0;padding-inline-start:5mm}
+.asks{padding:4mm 5mm;border-inline-start:3px solid var(--gold);background:#faf7ef;border-radius:6px}
+.asks>b{display:block;margin-bottom:2mm;font-size:10.5pt;color:#7a5f14}
+.asks ul{margin:0 0 2mm;padding-inline-start:5mm;font-size:10pt;line-height:1.95}
 .keeps{list-style:none;margin:0;padding:0}
 .keeps li{padding:3mm 4mm;margin-bottom:2mm;border-inline-start:3px solid #1e8449;background:#f5fbf7;border-radius:6px}
 .keeps b{color:#14532d;margin-inline-end:2mm}
@@ -514,6 +531,8 @@ code{background:#f3f5f8;padding:0 1mm;border-radius:3px;font-size:10pt}
 .voice .q{margin:0 0 3mm;padding:3mm 4mm;border-radius:6px;border-inline-start:3px solid var(--line);background:#fafbfc;break-inside:avoid}
 .voice .q.neg{border-inline-start-color:#c0392b;background:#fdf6f5}
 .voice .q.pos{border-inline-start-color:#1e8449;background:#f5fbf7}
+.voice .q.answered{opacity:.82}
+.voice .q .ans{color:#1e8449;font-weight:600}
 .voice .q p{margin:0 0 2mm;font-size:10pt;line-height:1.85}
 .voice .q footer{font-size:8.5pt;color:var(--muted)}
 .impact .assume{padding:3mm 4mm;background:#fbfcfd;border:1px solid var(--line);border-radius:6px;margin-bottom:3mm;font-size:9.5pt}
@@ -598,6 +617,7 @@ figcaption{font-size:9pt;color:var(--muted);margin-top:1mm;text-align:center}
   .act-grid b,.cover-grid b,.bcard b,.check-foot b,.stat b,.rec-cell b{font-size:10.5pt}
   .month .mv,.month .ml{font-size:9.5pt}
   .spark-ends{font-size:9pt}
+  .ring-of{font-size:8.5pt;bottom:-5mm}
   .ring-val span{font-size:8.5pt}
   .ring{width:22mm;height:22mm}
   /* صفُّ الموضوع خمسةُ أعمدة لا تسع شاشة يد: يصير سطرين — الاسمُ والحكمُ
@@ -675,9 +695,9 @@ export function buildReportHtml({ place: rawPlace, ctx = {}, markdown = '', phot
      ويسقط وعدُ التقرير كلُّه صامتًا. والإسناد يُضمَن هنا لا يُفترَض. */
   assignReviewIds(place);
   const opt = { toc: true, stars: true, topics: true, photos: true, recency: true, entities: true, replies: true, confidence: true,
-    priority: true, calc: true, voice: true, impact: true, sources: true, brief: true, coverage: true,
+    priority: false, calc: true, voice: true, impact: true, sources: true, brief: true, coverage: true,
     actions: true, checklist: true, commit: true, drafts: true, selfCompare: true, card: true,
-    keep: true, unanswered: true,
+    keep: true, unanswered: true, next: true,
     cooccur: true, timing: true, promises: true, effect: true, bias: true, ...(sector?.show || {}), ...show };
   const s = stats(place);
   const body = tocFrom(mdToHtml(markdown));
@@ -757,6 +777,7 @@ export function buildReportHtml({ place: rawPlace, ctx = {}, markdown = '', phot
     opt.impact ? impactBlock(place, { ...(job?.assume || {}), lossRate: (Number(job?.assume?.loss) || 25) / 100 }) : '',
     opt.photos ? photosBlock(photos) : '',
     opt.checklist ? checklistBlock(place, job || {}) : '',
+    opt.next ? nextBlock(place, job || {}) : '',
     opt.drafts ? draftsBlock(job || {}) : '',
   ].filter(Boolean).join('\n');
 

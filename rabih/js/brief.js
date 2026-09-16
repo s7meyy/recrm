@@ -24,7 +24,16 @@ const num = (n) => (Number.isFinite(Number(n)) ? Number(n).toLocaleString('ar-SA
 /** سهمٌ ودلالة: وما دون هامش الخطأ لا يُسمّى تغيّرًا. */
 function trendOf(place) {
   const r = recentVsOlder(place);
-  if (!r || r.verdict === 'غير كافٍ' || r.diff === null) return { label: 'لا يُقاس بعد', cls: 'flat', detail: 'يلزم تقريران أو تعليقات مؤرَّخة أكثر.' };
+  if (!r || r.verdict === 'غير كافٍ' || r.diff === null) {
+    /* الشارةُ حكمٌ إحصائيّ والخطُّ بجوارها وصفٌ للمسار، فكانت تُقرأ نفيًا
+       لما يرسمه. فتُسمّى بما هي: الاتجاه لم يُحسَم، والمسار مرسومٌ كما وقع. */
+    return {
+      label: 'الاتجاه لم يُحسَم',
+      cls: 'flat',
+      detail: r && r.note ? r.note : 'يلزم تعليقاتٌ مؤرَّخة أكثر في كل فترة.',
+      hint: 'والخطُّ بجانبه يرسم ما وقع فعلًا، ولا يُحسَم منه صعودٌ ولا هبوط.',
+    };
+  }
   if (r.verdict === 'انحدار') return { label: `انحدار ${Math.abs(r.diff).toFixed(2)}`, cls: 'down', detail: `آخر 90 يومًا ${r.recent.avg} مقابل ${r.older.avg} قبلها.` };
   if (r.verdict === 'تحسّن') return { label: `تحسّن ${r.diff.toFixed(2)}`, cls: 'up', detail: `آخر 90 يومًا ${r.recent.avg} مقابل ${r.older.avg} قبلها.` };
   return { label: 'ثابت', cls: 'flat', detail: `آخر 90 يومًا ${r.recent.avg} مقابل ${r.older.avg} قبلها.` };
@@ -74,8 +83,15 @@ function sparkline(place) {
   if (months.length < 3) return '';
   const W = 100;
   const H = 28;
-  const lo = Math.min(...months.map((m) => m.avg), 5);
-  const hi = Math.max(...months.map((m) => m.avg), lo + 0.5);
+  /* **مقياسٌ ثابت لا يتمدّد على البيانات.**
+     كان يُشَدّ بين أدنى قيمةٍ وأعلاها، فهبوطٌ من 4.4 إلى 4.3 يُرسَم كهبوطٍ
+     من خمسٍ إلى واحد — وهزّةٌ لا تُذكَر تُقرأ انهيارًا. فالمدى نصفُ نجمةٍ
+     حول القيم على الأقل، ويُكتَب حدّاه على الرسم فلا يُقرأ بلا سقف. */
+  const min = Math.min(...months.map((m) => m.avg));
+  const max = Math.max(...months.map((m) => m.avg));
+  const pad = Math.max(0.25, (0.5 - (max - min)) / 2);
+  const lo = Math.max(1, Math.floor((min - pad) * 10) / 10);
+  const hi = Math.min(5, Math.ceil((max + pad) * 10) / 10);
   const x = (i) => W - (i / (months.length - 1)) * W;
   const y = (v) => H - ((v - lo) / (hi - lo || 1)) * H;
   const pts = months.map((m, i) => `${x(i).toFixed(1)},${y(m.avg).toFixed(1)}`).join(' ');
@@ -87,7 +103,9 @@ function sparkline(place) {
         stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>
       <circle cx="${x(months.length - 1).toFixed(1)}" cy="${y(last.avg).toFixed(1)}" r="2.2" fill="currentColor"/>
     </svg>
-    <div class="spark-ends"><span>${esc(months[0].label)}</span><span>${esc(last.label)}</span></div>
+    <div class="spark-ends"><span>${esc(months[0].label)}</span>
+      <span class="spark-scale">${lo} — ${hi}</span>
+      <span>${esc(last.label)}</span></div>
   </div>`;
 }
 
@@ -103,6 +121,7 @@ function negRing(s) {
         stroke-dasharray="${pct} ${100 - pct}" stroke-dashoffset="25" stroke-linecap="butt"/>
     </svg>
     <div class="ring-val"><b>${pct}%</b><span>سلبي</span></div>
+    <div class="ring-of">${s.negative} من ${s.rated}</div>
   </div>`;
 }
 
@@ -129,7 +148,7 @@ export function briefBlock(place, job = {}) {
       <div class="hero-side">
         <div><b>${num(s.googleCount ?? '—')}</b> تقييمًا على قوقل</div>
         <div><b>${num(s.total)}</b> تعليقًا حُلِّل${s.declaredWithText ? ` من ${num(s.declaredWithText)} منصوصًا` : ''}</div>
-        <div class="fine">${esc(b.trend.detail)}</div>
+        <div class="fine">${esc(b.trend.detail)}${b.trend.hint ? ` ${esc(b.trend.hint)}` : ''}</div>
       </div>
     </div>
 
