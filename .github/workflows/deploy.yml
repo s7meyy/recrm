@@ -63,6 +63,25 @@ jobs:
 
       # رسالة النشرة تُمرَّر **متغيّرَ بيئة لا استبدالًا نصّيًا**: نصّ الالتزام يكتبه بشر،
       # وحقنه في سطر الصدفة مباشرةً بابٌ لتنفيذ ما ليس منه.
+      # الأداة بإصدارٍ مثبَّت لا بـ@latest، ومعها تجاوزٌ لتبعية مكسورة عند مصدرها:
+      # @types/node@26.6.0 مُدرَج في سجلّ npm وملفُّه مفقود (404)، فتسقط كل نشرة
+      # تحلّ التبعيات من جديد. وقع هذا فعلًا في نشرة رابح، وهذا الملف كان سيلقاه.
+      - name: تثبيت أداة Netlify
+        if: steps.guard.outputs.has_token == 'true'
+        run: |
+          mkdir -p "$RUNNER_TEMP/nl"
+          cat > "$RUNNER_TEMP/nl/package.json" <<'JSON'
+          {
+            "name": "netlify-deploy-runner",
+            "private": true,
+            "dependencies": { "netlify-cli": "27.7.0" },
+            "overrides": { "@types/node": "26.5.1" }
+          }
+          JSON
+          cd "$RUNNER_TEMP/nl"
+          npm install --no-audit --no-fund
+          echo "$RUNNER_TEMP/nl/node_modules/.bin" >> "$GITHUB_PATH"
+
       - name: نشر
         if: steps.guard.outputs.has_token == 'true'
         env:
@@ -70,5 +89,6 @@ jobs:
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID || '8fab1119-ac3c-4473-8fea-ea61abab8ab6' }}
           COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
-          npx -y netlify-cli@latest deploy --prod --no-build \
-            --message "${COMMIT_MESSAGE:-نشر يدوي}"
+          # رسالةٌ طويلة تُسقط النشر بـ«Request URI Too Long»: تُمرَّر في العنوان.
+          SHORT_MESSAGE=$(printf '%s' "$COMMIT_MESSAGE" | python3 -c 'import sys;print(sys.stdin.read().split(chr(10))[0][:110])')
+          netlify deploy --prod --no-build --message "${SHORT_MESSAGE:-نشر يدوي}"
