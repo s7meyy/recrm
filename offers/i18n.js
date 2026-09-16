@@ -27,6 +27,16 @@ export const STRINGS = {
     whatsapp: 'واتساب', call: 'اتصال', location: 'الموقع', allOffers: 'كل العروض',
     disclaimer: 'الأسعار والتفاصيل قابلة للتغيير — للتأكد تواصل معنا مباشرة.',
     ref: 'رقم',
+    // حقائقُ النوع (المرحلة ٤٨) — تُترجَم هنا لأنّ الصفحة تُعرض بلغتين.
+    facts: {
+      rooms: 'غرفة', baths: 'دورة مياه', floor: 'الدور', floorsCount: 'أدوار',
+      buildingAge: 'عمر البناء', buildingCondition: 'الحالة',
+      plotDimensions: 'الأطوال', streetWidth: 'عرض الشارع', streetsCount: 'شوارع', facades: 'الواجهات',
+    },
+    factUnits: { buildingAge: 'سنة', streetWidth: 'م' },
+    listedNew: 'مُدرَجٌ حديثًا',
+    listedMonths: (n) => (n === 1 ? 'مُدرَجٌ منذ شهر' : n === 2 ? 'مُدرَجٌ منذ شهرين' : n <= 10 ? `مُدرَجٌ منذ ${n} أشهر` : `مُدرَجٌ منذ ${n} شهرًا`),
+    listedYears: (n) => (n === 1 ? 'مُدرَجٌ منذ سنة' : n === 2 ? 'مُدرَجٌ منذ سنتين' : `مُدرَجٌ منذ ${n} سنوات`),
   },
   en: {
     dir: 'ltr', lang: 'en', other: 'العربية', title: 'Available Listings',
@@ -37,6 +47,15 @@ export const STRINGS = {
     whatsapp: 'WhatsApp', call: 'Call', location: 'Location', allOffers: 'All listings',
     disclaimer: 'Prices and details are subject to change — please contact us to confirm.',
     ref: 'Ref',
+    facts: {
+      rooms: 'rooms', baths: 'baths', floor: 'Floor', floorsCount: 'floors',
+      buildingAge: 'Age', buildingCondition: 'Condition',
+      plotDimensions: 'Dimensions', streetWidth: 'Street width', streetsCount: 'streets', facades: 'Facades',
+    },
+    factUnits: { buildingAge: 'yrs', streetWidth: 'm' },
+    listedNew: 'Newly listed',
+    listedMonths: (n) => `Listed ${n} month${n === 1 ? '' : 's'} ago`,
+    listedYears: (n) => `Listed ${n} year${n === 1 ? '' : 's'} ago`,
   },
 };
 
@@ -75,4 +94,30 @@ export function listingTitle(listing, lang) {
   const where = [listing.district, listing.city].filter(Boolean).join(lang === 'en' ? ', ' : '، ');
   if (!where) return type || listing.title || '';
   return lang === 'en' ? `${type} — ${where}` : `${type} — ${where}`;
+}
+
+
+/**
+ * وسمُ حقيقةٍ من حقائق النوع: «٤ غرفة» أو «Floor 3» (المرحلة ٤٨).
+ *
+ * والعربيةُ تضع العددَ قبل معدوده والإنجليزيةُ بعده في بعضها — فيُفرَّق بين ما هو معدودٌ
+ * (غرف، دورات مياه) وما هو وصفٌ بعنوانٍ وقيمة (الدور، الحالة، الواجهات).
+ */
+const COUNTED = new Set(['rooms', 'baths', 'floorsCount', 'streetsCount']);
+
+export function factLabel(key, value, strings, nf) {
+  const name = strings.facts?.[key];
+  if (!name) return null;
+  const unit = strings.factUnits?.[key];
+  const shown = typeof value === 'number' ? nf.format(value) : String(value);
+  if (COUNTED.has(key)) return `${shown} ${name}`;
+  return `${name}: ${shown}${unit ? ` ${unit}` : ''}`;
+}
+
+/** «مُدرَجٌ منذ…» — والشهرُ الأوّل «حديثًا»، فرقمٌ صفرٌ لا يُقال. */
+export function listedLabel(months, strings) {
+  if (months == null) return null;
+  if (months < 1) return strings.listedNew;
+  if (months < 12) return strings.listedMonths(months);
+  return strings.listedYears(Math.floor(months / 12));
 }

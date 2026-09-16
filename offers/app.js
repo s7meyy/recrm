@@ -1,7 +1,7 @@
 // صفحة العروض العامة (المرحلة ٩): تقرأ اللقطة المنشورة من /api/listings وتعرضها.
 // لا تصل إلى IndexedDB ولا إلى أي ملف من النظام الداخلي — صفحة مستقلة بالكامل.
 
-import { STRINGS, currentLang, rememberLang, typeName, purposeNames, listingTitle } from './i18n.js';
+import { STRINGS, currentLang, rememberLang, typeName, purposeNames, listingTitle, factLabel, listedLabel } from './i18n.js';
 
 const grid = document.getElementById('grid');
 const statusEl = document.getElementById('status');
@@ -29,6 +29,12 @@ const nf = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
 const df = new Intl.DateTimeFormat('ar-SA-u-ca-gregory-nu-latn', { year: 'numeric', month: 'long', day: 'numeric' });
 const money = (n) => (n == null ? t.priceOnRequest : `${nf.format(n)} ${lang === 'en' ? 'SAR' : 'ريال'}`);
 const area = (n) => (n == null ? null : `${nf.format(n)} ${lang === 'en' ? 'm²' : 'م²'}`);
+/** كم شهرًا مضى على إدراج العرض — و`null` إن لم يُعرف تاريخُه أو كان في المستقبل. */
+const monthsSince = (iso) => {
+  const at = new Date(iso || '').getTime();
+  if (!Number.isFinite(at) || at > Date.now()) return null;
+  return Math.floor((Date.now() - at) / (30 * 86400000));
+};
 
 let all = [];
 const filters = { type: '', purpose: '', district: '' };
@@ -78,7 +84,16 @@ function card(listing) {
       el('div', { class: 'card-meta' },
         purposeNames(listing, lang).map((p) => el('span', { class: 'tag', text: p })),
         area(listing.area) ? el('span', { class: 'tag', text: area(listing.area) }) : null,
+        // حقائقُ النوع (المرحلة ٤٨): «كم غرفة؟» أوّلُ ما يُسأل، وكان جوابُه لا يخرج أصلًا.
+        ...Object.entries(listing.facts || {})
+          .map(([k, v]) => factLabel(k, v, t, nf))
+          .filter(Boolean)
+          .map((text) => el('span', { class: 'tag', text })),
         listing.ref ? el('span', { class: 'tag', text: `${t.ref} ${listing.ref}` }) : null),
+      // «مُدرَجٌ منذ» لهذا العرض وحده — لا تاريخُ اللقطة الذي يستوي عنده الجديدُ والقديم.
+      listedLabel(monthsSince(listing.listedAt), t)
+        ? el('div', { class: 'card-since', text: listedLabel(monthsSince(listing.listedAt), t) })
+        : null,
       listing.notes ? el('p', { class: 'card-notes', text: listing.notes }) : null,
       el('div', { class: 'card-actions' },
         waLink ? el('a', { class: 'btn btn-primary', href: waLink, target: '_blank', rel: 'noopener', text: t.whatsapp }) : null,

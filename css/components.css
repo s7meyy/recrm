@@ -1062,3 +1062,71 @@ body.modal-open .voice-dock { display: none; }
   .start-step { flex-wrap: wrap; }
   .start-step .btn { width: 100%; }
 }
+
+/* ===== الجدولُ بطاقةً على الجوّال (المرحلة ٤٨) ===== */
+/*
+  كان `min-width: 900px` يجعل كلَّ جدولٍ يُسحب سحبًا على شاشةٍ عرضُها ٣٩٠، فيُرى نصفُه
+  وينقطع في منتصف خليّة — وأهمُّ أعمدته آخرُها، أي أبعدُها. وهنا يصير كلُّ صفٍّ بطاقةً
+  مستقلّةً تُقرأ من أوّلها إلى آخرها بلا سحب، وكلُّ خليّةٍ «عنوانٌ: قيمة».
+
+  والعناوينُ تأتي من `data-label` التي يضعها `table-cards.js` نقلًا عن `<thead>` —
+  فلا يُكتب عنوانٌ مرّتين، ولا يُعدَّل ثلاثون موضعًا يُبنى فيها جدول.
+*/
+@media (max-width: 720px) {
+  .table-wrap { border: 0; background: transparent; overflow-x: visible; }
+  .table { min-width: 0; border-collapse: separate; border-spacing: 0; }
+  .table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .table tbody tr {
+    display: block; background: var(--surface);
+    border: 1px solid var(--line); border-radius: var(--radius);
+    padding: var(--dhad-space-3); margin-bottom: var(--dhad-space-2);
+  }
+  .table tbody tr:last-child { margin-bottom: 0; }
+  .table tbody tr:last-child td { border-bottom: 0; }
+  .table td {
+    display: flex; align-items: baseline; gap: var(--dhad-space-3);
+    padding: 6px 0; border-bottom: 1px dashed var(--line-soft, var(--line));
+  }
+  .table td:last-child { border-bottom: 0; padding-bottom: 0; }
+  .table td[data-label]::before {
+    content: attr(data-label);
+    flex: 0 0 38%; min-width: 0;
+    color: var(--muted); font-size: var(--fs-sm); font-weight: 600;
+    line-height: var(--dhad-line-body);
+  }
+  /* أوّلُ خليّةٍ هي هويّةُ الصفّ: تُرفع عنوانًا للبطاقة بلا تسميةٍ تُزاحمها. */
+  .table tbody td:first-child {
+    font-weight: 600; font-size: var(--fs-md, 1rem); padding-top: 0;
+  }
+  .table tbody td:first-child::before { content: none; }
+  /* خليّةٌ فارغةٌ لا تشغل سطرًا في بطاقةٍ تُقرأ بالإبهام. */
+  .table td:empty { display: none; }
+  .table td .row { flex-wrap: wrap; }
+  .table td.num { white-space: normal; }
+}
+
+/* بلاطةُ مستند (المرحلة ٤٨): لا مصغَّرةَ له، فيُعرض اسمُه — وصورةٌ مكسورةٌ أسوأُ من اسم. */
+.img-tile.is-doc { background: var(--warn-soft); border-color: var(--warn); }
+.doc-name {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  padding: 4px 6px; text-align: center; font-size: var(--dhad-font-size-100);
+  color: var(--text); line-height: 1.4; overflow: hidden; word-break: break-word;
+}
+.doc-name::before { content: '📄 '; }
+
+/* نقطةُ حال المزامنة (المرحلة ٤٨): لونٌ يُرى بطرف العين، ونصٌّ يُقرأ عند الحاجة.
+   ولا تعتمد على اللون وحده: الشكلُ يفرّق بين «لم تُزامن بعد» (حلقة) وغيرها (قرص). */
+.sync-dot {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: var(--dhad-size-touch); min-height: var(--dhad-size-touch);
+  font-size: 12px; text-decoration: none; line-height: 1;
+}
+.sync-ok { color: var(--ok); }
+.sync-stale { color: var(--warn); }
+.sync-error { color: var(--danger); }
+.sync-never { color: var(--muted); }
+/* المتعثّرةُ تنبض نبضةً هادئة — ومن كره الحركة لا تتحرّك عنده. */
+@media (prefers-reduced-motion: no-preference) {
+  .sync-error { animation: sync-pulse 2.4s ease-in-out infinite; }
+}
+@keyframes sync-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }

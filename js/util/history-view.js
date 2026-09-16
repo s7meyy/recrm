@@ -26,6 +26,7 @@ const FIELD_LABELS = {
   commission: 'العمولة',
   partnerName: 'الشريك',
   partnerShare: 'نصيب الشريك',
+  agentShare: 'حصة الوسيط',
   commissionPaidAt: 'قبض العمولة',
   assignedTo: 'الإسناد',
   type: 'النوع',

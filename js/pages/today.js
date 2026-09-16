@@ -13,6 +13,7 @@ import { receivables } from '../util/receivables.js';
 import { awaitingReply } from '../util/lead-score.js';
 import { upcomingShowings, needFeedback } from '../util/showings.js';
 import { expiringAgreements } from '../util/agreements.js';
+import { expiryAlerts, STATE_LABEL as REGA_STATE } from '../util/rega.js';
 import { externalDuplicates } from '../util/duplicates.js';
 import { publishDrift } from '../util/publish-drift.js';
 import { storageStatus, formatBytes } from '../data/images.js';
@@ -20,6 +21,7 @@ import { dealAnniversaries } from '../util/calendar.js';
 import { runPlans } from '../util/plans.js';
 import { el, clear, badge, emptyState, confirmDialog, toast, openModal, labeled, selectEl } from '../util/dom.js';
 import { startSteps, startProgress, shouldShowStart } from '../util/onboarding.js';
+import { goalFor } from '../util/team.js';
 import { suggestTemplate, renderTemplate, templateValues, TEMPLATE_CONTEXTS } from '../util/templates.js';
 import { whatsappButton } from '../util/outreach.js';
 import { formatSAR, formatDate, formatDateTime, formatNumber, relativeDays, daysBetween, daysWord, countWord, countOf } from '../util/format.js';
@@ -153,10 +155,22 @@ async function loadData() {
     return !Number.isNaN(d.getTime()) && d.getFullYear() === new Date().getFullYear() && d.getMonth() === new Date().getMonth();
   };
   const monthDeals = deals.filter((d) => thisMonth(d.date));
+  /**
+   * **هدفُك أنت لا هدفُ المكتب** (المرحلة ٤٨).
+   *
+   * كان الشريطُ يقيس عملَ المكتب كلِّه ويعرضه لكلّ من يفتح — والموظّفُ لا يملك تحريكَه
+   * وحده. فمن وُضع له هدفٌ شخصيّ قيس به وقيست صفقاتُه هو، **ومن لا هدفَ له يرى ما كان
+   * يراه**: هدفَ المكتب على عمل المكتب كلِّه.
+   */
+  const myGoal = goalFor(goals, getCurrentUser()?.id || '');
+  const mine = myGoal.scope === 'member'
+    ? monthDeals.filter((d) => (d.assignedTo || d.createdBy) === getCurrentUser()?.id)
+    : monthDeals;
   const progress = {
-    goals,
-    deals: monthDeals.length,
-    commission: monthDeals.reduce((a, d) => a + (Number(d.commission) || 0), 0),
+    goals: { ...goals, dealsPerMonth: myGoal.dealsPerMonth, commissionPerMonth: myGoal.commissionPerMonth },
+    scope: myGoal.scope,
+    deals: mine.length,
+    commission: mine.reduce((a, d) => a + (Number(d.commission) || 0), 0),
     spent: expenses.filter((e) => thisMonth(e.date)).reduce((a, e) => a + (Number(e.amount) || 0), 0),
   };
   // تجديد الإيجار: العقد الذي ينتهي خلال ٤٥ يومًا (أو انتهى ولم يُتابَع).
@@ -189,6 +203,13 @@ async function loadData() {
     anniversaries: dealAnniversaries(deals),
     // اتفاقيات توشك أو انتهت (المرحلة ٣١)
     agreements: expiringAgreements(ctx.properties, { defaultDays: company.agreementDurationDays || 90 }),
+    // ما ينتهي خلال شهر (المرحلة ٤٨): رخصةُ «فال» وتراخيصُ الإعلان — وكانتا تُحسبان
+    // في صفحة «العقود والتراخيص» وحدها، فيُسجَّل التاريخُ ولا يُنبَّه عليه.
+    expiry: expiryAlerts({
+      company,
+      properties: ctx.properties,
+      publishedIds: new Set(publishSettings.listingIds || []),
+    }),
     // المعاينات (المرحلة ٢٧): القادمة خلال ٤٨ ساعة، والتي مضت بلا انطباع.
     upcoming: upcomingShowings(showings),
     pendingFeedback: needFeedback(showings),
@@ -575,10 +596,12 @@ function build(container, d) {
 
   /* الأهداف الشهرية (المرحلة ١٣) — لا تظهر ما لم تضبط هدفًا */
   if (d.progress.goals.dealsPerMonth || d.progress.goals.commissionPerMonth) {
-    grid.append(section('هدف الشهر', null, el('div', {},
+    grid.append(section(d.progress.scope === 'member' ? 'هدفك هذا الشهر' : 'هدف الشهر', null, el('div', {},
       goalBar('صفقات', d.progress.deals, d.progress.goals.dealsPerMonth, (v) => String(v)),
       goalBar('عمولات', d.progress.commission, d.progress.goals.commissionPerMonth, formatSAR),
-      el('p', { class: 'muted small', text: `مصاريف هذا الشهر: ${formatSAR(d.progress.spent)} · الصافي: ${formatSAR(d.progress.commission - d.progress.spent)}` })),
+      el('p', { class: 'muted small', text: d.progress.scope === 'member'
+        ? 'يُقاس بصفقاتك المسندة إليك — ومصاريفُ المكتب أدناه للمكتب لا لك.'
+        : `مصاريف هذا الشهر: ${formatSAR(d.progress.spent)} · الصافي: ${formatSAR(d.progress.commission - d.progress.spent)}` })),
     { href: '#/expenses', hrefText: 'المصاريف →', money: true }));
   }
 
@@ -732,17 +755,54 @@ function build(container, d) {
   }
 
   /* اتفاقيات الوساطة (المرحلة ٣١): عقارٌ انتهت اتفاقيته قد تخسره وأنت لا تدري */
-  if (d.agreements.length) {
-    const expired = d.agreements.filter((x) => x.state === 'expired').length;
-    grid.append(section('اتفاقيات تنتهي', d.agreements.length,
-      el('div', {}, d.agreements.slice(0, 6).map((x) => row(
-        `${typeLabel(d.lists, x.property.type)} — ${[x.property.district, x.property.city].filter(Boolean).join('، ') || 'بلا حي'}`,
+  /**
+   * **ما ينتهي: رخصةً وترخيصًا واتفاقية** (المرحلة ٤٨).
+   *
+   * كانت الاتفاقياتُ وحدها هنا، والرخصُ في صفحةٍ تُفتح قصدًا. **وثلاثتُها سؤالٌ واحد**:
+   * ما الذي يسقط عنّي قريبًا؟ فجُمعت في لوحةٍ واحدةٍ مرتّبةٍ بالخطر لا بالتاريخ.
+   */
+  const expiry = d.expiry || { rows: [], fal: null };
+  const expiryCount = (expiry.fal ? 1 : 0) + expiry.rows.length + d.agreements.length;
+  if (expiryCount) {
+    const grave = expiry.fal?.state === 'expired' || expiry.expired
+      || d.agreements.some((x) => x.state === 'expired');
+    const place = (p) => `${typeLabel(d.lists, p.type)} — ${[p.district, p.city].filter(Boolean).join('، ') || 'بلا حي'}`;
+    const body = el('div', {});
+
+    // **رخصةُ «فال» أوّلًا مهما بعُد أجلُها**: انتهاؤها يُبطل التوثيق وإصدارَ التراخيص
+    // جميعًا — لا ترخيصًا واحدًا. فليست صفًّا في قائمةٍ تُرتَّب بالتاريخ.
+    if (expiry.fal) {
+      body.append(row(
+        el('span', {}, 'رخصة «فال» ', badge(REGA_STATE[expiry.fal.state], expiry.fal.state === 'expired' ? 'badge-danger' : 'badge-warn')),
+        expiry.fal.state === 'expired'
+          ? `انتهت منذ ${daysWord(-expiry.fal.days)} — ولا يُوثَّق عقدٌ ولا يُصدَر ترخيصُ إعلانٍ بها منتهية`
+          : `تنتهي بعد ${daysWord(expiry.fal.days)} (${formatDate(expiry.fal.endsAt)}) — وبها يُوثَّق كلُّ عقدٍ ويُصدَر كلُّ ترخيص`,
+        el('a', { class: 'btn btn-ghost btn-sm', href: '#/rega', text: 'العقود والتراخيص' })));
+    }
+
+    for (const r of expiry.rows.slice(0, 6)) {
+      body.append(row(
+        el('span', {}, `ترخيص إعلان — ${place(r.property)}`,
+          r.published ? badge('منشورٌ الآن', 'badge-danger') : null),
+        r.state === 'expired'
+          ? `انتهى منذ ${daysWord(-r.days)}${r.published ? ' — والعرضُ ما زال على صفحتك، وهذه مخالفةٌ قائمة' : ' — لا تُعلن به'}`
+          : `ينتهي بعد ${daysWord(r.days)} (${formatDate(r.endsAt)})`,
+        el('a', { class: 'btn btn-ghost btn-sm', href: `#/properties/${r.property.id}`, text: 'افتح العقار' })));
+    }
+
+    for (const x of d.agreements.slice(0, 6)) {
+      body.append(row(
+        `اتفاقية وساطة — ${place(x.property)}`,
         x.state === 'expired'
           ? `انتهت منذ ${daysWord(-x.days)} — جدّدها أو اتفق مع المالك`
           : `تنتهي بعد ${daysWord(x.days)} (${formatDate(x.endsAt)})`,
-        el('a', { class: 'btn btn-ghost btn-sm', href: `#/properties/${x.property.id}`, text: 'افتح العقار' }))),
-      ),
-      { href: '#/properties', hrefText: 'العقارات →', tone: expired ? 'today-warn' : '' }));
+        el('a', { class: 'btn btn-ghost btn-sm', href: `#/properties/${x.property.id}`, text: 'افتح العقار' })));
+    }
+
+    grid.append(section('ما ينتهي قريبًا', expiryCount, el('div', {},
+      el('p', { class: 'muted small', text: 'رخصتُك وتراخيصُ إعلاناتك واتفاقياتُك — مرتَّبةً بالخطر لا بالتاريخ. وما يسقط منها لا يُكتشف يوم ترفض المنصّة طلبك.' }),
+      body),
+    { href: '#/rega', hrefText: 'العقود والتراخيص →', tone: grave ? 'today-warn' : '' }));
   }
 
   /* المعاينات (المرحلة ٢٧): القادمة أولًا — موعدٌ يفوتك أغلى من متابعة تتأخر */

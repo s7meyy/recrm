@@ -153,6 +153,22 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .sidebar-icon { font-size: var(--dhad-font-size-700); flex-shrink: 0; width: 22px; text-align: center; }
 .sidebar-label { display: none; font-size: var(--fs-sm); }
+/* عناوينُ مجموعات القائمة (المرحلة ٤٨): سبعةٌ وعشرون بابًا في قائمةٍ مسطّحةٍ تُقرأ جدارًا.
+   والعنوانُ يتبع عنوانَ الرابط نفسَه: يغيب مع الطيّ فلا يبقى نصٌّ في عمودٍ من أيقونات،
+   ويبقى بدله فاصلٌ رفيعٌ يحفظ التجميع للعين. */
+.nav-group {
+  font-size: 0; padding: 7px var(--dhad-space-2) 6px;
+  font-weight: 700; letter-spacing: .06em; color: var(--muted);
+  white-space: nowrap; overflow: hidden;
+}
+.nav-group::after { content: ''; display: block; height: 1px; background: var(--line); }
+.nav-group:first-child { display: none; }  /* فاصلٌ فوق أوّل مجموعةٍ لا معنى له */
+.sidebar-toggle-checkbox:checked ~ .sidebar .nav-group {
+  display: block; font-size: var(--dhad-font-size-100);
+  padding: var(--dhad-space-3) var(--dhad-space-2) 4px;
+}
+.sidebar-toggle-checkbox:checked ~ .sidebar .nav-group:first-child { padding-top: 4px; }
+.sidebar-toggle-checkbox:checked ~ .sidebar .nav-group::after { content: none; }
 .sidebar-scrim { display: none; }
 /* `display: none !important`: `.icon-btn` في components.css يُحمَّل بعد هذا الملف
    وبأولويّةٍ مساوية (صنفٌ واحد)، فكان `display: inline-flex` يغلب فيظهر زرّ الدرج
@@ -183,6 +199,13 @@ button, input, select, textarea { font: inherit; color: inherit; }
     width: 240px; box-shadow: var(--shadow-modal); border-inline-end: 1px solid var(--line);
   }
   .sidebar .sidebar-label { display: inline; }
+  /* الدرجُ على الجوّال إمّا مغلقٌ بعرض صفر أو مفتوحٌ كاملًا — فالعنوانُ نصٌّ دائمًا. */
+  .sidebar .nav-group {
+    display: block; font-size: var(--dhad-font-size-100);
+    padding: var(--dhad-space-3) var(--dhad-space-2) 4px;
+  }
+  .sidebar .nav-group:first-child { padding-top: 4px; }
+  .sidebar .nav-group::after { content: none; }
   .sidebar .sidebar-brand { display: block; }
   .sidebar .sidebar-head { justify-content: space-between; }
   .sidebar-expand-btn { display: none; }

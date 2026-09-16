@@ -11,8 +11,10 @@ import { repo } from '../data/repository.js';
 import { ENUMS, labelFor, clientPriority, clientTagClass } from '../data/schema.js';
 import {
   getLists, typeLabel, statusLabel, zoneLabel,
-  getCompany, suggestInvoiceNumber, consumeInvoiceNumber, getFollowUpSettings,
+  getCompany, suggestInvoiceNumber, consumeInvoiceNumber, getFollowUpSettings, getTeam,
 } from '../data/settings.js';
+import { getCurrentUser } from '../data/repository.js';
+import { activeMembers, assignOptions } from '../util/team.js';
 import { loadMatchingContext, candidatesFor, scoreOne, hardReasonLabel, priceFlexFor } from '../data/matching.js';
 import { runPlans } from '../util/plans.js';
 import {
@@ -44,9 +46,11 @@ export async function render(container) {
 }
 
 async function loadData(ctx) {
-  const [lists, match] = await Promise.all([getLists(), loadMatchingContext()]);
+  const [lists, match, team] = await Promise.all([getLists(), loadMatchingContext(), getTeam()]);
   ctx.lists = lists;
   ctx.match = match;
+  ctx.team = team;                                   // إسنادُ المعاينة (المرحلة ٤٨)
+  ctx.meId = getCurrentUser()?.id || '';
   ctx.propertiesById = new Map(match.properties.map((p) => [p.id, p]));
   ctx.externalsById = new Map((match.externals || []).map((x) => [x.id, x]));
   ctx.clientsById = new Map(match.clients.map((c) => [c.id, c]));
@@ -359,6 +363,12 @@ function openShowingForm(ctx, request, row) {
   at.setHours(17, 0, 0, 0); // الخامسة عصرًا: أشيع وقت معاينة، ويبقى قابلًا للتغيير
   const atInput = el('input', { class: 'input', type: 'datetime-local', value: toInputDateTime(at.toISOString()) });
   const notesInput = el('textarea', { class: 'input', rows: 2, placeholder: 'نقطة لقاء، أو ما يجب أن تنتبه له' });
+  // من يذهب إليها (المرحلة ٤٨): «فلان، عندك معاينةُ الخامسة» — وتُسنَد إليك افتراضًا.
+  const showMembers = activeMembers(ctx.team || []);
+  const assignSelect = selectEl({
+    options: assignOptions(ctx.team || [], ctx.meId || ''),
+    value: ctx.meId || '', placeholder: 'بلا مسند',
+  });
   const errorsBox = el('div', { class: 'form-errors', hidden: true });
 
   const save = async () => {
@@ -374,6 +384,7 @@ function openShowingForm(ctx, request, row) {
         at: when, clientId: request.clientId, requestId: request.id,
         propertyId: isExternal ? null : p.id, externalId: isExternal ? p.id : null,
         notes: notesInput.value,
+        ...(showMembers.length > 1 ? { assignedTo: assignSelect.value || null } : {}),
       });
       if (rowStatus(row) === 'new') await setStatus(ctx, request, row, 'presented', { silent: true });
       modal.close();
@@ -393,6 +404,7 @@ function openShowingForm(ctx, request, row) {
       el('p', { class: 'muted small', text: `${typeLabel(ctx.lists, p.type)} — ${[p.district, p.city].filter(Boolean).join('، ')} · ${clientName(ctx.clientsById.get(request.clientId))}` }),
       el('div', { class: 'form-grid' },
         labeled('الموعد', atInput, { required: true }),
+        showMembers.length > 1 ? labeled('من يذهب إليها', assignSelect) : null,
         labeled('ملاحظة', notesInput, { full: true })),
       el('p', { class: 'field-hint', text: 'بعد الموعد بساعتين يسألك «يومي» عن رأي العميل — وهو ما يغذّي نسبة المعاينة إلى الصفقة.' })),
     footer: [

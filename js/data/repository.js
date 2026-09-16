@@ -199,6 +199,8 @@ const PREPARE = {
     }
     rec.typeFields = obj(rec.typeFields);
     rec.extra = obj(rec.extra);
+    rec.building = trim(rec.building);   // المبنى ورقم الوحدة (المرحلة ٤٨)
+    rec.unitNo = trim(rec.unitNo);
     rec.referralSource = trim(rec.referralSource); // تاق المصدر — غير `source` (مسار الإدخال)
     rec.management = cleanManagement(rec.management, rec); // إدارة الأملاك (المرحلة ٣٨)
     // العقد الموثَّق ونطاقه، وترخيص الإعلان (المرحلة ٤٠)
@@ -214,13 +216,19 @@ const PREPARE = {
         status: ['open', 'doing', 'done'].includes(m.status) ? m.status : 'open',
         cost: numField(rec, 'كلفة الصيانة', m.cost),
         bearer: ['owner', 'tenant', 'office'].includes(m.bearer) ? m.bearer : 'owner',
+        vendor: trim(m.vendor),            // من نفّذه (المرحلة ٤٨)
+        vendorPhone: trim(m.vendorPhone),
         doneAt: m.status === 'done' ? (m.doneAt || nowISO()) : null,
         note: trim(m.note),
       }))
       .filter((m) => m.what)
       .sort((a, b) => String(b.at).localeCompare(String(a.at)));
     rec.searchKey = buildSearchKey([
-      rec.city, rec.district, rec.notes, ...(rec.maintenance || []).map((m) => m.what),
+      rec.city, rec.district, rec.notes,
+      // المبنى ورقمُ الوحدة يُبحث بهما: «الياسمين ١٢» سؤالٌ يُطرح (المرحلة ٤٨).
+      rec.building, rec.unitNo,
+      // ومنفّذُ الصيانة كذلك: «من أصلح المكيّف؟» يُسترجع باسمه.
+      ...(rec.maintenance || []).flatMap((m) => [m.what, m.vendor]),
       ...Object.values(rec.typeFields), ...Object.values(rec.extra),
       rec.referralSource,
       // «إدارة أملاك» كلمةٌ يبحث بها من يبحث — فتدخل مفتاح البحث لا تبقى حقلًا صامتًا.
@@ -287,6 +295,7 @@ const PREPARE = {
     ]);
   },
   showings(rec) {
+    rec.assignedTo = rec.assignedTo || null; // الإسناد (المرحلة ٤٨)
     rec.notes = trim(rec.notes);
     // «تمّت» بلا انطباع حالةٌ مشروعة (تُسأل لاحقًا)، لكن الانطباع بلا «تمّت» تناقض:
     // لا رأي لمن لم يعاين. فتسجيل الانطباع يرفع الحالة إلى «تمّت» بدل أن يُردّ بخطأ.
@@ -295,8 +304,14 @@ const PREPARE = {
     rec.searchKey = buildSearchKey([rec.notes]);
   },
   deals(rec) {
+    rec.assignedTo = rec.assignedTo || null; // من أتمّها من فريقك (المرحلة ٤٨)
     rec.finalPrice = numField(rec, 'السعر النهائي', rec.finalPrice);
     rec.commission = numField(rec, 'العمولة', rec.commission);
+    // حصّةُ وسيطك نسبةً — وما خرج عن ٠–١٠٠ خطأٌ يُردّ لا يُبتلع، ومئةٌ حدُّها فالعمولةُ عمولةُ المكتب.
+    rec.agentShare = numField(rec, 'حصة الوسيط', rec.agentShare);
+    if (rec.agentShare != null && (rec.agentShare < 0 || rec.agentShare > 100)) {
+      throw new ValidationError(['حصة الوسيط نسبةٌ بين ٠ و١٠٠']);
+    }
     rec.notes = trim(rec.notes);
     // الدفعات والمسار والشريك (المرحلة ٢٤)
     rec.payments = (Array.isArray(rec.payments) ? rec.payments : [])
@@ -358,6 +373,7 @@ const PREPARE = {
     rec.searchKey = buildSearchKey([rec.text.slice(0, 2000), rec.fileName, ...Object.values(rec.fields).filter((v) => typeof v !== 'object')]);
   },
   tasks(rec) {
+    rec.assignedTo = rec.assignedTo || null; // الإسناد (المرحلة ٤٨)
     rec.title = trim(rec.title);
     rec.order = toNumberOrNull(rec.order) ?? 0;
     rec.done = !!rec.done;
@@ -372,12 +388,17 @@ const PREPARE = {
     rec.searchKey = buildSearchKey([rec.text, ...rec.tags]);
   },
   expenses(rec) {
+    rec.repeatMonthly = !!rec.repeatMonthly; // يتكرّر شهريًّا (المرحلة ٤٨)
     rec.amount = toNumberOrNull(rec.amount);
     rec.category = trim(rec.category) || 'other';
     rec.note = trim(rec.note);
     rec.dealId = rec.dealId || null;
     rec.propertyId = rec.propertyId || null;
     rec.searchKey = buildSearchKey([rec.note]);
+  },
+  // الإيرادُ كالمصروف في هذا: كان بلا تهيئةٍ خاصّة، فصارت له واحدةٌ للعلم المتكرّر.
+  incomes(rec) {
+    rec.repeatMonthly = !!rec.repeatMonthly; // يتكرّر شهريًّا (المرحلة ٤٨)
   },
   invoices(rec) {
     rec.type = trim(rec.type);
@@ -580,6 +601,8 @@ const TRACKED = {
   properties: ['price', 'status', 'captureStatus', 'area', 'ownerName', 'agreementSignedAt', 'assignedTo'],
   clients: ['stage', 'phone', 'phone2', 'doNotContact', 'referralSource', 'assignedTo'],
   requests: ['status', 'budgetMax', 'budgetMin', 'area', 'rooms', 'closeReason', 'assignedTo'],
+  // الإسنادُ يُتتبَّع كما تُتتبَّع الحالة (المرحلة ٤٨): «من نُقلت إليه ومتى» سؤالُ مديرٍ لا فضول.
+  deals: ['assignedTo', 'agentShare', 'commission', 'finalPrice'],
   deals: ['finalPrice', 'commission', 'partnerName', 'partnerShare', 'commissionPaidAt'],
   invoices: ['type', 'number', 'status'],
 };
@@ -1046,6 +1069,8 @@ const properties = Object.assign(makeEntity('properties'), {
       area: keep.area ?? drop.area,
       price: keep.price ?? drop.price,
       deedNumber: keep.deedNumber || drop.deedNumber,
+      building: keep.building || drop.building,
+      unitNo: keep.unitNo || drop.unitNo,
       ownerId: keep.ownerId || drop.ownerId,
       location: keep.location || drop.location,
       signboardImageId: keep.signboardImageId || drop.signboardImageId,

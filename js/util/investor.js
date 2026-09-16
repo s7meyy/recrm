@@ -118,8 +118,32 @@ export function investorPortfolio({ ownerId, properties = [], deals = [], now = 
   const actual = rows.reduce((a, r) => a + r.actual, 0);
   const missed = rows.reduce((a, r) => a + r.missed, 0);
 
+  const actualYield = value > 0 ? (actual / value) * 100 : null;
+
+  /**
+   * **أيُّها يجرّ البقيّة إلى أسفل؟** (المرحلة ٤٨)
+   *
+   * اللوحةُ كانت تعطي لكلّ عقارٍ عائدَه، وتعطي للمحفظة عائدَها الكلّيّ — **ولا تضع
+   * الاثنين في جملةٍ واحدة**. وتلك الجملةُ هي ورقةُ التفاوض كلُّها: بها يبيع المستثمر
+   * الخاسرَ ويشتري بدله منك، فتكسب عمولتين من رقمٍ كان محسوبًا عندك أصلًا.
+   *
+   * **والفرقُ نسبةٌ من متوسّط المحفظة لا فرقُ نقاطٍ مئويّة**: «أقلُّ بـ٤٠٪» تُفهم،
+   * و«أقلُّ بنقطةٍ ونصف» لا تُفهم. وما لا عائدَ واقعًا له يبقى `null` ولا يُقارَن.
+   */
+  for (const r of rows) {
+    r.vsPortfolio = (actualYield != null && actualYield > 0 && r.actualYield != null)
+      ? Math.round(((r.actualYield - actualYield) / actualYield) * 100)
+      : null;
+  }
+
   return {
-    rows: rows.sort((a, b) => (b.value || 0) - (a.value || 0)),
+    // **الأسوأُ أوّلًا** لا الأغلى: المحفظةُ تُقرأ لتُعالَج، وأوّلُ ما يُعالَج أضعفُها.
+    // وما لا يُقارَن (بلا قيمةٍ أو بلا عائد) يقع آخرًا — لا يتقدّم المجهولُ على المعلوم.
+    rows: rows.sort((a, b) => {
+      const A = a.vsPortfolio == null ? Infinity : a.vsPortfolio;
+      const B = b.vsPortfolio == null ? Infinity : b.vsPortfolio;
+      return A - B || (b.value || 0) - (a.value || 0);
+    }),
     count: rows.length,
     unpriced: rows.length - priced.length,
     value,
@@ -128,7 +152,7 @@ export function investorPortfolio({ ownerId, properties = [], deals = [], now = 
     missed,
     // العائدُ الكلّيّ يُقسم على قيمة ما عُرفت قيمتُه وحده — وعددُ المجهول يُقال فوقه.
     expectedYield: value > 0 ? (expected / value) * 100 : null,
-    actualYield: value > 0 ? (actual / value) * 100 : null,
+    actualYield,
     withoutLease: rows.filter((r) => !r.hasLease).length,
   };
 }

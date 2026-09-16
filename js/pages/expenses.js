@@ -11,9 +11,10 @@ import { repo, ValidationError } from '../data/repository.js';
 import { ENUMS, labelFor } from '../data/schema.js';
 import { getLists, typeLabel } from '../data/settings.js';
 import {
-  el, clear, labeled, selectEl, badge, openModal, confirmDialog, toast, emptyState, debounce,
+  el, clear, labeled, selectEl, checkbox, badge, openModal, confirmDialog, toast, emptyState, debounce,
 } from '../util/dom.js';
-import { formatSAR, formatDate, formatNumber, toInputDate, fromInputDate } from '../util/format.js';
+import { formatSAR, formatDate, formatNumber, countOf, toInputDate, fromInputDate } from '../util/format.js';
+import { dueRecurring, currentMonth } from '../util/recurring.js';
 import { matchesQuery } from '../util/arabic.js';
 
 const categoryLabel = (key, kind = 'expense') => labelFor(kind === 'income' ? ENUMS.incomeCategories : ENUMS.expenseCategories, key);
@@ -131,6 +132,56 @@ function renderSummary(ctx) {
       el('td', { class: 'num', text: formatSAR(r.expenses) }),
       el('td', {}, badge(formatSAR(r.net), r.net < 0 ? 'badge-danger' : 'badge-ok'))))))));
   area.append(el('p', { class: 'muted small', text: 'صافي الربح = عمولاتك من الصفقات + إيراداتك الأخرى − مصاريفك. وسعر البيع نفسه ليس دخلك، فلا يدخل هنا.' }));
+  renderRecurring(ctx, area);
+}
+
+/**
+ * **المتكرّرُ الذي لم يُقيَّد بعد هذا الشهر** (المرحلة ٤٨).
+ *
+ * يُقترح ولا يُكتب: المبلغُ قد يتغيّر، **وقيدٌ يقع في دفترك بلا علمك أسوأُ من قيدٍ يُنسى** —
+ * فالمنسيُّ تكتشفه وتُضيفه، والواقعُ بلا علمك تبني عليه قرارًا.
+ */
+function renderRecurring(ctx, area) {
+  const month = currentMonth();
+  const rows = ctx.kind === 'income' ? ctx.incomes : ctx.expenses;
+  const due = dueRecurring(rows, { month });
+  if (!due.length) return;
+
+  const word = kindWord(ctx);
+  const list = el('div', {});
+  for (const { draft } of due) {
+    list.append(el('div', { class: 'today-row' },
+      el('div', {},
+        el('div', { class: 'strong', text: draft.note || labelFor(categoriesFor(ctx), draft.category) }),
+        el('div', { class: 'muted small', text: `${formatSAR(draft.amount)} · ${formatDate(draft.date)}` })),
+      el('button', {
+        type: 'button', class: 'btn btn-sm', text: 'قيِّده',
+        onClick: async (e) => {
+          e.currentTarget.disabled = true;
+          try {
+            await entityFor(ctx).create(draft);
+            toast(`قُيِّد ${word}`, 'success');
+            await refresh(ctx);
+          } catch (err) { toast(err.message || 'تعذّر القيد', 'error'); e.currentTarget.disabled = false; }
+        },
+      })));
+  }
+
+  area.append(el('section', { class: 'panel' },
+    el('h2', {}, 'متكرّرٌ لم يُقيَّد هذا الشهر ', el('span', { class: 'count', text: `(${formatNumber(due.length)})` })),
+    el('p', { class: 'muted small', text: `ما وسمتَه «يتكرّر شهريًّا» ولم يُسجَّل نظيرُه في ${month}. المبلغُ من آخر مرّة — راجعه قبل أن تعتمده.` }),
+    list,
+    due.length > 1 ? el('div', { class: 'row' }, el('button', {
+      type: 'button', class: 'btn btn-ghost btn-sm', text: `قيِّد ${countOf(due.length, 'سطر')} دفعةً واحدة`,
+      onClick: async (e) => {
+        e.currentTarget.disabled = true;
+        try {
+          for (const { draft } of due) await entityFor(ctx).create(draft);
+          toast(`قُيِّد ${countOf(due.length, 'سطر')}`, 'success');
+          await refresh(ctx);
+        } catch (err) { toast(err.message || 'تعذّر القيد', 'error'); e.currentTarget.disabled = false; }
+      },
+    })) : null));
 }
 
 function stat(value, label) {
@@ -228,6 +279,8 @@ async function openForm(ctx, existing) {
       .map((d) => ({ value: d.id, label: `${formatDate(d.date)} — ${formatSAR(d.finalPrice)}` })),
     value: draft.dealId || '', placeholder: 'غير مرتبط بصفقة',
   });
+  // يتكرّر شهريًّا (المرحلة ٤٨) — علامةٌ تُرفع، والقيدُ التالي يُقترح ولا يُكتب وحده.
+  const repeatBox = checkbox('يتكرّر شهريًّا', { checked: !!draft.repeatMonthly });
 
   const saveBtn = el('button', { type: 'button', class: 'btn btn-primary', text: isEdit ? 'حفظ' : 'إضافة' });
   saveBtn.addEventListener('click', async () => {
@@ -237,6 +290,7 @@ async function openForm(ctx, existing) {
       amount: amountInput.value === '' ? null : Number(amountInput.value),
       category: categorySelect.value, note: noteInput.value, source: sourceSelect.value.trim(),
       dealId: dealSelect.value || null, propertyId: draft.propertyId || null,
+      repeatMonthly: repeatBox.querySelector('input').checked,
     };
     saveBtn.disabled = true;
     try {
@@ -263,7 +317,9 @@ async function openForm(ctx, existing) {
       labeled('مرتبط بصفقة', dealSelect, { hint: 'اختياري — يفيد في معرفة تكلفة كل صفقة' }),
       labeled(ctx.kind === 'income' ? 'المصدر الذي جاء منه' : 'المصدر الذي صُرف عليه', el('div', {}, sourceSelect, sourceList),
         { hint: 'اختياري — يحوّل تقرير المصادر من عدّ صفقات إلى ربحٍ بعد الكلفة' }),
-      labeled('ملاحظة', noteInput, { full: true }))),
+      labeled('ملاحظة', noteInput, { full: true }),
+      el('div', { class: 'field field-full' }, repeatBox,
+        el('span', { class: 'field-hint', text: 'يُقترح قيدُ الشهر التالي في أعلى الصفحة — ولا يُكتب حتى تعتمده، فالمبلغ قد يتغيّر.' })))),
     footer: [
       el('button', { type: 'button', class: 'btn btn-ghost', text: 'إلغاء', onClick: () => modal.close() }),
       saveBtn,

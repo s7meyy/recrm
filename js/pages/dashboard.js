@@ -6,7 +6,7 @@
 
 import { repo } from '../data/repository.js';
 import { ENUMS, labelFor, invoiceGrandTotal, netCommission } from '../data/schema.js';
-import { getLists, getCompleteness, getFollowUpSettings, typeLabel, statusLabel, getCompany } from '../data/settings.js';
+import { getLists, getCompleteness, getFollowUpSettings, typeLabel, statusLabel, getCompany, getGoals } from '../data/settings.js';
 import { tourStats } from './tours.js';
 import { buildPriceIndex, INDEX_SCOPE_NOTE } from '../util/price-stats.js';
 import { conversionFunnel } from '../util/funnel.js';
@@ -40,10 +40,11 @@ async function loadData() {
   const team = await getTeam(); // أداءُ الفريق (المرحلة ٤٧)
   const incomes = await repo.incomes.list(); // الإيرادات (المرحلة ٣٨)
   const company = await getCompany(); // نسبة العمولة لتوقّع الإيراد (المرحلة ٢٨)
+  const goals = await getGoals();     // أهدافُ الأعضاء (المرحلة ٤٨)
   const approved = properties.filter((p) => p.captureStatus === 'approved');
   const clientMap = new Map(clients.map((c) => [c.id, c]));
   const dealPropertyIds = new Set(deals.map((d) => d.propertyId).filter(Boolean));
-  return { clients, properties, approved, tours, matches, externals, deals, lists, completeness, followUp, tasks, invoices, expenses, incomes, requests, showings, company, clientMap, dealPropertyIds, team };
+  return { clients, properties, approved, tours, matches, externals, deals, lists, completeness, followUp, tasks, invoices, expenses, incomes, requests, showings, company, clientMap, dealPropertyIds, team, goals };
 }
 
 /* ===== أدوات تجميع عامة ===== */
@@ -207,10 +208,17 @@ function buildLayout(container, data) {
     const rows = memberStats({
       team: data.team, clients: data.clients, properties: approved,
       requests: data.requests, deals: data.deals,
+      // حصّةُ الوسيط وهدفُه (المرحلة ٤٨): كانت اللوحةُ تعرض عمولةَ المكتب كأنّها عمولتَه.
+      defaultShare: company.agentSharePercent || 0,
+      goals: data.goals,
     });
+    const anyShare = rows.some((r) => r.earned > 0);
+    const anyGoal = rows.some((r) => r.goalPct != null);
+    const head = ['العضو', 'عملاء', 'عقارات', 'طلبات', 'صفقات', 'عمولة المكتب',
+      anyShare ? 'حصّته' : null, anyGoal ? 'من هدفه' : null, 'أدخله بيده'].filter(Boolean);
     grid.append(panel('أداءُ الفريق', 'من الحسابات نفسِها مصفّاةً بصاحب العمل — والإسنادُ يغلب الإنشاء: عميلٌ أدخلتَه وأسندتَه إلى غيرك هو عميلُه.',
       el('div', { class: 'table-wrap' }, el('table', { class: 'table' },
-        el('thead', {}, el('tr', {}, ['العضو', 'عملاء', 'عقارات', 'طلبات', 'صفقات', 'عمولات', 'أدخله بيده'].map((t) => el('th', { text: t })))),
+        el('thead', {}, el('tr', {}, head.map((t) => el('th', { text: t })))),
         el('tbody', {}, rows.map((r) => el('tr', {},
           el('td', { class: 'strong', text: r.member.name }),
           el('td', { class: 'num', text: formatNumber(r.clients) }),
@@ -218,7 +226,15 @@ function buildLayout(container, data) {
           el('td', { class: 'num', text: formatNumber(r.requests) }),
           el('td', { class: 'num', text: formatNumber(r.deals) }),
           el('td', { class: 'num', text: formatSAR(r.commission) }),
+          // لا حصّةَ مكتوبةً ولا نسبةَ افتراضيّة = لا حصّة، ولا يُخترع له مال.
+          anyShare ? el('td', { class: 'num' }, r.earned > 0 ? formatSAR(Math.round(r.earned)) : el('span', { class: 'muted', text: '—' })) : null,
+          anyGoal ? el('td', { class: 'num' }, r.goalPct == null
+            ? el('span', { class: 'muted', text: 'بلا هدف' })
+            : badge(`${formatNumber(r.goalPct)}٪`, r.goalPct >= 100 ? 'badge-ok' : r.goalPct >= 60 ? 'badge-warn' : 'badge-danger')) : null,
           el('td', { class: 'num muted', text: formatNumber(r.entered) })))))),
+      anyShare
+        ? el('p', { class: 'muted small', text: 'وحصّتُه تُحسب على العمولة بعد نصيب الوسيط الشريك الخارجيّ — وهي حسابٌ لا صرفٌ ولا قيدٌ في المالية.' })
+        : null,
       el('p', { class: 'muted small', text: 'وهذا تمييزٌ وتنسيق لا حجب: كلُّ عضوٍ يرى كلَّ شيء — والفصلُ الحقيقيّ يحتاج خادمًا يملك السجلّات.' })),
     );
   }

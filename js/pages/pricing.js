@@ -12,7 +12,7 @@ import { getLists, typeLabel } from '../data/settings.js';
 import { priceSamples, estimatePrice, purposeKey } from '../util/price-stats.js';
 import { el, clear, labeled, selectEl, checkbox, badge, emptyState, toast } from '../util/dom.js';
 import { formatSAR, formatArea, formatNumber, formatDate, countOf } from '../util/format.js';
-import { monthlyInstallment, rentalYield, closingCosts } from '../util/finance.js';
+import { monthlyInstallment, rentalYield, leveragedYield, closingCosts } from '../util/finance.js';
 
 const MIN_SAMPLE = 3;
 
@@ -295,6 +295,25 @@ function yieldPanel(defaultPrice) {
   const occInput = el('input', { class: 'input', type: 'number', min: '0', max: '100', step: '5', value: 100 });
   const out = el('div', { class: 'stat-strip', style: { marginTop: '12px' } });
 
+  /* **العائدُ على ما خرج من جيبك** (المرحلة ٤٨) — وأكثرُ من يشتري للاستثمار يشتري بتمويل */
+  const leverBox = checkbox('أشتريه بتمويل', { checked: false });
+  const downInput = el('input', { class: 'input', type: 'number', min: '0', max: '100', step: '5', value: 20 });
+  const rateInput = el('input', { class: 'input', type: 'number', min: '0', max: '20', step: '0.25', value: 5.5 });
+  const yearsInput = el('input', { class: 'input', type: 'number', min: '1', max: '30', step: '1', value: 20 });
+  const cashInput = el('input', { class: 'input', type: 'number', min: '0', step: '1000', value: 0 });
+  const leverFields = el('div', { class: 'form-grid', hidden: true },
+    labeled('الدفعة الأولى (٪)', downInput),
+    labeled('نسبة التمويل السنوية (٪)', rateInput),
+    labeled('مدّة التمويل (سنة)', yearsInput),
+    labeled('نقدٌ آخر عند الإفراغ', cashInput, { hint: 'رسوم التصرفات والعمولة وأتعاب البنك — من حاسبة كلفة الإتمام' }));
+  const leverOut = el('div', { class: 'stat-strip', style: { marginTop: '12px' } });
+  leverBox.querySelector('input').addEventListener('change', (e) => {
+    leverFields.hidden = !e.target.checked;
+    leverOut.hidden = !e.target.checked;
+    recalc();
+  });
+  leverOut.hidden = true;
+
   const recalc = () => {
     clear(out);
     const r = rentalYield({
@@ -307,8 +326,26 @@ function yieldPanel(defaultPrice) {
       fact(`${formatNumber(Math.round(r.gross * 100) / 100)}٪`, 'العائد الإجمالي'),
       fact(formatSAR(Math.round(r.monthly)), 'الدخل الشهري الصافي'),
       fact(r.payback == null ? '—' : `${countOf(Math.round(r.payback), 'سنة')}`, 'مدّة الاسترداد'));
+
+    clear(leverOut);
+    if (!leverBox.querySelector('input').checked) return;
+    const lv = leveragedYield({
+      price: Number(priceInput.value), annualRent: Number(rentInput.value),
+      annualCosts: Number(costsInput.value), occupancy: Number(occInput.value),
+      downPct: Number(downInput.value), cashCosts: Number(cashInput.value),
+      annualRate: Number(rateInput.value), months: Math.round(Number(yearsInput.value) * 12),
+    });
+    if (!lv) { leverOut.append(el('p', { class: 'muted small', text: 'دفعةٌ أولى أكبر من صفر ليُحسب عائدٌ على ما دفعتَه.' })); return; }
+    leverOut.append(
+      // **قد يكون سالبًا، ويُقال سالبًا**: قسطٌ أكبرُ من إيجارٍ يأكل من جيبك شهريًّا.
+      fact(`${formatNumber(Math.round(lv.cashYield * 100) / 100)}٪`, 'العائد على رأس المال المدفوع'),
+      fact(formatSAR(Math.round(lv.cashIn)), 'ما يخرج من جيبك'),
+      fact(formatSAR(Math.round(lv.monthlyPayment)), 'القسط الشهري'),
+      fact(formatSAR(Math.round(lv.monthlyNet)), lv.positive ? 'يبقى لك شهريًّا' : 'تدفعه من جيبك شهريًّا'));
   };
-  for (const input of [priceInput, rentInput, costsInput, occInput]) input.addEventListener('input', recalc);
+  for (const input of [priceInput, rentInput, costsInput, occInput, downInput, rateInput, yearsInput, cashInput]) {
+    input.addEventListener('input', recalc);
+  }
 
   const panel = el('div', { class: 'panel', style: { marginTop: '18px' } },
     el('h2', { class: 'section-title', text: 'وكم يعود عليّ؟' }),
@@ -318,7 +355,12 @@ function yieldPanel(defaultPrice) {
       labeled('المصاريف السنوية', costsInput, { hint: 'صيانة وإدارة ورسوم' }),
       labeled('نسبة الإشغال (٪)', occInput, { hint: 'مئة = مؤجَّر طول السنة' })),
     out,
-    el('p', { class: 'muted small', text: 'حساب استرشادي: لا يشمل تغيّر قيمة العقار ولا كلفة التمويل ولا الضريبة، ومدّة الاسترداد بالدخل الحالي وحده. والإيجار المقترح افتراض أوّليّ عدّله بما تعرفه عن الحي.' }));
+    el('div', { class: 'panel-block' },
+      el('div', { class: 'field' }, leverBox),
+      leverFields,
+      leverOut,
+      el('p', { class: 'muted small', text: 'العائدُ على ما خرج من جيبك — لا على ثمن العقار. وهو يختلف عن الأعلى اختلافًا كبيرًا، وكلاهما صادقٌ في موضعه: الأوّلُ يقيس العقار، وهذا يقيس الصفقة. ويفترض بقاءَ القسط ثابتًا، ولا يحسب إطفاءَ أصل الدين — وهو ثروةٌ تتراكم لا تظهر هنا.' })),
+    el('p', { class: 'muted small', text: 'حساب استرشادي: لا يشمل تغيّر قيمة العقار ولا الضريبة، ومدّة الاسترداد بالدخل الحالي وحده. والإيجار المقترح افتراض أوّليّ عدّله بما تعرفه عن الحي.' }));
   recalc();
   return panel;
 }

@@ -527,6 +527,9 @@ export const DEFAULT_COMPANY = {
   licenseExpiresAt: null,
   // اتفاقية الوساطة (المرحلة ١٣): تُطبع من بيانات العقار والمالك + هذه البنود
   commissionPercent: 2.5,
+  // **حصّةُ الوسيط من العمولة** افتراضًا (المرحلة ٤٨) — صفرٌ = بلا حصّة، فلا يُفترض على
+  // مكتبٍ من شخصٍ واحدٍ ترتيبٌ لا وجود له. وتُغيَّر في كلّ صفقةٍ على حدة.
+  agentSharePercent: 0,
   agreementDurationDays: 90,
   agreementTerms: '',
   logoImageId: null, // صورة في مخزن images (entity: 'company')
@@ -555,6 +558,7 @@ export async function getCompany() {
 
 export async function setCompany(patch) {
   const next = { ...(await getCompany()), ...patch };
+  next.agentSharePercent = Math.min(100, Math.max(0, Number(next.agentSharePercent) || 0));
   next.nextInvoiceNo = Math.max(1, Math.round(Number(next.nextInvoiceNo) || DEFAULT_COMPANY.nextInvoiceNo));
   next.nextQuoteNo = Math.max(1, Math.round(Number(next.nextQuoteNo) || DEFAULT_COMPANY.nextQuoteNo));
   await repo.settings.set(SETTINGS_KEYS.company, next);
@@ -681,6 +685,13 @@ export const DEFAULT_GOALS = {
   dealsPerMonth: 0, // 0 = بلا هدف (فلا يظهر شريط تقدّم يزعجك بلا داعٍ)
   commissionPerMonth: 0,
   staleListingDays: 60, // عقار لم يُحدَّث منذ هذه المدة يُعدّ بائتًا ويُنبَّه عليه
+  /**
+   * **هدفُ كلّ عضوٍ على حدة** (المرحلة ٤٨): `{ [memberId]: { dealsPerMonth, commissionPerMonth } }`.
+   *
+   * كان الهدفُ رقمين للمكتب كلِّه، فشريطُ التقدّم في «يومي» يقول للموظّف ما أنجزه المكتب —
+   * وهو لا يملك تحريكَه وحده. ومن لا هدفَ له يرى هدفَ المكتب كما كان.
+   */
+  perMember: {},
 };
 
 export async function getGoals() {
@@ -690,6 +701,13 @@ export async function getGoals() {
     dealsPerMonth: num(stored.dealsPerMonth, DEFAULT_GOALS.dealsPerMonth),
     commissionPerMonth: num(stored.commissionPerMonth, DEFAULT_GOALS.commissionPerMonth),
     staleListingDays: Math.max(7, num(stored.staleListingDays, DEFAULT_GOALS.staleListingDays)),
+    perMember: Object.fromEntries(Object.entries(stored.perMember || {})
+      .map(([id, g]) => [id, {
+        dealsPerMonth: num(g?.dealsPerMonth, 0),
+        commissionPerMonth: num(g?.commissionPerMonth, 0),
+      }])
+      // هدفٌ صفرٌ في طرفيه ليس هدفًا — يُطرح فلا يبقى سطرٌ ميّتٌ في الإعدادات.
+      .filter(([, g]) => g.dealsPerMonth > 0 || g.commissionPerMonth > 0)),
   };
 }
 

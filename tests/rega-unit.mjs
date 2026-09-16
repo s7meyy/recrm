@@ -123,3 +123,51 @@ ok('وترخيصٌ بلا تاريخ انتهاء لا يُخترع له موع�
 
 /* الفراغ */
 ok('لا عقارات: خلاصةٌ صفريّة لا خطأ', summary([]).total === 0 && complianceRows().length === 0 && spanState(null).state === 'none');
+
+/* ===== المرحلة ٤٨ — ما ينتهي خلال شهر ===== */
+const R48 = await import('../js/util/rega.js');
+const NOW48 = Date.parse('2026-09-15T00:00:00Z');
+const at48 = (d) => new Date(NOW48 + d * 86400000).toISOString();
+const prop = (id, days, extra = {}) => ({
+  id, captureStatus: 'approved', status: 'available',
+  adLicense: days == null ? null : { number: `L${id}`, expiresAt: at48(days) },
+  ...extra,
+});
+
+const base = { properties: [prop('a', 5), prop('b', -3), prop('c', 200), prop('d', null)], now: NOW48 };
+const e1 = R48.expiryAlerts(base);
+ok('ما يوشك وما انتهى وحدهما يدخلان التنبيه', e1.rows.length === 2, e1.rows.map((r) => r.property.id).join('،'));
+ok('وما بقي له مئتا يوم لا ينبّه', !e1.rows.some((r) => r.property.id === 'c'));
+ok('وبلا ترخيصٍ أصلًا ليس انتهاءً — تلك ثغرةٌ تُعرض لا تنبيهٌ يوميّ', !e1.rows.some((r) => r.property.id === 'd'));
+ok('والمنتهي أوّلًا', e1.rows[0].property.id === 'b', e1.rows[0].property.id);
+ok('ويُعدّ المنتهي والموشك كلٌّ على حدة', e1.expired === 1 && e1.soon === 1, JSON.stringify([e1.expired, e1.soon]));
+
+const settled = R48.expiryAlerts({ properties: [prop('s', -3, { status: 'sold' }), prop('r', -3, { status: 'rented' })], now: NOW48 });
+ok('والمبيعُ والمؤجَّر لا يُلاحَقان', settled.rows.length === 0);
+const pending = R48.expiryAlerts({ properties: [prop('p', -3, { captureStatus: 'pending' })], now: NOW48 });
+ok('وما لم يُعتمد بعد كذلك', pending.rows.length === 0);
+
+/* المنشورُ بترخيصٍ منتهٍ مخالفةٌ قائمةٌ لا خطرٌ مستقبليّ */
+const pub = R48.expiryAlerts({ ...base, publishedIds: new Set(['b', 'c']) });
+ok('والمنشورُ يُعلَّم', pub.rows.find((r) => r.property.id === 'b').published === true);
+ok('وغيرُ المنشور لا', pub.rows.find((r) => r.property.id === 'a').published === false);
+ok('ويُعدّ المنشورُ بترخيصٍ منتهٍ وحده', pub.publishedExpired === 1, String(pub.publishedExpired));
+
+/* فال */
+const falSoon = R48.expiryAlerts({ company: { licenseNumber: '123', licenseExpiresAt: at48(9) }, now: NOW48 });
+ok('فالٌ توشك تدخل التنبيه', falSoon.fal?.state === 'soon', String(falSoon.fal?.state));
+const falOk = R48.expiryAlerts({ company: { licenseNumber: '123', licenseExpiresAt: at48(300) }, now: NOW48 });
+ok('وفالٌ بعيدةُ الأجل لا تُزعج', falOk.fal === null);
+const falNone = R48.expiryAlerts({ company: {}, now: NOW48 });
+ok('وبلا تاريخٍ مسجَّلٍ لا يُخمَّن أجل', falNone.fal === null && falNone.worst === 'none');
+const falDead = R48.expiryAlerts({ company: { licenseNumber: '1', licenseExpiresAt: at48(-1) }, properties: [prop('a', 200)], now: NOW48 });
+ok('وفالٌ منتهيةٌ تجعل الحالَ أشدَّ ولو كانت التراخيص سارية', falDead.worst === 'expired', falDead.worst);
+ok('وموشكٌ بلا منتهٍ = تنبيهٌ لا إنذار', R48.expiryAlerts(base).worst === 'expired'
+  && R48.expiryAlerts({ properties: [prop('a', 5)], now: NOW48 }).worst === 'soon');
+ok('ولا شيء = لا شيء', R48.expiryAlerts({}).worst === 'none' && R48.expiryAlerts({}).rows.length === 0);
+
+/* الموشك قبل النشر */
+ok('ترخيصٌ يوشك يُقال قبل النشر', R48.expiringSoon(prop('x', 4), { now: NOW48 })?.days === 4);
+ok('والساري لا يُقال', R48.expiringSoon(prop('x', 200), { now: NOW48 }) === null);
+ok('والمنتهي ليس «يوشك» — ذاك مانعٌ لا تنبيه', R48.expiringSoon(prop('x', -1), { now: NOW48 }) === null);
+ok('وبلا ترخيصٍ لا شيء', R48.expiringSoon(prop('x', null), { now: NOW48 }) === null);

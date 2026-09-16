@@ -85,11 +85,44 @@ const layout = await page.evaluate(() => ({
   sidebarHidden: getComputedStyle(document.querySelector('.sidebar')).transform,
 }));
 ok('لا تجاوز أفقي للصفحة على الجوال', layout.overflow <= 1, 'زيادة=' + layout.overflow);
-const tableScrolls = await page.evaluate(() => {
+/**
+ * المرحلة ٤٨: على الجوّال لم يعد الجدولُ يُسحب سحبًا — صار كلُّ صفٍّ بطاقةً تُقرأ من
+ * أوّلها إلى آخرها. وكان يُرى منه نصفُه وينقطع في منتصف خليّة، وأهمُّ أعمدته آخرُها.
+ * **والضمانُ الذي كان يحرسه هذا الفحصُ باقٍ وأقوى**: لا تجاوزَ أفقيّ (السطر أعلاه).
+ */
+const phoneTable = await page.evaluate(() => {
   const w = document.querySelector('.table-wrap');
-  return w ? getComputedStyle(w).overflowX : 'n/a';
+  const row = document.querySelector('.table tbody tr');
+  return {
+    wrapOverflow: w ? getComputedStyle(w).overflowX : 'n/a',
+    rowIsBlock: row ? getComputedStyle(row).display : 'n/a',
+    // العنوانُ منسوخٌ من `<thead>` إلى الخليّة، فتُقرأ وحدها بلا رأسِ جدول.
+    // **وعمودٌ بلا عنوان** (مربّعُ اختيارٍ أو أزرار) يبقى بلا وسم قصدًا — وعنوانٌ فارغٌ
+    // أسوأُ من لا عنوان. فيُفحص أنّ الأعمدةَ المسمّاةَ وُسمت، لا كلُّ خليّة.
+    labelled: row ? row.querySelectorAll('td[data-label]').length : 0,
+    cells: row ? row.children.length : 0,
+  };
 });
-ok('جدول المستندات داخل حاوية قابلة للتمرير أفقيًا', ['auto','scroll'].includes(tableScrolls), tableScrolls);
+ok('الصفُّ يصير بطاقةً على الجوّال لا جدولًا يُسحب', phoneTable.rowIsBlock === 'block', phoneTable.rowIsBlock);
+ok('وخلايا الأعمدة المسمّاة تحمل عناوينها فتُقرأ وحدها',
+  phoneTable.labelled > 0 && phoneTable.labelled <= phoneTable.cells,
+  `${phoneTable.labelled} من ${phoneTable.cells}`);
+ok('ولا تمريرَ أفقيًّا داخل الحاوية أصلًا', phoneTable.wrapOverflow === 'visible', phoneTable.wrapOverflow);
+
+/* وعلى الشاشة الواسعة يبقى الجدولُ جدولًا كما كان. */
+await page.setViewportSize({ width: 1180, height: 800 });
+await page.waitForTimeout(400);
+const wideTable = await page.evaluate(() => {
+  const w = document.querySelector('.table-wrap');
+  return {
+    wrapOverflow: w ? getComputedStyle(w).overflowX : 'n/a',
+    rowDisplay: w ? getComputedStyle(document.querySelector('.table tbody tr')).display : 'n/a',
+  };
+});
+ok('وعلى الشاشة الواسعة يبقى جدولًا داخل حاويةٍ تُمرَّر', ['auto', 'scroll'].includes(wideTable.wrapOverflow), wideTable.wrapOverflow);
+ok('وصفُّه صفُّ جدول', wideTable.rowDisplay === 'table-row', wideTable.rowDisplay);
+await page.setViewportSize({ width: 390, height: 780 });
+await page.waitForTimeout(300);
 
 console.log('\nERRORS:', errors.length ? JSON.stringify(errors.slice(0,4)) : 'none');
 await b.close();

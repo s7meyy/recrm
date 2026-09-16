@@ -6,7 +6,9 @@
 
 import { repo } from '../data/repository.js';
 import { ENUMS, labelFor } from '../data/schema.js';
-import { getUI, setUI } from '../data/settings.js';
+import { getUI, setUI, getTeam } from '../data/settings.js';
+import { getCurrentUser } from '../data/repository.js';
+import { activeMembers, assignOptions, memberName, passesAssign, assignRow } from '../util/team.js';
 import {
   el, clear, badge, selectEl, checkbox, openModal, confirmDialog, promptDialog, toast, emptyState,
 } from '../util/dom.js';
@@ -29,7 +31,7 @@ export async function render(container) {
     container, taskLists: [], tasks: [], clients: [], properties: [], requests: [],
     view: 'board',
     // فلاتر عرض الجدول (المرحلة ٤٠) — كلٌّ منها سؤالٌ يُسأل في أدوات إدارة المهام
-    table: { status: 'open', priorities: new Set(), due: 'all', listId: '', query: '', sort: { key: 'due', dir: 'asc' } },
+    table: { status: 'open', priorities: new Set(), due: 'all', listId: '', query: '', assign: '', sort: { key: 'due', dir: 'asc' } },
   };
   const savedView = (await getUI()).tasksView;
   ctx.view = ['single', 'table'].includes(savedView) ? savedView : 'board';
@@ -44,9 +46,12 @@ export async function render(container) {
 }
 
 async function loadData(ctx) {
-  const [taskLists, tasks, clients, properties, requests] = await Promise.all([
+  const [taskLists, tasks, clients, properties, requests, team] = await Promise.all([
     repo.taskLists.list(), repo.tasks.list(), repo.clients.list(), repo.properties.list(), repo.requests.list(),
+    getTeam(), // الإسناد (المرحلة ٤٨)
   ]);
+  ctx.team = team;
+  ctx.meId = getCurrentUser()?.id || '';
   // المثبَّتة أوّلًا مهما كان ترتيبها (المرحلة ٤٠) — ما تعمل فيه اليوم أمامك لا في آخر لوحة.
   ctx.taskLists = taskLists.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || (a.order ?? 0) - (b.order ?? 0));
   ctx.tasks = tasks;
@@ -282,6 +287,13 @@ async function openTaskForm(ctx, task) {
     options: ENUMS.taskRepeats.map((r) => ({ value: r.key, label: r.label })), value: task.repeat || 'none',
   });
 
+  // الإسناد (المرحلة ٤٨): المهمّةُ فعلٌ يُوزَّع — ولا يظهر الحقل لمكتبٍ من شخصٍ واحد.
+  const taskMembers = activeMembers(ctx.team || []);
+  const assignSelect = selectEl({
+    options: assignOptions(ctx.team || [], task.assignedTo || ''),
+    value: task.assignedTo || '', placeholder: 'بلا مسند',
+  });
+
   const linkTypeSelect = selectEl({
     options: ENUMS.linkTypes.map((t) => ({ value: t.key, label: t.label })), value: task.linkType || '', placeholder: 'بلا ربط',
   });
@@ -318,6 +330,7 @@ async function openTaskForm(ctx, task) {
       const patch = {
         title: titleInput.value, notes: notesInput.value, listId: listSelect.value,
         dueAt: newDueAt, repeat: repeatSelect.value, priority: prioritySelect.value,
+        ...(taskMembers.length > 1 ? { assignedTo: assignSelect.value || null } : {}),
         linkType: linkTypeSelect.value || null, linkId: linkTypeSelect.value ? currentLinkId : null,
       };
       if (newDueAt !== task.dueAt) patch.reminded = false; // موعد جديد يستحق تنبيهًا جديدًا
@@ -343,6 +356,9 @@ async function openTaskForm(ctx, task) {
       el('label', { class: 'field' }, el('span', { class: 'field-label', text: 'تذكير بتاريخ ووقت' }), el('div', { class: 'field-row' }, dueInput, clearDueBtn)),
       el('label', { class: 'field' }, el('span', { class: 'field-label', text: 'الأولوية' }), prioritySelect),
       el('label', { class: 'field' }, el('span', { class: 'field-label', text: 'التكرار' }), repeatSelect),
+      taskMembers.length > 1
+        ? el('label', { class: 'field' }, el('span', { class: 'field-label', text: 'مُسندة إلى' }), assignSelect)
+        : null,
       el('label', { class: 'field' }, el('span', { class: 'field-label', text: 'ربط بسجل آخر' }), linkTypeSelect),
       linkIdWrap,
       el('label', { class: 'field' }, el('span', { class: 'field-label', text: 'ملاحظات' }), notesInput)));
@@ -528,7 +544,12 @@ const COLUMNS = [
   { key: 'list', label: 'القائمة', sort: (t, ctx) => ctx.taskLists.find((l) => l.id === t.listId)?.title || '' },
   { key: 'repeat', label: 'التكرار', sort: (t) => t.repeat || '' },
   { key: 'link', label: 'مرتبطة بـ', sort: (t, ctx) => linkedLabel(ctx, t) || '' },
+  // الإسناد (المرحلة ٤٨) — عمودٌ يُخفى كلُّه لمكتبٍ من شخصٍ واحد، فلا يشغل عرضًا بلا معنى.
+  { key: 'assign', label: 'مُسندة إلى', team: true, sort: (t, ctx) => memberName(ctx.team, t.assignedTo, { me: ctx.meId }) || '￿' },
 ];
+
+/** أعمدةُ هذا المكتب: الإسنادُ يسقط إن لم يكن ثَمّ فريق. */
+const columnsFor = (ctx) => COLUMNS.filter((c) => !c.team || activeMembers(ctx.team || []).length > 1);
 
 function dueBucket(task, now = Date.now()) {
   if (!task.dueAt) return 'none';
@@ -548,6 +569,7 @@ function tableRows(ctx) {
   else if (f.status === 'done') rows = rows.filter((t) => t.done);
   if (f.priorities.size) rows = rows.filter((t) => f.priorities.has(t.priority || 'normal'));
   if (f.listId) rows = rows.filter((t) => t.listId === f.listId);
+  rows = rows.filter((t) => passesAssign(t, f.assign, ctx.meId));
   if (f.due !== 'all') {
     const now = Date.now();
     rows = rows.filter((t) => (f.due === 'week'
@@ -605,6 +627,14 @@ function tableView(ctx) {
       }, p.label, el('span', { class: 'chip-count', text: String(n) })));
     }
 
+    // رقاقةُ الإسناد (المرحلة ٤٨) — هي نفسُها المستعملة في العملاء والعقارات والطلبات.
+    const assignChips = assignRow({
+      rows: ctx.tasks.filter((t) => f.status !== 'open' || !t.done),
+      team: ctx.team || [], meId: ctx.meId, value: f.assign || '',
+      onPick: (v) => { f.assign = v; redrawAll(); },
+      el, formatNumber,
+    });
+
     const dueSelect = selectEl({
       options: DUE_FILTERS.map((d) => ({ value: d.key, label: d.label })),
       value: f.due,
@@ -619,7 +649,8 @@ function tableView(ctx) {
     filters.append(
       el('div', { class: 'row', style: { flexWrap: 'wrap', gap: '8px', marginBottom: '8px' } },
         search, statusSeg, dueSelect, listSelect),
-      el('div', { class: 'filter-row' }, el('span', { class: 'filter-label', text: 'الأولوية' }), prChips));
+      el('div', { class: 'filter-row' }, el('span', { class: 'filter-label', text: 'الأولوية' }), prChips),
+      assignChips); // `assignRow` تُعيد صفَّ فلترٍ كاملًا بعنوانه — لا يُلَفّ مرّةً ثانية
   }
 
   drawFilters();
@@ -631,7 +662,8 @@ function tableView(ctx) {
 function tableBody(ctx, redrawAll) {
   const rows = tableRows(ctx);
   const f = ctx.table;
-  const head = el('tr', {}, COLUMNS.map((c) => {
+  const cols = columnsFor(ctx);
+  const head = el('tr', {}, cols.map((c) => {
     if (!c.sort) return el('th', { text: c.label });
     const active = f.sort.key === c.key;
     return el('th', {}, el('button', {
@@ -671,5 +703,8 @@ function tableRow(ctx, task) {
       : el('span', { class: 'muted', text: '—' })),
     el('td', { text: list?.title || '—' }),
     el('td', { text: task.repeat && task.repeat !== 'none' ? labelFor(ENUMS.taskRepeats, task.repeat) : '—' }),
-    el('td', {}, link || el('span', { class: 'muted', text: '—' })));
+    el('td', {}, link || el('span', { class: 'muted', text: '—' })),
+    activeMembers(ctx.team || []).length > 1
+      ? el('td', { text: task.assignedTo ? memberName(ctx.team, task.assignedTo, { me: ctx.meId }) : '—' })
+      : null);
 }

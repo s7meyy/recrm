@@ -354,3 +354,90 @@ export async function printOwnerStatement({ property, owner = null, statement, l
     company.footerNote ? el('div', { class: 'print-notes', text: company.footerNote }) : null,
     el('div', { class: 'print-notes', text: 'أجرُ الإدارة بالنسبة يُحسب على ما قُبض فعلًا — فلا أجرَ على مالٍ لم يصل. والصيانةُ المخصومة هي ما يتحمّله المالك وحده.' })));
 }
+
+/* ===== تقريرُ نشاطٍ للمالك (المرحلة ٤٨) ===== */
+
+/**
+ * **«ماذا فعلتم لعقاري؟»** — الورقةُ التي تجيب السؤالَ الشهريّ.
+ *
+ * وتختلف عن تقرير المقارنة السوقيّة اختلافًا كاملًا: ذاك يقول **بكم يُعرض؟**، وهذا يقول
+ * **ماذا جرى له؟** — كم فُتحت صفحتُه، وكم معاينةً جرت، وما قاله من رآه، وكيف تحرّك سعرُه.
+ *
+ * **والصمتُ يُطبع كما يُطبع العمل**: «لا معاينةَ منذ ٤٠ يومًا» جملةٌ تفتح حديثَ خفض
+ * السعر خيرًا من أن تبدأه أنت، وتُبقي عقدَك لأنّ المالك يرى أنّك تقول له الحقّ.
+ */
+export async function printOwnerActivity({
+  property, owner = null, activity, lists = null, company = {}, reasonLabel = (k) => k,
+} = {}) {
+  const where = [typeLabel(lists, property.type), property.district, property.city].filter(Boolean).join(' — ');
+  const s = activity.showings;
+  const num = (n) => formatNumber(n);
+
+  const facts = [
+    ['العقار', where],
+    ['المالك', owner?.name || '—'],
+    ['السعر المعروض', formatSAR(property.price)],
+    ['مُدرَجٌ منذ', activity.daysListed == null ? '—' : daysWord(activity.daysListed)],
+    // **المشاهداتُ غير متاحةٍ أحيانًا** (لا نشرَ بعد، أو تعذّر الوصول إلى الخادم) —
+    // وتُقال «غير متاحة» ولا تُكتب صفرًا يُقرأ إهمالًا.
+    ['مشاهدات صفحة العرض', activity.views == null ? 'غير متاحة' : num(activity.views)],
+    ['طلبات طابقته', num(activity.matched)],
+  ];
+
+  const showingRows = [
+    ['مواعيد خلال المدّة', num(s.window)],
+    ['معاينات تمّت (كل الوقت)', num(s.done)],
+    ['لم يحضر', num(s.noShow)],
+    ['مواعيد قادمة', num(s.upcoming)],
+  ];
+
+  const imp = activity.impressions || {};
+  const impressionRows = [
+    ['أعجبه', num(imp.liked || 0)],
+    ['متردّد', num(imp.maybe || 0)],
+    ['لم يعجبه', num(imp.disliked || 0)],
+  ];
+
+  const reasonRows = (activity.reasons || []).slice(0, 6).map(([key, n]) => el('tr', {},
+    el('td', { text: reasonLabel(key) }),
+    el('td', { class: 'num', text: num(n) })));
+
+  const dropRows = (activity.priceDrops || []).map((d) => el('tr', {},
+    el('td', { text: formatDate(d.at) }),
+    el('td', { text: `${formatSAR(d.from)} ← ${formatSAR(d.to)}` }),
+    el('td', { class: 'num', text: `−${num(Math.round(d.cut * 100))}٪` })));
+
+  const pair = (rows) => el('table', { class: 'print-table' }, el('tbody', {},
+    rows.map(([k, v]) => el('tr', {}, el('th', { style: { width: '55%' }, text: k }), el('td', { class: 'num', text: v })))));
+
+  printNode(el('article', { class: 'print-doc' },
+    await officeHeader(company, 'تقرير نشاط العقار', `${where} · آخر ${daysWord(activity.days)}`),
+    el('p', { class: 'print-statement', text: activity.headline || '' }),
+    el('table', { class: 'print-table' }, el('tbody', {},
+      facts.map(([k, v]) => el('tr', {}, el('th', { style: { width: '35%' }, text: k }), el('td', { text: v }))))),
+
+    el('h2', { class: 'print-section-title', text: 'المعاينات' }),
+    pair(showingRows),
+
+    s.done ? el('h2', { class: 'print-section-title', text: 'انطباع من عاين' }) : null,
+    s.done ? pair(impressionRows) : null,
+
+    reasonRows.length ? el('h2', { class: 'print-section-title', text: 'ما قاله السوق' }) : null,
+    reasonRows.length ? el('table', { class: 'print-table' },
+      el('thead', {}, el('tr', {}, el('th', { text: 'السبب' }), el('th', { style: { width: '22%' }, text: 'مرّة' }))),
+      el('tbody', {}, reasonRows)) : null,
+    // عيّنةٌ صغيرةٌ تُقال صغيرةً: ثلاثةُ آراءٍ لا يُبنى عليها قرارُ خفضِ سعر.
+    reasonRows.length && !activity.reasonsEnough
+      ? el('p', { class: 'print-notes', text: `وهذه ${countOf(activity.opinions, 'رأي')} فقط — عيّنةٌ صغيرة، تُقرأ إشارةً لا حكمًا.` })
+      : null,
+
+    dropRows.length ? el('h2', { class: 'print-section-title', text: 'حركة السعر' }) : null,
+    dropRows.length ? el('table', { class: 'print-table' },
+      el('thead', {}, el('tr', {}, el('th', { text: 'التاريخ' }), el('th', { text: 'من ← إلى' }), el('th', { style: { width: '18%' }, text: 'النسبة' }))),
+      el('tbody', {}, dropRows)) : null,
+
+    el('footer', { class: 'print-footer' },
+      'هذا التقرير من سجلّات هذا المكتب وقت طباعته: المواعيدُ المسجَّلة، وما قاله من عاين، ومشاهداتُ صفحة العرض العامّة. '
+      + 'ولا يشمل ما جرى خارج النظام من مكالماتٍ أو عروضٍ على قنواتٍ أخرى. '
+      + (company.phone ? `للاستفسار: ${formatPhone(company.phone)}${company.name ? ` — ${company.name}` : ''}` : ''))));
+}

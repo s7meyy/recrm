@@ -198,3 +198,60 @@ export function falState(company = {}, opts = {}) {
   if (!company.licenseExpiresAt) return { state: 'active', days: null, endsAt: null, number, undated: true };
   return { ...spanState(company.licenseExpiresAt, opts), number, undated: false };
 }
+
+/* ===== ما ينتهي قريبًا (المرحلة ٤٨) ===== */
+
+/** المهلةُ التي يُنبَّه فيها على ما يوشك: شهرٌ يكفي لإجراءٍ في منصّةٍ حكوميّة. */
+export const EXPIRY_HORIZON_DAYS = 30;
+
+/**
+ * **ما ينتهي خلال شهر** — رخصتُك، وتراخيصُ إعلاناتك، مجموعةً في صفٍّ واحد.
+ *
+ * `falState` و`adLicenseState` مبنيّتان منذ المرحلة ٤٠، **وكانتا تُستدعيان في صفحة
+ * «العقود والتراخيص» وحدها** — صفحةٍ تُفتح قصدًا، ومن يفتحها يعرف أصلًا أنّ عنده ما ينتهي.
+ * فكان التاريخُ يُسجَّل ولا يُنبَّه عليه، وهو عكسُ ما وُضع له.
+ *
+ * **وترتيبُ الخطر ليس ترتيبَ التاريخ:** رخصةُ «فال» أوّلًا مهما بعُد أجلُها، لأنّ انتهاءها
+ * يُبطل التوثيقَ وإصدارَ التراخيص جميعًا — لا ترخيصًا واحدًا. ثمّ المنتهي، ثمّ الموشك.
+ *
+ * @param {Set<string>} o.publishedIds معرّفاتُ ما هو منشورٌ الآن — فالمنشورُ بترخيصٍ
+ *   منتهٍ مخالفةٌ قائمةٌ اللحظةَ لا خطرٌ مستقبليّ، ويُقال ذلك بنصّه.
+ * @returns {{ fal, rows, expired, soon, publishedExpired, worst }}
+ */
+export function expiryAlerts({
+  company = {}, properties = [], publishedIds = new Set(),
+  soonDays = EXPIRY_HORIZON_DAYS, now = Date.now(),
+} = {}) {
+  const fal = falState(company, { soonDays, now });
+  const settled = new Set(['sold', 'rented']);
+
+  const rows = [];
+  for (const p of properties) {
+    if (p.captureStatus !== 'approved' || settled.has(p.status)) continue;
+    const lic = adLicenseState(p, { soonDays, now });
+    // بلا ترخيصٍ أصلًا ليس انتهاءً: تلك ثغرةٌ تُعرض في «العقود والتراخيص» لا تنبيهٌ يوميّ.
+    if (lic.state !== 'soon' && lic.state !== 'expired') continue;
+    rows.push({ property: p, ...lic, published: publishedIds.has(p.id) });
+  }
+  rows.sort((a, b) => (a.days ?? 9e9) - (b.days ?? 9e9));
+
+  const expired = rows.filter((r) => r.state === 'expired').length;
+  const publishedExpired = rows.filter((r) => r.state === 'expired' && r.published).length;
+  const falBad = fal.state === 'expired' || fal.state === 'soon';
+
+  return {
+    // بلا تاريخٍ مسجَّلٍ لا تنبيه: لا يُخمَّن أجلُ رخصةٍ لم تُدخل مدّتها.
+    fal: falBad ? fal : null,
+    rows,
+    expired,
+    soon: rows.length - expired,
+    publishedExpired,
+    worst: fal.state === 'expired' || expired ? 'expired' : (falBad || rows.length ? 'soon' : 'none'),
+  };
+}
+
+/** ترخيصٌ يوشك — لا يمنع النشر، لكنّه يُقال قبله لا بعده. */
+export function expiringSoon(property, opts = {}) {
+  const lic = adLicenseState(property, { soonDays: EXPIRY_HORIZON_DAYS, ...opts });
+  return lic.state === 'soon' ? lic : null;
+}

@@ -235,9 +235,13 @@ export function lateDays(iso, now = Date.now()) {
  * **ولا يُخترع مبلغ**: دفعاتُ السنة القادمة تُبنى على قيمة آخر دفعةٍ مجدوَلة، فإن لم
  * تكن هناك دفعةٌ سابقة فلا دفعاتٍ تُقترح — وتُذكر العلّة صراحةً في `warnings`.
  *
- * @returns {{months, management, lease, warnings: string[]}}
+ * **والتجديدُ هو اللحظةُ التي تُراجَع فيها الأجرة** (المرحلة ٤٨): `increasePct` نسبةُ
+ * زيادةٍ **افتراضُها صفر**، فمن أراد رفعَها رفعها ورأى الجدولَ الجديد قبل أن يعتمده.
+ * **ولا تُقترح نسبةٌ من عندنا** — تلك مسألةُ سوقٍ ونظامٍ لا حساب.
+ *
+ * @returns {{months, increasePct, management, lease, warnings: string[]}}
  */
-export function renewalPlan({ row, months = 12, now = Date.now() } = {}) {
+export function renewalPlan({ row, months = 12, increasePct = 0, now = Date.now() } = {}) {
   const warnings = [];
   const addMonths = (base, n) => {
     const d = new Date(base);
@@ -271,7 +275,10 @@ export function renewalPlan({ row, months = 12, now = Date.now() } = {}) {
     const out = [];
     if (last && Number.isFinite(amount) && amount > 0) {
       const from = new Date(last.dueAt).getTime();
-      for (let m = 1; m <= months; m++) out.push({ dueAt: addMonths(from, m).toISOString(), amount, note: `تجديد — الشهر ${m}` });
+      const pct = Math.min(100, Math.max(0, Number(increasePct) || 0));
+      // الزيادةُ تُجبَر إلى ريالٍ صحيح: جدولُ دفعاتٍ بالهللات ورقةٌ لا تُقرأ.
+      const next = Math.round(amount * (1 + pct / 100));
+      for (let m = 1; m <= months; m++) out.push({ dueAt: addMonths(from, m).toISOString(), amount: next, note: `تجديد — الشهر ${m}` });
     } else {
       warnings.push('لا دفعةٌ سابقةٌ بمبلغٍ معلوم — لن تُقترح دفعات، أضِفها من صفحة العميل');
     }
@@ -280,5 +287,94 @@ export function renewalPlan({ row, months = 12, now = Date.now() } = {}) {
     warnings.push('لا عقد إيجارٍ مربوطٌ بهذا العقار — يُجدَّد عقدُ الإدارة وحده');
   }
 
-  return { months, management, lease, warnings };
+  return { months, increasePct: Math.min(100, Math.max(0, Number(increasePct) || 0)), management, lease, warnings };
+}
+
+/* ===== أجرُ الإدارة يصير قيدًا (المرحلة ٤٨) ===== */
+
+/** تصنيفُ الإيراد الذي يُقيَّد به أجرُ الإدارة — واحدٌ ثابتٌ ليُعرف ويُبحث به. */
+export const FEE_INCOME_CATEGORY = 'management';
+
+/**
+ * **هل قُيِّد أجرُ هذا العقار عن هذا الشهر؟**
+ *
+ * `ownerStatement` تحسب الأجرَ ويُطبع في كشف المالك، **ثمّ ينتهي الأمر هناك**: لا شيء
+ * يُنشئ منه سجلَّ إيراد. فدخلُك المتكرّر — وهو أثبتُ دخلٍ في عملك، لا يتعلّق بصفقةٍ تقع
+ * أو لا تقع — لا يدخل صافي ربحك إلّا أن تكتبه بيدك كلَّ شهرٍ لكلّ عقار.
+ *
+ * **والقيدُ مرّةً واحدةً لكلّ شهرٍ وعقار**: الزرُّ يُضغط مرّتين سهوًا، فيُضاعف دخلٌ لم
+ * يُضاعَف. والعلامةُ هي القيدُ نفسُه لا حقلٌ ثالث — فلا تفترق حقيقتان.
+ */
+export function feePosted(incomes = [], propertyId, month) {
+  const key = String(month || '').slice(0, 7);
+  return (incomes || []).some((i) => i.propertyId === propertyId
+    && i.category === FEE_INCOME_CATEGORY
+    && String(i.date || '').slice(0, 7) === key);
+}
+
+/**
+ * سجلُّ الإيراد المقترَح من كشفِ شهر — **يُبنى ولا يُكتب**، فالكتابةُ بقرار صاحبه.
+ *
+ * وتاريخُه **آخرُ يومٍ في شهر الكشف** لا يومُ الضغط: أجرُ أغسطس أجرُ أغسطس ولو قُيِّد في
+ * أكتوبر، وإلّا اختلّ ملفُّ الربع الذي يُصدَّر للمحاسب.
+ */
+export function feeIncomeDraft({ property, statement, ownerName = '' } = {}) {
+  if (!statement || !(statement.fee > 0)) return null;
+  const [y, m] = String(statement.month).split('-').map(Number);
+  const last = new Date(Date.UTC(y, m, 0)); // اليوم صفر من الشهر التالي = آخر أيّام هذا الشهر
+  return {
+    date: last.toISOString(),
+    amount: Math.round(statement.fee),
+    category: FEE_INCOME_CATEGORY,
+    propertyId: property?.id || null,
+    note: `أجر إدارة ${statement.month}${ownerName ? ` — ${ownerName}` : ''}`,
+  };
+}
+
+/* ===== المباني (المرحلة ٤٨) ===== */
+
+/**
+ * **تجميعُ الوحدات في مبانيها.**
+ *
+ * من يدير عمارةً من عشرين شقّةً كان يراها عشرين سطرًا لا يعرف بعضُها بعضًا — والسؤالُ
+ * الذي يُطرح عنها واحد: **«كم مؤجَّرةٌ من كم؟ وكم دخلُها؟ ومتى تشغر الأولى؟»**
+ *
+ * والاسمُ يُطبَّع قبل الجمع (الألفُ والهاءُ والتاءُ المربوطة والمسافات)، فـ«عمارة الياسمين»
+ * و«عماره الياسمين» مبنًى واحد — **ويُعرض بأوّل إملاءٍ كتبتَه** لا بصيغةٍ مخترَعة.
+ *
+ * @returns {[{ key, name, rows, units, leased, vacant, monthlyFee, overdueCount, overdueAmount, nextVacancy }]}
+ */
+export function buildingGroups(rows = [], { normalize } = {}) {
+  const norm = normalize || ((x) => String(x || '').trim());
+  const map = new Map();
+  for (const r of rows) {
+    const raw = String(r.property?.building || '').trim();
+    if (!raw) continue;                      // وحدةٌ بلا مبنًى تبقى وحدها — ولا يُخترع لها مبنًى
+    const key = norm(raw);
+    if (!map.get(key)) map.set(key, { key, name: raw, rows: [] });
+    map.get(key).rows.push(r);
+  }
+
+  const out = [];
+  for (const g of map.values()) {
+    // المؤجَّرُ ما له عقدٌ ومستأجرٌ مسجَّل — لا ما حالتُه مكتوبةٌ «مؤجَّر»، فالحالةُ تُنسى.
+    const leased = g.rows.filter((r) => r.tenant || r.deal).length;
+    const ends = g.rows
+      .map((r) => r.leaseEndAt)
+      .filter(Boolean)
+      .sort((a, b) => String(a).localeCompare(String(b)));
+    out.push({
+      ...g,
+      units: g.rows.length,
+      leased,
+      vacant: g.rows.length - leased,
+      monthlyFee: g.rows.reduce((a, r) => a + (r.fee || 0), 0),
+      overdueCount: g.rows.reduce((a, r) => a + r.overdueCount, 0),
+      overdueAmount: g.rows.reduce((a, r) => a + r.overdueAmount, 0),
+      openMaintenance: g.rows.reduce((a, r) => a + (r.openMaintenance?.length || 0), 0),
+      nextVacancy: ends[0] || null,
+    });
+  }
+  // الأكثرُ وحداتٍ أوّلًا — فالمبنى الكبير هو الذي يُدار، والصغيرُ يُتابَع.
+  return out.sort((a, b) => b.units - a.units || String(a.name).localeCompare(String(b.name), 'ar'));
 }

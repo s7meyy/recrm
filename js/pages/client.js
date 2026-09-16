@@ -8,10 +8,11 @@
 
 import { repo } from '../data/repository.js';
 import { ENUMS, labelFor, clientTagClass, invoiceGrandTotal, COLLECTION_LABELS, invoiceCollection, checklistProgress, duePayments } from '../data/schema.js';
-import { getLists, typeLabel, getCompany } from '../data/settings.js';
+import { getLists, typeLabel, getCompany, getTeam } from '../data/settings.js';
+import { activeMembers, assignOptions } from '../util/team.js';
 import { loadMatchingContext, candidatesFor } from '../data/matching.js';
 import { receivables, commissionState } from '../util/receivables.js';
-import { el, clear, badge, emptyState, openModal, labeled, checkbox, promptDialog, toast } from '../util/dom.js';
+import { el, clear, badge, emptyState, openModal, labeled, checkbox, selectEl, promptDialog, toast } from '../util/dom.js';
 import { formatSAR, formatArea, formatDate, formatDateTime, formatNumber, daysWord, toInputDate, fromInputDate, countOf } from '../util/format.js';
 import { formatPhone, toInternational } from '../util/phone.js';
 import { audioPlayer } from '../util/audio-note.js';
@@ -34,9 +35,10 @@ export async function render(container) {
     return;
   }
 
-  const [client, lists, match, deals, invoices, allShowings] = await Promise.all([
+  const [client, lists, match, deals, invoices, allShowings, team, company] = await Promise.all([
     repo.clients.get(id), getLists(), loadMatchingContext({ withMatches: true }),
     repo.deals.list(), repo.invoices.list(), repo.showings.list(),
+    getTeam(), getCompany(), // إسنادُ الصفقة وحصّةُ الوسيط (المرحلة ٤٨)
   ]);
   if (!client) {
     container.append(emptyState('العميل غير موجود، أو حُذف.', el('a', { class: 'btn', href: '#/clients', text: 'العملاء' })));
@@ -161,7 +163,7 @@ export async function render(container) {
           progress ? `المسار ${progress.done}/${progress.total}` : null,
           due.length ? `${countOf(due.length, 'دفعة مستحقة')}` : null,
         ].filter(Boolean).join(' · '),
-        el('button', { type: 'button', class: 'btn btn-ghost btn-sm', text: 'إدارة', onClick: () => openDeal(d, lists, client) }));
+        el('button', { type: 'button', class: 'btn btn-ghost btn-sm', text: 'إدارة', onClick: () => openDeal(d, lists, client, team, company) }));
     }))
     : el('p', { class: 'muted small', text: 'لا صفقات معه بعد.' })));
 
@@ -204,7 +206,7 @@ function portfolioPanel({ client, properties, deals, lists }) {
   const pf = investorPortfolio({ ownerId: client.id, properties, deals });
   const pct = (n) => { const v = yieldPct(n); return v == null ? '—' : `${formatNumber(v)}٪`; };
 
-  const head = ['العقار', 'قيمته', 'المتوقَّع سنويًّا', 'العائد المتوقَّع', 'قُبض في سنة', 'العائد الواقع', 'لم يُحصَّل'];
+  const head = ['العقار', 'قيمته', 'المتوقَّع سنويًّا', 'العائد المتوقَّع', 'قُبض في سنة', 'العائد الواقع', 'مقارنةً بمحفظته', 'لم يُحصَّل'];
   return el('section', { class: 'panel' },
     el('h2', { text: 'محفظته: المتوقَّع والواقع' }),
     el('div', { class: 'stat-strip' },
@@ -230,12 +232,19 @@ function portfolioPanel({ client, properties, deals, lists }) {
         el('td', { text: r.actualRows ? formatSAR(r.actual) : '—' }),
         // لا عائدَ واقعًا بلا قبضٍ واقع: «٠٪» هنا حكمٌ، و«—» صمتٌ صادق.
         el('td', { text: r.actualRows ? pct(r.actualYield) : '—' }),
+        // **الجملةُ التي تفتح التفاوض**: «أقلُّ من متوسّط محفظتك بـ٤٠٪» — رقمٌ كان
+        // محسوبًا عندك ولم يُقَل، وبه يبيع الخاسرَ ويشتري بدله منك.
+        el('td', {}, r.vsPortfolio == null
+          ? el('span', { class: 'muted', text: '—' })
+          : badge(`${r.vsPortfolio > 0 ? '+' : ''}${formatNumber(r.vsPortfolio)}٪`,
+            r.vsPortfolio <= -25 ? 'badge-danger' : r.vsPortfolio < 0 ? 'badge-warn' : 'badge-ok')),
         el('td', {}, r.missed
           ? badge(`${formatNumber(r.missedCount)} · ${formatSAR(r.missed)}`, 'badge-danger')
           : el('span', { class: 'muted', text: '—' }))))))),
     el('p', { class: 'muted small' },
       'المتوقَّعُ مجموعُ الدفعات المجدوَلة في الاثني عشر شهرًا القادمة، والواقعُ ما قُبض فعلًا في الاثني عشر الماضية بتاريخ قبضه. ',
       'والعائدُ يُقسم على قيمة التملّك وحدها؛ فعرضُ إيجارٍ سعرُه أجرةٌ سنويّةٌ لا يُحسب له عائد. ',
+      'و«مقارنةً بمحفظته» نسبةٌ من متوسّط عائدها الواقع — والأضعفُ أوّلًا، فما يُقرأ يُعالَج. ',
       'ولا يدخل هنا تغيّرُ قيمة العقار ولا التمويلُ ولا الضريبة.'));
 }
 
@@ -279,7 +288,7 @@ async function paymentReceipt(payment, { client = null, deal = null, lists = nul
   });
 }
 
-function openDeal(deal, lists, client = null) {
+function openDeal(deal, lists, client = null, team = [], company = {}) {
   const draft = JSON.parse(JSON.stringify(deal));
   draft.payments = draft.payments || [];
   draft.checklist = draft.checklist || [];
@@ -359,6 +368,16 @@ function openDeal(deal, lists, client = null) {
   const partnerInput = el('input', { class: 'input', type: 'text', value: draft.partnerName || '', placeholder: 'اسم الوسيط الشريك' });
   const shareInput = el('input', { class: 'input', type: 'number', min: '0', step: '100', value: draft.partnerShare ?? '' });
   const partnerPaidBox = checkbox('سلّمتُه نصيبه', { checked: !!draft.partnerPaidAt });
+  /* من أتمّها من فريقك وحصّتُه (المرحلة ٤٨) — ولا تظهر لمكتبٍ من شخصٍ واحد */
+  const members = activeMembers(team);
+  const assignSelect = selectEl({
+    options: assignOptions(team, draft.assignedTo || ''),
+    value: draft.assignedTo || '', placeholder: 'بلا مسند',
+  });
+  const agentShareInput = el('input', {
+    class: 'input', type: 'number', min: '0', max: '100', step: '2.5',
+    value: draft.agentShare ?? '', placeholder: String(company?.agentSharePercent || 0),
+  });
   // بالأقساط لا يُعرض مربّعُ «قُبضت»: الأقساط هي الحَكَم، ومربّعٌ يخالفها يكتب رقمين
   // متناقضين في سجلٍّ واحد. ويُعرض ما قُبض منها، وتحريرُها في صفحة الصفقات حيث محرّرها.
   const cstate = commissionState(draft);
@@ -371,12 +390,26 @@ function openDeal(deal, lists, client = null) {
   const recalcNet = () => {
     const total = Number(commissionInput.value) || 0;
     const share = Number(shareInput.value) || 0;
-    netNode.textContent = share > 0
-      ? `صافيك بعد نصيب الشريك: ${formatSAR(Math.max(0, total - share))}`
+    const afterPartner = Math.max(0, total - share);
+    // **حصّةُ وسيطك تُحسب على ما بقي بعد الشريك الخارجيّ**: الشريكُ يقتطع من العمولة قبل
+    // أن تدخل المكتب، وحصّةُ وسيطك من دخل المكتب. وترتيبُ الخصم يغيّر الرقم فيُقال صراحةً.
+    const pct = agentShareInput.value === ''
+      ? (Number(company?.agentSharePercent) || 0)
+      : Number(agentShareInput.value) || 0;
+    const agent = afterPartner * (Math.min(100, Math.max(0, pct)) / 100);
+    // **والسطرُ يسمّي صاحبَ الرقم دائمًا**: «صافيك» حين لا يقتطع أحد، و«صافي المكتب»
+    // حين يقتطع وسيطُك — فرقمٌ بلا صاحبٍ يُقرأ على غير وجهه.
+    const parts = [];
+    if (share > 0) parts.push(`نصيب الشريك ${formatSAR(share)}`);
+    if (members.length > 1 && agent > 0) parts.push(`حصّة الوسيط ${formatSAR(Math.round(agent))}`);
+    const mine = Math.round(afterPartner - agent);
+    netNode.textContent = parts.length
+      ? `${parts.join(' · ')} — ${agent > 0 ? 'صافي المكتب' : 'صافيك'}: ${formatSAR(mine)}`
       : `صافيك: ${formatSAR(total)}`;
   };
   commissionInput.addEventListener('input', recalcNet);
   shareInput.addEventListener('input', recalcNet);
+  agentShareInput.addEventListener('input', recalcNet);
   recalcNet();
 
   const save = async () => {
@@ -391,6 +424,10 @@ function openDeal(deal, lists, client = null) {
         partnerName: partnerInput.value,
         partnerShare: shareInput.value === '' ? null : Number(shareInput.value),
         partnerPaidAt: partnerPaidBox.querySelector('input').checked ? (deal.partnerPaidAt || new Date().toISOString()) : null,
+        ...(members.length > 1 ? {
+          assignedTo: assignSelect.value || null,
+          agentShare: agentShareInput.value === '' ? null : Number(agentShareInput.value),
+        } : {}),
         payments: draft.payments,
         checklist: draft.checklist,
       });
@@ -423,8 +460,12 @@ function openDeal(deal, lists, client = null) {
       el('div', { class: 'form-grid' },
         labeled('العمولة', commissionInput),
         el('div', { class: 'field' }, el('span', { class: 'field-label', text: 'التحصيل' }), commissionPaidBox),
-        labeled('وسيط شريك', partnerInput, { hint: 'اتركه فارغًا إن كانت العمولة كلها لك' }),
-        labeled('نصيبه', shareInput)),
+        labeled('وسيط شريك', partnerInput, { hint: 'من مكتبٍ آخر — اتركه فارغًا إن كانت العمولة كلها لك' }),
+        labeled('نصيبه', shareInput),
+        members.length > 1 ? labeled('أتمّها من فريقك', assignSelect, { hint: 'إليه تُنسب الصفقة في لوحة الأداء — لا إلى من أدخلها' }) : null,
+        members.length > 1 ? labeled('حصّته من العمولة ٪', agentShareInput, {
+          hint: `فارغًا = نسبة الإعدادات (${formatNumber(company?.agentSharePercent || 0)}٪). وهي حسابٌ لا صرف.`,
+        }) : null),
       el('div', { class: 'field' }, partnerPaidBox),
       netNode,
       el('h3', { class: 'section-title', style: { marginTop: '14px' }, text: 'مسار الصفقة ومستنداتها' }),

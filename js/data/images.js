@@ -140,7 +140,37 @@ export async function storeVideo(file, { entity = 'property', entityId = null } 
 
 /** يخزّن ملفًا أيًّا كان نوعه: صورةً مضغوطة أو مقطعًا كما هو. */
 export async function storeMedia(file, opts = {}) {
+  if (isDocFile(file)) return storeDoc(file, opts);
   return isVideoFile(file) ? storeVideo(file, opts) : storeImage(file, opts);
+}
+
+/* ===== المستندات (المرحلة ٤٨) ===== */
+
+/**
+ * **المستنداتُ: الصكُّ المصوَّر، والاتفاقيّةُ الموقَّعة، وعقدُ «إيجار» بعد توثيقه.**
+ *
+ * كان حقلُ الرفع `image/*,video/*` وحدهما، **ولا مكانَ لملفّ PDF**. وهي أوراقٌ تُطلب
+ * منك بعد شهور فتبحث عنها في واتساب. **والمخزنُ نفسُه يقبلها**: `blob` بنوعه لا أكثر،
+ * وصفحةُ التفريغ تقبل الـPDF أصلًا — *لتقرأه لا لتحفظه*.
+ *
+ * **ولا ضغطَ ولا مصغَّرة**: المستندُ يُحفظ كما هو — ضغطُه يُفسده، ومصغَّرتُه لا تُقرأ.
+ */
+export const DOC_MIMES = ['application/pdf'];
+export const DOC_MAX_BYTES = 12 * 1024 * 1024;
+
+export const isDoc = (rec) => DOC_MIMES.includes(String(rec?.mime || ''));
+export const isDocFile = (file) => DOC_MIMES.includes(String(file?.type || ''));
+
+export async function storeDoc(file, { entity = 'property', entityId = null } = {}) {
+  if (!isDocFile(file)) throw new Error('نوع المستند غير مدعوم — الـPDF وحده يُحفظ هنا');
+  if (file.size > DOC_MAX_BYTES) {
+    throw new Error(`المستند أكبر من ${formatBytes(DOC_MAX_BYTES)} — اضغطه أو صوّره صفحاتٍ أقلّ`);
+  }
+  return repo.images.create({
+    entity, entityId, mime: file.type, blob: file, thumb: null,
+    width: null, height: null,
+    size: file.size, originalName: file.name || 'مستند', originalSize: file.size ?? null,
+  });
 }
 
 /** يضغط ويخزّن الصورة ويعيد سجلها (يُضاف id إلى property.images من المستدعي). */
@@ -185,12 +215,15 @@ export async function firstStillId(ids = []) {
 export async function splitMedia(ids = []) {
   const images = [];
   const videos = [];
+  // والمستنداتُ ثالثةٌ (المرحلة ٤٨): لا تُعرض في شبكة الصور ولا تُنشر على صفحتك العامّة.
+  const docs = [];
   for (const id of ids) {
     const rec = await repo.images.get(id);
     if (!rec) continue;
-    (isVideo(rec) ? videos : images).push(id);
+    if (isDoc(rec)) docs.push({ id, name: rec.originalName || 'مستند', size: rec.size || 0 });
+    else (isVideo(rec) ? videos : images).push(id);
   }
-  return { images, videos };
+  return { images, videos, docs };
 }
 
 /** يحرّر كل روابط العرض المؤقتة (يُستدعى عند تغيير الصفحة). */

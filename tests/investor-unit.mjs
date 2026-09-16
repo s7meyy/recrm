@@ -73,7 +73,15 @@ ok('والقيمةُ مجموعُ ما عُرف: ١٢٠٠٠٠٠ + ٩٠٠٠٠٠',
 ok('والمجهولُ يُعدّ ويُقال، لا يُحسب صفرًا', pf.unpriced === 1, String(pf.unpriced));
 ok('والعائد الكلّيّ يُقسم على ما عُرفت قيمتُه', yieldPct(pf.actualYield) === 2.1, String(yieldPct(pf.actualYield)));
 ok('ومن بلا عقدٍ يُعدّ', pf.withoutLease === 2, String(pf.withoutLease));
-ok('والأغلى قيمةً أوّلًا', pf.rows[0].property.id === 'p1', pf.rows[0].property.id);
+/* **الأسوأُ أوّلًا** (المرحلة ٤٨): المحفظةُ تُقرأ لتُعالَج، وأوّلُ ما يُعالَج أضعفُها. */
+ok('العائدُ الواقع يُقارَن بمتوسّط المحفظة نسبةً لا نقاطًا',
+  pf.rows.find((r) => r.property.id === 'p1').vsPortfolio === 75,
+  String(pf.rows.find((r) => r.property.id === 'p1').vsPortfolio));
+ok('وما لا عائدَ واقعًا له لا يُقارَن — ولا يُقال عنه «أسوأ»',
+  pf.rows.find((r) => r.property.id === 'p3').vsPortfolio === null);
+ok('والأضعفُ يتقدّم، والمجهولُ يقع آخرًا',
+  pf.rows[0].property.id === 'p2' && pf.rows[pf.rows.length - 1].property.id === 'p3',
+  pf.rows.map((r) => r.property.id).join('،'));
 
 /* الفراغ */
 const none = investorPortfolio({ ownerId: 'nobody', properties: props, deals: [] , now: NOW });

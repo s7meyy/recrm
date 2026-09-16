@@ -9,14 +9,18 @@
 
 import { repo } from '../data/repository.js';
 import { getLists, typeLabel, getCompany } from '../data/settings.js';
-import { el, clear, badge, emptyState, selectEl, confirmDialog, toast } from '../util/dom.js';
-import { formatSAR, formatDate, formatNumber, countWord, daysWord } from '../util/format.js';
+import { el, clear, badge, emptyState, selectEl, labeled, openModal, confirmDialog, toast } from '../util/dom.js';
+import { formatSAR, formatDate, formatNumber, countWord, countOf, daysWord } from '../util/format.js';
 import { formatPhone } from '../util/phone.js';
 import {
   managedRows, managementAlerts, monthlyFeeTotal, STATE_LABEL, FEE_TYPES,
   ownerStatement, arrearsByTenant, lateDays, renewalPlan, bearerLabel, maintenanceLabel,
+  feePosted, feeIncomeDraft, buildingGroups,
 } from '../util/management.js';
-import { printOwnerStatement } from '../util/property-print.js';
+import { normalizeArabic } from '../util/arabic.js';
+import { printOwnerStatement, printOwnerActivity } from '../util/property-print.js';
+import { ownerActivity, activityHeadline } from '../util/owner-report.js';
+import { labelFor, ENUMS } from '../data/schema.js';
 
 const STATE_CLASS = { expired: 'badge-danger', ending: 'badge-warn', active: 'badge-ok', open: 'badge-outline' };
 const ALERT_CLASS = { expired: 'badge-danger', overdue: 'badge-danger', ending: 'badge-warn', maintenance: 'badge-warn' };
@@ -24,8 +28,10 @@ const personName = (c) => (c ? (c.name || formatPhone(c.phone) || 'بلا اسم
 
 export async function render(container) {
   clear(container);
-  const [properties, deals, clients, lists, company] = await Promise.all([
+  const [properties, deals, clients, lists, company, incomes, showings, matches] = await Promise.all([
     repo.properties.list(), repo.deals.list(), repo.clients.list(), getLists(), getCompany(),
+    // قيدُ أجر الإدارة وتقريرُ النشاط (المرحلة ٤٨)
+    repo.incomes.list(), repo.showings.list(), repo.matches.list(),
   ]);
   const clientMap = new Map(clients.map((c) => [c.id, c]));
   const rows = managedRows({ properties, deals, clientMap });
@@ -91,6 +97,32 @@ export async function render(container) {
     stat('عقود تنتهي خلال شهر', formatNumber(rows.filter((r) => r.state === 'ending').length)),
     stat('دفعات متأخّرة', formatNumber(rows.reduce((s, r) => s + r.overdueCount, 0)))));
 
+  /* المباني (المرحلة ٤٨): عشرون شقّةً في عمارةٍ كانت عشرين سطرًا لا يعرف بعضُها بعضًا */
+  const buildings = buildingGroups(rows, { normalize: normalizeArabic });
+  if (buildings.length) {
+    container.append(el('section', { class: 'panel' },
+      el('h2', { text: 'المباني' }),
+      el('p', { class: 'muted small', text: 'وحداتٌ تحمل اسمَ المبنى نفسَه تُجمع هنا. وما لم يُكتب له مبنًى يبقى في الجدول أدناه وحده.' }),
+      el('div', { class: 'table-wrap' }, el('table', { class: 'table' },
+        el('thead', {}, el('tr', {}, ['المبنى', 'الوحدات', 'مؤجَّرة', 'شاغرة', 'الأجر الشهري', 'متأخّرات', 'صيانة مفتوحة', 'أوّل عقدٍ ينتهي'].map((h) => el('th', { text: h })))),
+        el('tbody', {}, buildings.map((b) => el('tr', {},
+          el('td', { class: 'strong', text: b.name }),
+          el('td', { class: 'num', text: formatNumber(b.units) }),
+          el('td', { class: 'num', text: formatNumber(b.leased) }),
+          el('td', { class: 'num' }, b.vacant
+            ? badge(formatNumber(b.vacant), 'badge-warn')
+            : el('span', { class: 'muted', text: '—' })),
+          el('td', { class: 'num', 'data-sensitive': '' }, b.monthlyFee ? formatSAR(b.monthlyFee) : el('span', { class: 'muted', text: '—' })),
+          el('td', { class: 'num', 'data-sensitive': '' }, b.overdueCount
+            ? badge(`${formatNumber(b.overdueCount)} · ${formatSAR(b.overdueAmount)}`, 'badge-danger')
+            : el('span', { class: 'muted', text: '—' })),
+          el('td', { class: 'num' }, b.openMaintenance
+            ? badge(formatNumber(b.openMaintenance), 'badge-warn')
+            : el('span', { class: 'muted', text: '—' })),
+          el('td', { text: b.nextVacancy ? formatDate(b.nextVacancy) : '—' })))))),
+      el('p', { class: 'muted small', text: '«مؤجَّرة» = لها عقدٌ ومستأجرٌ مسجَّل — لا ما كُتبت حالتُه «مؤجَّر»، فالحالةُ تُنسى والعقدُ لا يُنسى.' })));
+  }
+
   /* شهرُ الكشف: يُختار مرّةً ويُطبع لأيّ مالك — والافتراضُ الشهرُ الماضي، فهو الذي يُسلَّم كشفُه */
   const monthInput = el('input', { class: 'input', type: 'month', value: defaultMonth(), style: { maxWidth: '180px' } });
   container.append(el('div', { class: 'row', style: { alignItems: 'flex-end', gap: '8px', marginBottom: '8px' } },
@@ -141,6 +173,21 @@ export async function render(container) {
             el('button', {
               type: 'button', class: 'icon-btn', text: '♻️', title: 'جدِّد عقد الإدارة والإيجار',
               onClick: () => renew(r, lists),
+            }),
+            // **دخلُ الإدارة يدخل دفترك** (المرحلة ٤٨): كان يُحسب ويُطبع ولا يُقيَّد،
+            // فيرى الداشبوردُ عمولاتِك ولا يرى أثبتَ دخلٍ عندك.
+            feeButton(r, { incomes, monthInput, lists }),
+            // **«ماذا فعلتم لعقاري؟»** — ورقةٌ تجمع ما هو متفرّقٌ في خمسة مواضع.
+            el('button', {
+              type: 'button', class: 'icon-btn', text: '📈', title: 'تقرير نشاط يُسلَّم للمالك',
+              onClick: () => {
+                const act = ownerActivity({ property: r.property, showings, matches });
+                act.headline = activityHeadline(act, { countOf, daysWord });
+                return printOwnerActivity({
+                  property: r.property, owner: r.owner, activity: act, lists, company,
+                  reasonLabel: (k) => labelFor(ENUMS.matchRejectReasons, k),
+                });
+              },
             })))))))); 
 
   container.append(el('p', { class: 'muted small' },
@@ -198,13 +245,52 @@ function maintenanceCell(r) {
  * يُخترع له مبلغ، ويُقال ذلك في نصّ التأكيد نفسه قبل الاعتماد.
  */
 async function renew(r, lists) {
-  const plan = renewalPlan({ row: r });
+  // **التجديدُ هو اللحظةُ التي تُراجَع فيها الأجرة** (المرحلة ٤٨): تُسأل النسبةُ أوّلًا
+  // وافتراضُها صفر، **ولا تُقترح نسبةٌ من عندنا** — تلك مسألةُ سوقٍ ونظامٍ لا حساب.
+  const increaseInput = el('input', { class: 'input', type: 'number', min: '0', max: '100', step: '2.5', value: '0' });
+  const preview = el('p', { class: 'muted small' });
+  const base = renewalPlan({ row: r });
+  const lastAmount = base.lease?.payments?.[0]?.amount || null;
+  const drawPreview = () => {
+    const pct = Math.min(100, Math.max(0, Number(increaseInput.value) || 0));
+    preview.textContent = !lastAmount
+      ? 'لا دفعةٌ سابقةٌ بمبلغٍ معلوم — فلا زيادةَ تُحسب.'
+      : pct > 0
+        ? `الدفعة الشهرية: ${formatSAR(lastAmount)} ← ${formatSAR(Math.round(lastAmount * (1 + pct / 100)))}`
+        : `الدفعة الشهرية تبقى ${formatSAR(lastAmount)} — صفرٌ = تجديدٌ بالأجرة نفسِها.`;
+  };
+  increaseInput.addEventListener('input', drawPreview);
+  drawPreview();
+
+  // **يُحسم الجوابُ قبل الإغلاق لا بعده**: `close()` تُطلق `onClose`، فلو أُغلقت أوّلًا
+  // لسبق `resolve(null)` جوابَ الزرّ — ووَعدٌ لا يُحسم مرّتين، فيضيع ما اختاره صاحبُه.
+  const asked = await new Promise((resolve) => {
+    let picked = null;
+    const m = openModal({
+      title: `تجديد ١٢ شهرًا — ${placeOf(r.property, lists)}`,
+      body: el('div', {},
+        el('div', { class: 'form-grid' }, labeled('زيادة الأجرة (٪)', increaseInput, { hint: 'افتراضُها صفر — والقرار قرارك' })),
+        preview),
+      onClose: () => resolve(picked),
+      footer: [
+        el('button', { type: 'button', class: 'btn btn-ghost', text: 'إلغاء', onClick: () => m.close() }),
+        el('button', {
+          type: 'button', class: 'btn btn-primary', text: 'اعرض الخطّة',
+          onClick: () => { picked = Number(increaseInput.value) || 0; m.close(); },
+        }),
+      ],
+    });
+  });
+  if (asked == null) return;
+
+  const plan = renewalPlan({ row: r, increasePct: asked });
   const lines = [];
   if (plan.management) lines.push(`عقد الإدارة يمتدّ حتى ${formatDate(plan.management.endAt)}.`);
   if (plan.lease) {
     lines.push(`عقد الإيجار يمتدّ حتى ${formatDate(plan.lease.leaseEndAt)}.`);
     if (plan.lease.payments.length) {
-      lines.push(`تُضاف ${countWord(plan.lease.payments.length, ['دفعة واحدة', 'دفعتان', 'دفعات', 'دفعةً'])} بقيمة ${formatSAR(plan.lease.payments[0].amount)} شهريًّا.`);
+      lines.push(`تُضاف ${countWord(plan.lease.payments.length, ['دفعة واحدة', 'دفعتان', 'دفعات', 'دفعةً'])} بقيمة ${formatSAR(plan.lease.payments[0].amount)} شهريًّا`
+        + (plan.increasePct > 0 ? ` (بزيادة ${formatNumber(plan.increasePct)}٪).` : '.'));
     }
   }
   for (const w of plan.warnings) lines.push(`تنبيه: ${w}.`);
@@ -231,4 +317,52 @@ async function renew(r, lists) {
   toast('جُدِّد. أُعيد تحميل الصفحة لتظهر المواعيد الجديدة.', 'success');
   const host = document.querySelector('#page');
   if (host) await render(host);
+}
+
+
+/**
+ * **زرُّ قيدِ أجر الإدارة إيرادًا** — بقرارك، ومرّةً واحدةً لكلّ شهرٍ وعقار.
+ *
+ * ولا يُقيَّد تلقائيًّا مع طباعة الكشف: الطباعةُ قد تتكرّر للمراجعة، والقيدُ لا يُراجَع
+ * بتكرار. **والعلامةُ على أنّه قُيِّد هي القيدُ نفسُه** — بحثٌ عن إيرادِ إدارةٍ لهذا
+ * العقار في هذا الشهر — فلا تفترق حقيقتان في سجلّين.
+ */
+function feeButton(row, { incomes, monthInput, lists }) {
+  const btn = el('button', { type: 'button', class: 'icon-btn', text: '💰' });
+  const paint = () => {
+    const month = monthInput.value;
+    const st = ownerStatement({ property: row.property, deal: row.deal, month });
+    const done = feePosted(incomes, row.property.id, month);
+    btn.disabled = !(st.fee > 0) || done;
+    btn.title = done
+      ? `أجرُ ${month} مقيَّدٌ في المالية — ولا يُقيَّد مرّتين`
+      : st.fee > 0
+        ? `قيِّد ${formatSAR(st.fee)} إيرادَ إدارةٍ عن ${month}`
+        : `لا أجرَ مستحقٌّ عن ${month} — فلا شيء يُقيَّد`;
+    btn.textContent = done ? '✅' : '💰';
+  };
+  monthInput.addEventListener('input', paint);
+  btn.addEventListener('click', async () => {
+    const month = monthInput.value;
+    const st = ownerStatement({ property: row.property, deal: row.deal, month });
+    const draft = feeIncomeDraft({ property: row.property, statement: st, ownerName: row.owner?.name || '' });
+    if (!draft) return;
+    const ok = await confirmDialog({
+      title: 'قيد إيراد إدارة',
+      message: `يُضاف إلى «المالية» إيرادٌ بـ${formatSAR(draft.amount)} باسم «${draft.note}»،\n`
+        + `بتاريخ آخر يومٍ في ${month} لا بتاريخ اليوم — فأجرُ الشهر أجرُ شهره.\n\n`
+        + 'وهذا قيدٌ في دفترك أنت، لا مطالبةً للمالك ولا صرفًا.',
+      confirmText: 'قيِّده',
+    });
+    if (!ok) return;
+    try {
+      await repo.incomes.create(draft);
+      toast('قُيِّد الإيراد — يظهر في «المالية» وفي صافي الداشبورد', 'success', 5000);
+      window.dispatchEvent(new CustomEvent('kassab:data-changed'));
+      const host = document.querySelector('#page');
+      if (host) await render(host);
+    } catch (err) { toast(err.message || 'تعذّر القيد', 'error'); }
+  });
+  paint();
+  return btn;
 }

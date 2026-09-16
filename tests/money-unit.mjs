@@ -94,3 +94,33 @@ ok('الصفقة بلا عمولة تُرصد', key('deal-no-commission').count 
 ok('كل بند يقول ماذا يتعطّل', h.groups.every((g) => g.impact && g.impact.length > 20));
 ok('نوع العقار يُعرض باسمه العربي', key('property-no-price').items[0].label.includes('فلة'));
 ok('بيانات سليمة = لا ملاحظات', healthReport({}).groups.length === 0);
+
+/* ===== المرحلة ٤٨ — العائد على رأس المال المدفوع ===== */
+const F48 = await import('../js/util/finance.js');
+const lv = F48.leveragedYield({
+  price: 1000000, annualRent: 60000, annualCosts: 5000,
+  downPct: 20, cashCosts: 30000, annualRate: 5.5, months: 240,
+});
+ok('ما يخرج من جيبك = الدفعة الأولى + النقد الآخر', lv.cashIn === 230000, String(lv.cashIn));
+ok('ومبلغُ التمويل ما بقي', lv.loan === 800000, String(lv.loan));
+ok('والقسطُ الشهريّ محسوبٌ بمعادلة الإطفاء', Math.round(lv.monthlyPayment) === 5503, String(Math.round(lv.monthlyPayment)));
+ok('والصافي = دخلُ الإيجار بعد المصاريف − خدمةِ الدين',
+  Math.round(lv.netIncome) === Math.round(55000 - lv.annualDebt), String(Math.round(lv.netIncome)));
+ok('والعائدُ يُقسم على ما دفعتَه لا على الثمن',
+  Math.abs(lv.cashYield - (lv.netIncome / 230000) * 100) < 0.0001);
+ok('وهو يختلف عن العائد على الثمن اختلافًا حقيقيًّا',
+  Math.abs(lv.cashYield - F48.rentalYield({ price: 1000000, annualRent: 60000, annualCosts: 5000 }).net) > 1);
+
+/* **قد يكون سالبًا، ويُقال سالبًا** */
+const bad = F48.leveragedYield({ price: 1000000, annualRent: 20000, downPct: 10, annualRate: 7, months: 180 });
+ok('قسطٌ أكبرُ من إيجارٍ يُقرأ سالبًا لا صفرًا', bad.cashYield < 0 && bad.positive === false, String(Math.round(bad.cashYield)));
+ok('وما يُدفع من الجيب شهريًّا يُقال', bad.monthlyNet < 0);
+
+/* الحدود */
+ok('وشراءٌ نقدًا بلا دفعةٍ ولا نقدٍ آخر: لا عائدَ نسبيًّا — ولا قسمةَ على صفر',
+  F48.leveragedYield({ price: 1000000, annualRent: 60000, downPct: 0, cashCosts: 0 }) === null);
+ok('وبلا سعرٍ أو إيجارٍ لا شيء', F48.leveragedYield({ price: 0, annualRent: 60000 }) === null
+  && F48.leveragedYield({ price: 1000000, annualRent: 0 }) === null && F48.leveragedYield() === null);
+ok('ونسبةُ تمويلٍ صفرٌ لا تنفجر', Number.isFinite(F48.leveragedYield({ price: 1000000, annualRent: 60000, downPct: 20, annualRate: 0 }).cashYield));
+ok('وشراءٌ نقديٌّ كاملٌ برسومٍ نقديّة يُحسب بلا قسط',
+  F48.leveragedYield({ price: 1000000, annualRent: 60000, downPct: 100, cashCosts: 50000 }).monthlyPayment === 0);

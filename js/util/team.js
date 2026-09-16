@@ -64,24 +64,57 @@ export function roundRobin(items = [], team = [], { startAfter = null } = {}) {
  *
  * @returns {[{ member, clients, properties, requests, deals, commission, entered }]}
  */
-export function memberStats({ team = [], clients = [], properties = [], requests = [], deals = [] } = {}) {
+export function memberStats({
+  team = [], clients = [], properties = [], requests = [], deals = [],
+  defaultShare = 0, goals = null,
+} = {}) {
   const ownerOf = (rec) => rec?.assignedTo || rec?.createdBy || null;
+  const perMember = goals?.perMember || {};
   const rows = activeMembers(team).map((member) => {
     const mine = (list) => list.filter((r) => ownerOf(r) === member.id);
     const myDeals = mine(deals);
+    const commission = myDeals.reduce((a, d) => a + (Number(d.commission) || 0), 0);
+    const goal = perMember[member.id] || null;
     return {
       member,
       clients: mine(clients).length,
       properties: mine(properties).length,
       requests: mine(requests).length,
       deals: myDeals.length,
-      commission: myDeals.reduce((a, d) => a + (Number(d.commission) || 0), 0),
+      commission,
+      // **حصّتُه هو من تلك العمولة** (المرحلة ٤٨) — وهي غيرُ عمولة المكتب.
+      // نسبةُ كل صفقةٍ إن حُدّدت، وإلّا فنسبةُ الإعدادات، وصفرٌ = لا حصّةَ فلا يُخترع له مال.
+      earned: myDeals.reduce((a, d) => {
+        const pct = d.agentShare != null ? Number(d.agentShare) : Number(defaultShare) || 0;
+        return a + ((Number(d.commission) || 0) * (Math.min(100, Math.max(0, pct)) / 100));
+      }, 0),
+      goal,
+      // بلوغُ الهدف نسبةً — ولا نسبةَ بلا هدف، فلا يُقال «٠٪» لمن لم يُوضع له هدف.
+      goalPct: goal?.commissionPerMonth > 0 ? Math.round((commission / goal.commissionPerMonth) * 100) : null,
       // ما أدخله بيده وإن أُسند لغيره — يفرّق بين من يُدخل ومن يُتابع.
       entered: [...clients, ...properties, ...requests].filter((r) => r.createdBy === member.id).length,
     };
   });
   // الأكثرُ عمولةً أوّلًا، ثم الأكثرُ صفقات — فالترتيبُ يقول شيئًا لا يُرتَّب أبجديًّا.
   return rows.sort((a, b) => b.commission - a.commission || b.deals - a.deals);
+}
+
+/**
+ * **هدفُ هذا الجهاز**: هدفُ صاحبه إن وُضع له، وإلّا فهدفُ المكتب (المرحلة ٤٨).
+ *
+ * فمن لا هدفَ شخصيًّا له يرى ما كان يراه، ومن وُضع له هدفٌ يرى هدفَه هو — لا رقمًا
+ * لا يملك تحريكَه وحده.
+ */
+export function goalFor(goals = {}, meId = '') {
+  const mine = goals?.perMember?.[meId];
+  if (mine && (mine.dealsPerMonth > 0 || mine.commissionPerMonth > 0)) {
+    return { ...mine, scope: 'member' };
+  }
+  return {
+    dealsPerMonth: goals?.dealsPerMonth || 0,
+    commissionPerMonth: goals?.commissionPerMonth || 0,
+    scope: 'office',
+  };
 }
 
 /** ما لم يُسند إلى أحد — وهو أوّلُ ما يبحث عنه مديرُ الكيان. */

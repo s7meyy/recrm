@@ -152,8 +152,14 @@ ok('وزرُّ كشف المالك موجود', (await page.locator('#page butto
 ok('وزرُّ التجديد بنقرة', (await page.locator('#page button[title*="جدِّد"]').count()) === 1);
 ok('وشهرُ الكشف يُختار مرّةً ويُطبع لأيّ مالك',
   (await page.locator('#page input[type="month"]').count()) === 1);
-// التجديد يُعرض قبل أن يُنفَّذ
+// التجديد يُعرض قبل أن يُنفَّذ — وتُسأل زيادةُ الأجرة أوّلًا (المرحلة ٤٨)
 await page.locator('#page button[title*="جدِّد"]').click();
+await page.waitForTimeout(700);
+const askText = await page.locator('.modal').last().innerText();
+ok('ويُسأل عن زيادة الأجرة أوّلًا وافتراضُها صفر',
+  askText.includes('زيادة الأجرة') && askText.includes('افتراضُها صفر'), askText.slice(0, 80).replace(/\n/g, ' · '));
+ok('ويُعرض أثرُ الزيادة على الدفعة قبل اعتمادها', askText.includes('الدفعة الشهرية'));
+await page.locator('.modal').last().locator('button:has-text("اعرض الخطّة")').click();
 await page.waitForTimeout(700);
 const renewText = await page.locator('.modal').last().innerText();
 ok('والتجديدُ يُعرض قبل أن يُعتمد — عقدان لا عقد',

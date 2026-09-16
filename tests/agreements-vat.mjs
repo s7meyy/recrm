@@ -37,7 +37,10 @@ await page.waitForTimeout(1200);
 await page.evaluate(() => { location.hash = '#/today'; });
 await page.waitForTimeout(2200);
 const todayText = await page.locator('#page').innerText();
-ok('لوحة الاتفاقيات في «يومي»', todayText.includes('اتفاقيات تنتهي'), todayText.split('\n').find((l) => l.includes('اتفاقيات')) || '');
+// المرحلة ٤٨: صارت لوحةً واحدةً تجمع الرخصةَ والتراخيصَ والاتفاقيّات — سؤالٌ واحد:
+// ما الذي يسقط عنّي قريبًا؟ والاتفاقيّةُ تُسمّى باسمها داخلها.
+ok('لوحة «ما ينتهي قريبًا» في «يومي»', todayText.includes('ما ينتهي قريبًا'), todayText.split('\n').find((l) => l.includes('ينتهي')) || '');
+ok('والاتفاقيّةُ تُسمّى باسمها داخلها', todayText.includes('اتفاقية وساطة'), todayText.split('\n').find((l) => l.includes('اتفاقية')) || '');
 ok('والمنتهية تقول منذ متى', /انتهت منذ/.test(todayText), todayText.split('\n').find((l) => l.includes('انتهت')) || '');
 ok('والتي توشك تقول متى', /تنتهي بعد/.test(todayText), todayText.split('\n').find((l) => l.includes('تنتهي بعد')) || '');
 ok('والأقرب انتهاءً أولًا (الياسمين قبل قرطبة)',

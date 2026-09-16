@@ -140,3 +140,51 @@ export function closingCosts({
     ].filter((l) => l.amount > 0),
   };
 }
+
+/**
+ * **العائدُ على رأس المال المدفوع** (المرحلة ٤٨) — لا على ثمن العقار كاملًا.
+ *
+ * في هذا الملفّ دالّتان جارتان لا تلتقيان: `rentalYield` تقسم الدخلَ على **الثمن كاملًا**،
+ * و`affordability` تحسب التمويلَ والقسط. **وأكثرُ من يشتري للاستثمار يشتري بتمويل** —
+ * فالعائدُ الذي يعنيه على ما خرج من جيبه: الدفعةُ الأولى ورسومُ الإتمام، والقسطُ يُخصم
+ * من الإيجار.
+ *
+ * وهو رقمٌ يختلف عن الأوّل اختلافًا كبيرًا صعودًا أو هبوطًا، **وكلاهما صادقٌ في موضعه**:
+ * الأوّلُ يقيس العقار، وهذا يقيس الصفقة.
+ *
+ * **وحدوده تُقال لا تُخبّأ**: يفترض بقاءَ القسط ثابتًا ومعدّلًا ثابتًا، ولا يحسب إطفاءَ
+ * أصل الدين (وهو ثروةٌ تتراكم لا تظهر هنا)، ولا تغيّرَ قيمة العقار، ولا الضريبة.
+ *
+ * @param {{ price, annualRent, annualCosts?, occupancy?, downPct?, cashCosts?, annualRate?, months? }} o
+ * @returns {{ cashIn, loan, annualDebt, netIncome, cashYield, monthlyNet, positive } | null}
+ */
+export function leveragedYield({
+  price, annualRent, annualCosts = 0, occupancy = 100,
+  downPct = 20, cashCosts = 0, annualRate = 5.5, months = 240,
+} = {}) {
+  const base = rentalYield({ price, annualRent, annualCosts, occupancy });
+  if (!base) return null;
+  const p = Number(price);
+  const down = p * (Math.min(100, Math.max(0, Number(downPct) || 0)) / 100);
+  const loan = Math.max(0, p - down);
+  const cashIn = down + Math.max(0, Number(cashCosts) || 0);
+  if (!(cashIn > 0)) return null; // شراءٌ بلا نقدٍ من جيبك لا عائدَ نسبيًّا له — وقسمةٌ على صفر
+
+  const r = (Number(annualRate) || 0) / 100 / 12;
+  const n = Math.max(1, Math.round(Number(months) || 0));
+  const monthly = loan === 0 ? 0 : (r === 0 ? loan / n : (loan * r) / (1 - (1 + r) ** -n));
+  const annualDebt = monthly * 12;
+  const netIncome = base.netIncome - annualDebt;
+
+  return {
+    cashIn,
+    loan,
+    monthlyPayment: monthly,
+    annualDebt,
+    netIncome,
+    // **قد يكون سالبًا**، ويُقال سالبًا: عقارٌ قسطُه أكبرُ من إيجاره يأكل من جيبك شهريًّا.
+    cashYield: (netIncome / cashIn) * 100,
+    monthlyNet: netIncome / 12,
+    positive: netIncome > 0,
+  };
+}

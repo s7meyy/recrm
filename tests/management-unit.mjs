@@ -176,3 +176,17 @@ const mRows = managedRows({ properties: [propM], deals: [], clientMap: new Map()
 ok('الصفُّ يحمل بلاغاتِه المفتوحة', mRows[0].openMaintenance.length === 1, String(mRows[0].openMaintenance.length));
 ok('وبلاغٌ مفتوحٌ ينبّه كما تنبّه الدفعةُ الفائتة',
   managementAlerts(mRows).some((a) => a.kind === 'maintenance'), managementAlerts(mRows).map((a) => a.kind).join('، '));
+
+/* ===== المرحلة ٤٨ — زيادةُ التجديد ===== */
+const up = M.renewalPlan({ row: renewRow, increasePct: 10, now: NOW });
+ok('الزيادةُ تُطبَّق على كل دفعة (٥٥٠٠ + ١٠٪)', up.lease.payments.every((p) => p.amount === 6050), String(up.lease.payments[0].amount));
+ok('وتُجبَر إلى ريالٍ صحيح — لا هللاتٍ في جدولٍ يُقرأ',
+  M.renewalPlan({ row: renewRow, increasePct: 3, now: NOW }).lease.payments[0].amount === 5665,
+  String(M.renewalPlan({ row: renewRow, increasePct: 3, now: NOW }).lease.payments[0].amount));
+ok('وافتراضُها صفرٌ فالتجديدُ بالأجرة نفسِها', M.renewalPlan({ row: renewRow, now: NOW }).lease.payments[0].amount === 5500);
+ok('والنسبةُ تُعاد في الخطّة ليُقال بها', up.increasePct === 10);
+ok('ونسبةٌ خارج الحدّ تُقصّ', M.renewalPlan({ row: renewRow, increasePct: 900, now: NOW }).increasePct === 100);
+ok('ونسبةٌ سالبةٌ تُردّ إلى صفر — التجديدُ لا يُخفّض بهذا الحقل',
+  M.renewalPlan({ row: renewRow, increasePct: -20, now: NOW }).lease.payments[0].amount === 5500);
+ok('ولا تُخترع زيادةٌ حيث لا دفعةَ معلومة',
+  M.renewalPlan({ row: { property: renewRow.property, deal: { payments: [] } }, increasePct: 10, now: NOW }).lease.payments.length === 0);

@@ -8,6 +8,7 @@ import {
 } from '../data/settings.js';
 import {
   storeMedia, getImageUrl, deleteImages, isVideo, isVideoFile, firstStillId, VIDEO_LIMITS, formatBytes,
+  isDoc, isDocFile, DOC_MAX_BYTES,
 } from '../data/images.js';
 import {
   el, clear, labeled, fieldGroup, selectEl, checkbox, badge, openModal, confirmDialog,
@@ -1221,12 +1222,16 @@ async function openForm(ctx, existing, prefill = {}) {
         },
       });
       const cost = el('input', { class: 'input', type: 'number', min: '0', step: '50', value: m.cost ?? '', placeholder: 'الكلفة', onInput: (e) => { m.cost = e.target.value === '' ? null : Number(e.target.value); } });
+      // من نفّذه (المرحلة ٤٨): البلاغُ كان يعرف كلفتَه ولا يعرف صاحبَ اليد —
+      // ومديرُ الأملاك يسأل: «من أصلح مكيّفات هذه العمارة؟ وبكم؟ ومن يتأخّر عليّ؟»
+      const vendor = el('input', { class: 'input', type: 'text', value: m.vendor || '', placeholder: 'المنفّذ', onInput: (e) => { m.vendor = e.target.value; } });
+      const vendorPhone = el('input', { class: 'input ltr', type: 'tel', value: m.vendorPhone || '', placeholder: 'جواله', onInput: (e) => { m.vendorPhone = e.target.value; } });
       const doneAt = el('input', {
         class: 'input', type: 'date', title: 'تاريخ الإنجاز', hidden: (m.status || 'open') !== 'done',
         value: m.doneAt ? toInputDate(m.doneAt) : '',
         onInput: (e) => { m.doneAt = e.target.value ? fromInputDate(e.target.value) : null; },
       });
-      maintWrap.append(el('div', { class: 'plan-step' }, what, bearer, status, cost, doneAt,
+      maintWrap.append(el('div', { class: 'plan-step' }, what, bearer, status, cost, vendor, vendorPhone, doneAt,
         el('button', { type: 'button', class: 'icon-btn', text: '✕', title: 'حذف البلاغ', onClick: () => { maint.splice(i, 1); drawMaint(); } })));
     });
     maintWrap.append(el('button', {
@@ -1312,18 +1317,35 @@ async function openForm(ctx, existing, prefill = {}) {
 
   /* الملاحظات */
   const notesInput = el('textarea', { class: 'input', rows: 3, value: draft.notes || '' });
+  // المبنى ورقمُ الوحدة (المرحلة ٤٨): نصٌّ حرٌّ يجمع وحداتِ العمارة في سطرٍ واحد.
+  const buildingInput = el('input', {
+    class: 'input', type: 'text', value: draft.building || '',
+    placeholder: 'عمارة الياسمين', list: 'kassab-buildings',
+  });
+  const unitInput = el('input', { class: 'input', type: 'text', value: draft.unitNo || '', placeholder: 'رقم الوحدة' });
+  // قائمةُ ما كتبتَه من مبانٍ — فلا يُكتب الاسمُ مرّتين بإملاءين.
+  const buildingList = el('datalist', { id: 'kassab-buildings' },
+    [...new Set(ctx.properties.map((p) => (p.building || '').trim()).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, 'ar'))
+      .map((b) => el('option', { value: b })));
+
   const deedInput = el('input', { class: 'input', type: 'text', value: draft.deedNumber || '', placeholder: 'رقم الصك كما هو' });
   const source = sourceField(draft.referralSource, ctx.lists.sources);
 
   /* الوسائط: صورٌ ومقاطع (المرحلة ٣٨) */
   const fileInput = el('input', {
-    type: 'file', accept: 'image/*,video/*', multiple: true, class: 'visually-hidden',
+    // والمستنداتُ معها (المرحلة ٤٨): الصكُّ المصوَّر، والاتفاقيّةُ الموقَّعة، وعقدُ «إيجار».
+    type: 'file', accept: 'image/*,video/*,application/pdf', multiple: true, class: 'visually-hidden',
     onChange: (e) => {
       // الحدُّ يُقال قبل الحفظ لا بعده: من اختار مقطعًا كبيرًا يعرف الآن، لا بعد أن
       // ينتظر الحفظ ثم يقرأ خطأً.
       for (const f of e.target.files) {
         if (isVideoFile(f) && f.size > VIDEO_LIMITS.maxBytes) {
           toast(`«${f.name}» ${formatBytes(f.size)} — أكبر من حدّ المقاطع (${formatBytes(VIDEO_LIMITS.maxBytes)}). المقاطع تُحفظ بلا ضغط.`, 'error', 7000);
+          continue;
+        }
+        if (isDocFile(f) && f.size > DOC_MAX_BYTES) {
+          toast(`«${f.name}» ${formatBytes(f.size)} — أكبر من حدّ المستندات (${formatBytes(DOC_MAX_BYTES)}).`, 'error', 7000);
           continue;
         }
         state.newFiles.push(f);
@@ -1343,15 +1365,26 @@ async function openForm(ctx, existing, prefill = {}) {
       // عشرةُ مقاطع في الصفحة دفعةً فتثقل على جوّالٍ في السيارة.
       const img = el('img', { alt: '' });
       const tag = el('span', { class: 'media-kind', hidden: true, text: '▶ مقطع' });
-      getImageUrl(id, { thumb: true }).then((url) => { if (url) img.src = url; });
+      // المستندُ لا مصغَّرةَ له، وعرضُه `<img>` صورةٌ مكسورة — فيُعرض اسمَه على بلاطةٍ
+      // تُفتح بالضغط (المرحلة ٤٨).
+      const docName = el('span', { class: 'doc-name', hidden: true });
       repo.images.get(id).then((rec) => {
-        if (!rec || !isVideo(rec)) return;
+        if (!rec) return;
+        if (isDoc(rec)) {
+          img.remove();
+          docName.hidden = false;
+          docName.textContent = rec.originalName || 'مستند';
+          docName.closest('.img-tile')?.classList.add('is-doc');
+          return;
+        }
+        getImageUrl(id, { thumb: true }).then((url) => { if (url) img.src = url; });
+        if (!isVideo(rec)) return;
         tag.hidden = false;
         if (!rec.thumb) img.classList.add('media-noposter');
       });
       // الأولى هي الغلاف: هي التي يراها العميل في الصفحة العامة وبطاقة الطباعة (المرحلة ١٣).
       const isCover = index === 0;
-      imagesBox.append(el('div', { class: `img-tile${removed ? ' removed' : ''}${isCover ? ' is-cover' : ''}` }, img, tag,
+      imagesBox.append(el('div', { class: `img-tile${removed ? ' removed' : ''}${isCover ? ' is-cover' : ''}` }, img, tag, docName,
         isCover ? el('span', { class: 'img-cover-tag', text: 'الغلاف' }) : null,
         el('div', { class: 'img-tools' },
           index > 0 ? el('button', {
@@ -1374,7 +1407,9 @@ async function openForm(ctx, existing, prefill = {}) {
     state.newFiles.forEach((file, index) => {
       const url = URL.createObjectURL(file);
       state.previewUrls.push(url);
-      const preview = isVideoFile(file)
+      const preview = isDocFile(file)
+        ? el('span', { class: 'doc-name', text: file.name || 'مستند' })
+        : isVideoFile(file)
         ? el('video', { src: url, muted: true, playsinline: '', preload: 'metadata' })
         : el('img', { src: url, alt: '' });
       imagesBox.append(el('div', { class: 'img-tile new' }, preview,
@@ -1409,6 +1444,8 @@ async function openForm(ctx, existing, prefill = {}) {
       status: statusSelect.value,
       notes: notesInput.value.trim(),
       deedNumber: deedInput.value.trim(),
+      building: buildingInput.value.trim(),
+      unitNo: unitInput.value.trim(),
       typeFields, extra,
       management: mgmtBox.querySelector('input').checked ? {
         active: true,
@@ -1538,6 +1575,9 @@ async function openForm(ctx, existing, prefill = {}) {
         ? labeled('المسند إليه', assignSelect, { hint: 'من يتولّى هذا العقار — تنسيقٌ لا حجب' })
         : null,
       labeled('رقم الصك', deedInput, { hint: 'اختياري — يطلبه عقد الإيجار وكل توثيق، ويدخل حزمة العقد' }),
+      labeled('المبنى', buildingInput, { hint: 'اسمُه عندك — تُجمع به وحداتُ العمارة في «إدارة الأملاك»' }),
+      labeled('رقم الوحدة', unitInput),
+      buildingList,
       labeled('توقيع اتفاقية الوساطة', agreementInput, { hint: 'يُنبّهك «يومي» قبل انتهائها — والعقار بلا اتفاقية قد تخسره' }),
       labeled('مدّة الاتفاقية (يومًا)', agreementDaysInput, { hint: 'اتركه فارغًا لتُستعمل المدّة الافتراضية من الإعدادات — والنظام يجعلها ٩٠ يومًا حين لا تُذكر' }),
       newOwnerBox),

@@ -8,6 +8,8 @@ import { uploadBackup, uploadImages } from './data/vault.js';
 import { revokeImageUrls } from './data/images.js';
 import { startFollowUpAlerts } from './util/follow-up-alerts.js';
 import { initGlobalSearch } from './util/global-search.js';
+import { installTableCards } from './util/table-cards.js';
+import { installSyncDot } from './util/sync-dot.js';
 import { applySidebarOrder } from './util/sidebar.js';
 import { applyTheme } from './util/theme.js';
 import { setHijriMode, formatNumber, countOf } from './util/format.js';
@@ -446,6 +448,12 @@ async function init() {
   await applySidebarOrder(); // ترتيب صفحات القائمة الجانبية المحفوظ من الإعدادات (المرحلة ٨)
   await initSidebarState(); // قبل أول تنقّل كي لا تُطوى القائمة ثم تُفتح أمام عينك
   initGlobalSearch();
+  // الجدولُ بطاقةً على الجوّال (المرحلة ٤٨): موضعٌ واحدٌ يلحق كلَّ جدولٍ في النظام،
+  // ولا يعمل إلّا على الشاشة الضيّقة. **وعلى `body` لا على `#page`**: النوافذُ تُرسَم في
+  // `#modal-root` خارجه، وفيها جداولُ المقارنة وملخّصِ الضريبة — ولها العطبُ نفسُه.
+  installTableCards(document.body);
+  // حالُ المزامنة (المرحلة ٤٨): كانت تعمل في صمتٍ تامّ — تنجح وتفشل ولا تقول.
+  installSyncDot();
   initVoiceBar(); // أمرٌ بالصوت في كل صفحة (المرحلة ٣٨) — لا يسمع شيئًا حتى تضغطه
   watchOtherTabs(); // تبويبٌ آخر مفتوح: يُقال ولا يُترك صامتًا (المرحلة ٤٤)
   initClientMode(); // وضع العرض للعميل (المرحلة ١٣)

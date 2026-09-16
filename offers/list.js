@@ -1,6 +1,14 @@
 // صفحة القائمة المخصّصة لعميل (المرحلة ١١): تقرأ رمز القائمة من العنوان وتعرض عروضها.
 // تعيد استعمال أنماط الصفحة العامة نفسها، ولا تلمس أي ملف من النظام الداخلي.
 
+/** أسماءُ حقائق النوع بالعربية — القائمةُ المخصَّصة لا تُعرض إلا بها. */
+const FACT_AR = {
+  rooms: 'غرفة', baths: 'دورة مياه', floor: 'الدور', floorsCount: 'أدوار',
+  buildingAge: 'عمر البناء', buildingCondition: 'الحالة',
+  plotDimensions: 'الأطوال', streetWidth: 'عرض الشارع', streetsCount: 'شوارع', facades: 'الواجهات',
+};
+const COUNTED_AR = new Set(['rooms', 'baths', 'floorsCount', 'streetsCount']);
+
 const grid = document.getElementById('grid');
 const statusEl = document.getElementById('status');
 
@@ -44,7 +52,12 @@ function card(listing) {
       el('div', { class: 'card-price', text: money(listing.price) }),
       el('div', { class: 'card-meta' },
         (listing.purposeLabels || []).map((p) => el('span', { class: 'tag', text: p })),
-        listing.area ? el('span', { class: 'tag', text: `${nf.format(listing.area)} م²` }) : null),
+        listing.area ? el('span', { class: 'tag', text: `${nf.format(listing.area)} م²` }) : null,
+        // حقائقُ النوع (المرحلة ٤٨) — القائمةُ المخصَّصة عربيّةٌ وحدها، فتُسمَّى هنا مباشرةً.
+        ...Object.entries(listing.facts || {})
+          .map(([k, v]) => FACT_AR[k] && (COUNTED_AR.has(k) ? `${nf.format(v)} ${FACT_AR[k]}` : `${FACT_AR[k]}: ${v}`))
+          .filter(Boolean)
+          .map((text) => el('span', { class: 'tag', text }))),
       listing.notes ? el('p', { class: 'card-notes', text: listing.notes }) : null,
       el('div', { class: 'card-actions' },
         wa ? el('a', { class: 'btn btn-primary', href: wa, target: '_blank', rel: 'noopener', text: 'واتساب' }) : null,

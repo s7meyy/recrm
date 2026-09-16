@@ -12,9 +12,10 @@ import { repo } from '../data/repository.js';
 import { ENUMS, labelFor } from '../data/schema.js';
 import { getLists, typeLabel, statusLabel, getCompany, getPublishSettings, setPublishSettings } from '../data/settings.js';
 import { el, clear, labeled, selectEl, checkbox, badge, toast, emptyState, confirmDialog, choiceDialog, debounce, openModal } from '../util/dom.js';
-import { formatSAR, formatArea, formatDateTime, formatNumber, countOf } from '../util/format.js';
-import { adBlockers, adDisclosure } from '../util/rega.js';
+import { formatSAR, formatArea, formatDate, formatDateTime, formatNumber, countOf, daysWord } from '../util/format.js';
+import { adBlockers, adDisclosure, expiringSoon } from '../util/rega.js';
 import { publishDrift, publishFingerprint, busyTimes } from '../util/publish-drift.js';
+import { publicFacts } from '../util/public-listing.js';
 import { mapsLink } from '../util/location.js';
 import { isVideo } from '../data/images.js';
 import { matchesQuery } from '../util/arabic.js';
@@ -262,6 +263,16 @@ function licenseCell(ctx, property) {
   const blockers = propertyBlockers(ctx, property);
   if (!blockers.length) {
     const number = property.adLicense?.number;
+    // **الموشكُ يُقال قبل أن ينتهي** (المرحلة ٤٨): ترخيصٌ يبقى له أربعةُ أيامٍ لا يمنع
+    // النشر اليوم، لكنّ العرضَ يبقى على صفحتك بعد انتهائه — فتصير مخالفةً بلا حدث.
+    const soon = expiringSoon(property, { defaultDays: ctx.company.agreementDurationDays });
+    if (soon) {
+      return el('span', {
+        class: 'badge badge-warn',
+        title: `ترخيص ${soon.number} ينتهي ${formatDate(soon.endsAt)} — والعرض يبقى منشورًا بعده`,
+        text: `ينتهي بعد ${daysWord(soon.days)}`,
+      });
+    }
     return el('span', { class: 'muted small', title: number ? `ترخيص ${number}` : '', text: '✓' });
   }
   return el('span', {
@@ -409,6 +420,11 @@ function toPublicListing(ctx, property, index) {
     area: property.area ?? null,
     price: ctx.publish.showPrice !== false ? (property.price ?? null) : null,
     notes: property.notes || '',
+    // حقائقُ النوع (المرحلة ٤٨): الغرفُ ودوراتُ المياه والدورُ وعمرُ البناء — بالمفاتيح
+    // لا بالعناوين، فالصفحةُ تُعرض بلغتين. وما لم يُملأ لا يخرج.
+    facts: publicFacts(property),
+    // «مُدرَجٌ منذ» لكلّ عرضٍ على حدة — لا تاريخُ اللقطة الذي يستوي عنده الجديدُ والقديم.
+    listedAt: property.createdAt || null,
     images: (property.images || []).filter((id) => !ctx.videoIds.has(id)),
     mapUrl: property.location ? mapsLink(property.location) : null,
     contactPhone: ctx.publish.contactPhone || ctx.company.phone || '',
@@ -430,7 +446,22 @@ function toPublicListing(ctx, property, index) {
  */
 async function passLicenseGate(ctx, chosen) {
   const blocked = chosen.map((p) => ({ p, blockers: propertyBlockers(ctx, p) })).filter((x) => x.blockers.length);
-  if (!blocked.length) return chosen;
+  if (!blocked.length) {
+    // **لا مانعَ، لكن فيها ما يوشك** (المرحلة ٤٨): يُقال ولا يُوقف — النشرُ اليومَ نظاميّ،
+    // والتنبيهُ لأنّ العرضَ يبقى بعد انتهاء ترخيصه. وسؤالٌ بنعم/لا هنا يُبطئ بلا فائدة،
+    // فيكفي أن يُقال في شريطٍ بعد النشر ويبقى في عمود الترخيص.
+    const soon = chosen
+      .map((p) => ({ p, soon: expiringSoon(p, { defaultDays: ctx.company.agreementDurationDays }) }))
+      .filter((x) => x.soon);
+    if (soon.length) {
+      const first = soon.sort((a, b) => a.soon.days - b.soon.days)[0];
+      toast(soon.length === 1
+        ? `تنبيه: ترخيص «${typeLabel(ctx.lists, first.p.type)} — ${first.p.district || first.p.city}» ينتهي بعد ${daysWord(first.soon.days)}`
+        : `تنبيه: ${countOf(soon.length, 'ترخيص')} من المنشورة ينتهي خلال شهر — أقربُها بعد ${daysWord(first.soon.days)}`,
+      'warn', 7000);
+    }
+    return chosen;
+  }
 
   const clean = chosen.filter((p) => !blocked.some((b) => b.p.id === p.id));
   const lines = blocked.slice(0, 8)

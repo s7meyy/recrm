@@ -2,6 +2,7 @@
 // الحقول المخصصة، تعريف "مكتمل البيانات"، والبيانات التجريبية.
 
 import { repo, getCurrentUser } from '../data/repository.js';
+import { activeMembers } from '../util/team.js';
 import { ENUMS, COMPLETENESS_CANDIDATES, labelFor } from '../data/schema.js';
 import {
   updateUserName, userHandle, getTeam, setTeam, getLists, addPropertyType, removePropertyType, addPropertyStatus, removePropertyStatus,
@@ -923,22 +924,49 @@ async function sidebarOrderBody(redraw) {
 /* ===== بيانات الشركة والمستندات (المرحلة ٨) ===== */
 
 async function goalsBody(redraw) {
-  const goals = await getGoals();
+  const [goals, team] = await Promise.all([getGoals(), getTeam()]);
   const num = (value, step = '1') => el('input', { class: 'input', type: 'number', min: '0', step, value });
   const dealsInput = num(goals.dealsPerMonth);
   const commissionInput = num(goals.commissionPerMonth, '1000');
   const staleInput = num(goals.staleListingDays);
+
+  /**
+   * **هدفٌ لكلّ عضو** (المرحلة ٤٨).
+   *
+   * كان الهدفُ رقمين للمكتب كلِّه، فشريطُ التقدّم في «يومي» يقول للموظّف ما أنجزه
+   * المكتب — وهو لا يملك تحريكَه وحده. **ومن لا هدفَ شخصيًّا له يرى هدفَ المكتب كما كان**،
+   * فلا ينكسر شيءٌ على من لا فريقَ له.
+   */
+  const members = activeMembers(team);
+  const perRows = members.map((m) => {
+    const g = goals.perMember?.[m.id] || {};
+    return { member: m, deals: num(g.dealsPerMonth || 0), commission: num(g.commissionPerMonth || 0, '1000') };
+  });
+  const perBlock = members.length > 1
+    ? el('div', { class: 'panel-block' },
+      el('h3', { text: 'هدفُ كلّ عضو' }),
+      el('p', { class: 'muted small', text: 'صفرٌ في الاثنين = بلا هدفٍ خاصّ، فيرى هدفَ المكتب أعلاه. والنسبةُ تظهر في لوحة أداء الفريق.' }),
+      el('div', {}, perRows.map((r) => el('div', { class: 'plan-step' },
+        el('span', { class: 'field-label', text: r.member.name }),
+        el('span', { class: 'muted small', text: 'صفقات' }), r.deals,
+        el('span', { class: 'muted small', text: 'عمولات' }), r.commission))))
+    : null;
+
   return el('div', {},
     el('div', { class: 'form-grid' },
       labeled('هدف الصفقات شهريًا', dealsInput, { hint: 'صفر = بلا هدف، فلا يظهر شريط' }),
       labeled('هدف العمولات شهريًا (ريال)', commissionInput, { hint: 'صفر = بلا هدف' }),
       labeled('العرض يُعدّ بائتًا بعد (يومًا)', staleInput, { hint: 'عقار لم يُحدَّث منذ هذه المدة يظهر في «يومي» لمراجعة سعره' })),
+    perBlock,
     el('div', { class: 'row' }, el('button', {
       type: 'button', class: 'btn btn-primary', text: 'حفظ الأهداف',
       onClick: async () => {
         try {
           await setGoals({
             dealsPerMonth: dealsInput.value, commissionPerMonth: commissionInput.value, staleListingDays: staleInput.value,
+            perMember: Object.fromEntries(perRows.map((r) => [r.member.id, {
+              dealsPerMonth: r.deals.value, commissionPerMonth: r.commission.value,
+            }])),
           });
           toast('حُفظت الأهداف', 'success');
           await redraw();

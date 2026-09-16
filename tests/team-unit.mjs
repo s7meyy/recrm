@@ -63,3 +63,42 @@ ok('و«إليّ» تمرّ ما أُسند إليّ', passesAssign({ assignedTo
 ok('ولا تمرّ ما أُسند لغيري', passesAssign({ assignedTo: 'm1' }, 'me', 'm2') === false);
 ok('و«بلا مسند» تمرّ الفارغ وحده', passesAssign({}, 'none', 'm1') === true && passesAssign({ assignedTo: 'm1' }, 'none', 'm1') === false);
 ok('وعضوٌ بعينه يمرّ سجلّاته', passesAssign({ assignedTo: 'm2' }, 'm2', 'm1') === true);
+
+/* ===== المرحلة ٤٨ — حصّةُ الوسيط وهدفُه ===== */
+const T48 = await import('../js/util/team.js');
+const team48 = [{ id: 'u1', name: 'ناصر', active: true }, { id: 'u2', name: 'سارة', active: true }];
+const deals48 = [
+  { id: 'd1', assignedTo: 'u1', commission: 10000, agentShare: 50 },
+  { id: 'd2', assignedTo: 'u1', commission: 20000 },            // بلا نسبةٍ مكتوبة → نسبةُ الإعدادات
+  { id: 'd3', createdBy: 'u2', commission: 8000, agentShare: 0 }, // صفرٌ صريح = لا حصّة
+  { id: 'd4', assignedTo: 'u2', commission: 5000, agentShare: 100 },
+];
+
+const st = T48.memberStats({ team: team48, deals: deals48, defaultShare: 25 });
+const n = st.find((r) => r.member.id === 'u1');
+const sa = st.find((r) => r.member.id === 'u2');
+ok('عمولةُ المكتب تُجمع كما كانت', n.commission === 30000, String(n.commission));
+ok('وحصّتُه: نسبةُ الصفقة حيث كُتبت، ونسبةُ الإعدادات حيث لم تُكتب (٥٠٠٠ + ٥٠٠٠)',
+  n.earned === 10000, String(n.earned));
+ok('وصفرٌ صريحٌ يُحترم ولا يُستبدل بنسبة الإعدادات', sa.earned === 5000, String(sa.earned));
+ok('والإسنادُ يغلب الإنشاء في الصفقة أيضًا', n.deals === 2 && sa.deals === 2);
+ok('وبلا نسبةٍ ولا إعداداتٍ لا يُخترع مال',
+  T48.memberStats({ team: team48, deals: [{ assignedTo: 'u1', commission: 9000 }] })[0].earned === 0);
+ok('ونسبةٌ خارج الحدّ تُقصّ لا تُضخّم',
+  T48.memberStats({ team: team48, deals: [{ assignedTo: 'u1', commission: 100, agentShare: 500 }] })[0].earned === 100);
+
+/* الهدف */
+const goals48 = { dealsPerMonth: 10, commissionPerMonth: 100000, perMember: { u1: { dealsPerMonth: 3, commissionPerMonth: 60000 } } };
+const withGoal = T48.memberStats({ team: team48, deals: deals48, goals: goals48 });
+const gn = withGoal.find((r) => r.member.id === 'u1');
+const gs = withGoal.find((r) => r.member.id === 'u2');
+ok('ونسبةُ بلوغ الهدف تُحسب لمن وُضع له هدف', gn.goalPct === 50, String(gn.goalPct));
+ok('ولا نسبةَ لمن لا هدفَ له — لا «٠٪» تُقرأ حكمًا', gs.goalPct === null);
+
+ok('وهدفُ الجهاز هدفُ صاحبه إن وُجد', T48.goalFor(goals48, 'u1').commissionPerMonth === 60000
+  && T48.goalFor(goals48, 'u1').scope === 'member');
+ok('وإلّا فهدفُ المكتب كما كان', T48.goalFor(goals48, 'u2').commissionPerMonth === 100000
+  && T48.goalFor(goals48, 'u2').scope === 'office');
+ok('وهدفٌ بصفرين ليس هدفًا',
+  T48.goalFor({ dealsPerMonth: 4, perMember: { u1: { dealsPerMonth: 0, commissionPerMonth: 0 } } }, 'u1').scope === 'office');
+ok('وبلا أهدافٍ أصلًا لا ينفجر', T48.goalFor().dealsPerMonth === 0 && T48.goalFor({}, '').scope === 'office');
