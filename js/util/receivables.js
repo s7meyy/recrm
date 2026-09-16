@@ -65,29 +65,86 @@ export function invoiceReceivables(invoices = [], now = new Date()) {
 }
 
 /**
+ * حال عمولة صفقة: كم منها قُبض وكم بقي (المرحلة ٤٥).
+ *
+ * **صورتان لا ثالثة:**
+ *   • بلا أقساط → `commissionPaidAt` هو الحَكَم كما كان منذ المرحلة ١٧: قُبضت كلّها أو
+ *     لم يُقبض منها شيء. وهكذا تبقى كل صفقةٍ سُجّلت قبل هذه المرحلة على حالها بلا هجرة.
+ *   • بأقساط → المقبوض مجموعُ ما وُسم مقبوضًا، والباقي فرقُه عن العمولة.
+ *
+ * **والمجدولُ غيرُ العمولة:** من كتب عمولةً ١٠٠ ألف وجدول منها ٥٠ فله ٥٠ **غير مجدولة**
+ * وهي مستحَقّةٌ عليه لا مُلغاة — فتُحسب في `unscheduled` ولا تُبتلع. وضدُّه كذلك: مجدولٌ
+ * فوق العمولة يُقال بسالبٍ ولا يُصحَّح من خلف ظهرك.
+ */
+export function commissionState(deal) {
+  const total = Number(deal?.commission) || 0;
+  const rows = Array.isArray(deal?.commissionPayments) ? deal.commissionPayments : [];
+  if (!rows.length) {
+    const paid = deal?.commissionPaidAt ? total : 0;
+    return {
+      total, paid, remaining: total - paid, scheduled: 0, unscheduled: total,
+      rows: [], split: false, done: !!deal?.commissionPaidAt, paidAt: deal?.commissionPaidAt || null,
+    };
+  }
+  const amount = (r) => Number(r?.amount) || 0;
+  const paid = rows.filter((r) => r.paidAt).reduce((a, r) => a + amount(r), 0);
+  const scheduled = rows.reduce((a, r) => a + amount(r), 0);
+  const lastPaidAt = rows.filter((r) => r.paidAt).map((r) => r.paidAt).sort().at(-1) || null;
+  const done = total > 0 && paid >= total;
+  return {
+    total, paid, remaining: total - paid, scheduled, unscheduled: total - scheduled,
+    rows, split: true, done, paidAt: done ? lastPaidAt : null,
+  };
+}
+
+/**
  * العمولات غير المقبوضة: الصفقة أُبرمت وسُجّلت عمولتها ولم يُسجَّل قبضها.
  * الصفقة بلا رقم عمولة ليست مستحقًا — لا يُخترع لها رقم.
+ *
+ * **وبالأقساط يصير لكلّ قسطٍ صفُّه وتاريخُ استحقاقه** (المرحلة ٤٥): عمرُ المتأخر يُحسب من
+ * موعد القسط لا من تاريخ الصفقة — وإلا لظهر قسطٌ يستحقّ بعد شهرين متأخّرًا اليوم.
  */
 export function commissionReceivables(deals = [], now = new Date()) {
-  return deals
-    .filter((d) => !d.commissionPaidAt && Number(d.commission) > 0)
-    .map((d) => {
+  const out = [];
+  for (const d of deals) {
+    const st = commissionState(d);
+    if (st.total <= 0 || st.remaining <= 0) continue;
+
+    if (!st.split) {
       const days = ageDays(d.date, now);
-      return {
-        kind: 'commission',
-        id: d.id,
-        deal: d,
-        clientId: d.clientId || null,
-        remaining: Number(d.commission),
-        total: Number(d.commission),
-        state: 'unpaid',
-        basis: d.date,
-        dated: false,
-        days,
-        bucket: bucketFor(days),
-      };
-    })
-    .sort((a, b) => b.days - a.days);
+      out.push({
+        kind: 'commission', id: d.id, deal: d, clientId: d.clientId || null,
+        remaining: st.remaining, total: st.total, state: 'unpaid',
+        basis: d.date, dated: false, days, bucket: bucketFor(days),
+      });
+      continue;
+    }
+
+    for (const p of st.rows) {
+      if (p.paidAt || !(Number(p.amount) > 0)) continue;
+      // قسطٌ بلا تاريخ استحقاق: يُنسب إلى تاريخ الصفقة ويُعلَن غيرَ مؤرَّخ، ولا يختفي.
+      const basis = p.dueAt || d.date;
+      const days = ageDays(basis, now);
+      out.push({
+        kind: 'commission', id: `${d.id}:${p.id || p.dueAt || ''}`, dealId: d.id, deal: d,
+        instalment: p, clientId: d.clientId || null,
+        remaining: Number(p.amount), total: st.total, state: 'unpaid',
+        basis, dated: !!p.dueAt, days, bucket: bucketFor(days),
+      });
+    }
+
+    // ما لم يُجدول أصلًا: مستحَقٌّ لك ولا قسطَ يحمله، فيُعرض على تاريخ الصفقة.
+    if (st.unscheduled > 0) {
+      const days = ageDays(d.date, now);
+      out.push({
+        kind: 'commission', id: `${d.id}:unscheduled`, dealId: d.id, deal: d,
+        clientId: d.clientId || null, unscheduled: true,
+        remaining: st.unscheduled, total: st.total, state: 'unpaid',
+        basis: d.date, dated: false, days, bucket: bucketFor(days),
+      });
+    }
+  }
+  return out.sort((a, b) => b.days - a.days);
 }
 
 /**

@@ -14,7 +14,7 @@ import {
   getGoals, setGoals,
 } from '../data/settings.js';
 import {
-  listBackups, uploadBackup, restoreBackup, uploadImages, listImageBackups, restoreImages,
+  listBackupBatches, uploadBackup, restoreBackup, uploadImages, listImageBackups, restoreImages,
   inspectBackup, mergeFromVault, settingsFromVault,
 } from '../data/vault.js';
 import { pushSupported, enablePush, disablePush, currentSubscription, syncReminders } from '../util/push.js';
@@ -1081,19 +1081,28 @@ async function vaultBody(redraw) {
   const vault = await getVaultSettings();
   const passInput = el('input', { class: 'input', type: 'password', value: vault.passphrase || '', placeholder: 'عبارة سرّية طويلة تتذكّرها' });
   const autoBox = checkbox('ارفع نسخة تلقائيًا عند فتح التطبيق (مرة كل يوم)', { checked: !!vault.auto });
+  // المزامنة (المرحلة ٤٥) منفصلةٌ عن الرفع التلقائي بقصد: ذاك نسخةٌ تحفظ، وهذه جهازان
+  // يتّفقان. ومن أراد الحفظ وحده لا يُفرض عليه رفعٌ كلّما كتب.
+  const syncBox = checkbox('زامن أجهزتي: اسحب وادمج عند الفتح، وارفع بعد كل تغيير', { checked: !!vault.sync });
   const listBox = el('div');
   const busy = (btn, on, text) => { btn.disabled = on; if (text) btn.textContent = text; };
 
   const drawList = async () => {
     clear(listBox);
     try {
-      const backups = await listBackups();
+      // الدفعة صفٌّ واحد ولو كانت عشر كتل (المرحلة ٤٥): النسخة نسخةٌ واحدة في عين
+      // صاحبها، وعرضُ كتلها صفوفًا يوهم أن عنده عشر نسخ وليس عنده إلا واحدة.
+      const backups = await listBackupBatches();
       if (!backups.length) { listBox.append(el('p', { class: 'muted small', text: 'لا نسخ سحابية بعد.' })); return; }
       listBox.append(el('table', { class: 'table' },
         el('thead', {}, el('tr', {}, ['التاريخ', 'الحجم', ''].map((t) => el('th', { text: t })))),
         el('tbody', {}, backups.map((b) => el('tr', {},
-          el('td', { text: formatDateTime(b.at) }),
-          el('td', { text: b.size ? formatBytes(b.size) : '—' }),
+          el('td', {}, el('div', {},
+            el('div', { text: formatDateTime(b.at) }),
+            b.expected > 1 ? el('div', { class: 'muted small', text: countOf(b.expected, 'كتلة') }) : null)),
+          el('td', {}, el('div', {},
+            el('div', { text: b.size ? formatBytes(b.size) : '—' }),
+            b.complete ? null : badge(`ناقصة: ${b.parts.length} من ${b.expected}`, 'badge-danger'))),
           el('td', {}, el('div', { class: 'row' },
             el('button', {
               type: 'button', class: 'btn btn-sm btn-primary', text: 'دمج',
@@ -1191,11 +1200,15 @@ async function vaultBody(redraw) {
     if (pass.length < 8) { toast('اجعل العبارة السرّية ٨ أحرف فأكثر', 'error'); return; }
     busy(uploadBtn, true, 'يشفّر ويرفع…');
     try {
-      await setVaultSettings({ passphrase: pass, auto: autoBox.querySelector('input').checked });
+      await setVaultSettings({
+        passphrase: pass,
+        auto: autoBox.querySelector('input').checked,
+        sync: syncBox.querySelector('input').checked,
+      });
       const res = await uploadBackup(pass);
       await setVaultSettings({ lastUploadAt: res.at });
       await markExported(); // النسخة السحابية تُعدّ تصديرًا فعليًا، فيسكت شريط التذكير
-      toast('رُفعت نسخة مشفَّرة', 'success');
+      toast(res.parts > 1 ? `رُفعت نسخة مشفَّرة في ${countOf(res.parts, 'كتلة')}` : 'رُفعت نسخة مشفَّرة', 'success');
       dataChanged();
       await redraw();
     } catch (err) { errToast(err); }
@@ -1252,6 +1265,28 @@ async function vaultBody(redraw) {
     finally { busy(imgRestoreBtn, false, 'استرجع الصور'); }
   });
 
+  const syncBtn = el('button', { type: 'button', class: 'btn', text: 'زامن الآن' });
+  syncBtn.addEventListener('click', async () => {
+    const pass = passInput.value.trim();
+    if (pass.length < 8) { toast('اجعل العبارة السرّية ٨ أحرف فأكثر', 'error'); return; }
+    busy(syncBtn, true, 'يزامن…');
+    try {
+      // تُحفظ العبارة والمفتاح قبل المزامنة: الدورة تقرأ الإعدادات لا الحقل.
+      await setVaultSettings({ passphrase: pass, sync: syncBox.querySelector('input').checked });
+      const { syncNow } = await import('../data/sync.js');
+      const res = await syncNow();
+      if (res.error) { toast(`تعذّرت المزامنة: ${res.error}`, 'error', 7000); }
+      else if (res.skipped === 'off') { toast('المزامنة غير مفعّلة — فعّلها أوّلًا', 'error'); }
+      else {
+        const st = res.stats || {};
+        toast(`تمّت المزامنة — أُضيف ${st.added || 0} · حُدّث ${st.updated || 0}`
+          + (res.pushed ? ' · ورُفعت نسختك' : ''), 'success', 6000);
+      }
+      redraw();
+    } catch (err) { errToast(err); }
+    finally { busy(syncBtn, false, 'زامن الآن'); }
+  });
+
   await drawList();
   await drawImages();
   return el('div', {},
@@ -1259,12 +1294,22 @@ async function vaultBody(redraw) {
       el('dt', { text: 'آخر رفع للبيانات' }),
       el('dd', {}, vault.lastUploadAt ? formatDateTime(vault.lastUploadAt) : badge('لم تُرفع نسخة بعد', 'badge-warn')),
       el('dt', { text: 'آخر رفع للصور' }),
-      el('dd', {}, vault.lastImagesAt ? formatDateTime(vault.lastImagesAt) : badge('لم تُرفع صور بعد', 'badge-warn'))),
+      el('dd', {}, vault.lastImagesAt ? formatDateTime(vault.lastImagesAt) : badge('لم تُرفع صور بعد', 'badge-warn')),
+      el('dt', { text: 'آخر مزامنة' }),
+      // **الفشل يُقال.** مزامنةٌ صامتة أسوأ من لا مزامنة: تحسب جهازيك متّفقين وهما مفترقان.
+      el('dd', {}, vault.lastSyncError
+        ? badge(`تعثّرت: ${vault.lastSyncError}`, 'badge-danger')
+        : (vault.lastSyncAt ? formatDateTime(vault.lastSyncAt) : badge('لم تُزامن بعد', 'badge-warn')))),
     el('div', { class: 'form-grid' },
       labeled('العبارة السرّية', passInput, { hint: 'تُشتق منها مفتاحية التشفير. نسيانها يعني فقدان النسخ السحابية — لا يستطيع أحد فكّها، ولا الخادم.' }),
-      el('div', { class: 'field' }, el('span', { class: 'field-label', text: 'الرفع التلقائي' }), autoBox)),
-    el('div', { class: 'row' }, uploadBtn, imgUploadBtn, imgRestoreBtn,
+      el('div', { class: 'field' }, el('span', { class: 'field-label', text: 'الرفع التلقائي' }), autoBox),
+      el('div', { class: 'field' }, el('span', { class: 'field-label', text: 'المزامنة بين الأجهزة' }), syncBox)),
+    el('div', { class: 'row' }, uploadBtn, syncBtn, imgUploadBtn, imgRestoreBtn,
       el('button', { type: 'button', class: 'btn', text: 'تحديث القائمة', onClick: () => { drawList(); drawImages(); } })),
+    el('p', { class: 'muted small', text: 'المزامنة تسحب آخر نسخة وتدمجها ثم ترفع الاتّحاد — فلا يمحو جهازٌ ما كتبه الآخر.'
+      + ' والأحدثُ كتابةً يغلب لكل سجلٍّ على حدة، والمحذوفُ يبقى محذوفًا.'
+      + ' وما عُدّل في السجلّ نفسه من جهازين قبل أن يلتقيا: يبقى الأحدث ويذهب الآخر — وهذا حدُّها المعلَن.'
+      + ' والصور والإعدادات خارجها: لكلٍّ زرُّه أعلاه.' }),
     el('div', { class: 'panel-block' }, el('h3', { text: 'نسخ البيانات (آخر ٥)' }), listBox),
     el('div', { class: 'panel-block' }, el('h3', { text: 'الصور' }), imagesBox,
       el('p', { class: 'muted small', text: 'الترتيب بين جهازين: استرجع الصور أوّلًا ثم ارفعها — فترفع دفعتك وفيها صور الجهازين، وتلتقي المكتبتان. والاسترجاع يضيف ولا يمحو.' }),

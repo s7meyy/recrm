@@ -10,7 +10,7 @@ import { repo } from '../data/repository.js';
 import { ENUMS, labelFor, clientTagClass, invoiceGrandTotal, COLLECTION_LABELS, invoiceCollection, checklistProgress, duePayments } from '../data/schema.js';
 import { getLists, typeLabel, getCompany } from '../data/settings.js';
 import { loadMatchingContext, candidatesFor } from '../data/matching.js';
-import { receivables } from '../util/receivables.js';
+import { receivables, commissionState } from '../util/receivables.js';
 import { el, clear, badge, emptyState, openModal, labeled, checkbox, promptDialog, toast } from '../util/dom.js';
 import { formatSAR, formatArea, formatDate, formatDateTime, formatNumber, daysWord, toInputDate, fromInputDate, countOf } from '../util/format.js';
 import { formatPhone, toInternational } from '../util/phone.js';
@@ -151,7 +151,8 @@ export async function render(container) {
           formatSAR(d.finalPrice),
           d.commission ? `عمولة ${formatSAR(d.commission)}` : null,
           d.partnerName ? `شريك ${d.partnerName} (${formatSAR(d.partnerShare || 0)})` : null,
-          d.commission && !d.commissionPaidAt ? 'لم تُقبض' : null,
+          // حال العمولة من `commissionState` (المرحلة ٤٥): «لم تُقبض» على صفقةٍ قُبض نصفُها خطأ.
+          commissionLine(d),
           progress ? `المسار ${progress.done}/${progress.total}` : null,
           due.length ? `${countOf(due.length, 'دفعة مستحقة')}` : null,
         ].filter(Boolean).join(' · '),
@@ -187,6 +188,13 @@ export async function render(container) {
  * هنا **وحده** لأن الصفقة لا صفحة لها: تُنشأ من المطابقات ولا تُعدَّل بعدها في أي مكان.
  * وهذه أقرب شاشة إليها منطقيًا — ملف صاحبها.
  */
+/** عبارةُ حال العمولة في سطر الصفقة: مكتملةً تُترك، وإلا يُقال ما بقي (المرحلة ٤٥). */
+function commissionLine(deal) {
+  const st = commissionState(deal);
+  if (st.total <= 0 || st.done) return null;
+  return st.paid > 0 ? `بقي ${formatSAR(st.remaining)} من العمولة` : 'لم تُقبض';
+}
+
 function openDeal(deal, lists, client = null) {
   const draft = JSON.parse(JSON.stringify(deal));
   draft.payments = draft.payments || [];
@@ -260,7 +268,14 @@ function openDeal(deal, lists, client = null) {
   const partnerInput = el('input', { class: 'input', type: 'text', value: draft.partnerName || '', placeholder: 'اسم الوسيط الشريك' });
   const shareInput = el('input', { class: 'input', type: 'number', min: '0', step: '100', value: draft.partnerShare ?? '' });
   const partnerPaidBox = checkbox('سلّمتُه نصيبه', { checked: !!draft.partnerPaidAt });
-  const commissionPaidBox = checkbox('قُبضت العمولة', { checked: !!draft.commissionPaidAt });
+  // بالأقساط لا يُعرض مربّعُ «قُبضت»: الأقساط هي الحَكَم، ومربّعٌ يخالفها يكتب رقمين
+  // متناقضين في سجلٍّ واحد. ويُعرض ما قُبض منها، وتحريرُها في صفحة الصفقات حيث محرّرها.
+  const cstate = commissionState(draft);
+  const commissionPaidBox = cstate.split
+    ? el('div', { class: 'muted small' },
+      el('div', { text: `أقساط: قُبض ${formatSAR(cstate.paid)} من ${formatSAR(cstate.total)} · بقي ${formatSAR(cstate.remaining)}` }),
+      el('a', { class: 'btn btn-ghost btn-sm', href: `#/deals/${draft.id}`, text: 'حرّر الأقساط في الصفقات' }))
+    : checkbox('قُبضت العمولة', { checked: !!draft.commissionPaidAt });
   const netNode = el('p', { class: 'muted small' });
   const recalcNet = () => {
     const total = Number(commissionInput.value) || 0;
@@ -278,7 +293,10 @@ function openDeal(deal, lists, client = null) {
     try {
       await repo.deals.update(deal.id, {
         commission: commissionInput.value === '' ? null : Number(commissionInput.value),
-        commissionPaidAt: commissionPaidBox.querySelector('input').checked ? (deal.commissionPaidAt || new Date().toISOString()) : null,
+        // بالأقساط يبقى ما اشتُقّ منها كما هو، ولا يكتب هذا النموذج فوقه.
+        ...(cstate.split ? {} : {
+          commissionPaidAt: commissionPaidBox.querySelector('input').checked ? (deal.commissionPaidAt || new Date().toISOString()) : null,
+        }),
         partnerName: partnerInput.value,
         partnerShare: shareInput.value === '' ? null : Number(shareInput.value),
         partnerPaidAt: partnerPaidBox.querySelector('input').checked ? (deal.partnerPaidAt || new Date().toISOString()) : null,

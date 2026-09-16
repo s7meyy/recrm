@@ -763,8 +763,18 @@ body.client-mode #client-mode-btn { background: var(--accent); color: #fff; }
 .trash-row:last-child { border-bottom: 0; }
 
 /* ===== المرحلة ٢٣ — خطوات خطة المتابعة ===== */
+/* صفُّ خطوةٍ أو دفعةٍ أو قسط: حقولٌ في **سطرٍ واحد**.
+   و`.input` عرضُها `100%` افتراضًا — وفي حاويةٍ مرنةٍ تلتفّ، يأخذ كلُّ حقلٍ بذلك سطرًا
+   كاملًا، فيصير الصفُّ عمودًا. وكان يخفى لأن صفَّ الخطط يضع `width: 80px` بيده على حقل
+   الرقم، وحقلُ النصّ وحده كان يحمل `flex`. فلمّا جاء صفُّ الدفعات بحقل تاريخٍ وحقل رقمٍ
+   بلا حيلة، ظهر العمود. (المرحلة ٤٥) */
 .plan-step { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
-.plan-step .input[type="text"] { flex: 1; min-width: 140px; }
+.plan-step > .input { width: auto; min-width: 0; }
+.plan-step .input[type="date"], .plan-step .input[type="datetime-local"] { flex: 0 1 auto; }
+.plan-step .input[type="number"] { flex: 0 1 130px; }
+.plan-step .input[type="text"] { flex: 1 1 160px; min-width: 140px; }
+/* وصدى التاريخ (المرحلة ٤٢) يبقى في الصفّ ولا يكسره — ولا يُحذف: قراءةُ الهجريّ هي فائدته. */
+.plan-step .date-echo { flex: 0 0 auto; }
 
 
 /* ===== المرحلة ٣٢ — التقويم والقفل ===== */
@@ -789,7 +799,10 @@ body.client-mode #client-mode-btn { background: var(--accent); color: #fff; }
 .cal-event:active { background: var(--surface-2); }
 .cal-showing { border-inline-start: 3px solid var(--accent); }
 .cal-payment, .cal-agreement, .cal-adLicense { border-inline-start: 3px solid var(--danger); }
-.auto-lock-warn { display: flex; align-items: center; gap: 10px; }
+/* تنبيهٌ بزرٍّ فيه: النصّ والزرّ في سطرٍ واحد (كان `.auto-lock-warn` وحده، والمزامنة
+   تحتاجه مثله — فصار اسمه عامًّا). و`toast-error` كان صنفًا لا وجود له في الأنماط
+   إطلاقًا، فكان إنذار القفل يظهر بلون التنبيه العادي لا بلون الخطر. */
+.toast-row { display: flex; align-items: center; gap: 10px; }
 
 
 /* ===== المرحلة ٣٤ — مساحة اللمس للروابط =====

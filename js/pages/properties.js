@@ -31,6 +31,7 @@ import { adBlockers } from '../util/rega.js';
 import { propertyEvidence, priceDrops, MIN_SAMPLE } from '../util/property-evidence.js';
 import { historyBox } from '../util/history-view.js';
 import { capped, PAGE_SIZE } from '../util/render-cap.js';
+import { isArchived, archivePropertyCandidates } from '../util/archive.js';
 import { parseOfferText } from '../data/listing-parse.js';
 import { runPlans } from '../util/plans.js';
 
@@ -58,7 +59,7 @@ function routePropertyId() {
 
 export async function render(container) {
   const ctx = {
-    container, query: '', view: 'grid', selected: new Set(),
+    container, query: '', view: 'grid', selected: new Set(), showArchived: false,
     sort: { key: 'createdAt', dir: 'desc' },
     filters: Object.fromEntries(GROUPS.map(([k]) => [k, new Set()])),
     properties: [], clients: [], clientMap: new Map(),
@@ -218,6 +219,8 @@ function openCompare(ctx, items) {
 /* ===== الفرز ===== */
 
 function passes(ctx, p, exceptGroup = null) {
+  // المؤرشف خارج القائمة ما لم يُطلَب (المرحلة ٤٥) — عَرضٌ لا حذف.
+  if (!ctx.showArchived && isArchived(p)) return false;
   for (const [g] of GROUPS) {
     if (g === exceptGroup) continue;
     const set = ctx.filters[g];
@@ -228,6 +231,23 @@ function passes(ctx, p, exceptGroup = null) {
     if (!matchesQuery(p.searchKey, ctx.query) && !(owner && matchesQuery(owner.searchKey, ctx.query))) return false;
   }
   return true;
+}
+
+/** أرشفةُ العقارات المبيعة أو المؤجَّرة بالجملة — بعددٍ يُقال وبقرارٍ يُطلب (المرحلة ٤٥). */
+async function bulkArchiveProperties(ctx, candidates) {
+  const ok = await confirmDialog({
+    title: 'أرشفة المنتهية',
+    message: `الحالة «بِيع» أو «أُجِّر»، وبلا تعديلٍ منذ سنة: ${countOf(candidates.length, 'عقار')}.`
+      + '\n\nالأرشفة تُخرجها من هذه القائمة وحدها — لا تحذف شيئًا، ولا تمسّ مؤشّر السعر ولا تقاريرك،'
+      + ' وتعود بضغطةٍ على «+ المؤرشف».',
+    confirmText: 'أرشفها',
+  });
+  if (!ok) return;
+  const at = new Date().toISOString();
+  for (const p of candidates) await repo.properties.update(p.id, { archivedAt: at });
+  toast(`أُرشف ${countOf(candidates.length, 'عقار')}`, 'success');
+  window.dispatchEvent(new CustomEvent('kassab:data-changed'));
+  await refresh(ctx);
 }
 
 /* ===== بحوث محفوظة (المرحلة ١٧) ===== */
@@ -339,6 +359,27 @@ function renderFilters(ctx) {
     }
     wrap.append(el('div', { class: 'filter-row' }, el('span', { class: 'filter-label', text: label }), chips));
   }
+  /* الأرشيف (المرحلة ٤٥) */
+  const archivedCount = ctx.properties.filter(isArchived).length;
+  const candidates = archivePropertyCandidates(ctx.properties);
+  if (archivedCount || candidates.length) {
+    const chips = el('div', { class: 'chips' });
+    if (archivedCount) {
+      chips.append(el('button', {
+        type: 'button', class: `chip${ctx.showArchived ? ' active' : ''}`,
+        onClick: () => { ctx.showArchived = !ctx.showArchived; renderFilters(ctx); renderList(ctx); },
+      }, ctx.showArchived ? 'أخفِ المؤرشف' : '+ المؤرشف', el('span', { class: 'chip-count', text: String(archivedCount) })));
+    }
+    if (candidates.length) {
+      chips.append(el('button', {
+        type: 'button', class: 'btn btn-sm',
+        text: `أرشف ما بِيع أو أُجِّر منذ سنة (${formatNumber(candidates.length)})`,
+        onClick: () => bulkArchiveProperties(ctx, candidates),
+      }));
+    }
+    wrap.append(el('div', { class: 'filter-row' }, el('span', { class: 'filter-label', text: 'الأرشيف' }), chips));
+  }
+
   if (GROUPS.some(([g]) => ctx.filters[g].size)) {
     wrap.append(el('div', {}, el('button', {
       type: 'button', class: 'btn btn-ghost btn-sm', text: 'مسح الفرز',

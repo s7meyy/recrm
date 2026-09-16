@@ -603,6 +603,13 @@ export const DEFAULT_VAULT = {
   lastUploadAt: null,
   lastUploadCounts: null,
   lastImagesAt: null, // آخر رفع لكتل الصور (المرحلة ٣٥) — دورته أسبوعية لا يومية
+  // المزامنة بين الأجهزة (المرحلة ٤٥): سحبٌ ودمجٌ عند الفتح، ورفعٌ بعد كل تغيير بمهلة.
+  // منفصلةٌ عن `auto` لأنهما نيّتان مختلفتان: `auto` نسخةٌ احتياطية يومية تحفظ، و`sync`
+  // جهازان يتّفقان. ومن أراد الحفظ وحده لا يُفرض عليه أن يرفع كلّما كتب حرفًا.
+  sync: false,
+  lastSyncAt: null,
+  lastSyncError: null,   // آخر سبب فشل — يُعرض، ولا يُبتلع: مزامنةٌ صامتة أسوأ من لا مزامنة
+  lastSyncErrorAt: null,
 };
 
 export async function getVaultSettings() {

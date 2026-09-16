@@ -91,7 +91,12 @@ export function suggestKeeper(a, b) {
  * **الشرط ضيّق بقصد:** المدينة والحي والنوع نفسها، والمساحة والسعر ضمن هامشٍ صغير.
  * وتوسيعه يُنتج تنبيهات كاذبة تُفقد اللوحة قيمتها — والتنبيه الكاذب أسوأ من لا تنبيه.
  */
-export function externalDuplicates({ properties = [], externals = [], areaPct = 5, pricePct = 5 } = {}) {
+export function externalDuplicates({ properties = [], externals = [], areaPct = 5, pricePct = 5, myPhones = [] } = {}) {
+  // **من المعلن؟** (المرحلة ٤٥) التطابق وحده لا يفرّق بين حالتين علاجُهما مختلف تمامًا:
+  // إمّا أنك رصدتَ عقارك مرّتين — فالعلاج حذفُ أحدهما كي لا يُحسب مرّتين في مؤشّر السعر؛
+  // وإمّا أنّ **غيرك يسوّق عقارك** — والعلاج مكالمةٌ للمالك اليوم. وجوّالُ المعلن يفرّق
+  // بينهما: إن كان جوّالك فهو رصدُك، وإن كان غيره فهو وسيطٌ آخر، وإن غاب فلا يُدَّعى علمٌ.
+  const myNorm = new Set(myPhones.map((p) => normalizePhone(p)).filter(Boolean));
   const near = (a, b, pct) => {
     const x = Number(a);
     const y = Number(b);
@@ -111,11 +116,15 @@ export function externalDuplicates({ properties = [], externals = [], areaPct = 
       // السعر قد يغيب في أحدهما: غيابه لا يمنع الشبهة، لكن اختلافه الكبير يمنعها.
       const bothPriced = Number(p.price) > 0 && Number(ext.price) > 0;
       if (bothPriced && !near(p.price, ext.price, pricePct)) continue;
+      const advPhone = normalizePhone(ext.advertiserPhone);
       out.push({
         property: p,
         external: ext,
         samePrice: bothPriced && Number(p.price) === Number(ext.price),
         priceGap: bothPriced ? Number(ext.price) - Number(p.price) : null,
+        // `'unknown'` حين لا جوّالَ للمعلن، أو حين لم تُسجَّل أرقامك — لا تخمين.
+        advertiser: !advPhone || !myNorm.size ? 'unknown' : (myNorm.has(advPhone) ? 'me' : 'other'),
+        advertiserPhone: advPhone,
       });
     }
   }

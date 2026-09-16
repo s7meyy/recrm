@@ -70,3 +70,73 @@ export function rentalYield({ price, annualRent, annualCosts = 0, occupancy = 10
     payback: netIncome > 0 ? p / netIncome : null,
   };
 }
+
+/**
+ * **كم أحتاج نقدًا يوم الإفراغ؟** (المرحلة ٤٥)
+ *
+ * الحاسبة تقول القسط الشهري وأقصى سعرٍ يحتمله الدخل، **ولا تقول المبلغ النقديّ المطلوب
+ * لإتمام الصفقة**. وهو أوّلُ ما يسأل عنه المشتري، وأكثرُ ما تنكسر عنده الصفقة في آخرها:
+ * يظنّ الدفعة الأولى وحدها، فإذا جاء يوم الإفراغ وجد فوقها عشراتِ الألوف.
+ *
+ * وبنوده أربعة:
+ *   • **الدفعة الأولى** — نسبة من السعر، من جيبه لا من البنك.
+ *   • **رسوم التصرفات العقارية** — ضريبةٌ على التصرّف العقاري، أساسُها ٥٪ من قيمة التصرّف،
+ *     ولها إعفاءاتٌ معروفة (منها تملّك المواطن مسكنَه الأول ضمن سقفٍ محدَّد). ولذلك
+ *     `rettRate` **قابلةٌ للضبط**، و`rettExempt` تُصفّرها — فمن عرف حالته أدخلها، ومن لم
+ *     يعرف لم يُخبَّأ عنه الرقم.
+ *   • **العمولة وضريبتها** — عمولة الوساطة، وعليها ضريبة القيمة المضافة (١٥٪ افتراضًا).
+ *   • **رسوم البنك الإدارية** — نسبةٌ من مبلغ التمويل، ولها سقفٌ في العادة.
+ *
+ * **ولا يُخترع رقم:** كل نسبةٍ هنا مُدخَلٌ له قيمةٌ ابتدائية شائعة لا حكمٌ على حالتك،
+ * والنتيجة تُعرض بندًا بندًا لا مجموعًا مبهمًا — كي ترى **من أين جاء** كلُّ ريال.
+ *
+ * @param {{ price, downPaymentRate?, downPayment?, rettRate?, rettExempt?,
+ *           commissionRate?, vatRate?, bankFeeRate?, bankFeeCap?, otherFees? }} input
+ * @returns {{ price, down, financed, rett, commission, commissionVat, bankFee, other,
+ *             cashNeeded, lines } | null}
+ */
+export function closingCosts({
+  price,
+  downPaymentRate = 10,
+  downPayment = null,
+  rettRate = 5,
+  rettExempt = false,
+  commissionRate = 2.5,
+  vatRate = 15,
+  bankFeeRate = 1,
+  bankFeeCap = 5000,
+  otherFees = 0,
+} = {}) {
+  const p = Number(price);
+  if (!Number.isFinite(p) || p <= 0) return null;
+
+  const pct = (v) => Math.max(0, Number(v) || 0) / 100;
+  // دفعةٌ بالمبلغ تغلب النسبة: من يعرف رقمه لا يُحسب له غيرُه.
+  const down = downPayment != null && downPayment !== ''
+    ? Math.min(p, Math.max(0, Number(downPayment) || 0))
+    : p * pct(downPaymentRate);
+  const financed = Math.max(0, p - down);
+
+  const rett = rettExempt ? 0 : p * pct(rettRate);
+  const commission = p * pct(commissionRate);
+  const commissionVat = commission * pct(vatRate);
+  // السقفُ يُطبَّق حين يكون موجبًا: صفرًا أو فارغًا يعني «لا سقف» لا «لا رسوم».
+  const rawBankFee = financed * pct(bankFeeRate);
+  const cap = Number(bankFeeCap);
+  const bankFee = Number.isFinite(cap) && cap > 0 ? Math.min(rawBankFee, cap) : rawBankFee;
+  const other = Math.max(0, Number(otherFees) || 0);
+
+  const cashNeeded = down + rett + commission + commissionVat + bankFee + other;
+  return {
+    price: p, down, financed, rett, commission, commissionVat, bankFee, other, cashNeeded,
+    // البنود مرتَّبةً للعرض: الرقم وحده لا يُقنع، وتفصيلُه يُقنع ويُراجَع.
+    lines: [
+      { key: 'down', label: 'الدفعة الأولى', amount: down },
+      { key: 'rett', label: rettExempt ? 'رسوم التصرفات العقارية (معفاة)' : `رسوم التصرفات العقارية (${Number(rettRate) || 0}٪)`, amount: rett },
+      { key: 'commission', label: `عمولة الوساطة (${Number(commissionRate) || 0}٪)`, amount: commission },
+      { key: 'vat', label: `ضريبة القيمة المضافة على العمولة (${Number(vatRate) || 0}٪)`, amount: commissionVat },
+      { key: 'bank', label: 'رسوم البنك الإدارية', amount: bankFee },
+      { key: 'other', label: 'رسومٌ أخرى', amount: other },
+    ].filter((l) => l.amount > 0),
+  };
+}

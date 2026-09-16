@@ -17,6 +17,7 @@ import {
   el, clear, labeled, selectEl, checkbox, badge, openModal, confirmDialog, toast, emptyState, debounce,
 } from '../util/dom.js';
 import { formatDate, formatSAR, formatNumber, countWord, toInputDate, fromInputDate } from '../util/format.js';
+import { commissionState } from '../util/receivables.js';
 
 const clientName = (c) => (c ? (c.name || c.phone || 'عميل') : '');
 
@@ -61,7 +62,11 @@ function build(ctx) {
   clear(ctx.container);
   const rows = filtered(ctx);
   const totalCommission = rows.reduce((s, d) => s + (Number(d.commission) || 0), 0);
-  const unpaid = rows.filter((d) => d.commission && !d.commissionPaidAt);
+  // الباقي لا العدد وحده (المرحلة ٤٥): «٣ عمولات لم تُقبض» لا تقول كم في ذمّتهم، وقد
+  // يكون قُبض أكثرُها بالأقساط. والرقم الذي يعنيك هو **ما لم يصلك بعد**.
+  const states = rows.map((d) => commissionState(d));
+  const unpaid = states.filter((st) => st.total > 0 && st.remaining > 0);
+  const remaining = unpaid.reduce((a, st) => a + st.remaining, 0);
 
   ctx.container.append(
     el('div', { class: 'page-head' },
@@ -80,7 +85,8 @@ function build(ctx) {
     ctx.container.append(el('div', { class: 'stat-strip' },
       stat(formatNumber(rows.length), 'صفقة معروضة'),
       stat(formatSAR(totalCommission), 'مجموع عمولاتها'),
-      stat(formatNumber(unpaid.length), 'عمولة لم تُقبض')));
+      stat(formatSAR(remaining), 'باقٍ لك'),
+      stat(formatNumber(unpaid.length), 'عمولة لم تكتمل')));
   }
 
   if (!rows.length) {
@@ -110,7 +116,9 @@ function filtered(ctx) {
 }
 
 function dealRow(ctx, d) {
-  const paid = !!d.commissionPaidAt;
+  // الحال من `commissionState` لا من `commissionPaidAt` وحده (المرحلة ٤٥): صفقةٌ قُبض
+  // نصفُ عمولتها ليست «قُبضت» ولا «لم تُقبض» — وكلاهما كان يُكتب كذبًا.
+  const st = commissionState(d);
   return el('tr', {},
     el('td', { text: formatDate(d.date) }),
     el('td', { text: clientName(ctx.clientById.get(d.clientId)) || '—' }),
@@ -119,7 +127,11 @@ function dealRow(ctx, d) {
     el('td', { class: 'num', text: d.commission == null ? '—' : formatSAR(d.commission) }),
     el('td', {}, d.commission == null
       ? el('span', { class: 'muted small', text: 'بلا عمولة' })
-      : badge(paid ? `قُبضت ${formatDate(d.commissionPaidAt)}` : 'لم تُقبض', paid ? 'badge-ok' : 'badge-warn')),
+      : (st.done
+        ? badge(`قُبضت ${formatDate(st.paidAt || d.commissionPaidAt)}`, 'badge-ok')
+        : (st.paid > 0
+          ? badge(`قُبض ${formatSAR(st.paid)} · بقي ${formatSAR(st.remaining)}`, 'badge-warn')
+          : badge('لم تُقبض', 'badge-warn')))),
     el('td', {},
       el('button', { type: 'button', class: 'btn btn-sm', text: 'تعديل', onClick: () => openForm(ctx, d) })));
 }
@@ -148,6 +160,83 @@ function openForm(ctx, deal) {
   const invoiceBox = checkbox('أنشئ فاتورة بالعمولة لهذا العميل', { checked: false });
   const errorsBox = el('div', { class: 'form-errors', hidden: true });
 
+  /* أقساط العمولة (المرحلة ٤٥) — نصفٌ عند التوقيع ونصفٌ عند الإفراغ */
+  const instalments = JSON.parse(JSON.stringify(d.commissionPayments || []));
+  const instWrap = el('div', {});
+  const instSummary = el('p', { class: 'muted small' });
+
+  const drawSummary = () => {
+    clear(instSummary);
+    const total = commissionInput.value === '' ? 0 : Number(commissionInput.value) || 0;
+    if (!instalments.length) {
+      instSummary.append(el('span', { text: 'بلا أقساط: تاريخُ القبض أعلاه هو الحَكَم — قُبضت كلّها أو لم يُقبض منها شيء.' }));
+      return;
+    }
+    const scheduled = instalments.reduce((a, p) => a + (Number(p.amount) || 0), 0);
+    const paid = instalments.filter((p) => p.paidAt).reduce((a, p) => a + (Number(p.amount) || 0), 0);
+    instSummary.append(el('span', { text: `المجدول ${formatSAR(scheduled)} · المقبوض ${formatSAR(paid)} · الباقي ${formatSAR(total - paid)}` }));
+    // **الفرق يُقال ولا يُصحَّح من خلف ظهرك:** ما لم يُجدول يبقى مستحقًّا لك ويظهر في
+    // «مستحقات لم تُقبض» على تاريخ الصفقة، والمجدولُ فوق العمولة خطأُ إدخالٍ يُنبَّه عليه.
+    if (total > 0 && scheduled < total) {
+      instSummary.append(el('div', {}, badge(`غير مجدول: ${formatSAR(total - scheduled)} — يبقى مستحقًّا ويظهر في المستحقات`, 'badge-warn')));
+    } else if (total > 0 && scheduled > total) {
+      instSummary.append(el('div', {}, badge(`الأقساط تزيد عن العمولة بـ${formatSAR(scheduled - total)} — راجع الأرقام`, 'badge-danger')));
+    }
+  };
+
+  const drawInstalments = () => {
+    clear(instWrap);
+    instalments.forEach((p, i) => {
+      const due = el('input', {
+        class: 'input', type: 'date', value: p.dueAt ? toInputDate(p.dueAt) : '',
+        onInput: (e) => { p.dueAt = e.target.value ? fromInputDate(e.target.value) : null; },
+      });
+      const amount = el('input', {
+        class: 'input', type: 'number', min: '0', step: '500', value: p.amount ?? '',
+        onInput: (e) => { p.amount = e.target.value === '' ? null : Number(e.target.value); drawSummary(); },
+      });
+      const note = el('input', {
+        class: 'input', type: 'text', value: p.note || '', placeholder: 'عند التوقيع، عند الإفراغ…',
+        onInput: (e) => { p.note = e.target.value; },
+      });
+      const paidBox = checkbox('قُبض', {
+        checked: !!p.paidAt,
+        onChange: (e) => { p.paidAt = e.target.checked ? new Date().toISOString() : null; drawSummary(); },
+      });
+      instWrap.append(el('div', { class: 'plan-step' }, due, amount, note, paidBox,
+        el('button', {
+          type: 'button', class: 'icon-btn', text: '✕', title: 'حذف القسط',
+          onClick: () => { instalments.splice(i, 1); drawInstalments(); drawSummary(); },
+        })));
+    });
+    instWrap.append(el('div', { class: 'row' },
+      el('button', {
+        type: 'button', class: 'btn btn-ghost btn-sm', text: '+ قسط',
+        onClick: () => {
+          instalments.push({ id: `ci${Date.now()}${instalments.length}`, dueAt: null, amount: null, paidAt: null, note: '' });
+          drawInstalments(); drawSummary();
+        },
+      }),
+      // القسمة نصفين هي الصيغة الغالبة، فتُقترح بضغطة بدل كتابتها مرّتين في كل صفقة.
+      el('button', {
+        type: 'button', class: 'btn btn-ghost btn-sm', text: 'نصفان: التوقيع والإفراغ',
+        onClick: () => {
+          const total = Number(commissionInput.value) || 0;
+          if (!total) { toast('اكتب العمولة أوّلًا', 'error'); return; }
+          const half = Math.round(total / 2);
+          instalments.length = 0;
+          instalments.push(
+            { id: `ci${Date.now()}a`, dueAt: fromInputDate(dateInput.value), amount: half, paidAt: null, note: 'عند التوقيع' },
+            { id: `ci${Date.now()}b`, dueAt: null, amount: total - half, paidAt: null, note: 'عند الإفراغ' },
+          );
+          drawInstalments(); drawSummary();
+        },
+      })));
+  };
+  commissionInput.addEventListener('input', drawSummary);
+  drawInstalments();
+  drawSummary();
+
   const saveBtn = el('button', { type: 'button', class: 'btn btn-primary', text: isEdit ? 'حفظ التعديلات' : 'تسجيل الصفقة' });
   saveBtn.addEventListener('click', async () => {
     const date = fromInputDate(dateInput.value);
@@ -165,7 +254,12 @@ function openForm(ctx, deal) {
         date, finalPrice, commission,
         clientId: clientSelect.value || null,
         propertyId: propertySelect.value || null,
-        commissionPaidAt: fromInputDate(paidInput.value),
+        commissionPayments: instalments.filter((p) => p.amount != null || p.dueAt || p.note),
+        // بالأقساط يُشتقّ تاريخُ القبض من اكتمالها فلا يتناقض رقمان: صفقةٌ باقٍ منها شيء
+        // لا تحمل تاريخَ قبضٍ كامل. وبلا أقساط يبقى ما كتبتَه بيدك كما هو.
+        commissionPaidAt: instalments.length
+          ? (commissionState({ commission: Number(commissionInput.value) || 0, commissionPayments: instalments }).paidAt)
+          : fromInputDate(paidInput.value),
         leaseEndAt: fromInputDate(leaseEndInput.value),
         partnerName: partnerName.value.trim(),
         partnerShare: partnerShare.value === '' ? null : Number(partnerShare.value),
@@ -238,11 +332,15 @@ function openForm(ctx, deal) {
         labeled('العميل', clientSelect),
         labeled('العقار', propertySelect),
         labeled('العمولة (ريال)', commissionInput),
-        labeled('تاريخ قبض العمولة', paidInput, { hint: 'اتركه فارغًا إن لم تُقبض بعد — فتظهر في «مستحقات لم تُقبض»' }),
+        labeled('تاريخ قبض العمولة', paidInput, { hint: 'اتركه فارغًا إن لم تُقبض بعد — فتظهر في «مستحقات لم تُقبض». وإن جدولتَ أقساطًا أدناه فهي الحَكَم، ويُهمَل هذا الحقل.' }),
         labeled('نهاية عقد الإيجار', leaseEndInput, { hint: 'للإيجار فقط — يُذكّرك بالتجديد قبل شهر' }),
         labeled('الوسيط الشريك', partnerName, { hint: 'اختياري' }),
         labeled('نصيب الشريك (ريال)', partnerShare),
         labeled('ملاحظات', notesInput, { full: true })),
+      el('div', { class: 'panel-block' },
+        el('h3', { text: 'أقساط العمولة' }),
+        el('p', { class: 'muted small', text: 'نصفٌ عند التوقيع ونصفٌ عند الإفراغ هو الغالب — وبلا أقساط كانت الصفقة تُسجَّل مقبوضةً بالكامل أو غيرَ مقبوضة، وكلاهما غيرُ صحيح. وكلُّ قسطٍ غير مقبوض يظهر في «مستحقات لم تُقبض» بموعده هو.' }),
+        instWrap, instSummary),
       isEdit ? null : el('div', { class: 'panel-block' }, invoiceBox)),
     footer,
   });

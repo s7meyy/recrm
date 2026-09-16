@@ -291,6 +291,20 @@ const PREPARE = {
       }))
       .filter((p) => p.dueAt && p.amount != null && p.amount > 0)
       .sort((a, b) => a.dueAt.localeCompare(b.dueAt));
+    // أقساط العمولة (المرحلة ٤٥). وشرطُها **أرخى** من دفعات الإيجار عمدًا: دفعةُ الإيجار
+    // لا معنى لها بلا تاريخ استحقاق، أمّا «نصفٌ عند الإفراغ» فمبلغٌ معلومٌ وموعدُه مجهول —
+    // واشتراطُ تاريخٍ عليه يعني أن يخترع المستخدم تاريخًا، أو يُمحى قسطُه صامتًا.
+    rec.commissionPayments = (Array.isArray(rec.commissionPayments) ? rec.commissionPayments : [])
+      .map((p) => ({
+        id: p.id || newId(),
+        dueAt: p.dueAt || null,
+        amount: numField(rec, 'قسط العمولة', p.amount),
+        paidAt: p.paidAt || null,
+        note: trim(p.note),
+      }))
+      .filter((p) => p.amount != null && p.amount > 0)
+      // المؤرَّخُ أوّلًا بترتيب موعده، ثم ما لا موعد له — فلا يتقدّم المجهولُ على المعلوم.
+      .sort((a, b) => (a.dueAt ? 0 : 1) - (b.dueAt ? 0 : 1) || String(a.dueAt).localeCompare(String(b.dueAt)));
     rec.checklist = (Array.isArray(rec.checklist) ? rec.checklist : [])
       .map((i) => ({
         key: i.key || newId(),
@@ -431,6 +445,14 @@ const VALIDATE = {
     nonNegative(rec, 'السعر النهائي', rec.finalPrice, errors);
     nonNegative(rec, 'العمولة', rec.commission, errors);
     nonNegative(rec, 'نصيب الشريك', rec.partnerShare, errors);
+    // أقساطٌ تزيد عن العمولة خطأُ إدخالٍ يجعل مستحقّاتك تقول أكثرَ مما لك (المرحلة ٤٥).
+    const instTotal = (rec.commissionPayments || []).reduce((a, p) => a + (Number(p.amount) || 0), 0);
+    if (instTotal > 0 && rec.commission != null && instTotal > rec.commission) {
+      errors.push(`مجموع أقساط العمولة (${instTotal}) أكبر من العمولة (${rec.commission})`);
+    }
+    if (instTotal > 0 && rec.commission == null) {
+      errors.push('جدولتَ أقساطًا بلا عمولة — اكتب مبلغ العمولة أوّلًا');
+    }
     // نصيب الشريك أكبر من العمولة يجعل صافيك سالبًا — خطأ إدخال غالبًا (المرحلة ٢٤).
     if (rec.partnerShare != null && rec.commission != null && rec.partnerShare > rec.commission) {
       errors.push('نصيب الشريك أكبر من العمولة');

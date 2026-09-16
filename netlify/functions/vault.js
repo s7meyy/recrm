@@ -52,7 +52,18 @@ export default async (request) => {
       const metas = [];
       for (const key of keys) {
         const meta = await store.getMetadata(key);
-        metas.push({ key, at: meta?.metadata?.at || key.slice(kind.length), size: meta?.metadata?.size || null, counts: meta?.metadata?.counts || null, part: meta?.metadata?.part ?? null, parts: meta?.metadata?.parts ?? null });
+        // `batch` يُعاد مع الباقي (المرحلة ٤٥): الكتل تُجمَّع به في المتصفح. وكان يُخزَّن
+        // ولا يُعاد، فكان الجمع يقع على `at` — وهو **ختم الخادم لكل طلبٍ على حدة**،
+        // فتنفرط الدفعة الواحدة إلى دفعاتٍ ناقصة يرفضها الاسترجاع جميعًا.
+        metas.push({
+          key,
+          at: meta?.metadata?.at || key.slice(kind.length),
+          size: meta?.metadata?.size || null,
+          counts: meta?.metadata?.counts || null,
+          part: meta?.metadata?.part ?? null,
+          parts: meta?.metadata?.parts ?? null,
+          batch: meta?.metadata?.batch || null,
+        });
       }
       return json({ backups: metas });
     }
@@ -68,7 +79,7 @@ export default async (request) => {
     // **بالأرقام** لماذا رُفضت — «كبيرة» وحدها لا تدلّ على فعل.
     if (body.payload.length > MAX_BYTES) {
       return json({
-        error: `النسخة ${Math.round(body.payload.length / 100000) / 10} ميغابايت، والحدّ ${MAX_BYTES / 1000000} — ارفع البيانات وحدها، والصور في كتلٍ منفصلة.`,
+        error: `الكتلة ${Math.round(body.payload.length / 100000) / 10} ميغابايت، والحدّ ${MAX_BYTES / 1000000} — والبيانات والصور كلتاهما تُرفع كتلًا دون هذا الحدّ، فكتلةٌ فوقه عطبٌ يُبلَّغ عنه.`,
         tooLarge: true, bytes: body.payload.length, limit: MAX_BYTES,
       }, 413);
     }
@@ -83,24 +94,24 @@ export default async (request) => {
       },
     });
 
+    // التقليم **بالدفعة لا بالعدد**، للصور وللبيانات سواء (المرحلة ٤٥). كان تقليم
+    // البيانات بالعدد صوابًا يوم كانت النسخة كتلةً واحدة؛ فلمّا صارت تُجزَّأ، صار
+    // `slice(5)` يقصّ **وسط دفعةٍ حيّة** فيبقي منها ثلاث كتلٍ من خمس — ونصفُ نسخةٍ
+    // لا يُسترجع. والدفعة الواحدة تذهب كلُّها أو تبقى كلُّها.
     const keys = await listSorted(store, kind);
-    // كتل الصور تُقلَّم بالدفعة لا بالعدد: دفعةٌ من عشر كتل لا يجوز أن يبقى منها اثنتان.
-    if (kind === IMAGE_PREFIX) {
-      const batches = [];
-      for (const k of keys) {
-        const meta = await store.getMetadata(k);
-        const batch = meta?.metadata?.batch || k;
-        if (!batches.includes(batch)) batches.push(batch);
-      }
-      const doomed = batches.slice(keep);
-      for (const k of keys) {
-        const meta = await store.getMetadata(k);
-        if (doomed.includes(meta?.metadata?.batch || k)) await store.delete(k);
-      }
-      return json({ ok: true, key, at, kept: Math.min(batches.length, keep) });
+    const batchOf = new Map();
+    for (const k of keys) {
+      const meta = await store.getMetadata(k);
+      batchOf.set(k, meta?.metadata?.batch || k);
     }
-    for (const old of keys.slice(keep)) await store.delete(old);
-    return json({ ok: true, key, at, kept: Math.min(keys.length, keep) });
+    const batches = [];
+    for (const k of keys) {
+      const b = batchOf.get(k);
+      if (!batches.includes(b)) batches.push(b);
+    }
+    const doomed = new Set(batches.slice(keep));
+    for (const k of keys) if (doomed.has(batchOf.get(k))) await store.delete(k);
+    return json({ ok: true, key, at, kept: Math.min(batches.length, keep) });
   }
 
   return json({ error: 'طريقة غير مدعومة' }, 405);

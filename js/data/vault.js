@@ -18,8 +18,36 @@ const PBKDF2_ROUNDS = 200000;
 export const MAX_PAYLOAD = 4_500_000;
 // الصور تُرفع كتلًا، وحجم الكتلة قبل التشفير يُبقي المشفَّر تحت الحدّ.
 const IMAGE_CHUNK_BYTES = 3_000_000;
+// **والبيانات مثلها الآن** (المرحلة ٤٥). كانت كتلةً واحدة تُرمى كاملةً عند تجاوز الحدّ،
+// فكان سقفُ الخزنة سقفًا لعدد عملائك: آلافُ عميلٍ بمطابقاتهم ومهامّهم تبلغه، وحينها
+// **لا نسخة سحابية أصلًا** — لا ناقصة ولا كاملة. والثلاثةُ ملايين بايت تصير بعد التشفير
+// وbase64 نحو أربعةٍ، فتبقى دون الحدّ بهامش.
+const DATA_CHUNK_BYTES = 3_000_000;
 const enc = new TextEncoder();
 const dec = new TextDecoder();
+
+/**
+ * يقطع نصًّا قطعًا لا تتجاوز الواحدة `limit` بايتًا من UTF-8، **بلا شقّ محرف**.
+ *
+ * والقطع بالبايت لا بالحرف لأن الحدّ حدُّ بايتات؛ والحرف العربي بايتان والإيموجي أربعة،
+ * فقطعٌ بعدد الأحرف يخطئ الحجم مرّتين. ولا يُقطع في وسط محرف: بايتُ التكملة في UTF-8
+ * نمطه `10xxxxxx`، فنتراجع عنه حتى نقف على أوّل بايتٍ في محرف.
+ *
+ * ووصلُ القطع نصًّا يعيد الأصل حرفًا حرفًا — وعليه يقوم الاسترجاع.
+ */
+export function splitUtf8(text, limit = DATA_CHUNK_BYTES) {
+  const bytes = enc.encode(String(text ?? ''));
+  if (bytes.length <= limit) return [String(text ?? '')];
+  const parts = [];
+  let start = 0;
+  while (start < bytes.length) {
+    let end = Math.min(start + limit, bytes.length);
+    while (end > start + 1 && end < bytes.length && (bytes[end] & 0xC0) === 0x80) end--;
+    parts.push(dec.decode(bytes.subarray(start, end)));
+    start = end;
+  }
+  return parts;
+}
 
 const b64 = (bytes) => {
   let bin = '';
@@ -73,9 +101,50 @@ async function call(path, options = {}) {
   return data;
 }
 
-/** قائمة النسخ المحفوظة سحابيًا (بلا تنزيلها). */
+/** قائمة كتل النسخ المحفوظة سحابيًا (بلا تنزيلها) — كتلةً كتلة لا دفعةً دفعة. */
 export async function listBackups() {
   return (await call('')).backups || [];
+}
+
+/**
+ * يجمع الكتل **دفعاتٍ**: الدفعة رفعةٌ واحدة قد تكون كتلةً أو عشرًا.
+ *
+ * والتجميع بـ`batch` لا بـ`at`: الخادم يختم كلَّ طلبٍ بوقته هو، وكتلُ الدفعة الواحدة
+ * تصل في ثوانٍ متفرّقة — **فالجمع بالوقت يفرّق الدفعة الواحدة إلى دفعاتٍ ناقصة**، ثم
+ * يرفض الاسترجاعُ كلَّ واحدةٍ منها لنقصها. وهذا كان حال استرجاع الصور متعدّدِ الكتل
+ * منذ المرحلة ٣٥: لم يكن يسترجع شيئًا، ورسالتُه «الدفعة ناقصة» تصف عطبَ العدّ لا عطبَ
+ * الخزنة. و`batch` كان يُخزَّن في بيانات الكتلة الوصفية ولا يُعاد في القائمة.
+ *
+ * @returns {Array<{ key, at, batch, counts, size, parts, expected, complete }>}
+ */
+export function groupBatches(metas = []) {
+  const map = new Map();
+  for (const m of metas) {
+    const id = m.batch || m.at || m.key;
+    if (!map.has(id)) map.set(id, []);
+    map.get(id).push(m);
+  }
+  return [...map.values()]
+    .map((list) => {
+      const parts = list.slice().sort((a, b) => (a.part ?? 0) - (b.part ?? 0));
+      const expected = parts[0]?.parts ?? parts.length;
+      return {
+        key: parts[0].key,
+        at: parts[0].at,
+        batch: parts[0].batch || parts[0].at || parts[0].key,
+        counts: parts.find((p) => p.counts)?.counts || null,
+        size: parts.reduce((a, p) => a + (Number(p.size) || 0), 0),
+        parts,
+        expected,
+        complete: parts.length === expected,
+      };
+    })
+    .sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
+}
+
+/** الدفعات مجموعةً — وهو ما تعرضه الشاشة وما يقرؤه الاسترجاع. */
+export async function listBackupBatches() {
+  return groupBatches(await listBackups());
 }
 
 const mb = (bytes) => `${Math.round(bytes / 100000) / 10} ميغابايت`;
@@ -88,20 +157,34 @@ const mb = (bytes) => `${Math.round(bytes / 100000) / 10} ميغابايت`;
  * وأنت تحسب بياناتك محفوظة**. والبيانات وحدها تُرفع كل يوم بلا مشقّة، والصور في كتلٍ
  * منفصلة على مهلٍ (`uploadImages`).
  */
-export async function uploadBackup(passphrase, { includeImages = false } = {}) {
+export async function uploadBackup(passphrase, { includeImages = false, onProgress = null } = {}) {
   if (!passphrase) throw new Error('حدد العبارة السرّية أولًا');
   const { blob, counts } = await exportBackup({ includeImages });
-  const payload = await encryptText(await blob.text(), passphrase);
-  if (payload.length > MAX_PAYLOAD) {
-    throw new Error(`النسخة ${mb(payload.length)} والحدّ ${mb(MAX_PAYLOAD)}`
-      + (includeImages ? ' — ارفع البيانات وحدها ثم الصور في كتلٍ منفصلة.' : ' — بياناتك تجاوزت حدّ الرفعة الواحدة، صدّر ملفًا محليًّا واحتفظ به.'));
+  const chunks = splitUtf8(await blob.text());
+  const batch = new Date().toISOString();
+
+  let bytes = 0;
+  let result = null;
+  for (let i = 0; i < chunks.length; i++) {
+    const payload = await encryptText(chunks[i], passphrase);
+    if (payload.length > MAX_PAYLOAD) {
+      // لا يقع هذا إلا بعطبٍ في القطع: ثلاثةُ ملايين بايت لا تبلغ مشفَّرةً أربعةً ونصفًا.
+      throw new Error(`كتلةٌ واحدة ${mb(payload.length)} وهي فوق الحدّ ${mb(MAX_PAYLOAD)} — بلّغ عن هذا فهو عطب.`);
+    }
+    // الكتلةُ الواحدة تُرفع بشكلها القديم بلا `part`، فلا يتغيّر مفتاحها ولا تنكسر
+    // النسخُ المرفوعة قبل هذه المرحلة.
+    const body = chunks.length === 1
+      ? { payload, counts }
+      : { payload, counts: i === 0 ? counts : null, part: i, parts: chunks.length, batch };
+    result = await call('', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    bytes += payload.length;
+    onProgress?.(i + 1, chunks.length);
   }
-  const result = await call('', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ payload, counts }),
-  });
-  return { ...result, bytes: payload.length, includeImages };
+  return { ...result, bytes, includeImages, parts: chunks.length, batch };
 }
 
 /**
@@ -169,14 +252,14 @@ export async function listImageBackups() {
  */
 export async function restoreImages(passphrase) {
   if (!passphrase) throw new Error('حدد العبارة السرّية أولًا');
-  const metas = await listImageBackups();
-  if (!metas.length) throw new Error('لا كتل صور في الخزنة بعد');
-  const batch = metas[0].at;
-  const mine = metas.filter((m) => (m.at || '') === batch);
-  const expected = mine[0]?.parts ?? mine.length;
-  if (mine.length !== expected) {
-    throw new Error(`الدفعة ناقصة: ${mine.length} من ${countOf(expected, 'كتلة')} — ارفع الصور من جديد قبل الاسترجاع.`);
+  const batches = groupBatches(await listImageBackups());
+  if (!batches.length) throw new Error('لا كتل صور في الخزنة بعد');
+  const picked = batches[0];
+  if (!picked.complete) {
+    throw new Error(`الدفعة ناقصة: ${picked.parts.length} من ${countOf(picked.expected, 'كتلة')} — ارفع الصور من جديد قبل الاسترجاع.`);
   }
+  const mine = picked.parts;
+  const batch = picked.batch;
   const { repo } = await import('./repository.js');
   const { deserializeImage } = await import('./backup.js');
   let count = 0;
@@ -192,16 +275,29 @@ export async function restoreImages(passphrase) {
   return { images: count, parts: mine.length, at: batch };
 }
 
-/** ينزّل نسخة ويفكّها ويقرؤها — بلا كتابةِ شيء. تُستعمل للفحص قبل القرار. */
+/**
+ * ينزّل دفعةً كاملة ويفكّها ويقرؤها — بلا كتابةِ شيء. تُستعمل للفحص قبل القرار.
+ *
+ * **ولا تُقرأ دفعةٌ ناقصة أبدًا**: نصفُ نسخةٍ ليس نصفَ نفع، هو JSON مقطوع لا يُفكّ أصلًا؛
+ * والأسوأ لو فُكّ: بياناتٌ تحسبها كاملة وقد ذهب نصفها. وهذا مبدأ استرجاع الصور نفسه.
+ */
 export async function fetchBackup(passphrase, key = null) {
   if (!passphrase) throw new Error('حدد العبارة السرّية أولًا');
-  const target = key || (await listBackups())[0]?.key;
-  if (!target) throw new Error('لا توجد نسخة سحابية بعد');
-  const { payload } = await call(`?key=${encodeURIComponent(target)}`);
-  const plain = await decryptText(payload, passphrase);
+  const batches = await listBackupBatches();
+  const picked = key ? batches.find((b) => b.parts.some((p) => p.key === key)) : batches[0];
+  if (!picked) throw new Error('لا توجد نسخة سحابية بعد');
+  if (!picked.complete) {
+    throw new Error(`النسخة ناقصة: وصلت ${picked.parts.length} من ${countOf(picked.expected, 'كتلة')}`
+      + ' — ارفع نسخةً جديدة قبل الاسترجاع.');
+  }
+  let plain = '';
+  for (const part of picked.parts) {
+    const { payload } = await call(`?key=${encodeURIComponent(part.key)}`);
+    plain += await decryptText(payload, passphrase);
+  }
   const file = new File([plain], 'vault.json', { type: 'application/json' });
   const { data, counts, exportedAt } = await readBackupFile(file);
-  return { data, counts, exportedAt, key: target };
+  return { data, counts, exportedAt, key: picked.key };
 }
 
 /** ماذا يخسر هذا الجهاز لو استُبدل بهذه النسخة؟ يُسأل **قبل** أي استرجاع. */

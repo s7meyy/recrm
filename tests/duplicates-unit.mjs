@@ -55,3 +55,23 @@ ok('والترتيب لا يغيّر النتيجة', suggestKeeper(poor, rich).
 const older = c('a', 'سعد المالكي', '0502222222', { createdAt: '2025-01-01' });
 const newer = c('b', 'سعد المالكي', '0502222222', { createdAt: '2026-01-01' });
 ok('وعند التعادل يبقى الأقدم', suggestKeeper(newer, older).id === 'a');
+
+/* ===== من المعلن؟ (المرحلة ٤٥) ===== */
+import { externalDuplicates } from '../js/util/duplicates.js';
+
+const mine = { id: 'p1', captureStatus: 'approved', city: 'الرياض', district: 'الياسمين', type: 'villa', area: 400, price: 2500000 };
+const ext = (id, phone, extra = {}) => ({ id, status: 'active', city: 'الرياض', district: 'الياسمين', type: 'villa', area: 400, price: 2500000, advertiserPhone: phone, ...extra });
+
+const me = externalDuplicates({ properties: [mine], externals: [ext('e1', '0501234567')], myPhones: ['٠٥٠١٢٣٤٥٦٧'] });
+ok('جوّال المعلن جوّالك = رصدُك أنت', me.length === 1 && me[0].advertiser === 'me', me[0]?.advertiser);
+
+const other = externalDuplicates({ properties: [mine], externals: [ext('e2', '0559999999')], myPhones: ['0501234567'] });
+ok('وجوّالٌ غيره = معلنٌ آخر', other[0].advertiser === 'other', other[0]?.advertiser);
+
+const blank = externalDuplicates({ properties: [mine], externals: [ext('e3', '')], myPhones: ['0501234567'] });
+ok('وبلا جوّالٍ للمعلن لا يُدَّعى علم', blank[0].advertiser === 'unknown', blank[0]?.advertiser);
+
+const noMine = externalDuplicates({ properties: [mine], externals: [ext('e4', '0559999999')] });
+ok('ومن لم يسجّل جوّاله لا يُقال له «معلنٌ آخر»', noMine[0].advertiser === 'unknown', noMine[0]?.advertiser);
+
+ok('والحقول القديمة باقية كما هي', typeof noMine[0].priceGap === 'number' && noMine[0].samePrice === true);

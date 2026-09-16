@@ -17,6 +17,7 @@ import {
 import { formatSAR, formatArea, formatNumber, countOf } from '../util/format.js';
 import { matchesQuery } from '../util/arabic.js';
 import { formatPhone } from '../util/phone.js';
+import { isArchived, archiveRequestCandidates } from '../util/archive.js';
 
 const GROUPS = [['status', 'الحالة'], ['type', 'النوع'], ['purpose', 'الغرض'], ['city', 'المدينة']];
 const VALUES = {
@@ -37,7 +38,7 @@ function routeRequestIdParam() {
 
 export async function render(container) {
   const ctx = {
-    container, query: '',
+    container, query: '', showArchived: false,
     filters: Object.fromEntries(GROUPS.map(([k]) => [k, new Set()])),
     requests: [], clientsById: new Map(), lists: null, match: null, counts: new Map(), nodes: {},
   };
@@ -109,6 +110,8 @@ function buildLayout(ctx) {
 /* ===== الفرز ===== */
 
 function passes(ctx, r, exceptGroup = null) {
+  // المؤرشف خارج القائمة ما لم يُطلَب (المرحلة ٤٥) — عَرضٌ لا حذف.
+  if (!ctx.showArchived && isArchived(r)) return false;
   for (const [g] of GROUPS) {
     if (g === exceptGroup) continue;
     const set = ctx.filters[g];
@@ -158,12 +161,55 @@ function renderFilters(ctx) {
     }
     wrap.append(el('div', { class: 'filter-row' }, el('span', { class: 'filter-label', text: label }), chips));
   }
+  /* الأرشيف (المرحلة ٤٥) */
+  const archivedCount = ctx.requests.filter(isArchived).length;
+  const candidates = archiveRequestCandidates(ctx.requests);
+  if (archivedCount || candidates.length) {
+    const chips = el('div', { class: 'chips' });
+    if (archivedCount) {
+      chips.append(el('button', {
+        type: 'button', class: `chip${ctx.showArchived ? ' active' : ''}`,
+        onClick: () => { ctx.showArchived = !ctx.showArchived; renderFilters(ctx); renderList(ctx); },
+      }, ctx.showArchived ? 'أخفِ المؤرشف' : '+ المؤرشف', el('span', { class: 'chip-count', text: String(archivedCount) })));
+    }
+    if (candidates.length) {
+      chips.append(el('button', {
+        type: 'button', class: 'btn btn-sm',
+        text: `أرشف المنتهية منذ سنة (${formatNumber(candidates.length)})`,
+        onClick: () => bulkArchiveRequests(ctx, candidates),
+      }));
+    }
+    wrap.append(el('div', { class: 'filter-row' }, el('span', { class: 'filter-label', text: 'الأرشيف' }), chips));
+  }
+
   if (GROUPS.some(([g]) => ctx.filters[g].size)) {
     wrap.append(el('div', {}, el('button', {
       type: 'button', class: 'btn btn-ghost btn-sm', text: 'مسح الفرز',
       onClick: () => { for (const [g] of GROUPS) ctx.filters[g].clear(); renderFilters(ctx); renderList(ctx); },
     })));
   }
+}
+
+/**
+ * أرشفةُ الطلبات المنتهية بالجملة (المرحلة ٤٥).
+ *
+ * **ولا تمسّ «طلباتٌ عادت»**: تلك تقرأ الطلبات الموقوفة كما هي، والأرشفةُ ترشيحُ عرضٍ
+ * في هذه الصفحة وحدها — فطلبٌ مؤرشف يطابقه عرضٌ جديد يظلّ يُنبَّه عليك كما كان.
+ */
+async function bulkArchiveRequests(ctx, candidates) {
+  const ok = await confirmDialog({
+    title: 'أرشفة المنتهية',
+    message: `الحالة «مُنجز» أو «موقوف»، وبلا تعديلٍ منذ سنة: ${countOf(candidates.length, 'طلب')}.`
+      + '\n\nالأرشفة تُخرجه من هذه القائمة وحدها — لا تحذف شيئًا، ويبقى في المطابقة وفي «طلباتٌ عادت»،'
+      + ' ويعود بضغطةٍ على «+ المؤرشف».',
+    confirmText: 'أرشفها',
+  });
+  if (!ok) return;
+  const at = new Date().toISOString();
+  for (const r of candidates) await repo.requests.update(r.id, { archivedAt: at });
+  toast(`أُرشف ${countOf(candidates.length, 'طلب')}`, 'success');
+  window.dispatchEvent(new CustomEvent('kassab:data-changed'));
+  await refresh(ctx);
 }
 
 /* ===== القائمة ===== */

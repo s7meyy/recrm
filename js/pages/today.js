@@ -13,6 +13,7 @@ import { receivables } from '../util/receivables.js';
 import { awaitingReply } from '../util/lead-score.js';
 import { upcomingShowings, needFeedback } from '../util/showings.js';
 import { expiringAgreements } from '../util/agreements.js';
+import { externalDuplicates } from '../util/duplicates.js';
 import { dealAnniversaries } from '../util/calendar.js';
 import { runPlans } from '../util/plans.js';
 import { el, clear, badge, emptyState, confirmDialog, toast, openModal, labeled, selectEl } from '../util/dom.js';
@@ -185,6 +186,17 @@ async function loadData() {
     noShows: noShowCounts(showings),
     propertiesById: new Map(ctx.properties.map((p) => [p.id, p])),
     externalsById: new Map(externals.map((x) => [x.id, x])),
+    // «عقارك معروضٌ عند غيرك» (المرحلة ٤٥). الكشفُ نفسه قائمٌ منذ المرحلة ٣٢، لكنه كان
+    // في **صفحة الصحّة وحدها** — وهي صفحة تُفتح حين تشكّ لا كلَّ يوم. وهذا ليس خبرًا
+    // إحصائيًّا يُراجَع عند الفراغ: إمّا مالكٌ أعطى عقاره لاثنين، وإمّا إعلانٌ بلا ترخيصٍ
+    // باسمك — وكلاهما مكالمةُ اليوم لا مكالمةَ الشهر القادم.
+    //
+    // وما كان **رصدَك أنت** (جوّال المعلن جوّالُك) يُستبعد من هنا: هو ملاحظةُ بياناتٍ
+    // مكرّرة، ومكانُها صفحة الصحّة كما كانت.
+    poached: externalDuplicates({
+      properties: ctx.properties, externals,
+      myPhones: [company.phone].filter(Boolean),
+    }).filter((x) => x.advertiser !== 'me'),
   };
 }
 
@@ -192,6 +204,10 @@ async function loadData() {
 
 /** عبارة التأخّر: «تأخّر ١٢ يومًا» أصدق من تاريخٍ يُحسب في الذهن. */
 function dueWhen(r) {
+  // قسطُ عمولةٍ بلا موعد، أو عمولةٌ لم تُجدول (المرحلة ٤٥): يُنسبان إلى تاريخ الصفقة كي
+  // لا يختفيا من المستحقّات — **فلا يُقال عنهما «يستحق اليوم»**، إذ لا موعد لهما أصلًا،
+  // وتاريخُ الصفقة موضعُ عرضٍ لا موعدُ استحقاق.
+  if ((r.instalment && !r.instalment.dueAt) || r.unscheduled) return 'بلا موعدٍ محدَّد';
   if (r.days > 0) return `تأخّر ${daysWord(r.days)}${r.dated ? '' : ' عن تاريخه'}`;
   if (r.days === 0) return 'يستحق اليوم';
   return `يستحق بعد ${daysWord(-r.days)}`;
@@ -373,17 +389,35 @@ async function markPaymentPaid(event, r) {
   build(document.getElementById('page'), await loadData());
 }
 
-/** قبض العمولة من «يومي» مباشرة: لا صفحة للصفقات، وفتح المطابقات لأجل هذا تكلّف خطوات. */
+/**
+ * قبض العمولة من «يومي» مباشرة: فتح صفحة الصفقات لأجل هذا يكلّف خطوات.
+ *
+ * **وبالأقساط يُقبض القسط وحده** (المرحلة ٤٥): الصفُّ هنا قسطٌ لا صفقة، فوسمُ الصفقة
+ * كلِّها مقبوضةً لأنك قبضتَ نصفها كذبٌ يمحو النصف الباقي من مستحقّاتك.
+ */
 async function markCommissionPaid(event, r) {
   event.preventDefault();
+  const what = r.instalment ? `قسط ${formatSAR(r.remaining)}` : `عمولة ${formatSAR(r.remaining)}`;
   const ok = await confirmDialog({
-    title: 'قبض العمولة',
-    message: `تأكيد قبض عمولة ${formatSAR(r.remaining)} لصفقة ${formatDate(r.basis)}؟`,
-    confirmText: 'قُبضت',
+    title: r.instalment ? 'قبض قسط العمولة' : 'قبض العمولة',
+    message: `تأكيد قبض ${what} لصفقة ${formatDate(r.deal?.date || r.basis)}؟`,
+    confirmText: 'قُبض',
   });
   if (!ok) return;
-  await repo.deals.update(r.id, { commissionPaidAt: new Date().toISOString() });
-  toast('سُجّل قبض العمولة', 'success');
+  const now = new Date().toISOString();
+  if (r.instalment) {
+    const rows = (r.deal.commissionPayments || []).map((p) => (p.id === r.instalment.id ? { ...p, paidAt: now } : p));
+    const done = rows.filter((p) => p.paidAt).reduce((a, p) => a + (Number(p.amount) || 0), 0) >= (Number(r.deal.commission) || 0);
+    await repo.deals.update(r.dealId, { commissionPayments: rows, commissionPaidAt: done ? now : null });
+  } else if (r.unscheduled) {
+    // ما لم يُجدول: يُقبض بإضافته قسطًا مقبوضًا، فلا يضيع أثرُه ولا يُوسم الباقي مقبوضًا.
+    const rows = [...(r.deal.commissionPayments || []), { dueAt: r.deal.date || null, amount: r.remaining, paidAt: now, note: 'غير مجدول' }];
+    const done = rows.filter((p) => p.paidAt).reduce((a, p) => a + (Number(p.amount) || 0), 0) >= (Number(r.deal.commission) || 0);
+    await repo.deals.update(r.dealId, { commissionPayments: rows, commissionPaidAt: done ? now : null });
+  } else {
+    await repo.deals.update(r.id, { commissionPaidAt: now });
+  }
+  toast(r.instalment || r.unscheduled ? 'سُجّل قبض القسط' : 'سُجّل قبض العمولة', 'success');
   window.dispatchEvent(new CustomEvent('kassab:data-changed'));
   const container = document.getElementById('page');
   build(container, await loadData());
@@ -532,6 +566,29 @@ function build(container, d) {
       { href: '#/publish', hrefText: 'الطلبات →', tone: 'today-warn' }));
   }
 
+  /* عقارك معروضٌ عند غيرك (المرحلة ٤٥) — الكشف قائمٌ منذ ٣٢ وكان في صفحة الصحّة وحدها */
+  if (d.poached.length) {
+    grid.append(section('عقارك معروضٌ عند غيرك', d.poached.length,
+      el('div', {},
+        el('p', { class: 'muted small', text: 'عرضٌ خارجيّ بالمدينة والحي والنوع نفسها، ومساحته وسعره قريبان من عقارك.'
+          + ' إمّا مالكٌ أعطاه لوسيطٍ آخر أيضًا، وإمّا إعلانٌ عن عقارك بلا علمك — وكلاهما مكالمةٌ اليوم.' }),
+        ...d.poached.slice(0, 6).map((x) => row(
+          el('span', {}, `${typeLabel(d.lists, x.property.type)} — ${[x.property.district, x.property.city].filter(Boolean).join('، ')}`,
+            x.advertiser === 'unknown' ? badge('المعلن غير معروف', '') : badge('معلنٌ آخر', 'badge-warn')),
+          // فرقُ السعر هو الخبر: أرخصَ منك يسحب مشتريك، وأغلى يُفسد سعرك في الحي.
+          x.priceGap == null
+            ? 'أحدهما بلا سعر — راجعه بنفسك'
+            : (x.priceGap === 0
+              ? 'بالسعر نفسه'
+              : `${x.priceGap > 0 ? 'أغلى' : 'أرخص'} منك بـ${formatSAR(Math.abs(x.priceGap))}`),
+          el('div', { class: 'row' },
+            x.advertiserPhone
+              ? el('a', { class: 'btn btn-ghost btn-sm', href: `tel:${x.advertiserPhone}`, text: '📞', title: `اتصل بالمعلن ${formatPhone(x.advertiserPhone)}` })
+              : null,
+            el('a', { class: 'btn btn-sm', href: `#/properties/${x.property.id}`, text: 'العقار' }))))),
+      { href: '#/health', hrefText: 'صحة البيانات →', tone: 'today-warn' }));
+  }
+
   /* عملاء ينتظرون ردّك (المرحلة ٢٣) — أول لوحة لأن التأخير هنا يكلّف عميلًا لا وقتًا */
   if (d.waiting.length) {
     grid.append(section('ينتظرون ردّك', d.waiting.length,
@@ -563,7 +620,12 @@ function build(container, d) {
         el('p', { class: 'strong', text: `${formatSAR(d.due.total)} لك عند الناس`
           + (d.due.overdueCount ? ` — منها ${formatSAR(d.due.overdueTotal)} تجاوزت استحقاقها` : '') }),
         ...d.due.rows.slice(0, 8).map((r) => row(
-          r.kind === 'commission' ? `عمولة صفقة ${formatDate(r.basis)}`
+          r.kind === 'commission'
+            ? (r.instalment
+              ? `قسط عمولة${r.instalment.note ? ` — ${r.instalment.note}` : ''} · صفقة ${formatDate(r.deal?.date)}`
+              : (r.unscheduled
+                ? `عمولة غير مجدولة · صفقة ${formatDate(r.deal?.date)}`
+                : `عمولة صفقة ${formatDate(r.basis)}`))
             : r.kind === 'payment' ? `دفعة إيجار${r.payment.note ? ` — ${r.payment.note}` : ''}`
               : `فاتورة ${r.number || 'بلا رقم'}`,
           `${formatSAR(r.remaining)} · ${dueWhen(r)}${r.state === 'partial' ? ' · مقبوضة جزئيًا' : ''}`

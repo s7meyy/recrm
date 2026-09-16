@@ -17,6 +17,7 @@ import { formatPhone } from '../util/phone.js';
 import { findDuplicates, suggestKeeper } from '../util/duplicates.js';
 import { audioNoteField, audioPlayer } from '../util/audio-note.js';
 import { capped, PAGE_SIZE } from '../util/render-cap.js';
+import { isArchived, archiveCandidates } from '../util/archive.js';
 
 const GROUPS = [['role', 'الدور'], ['stage', 'المرحلة'], ['tag', 'التصنيف']];
 const VALUES = { role: (c) => c.roles || [], stage: (c) => [c.stage], tag: (c) => c.tags || [] };
@@ -30,7 +31,7 @@ function routeClientId() {
 
 export async function render(container) {
   const ctx = {
-    container, query: '',
+    container, query: '', showArchived: false,
     filters: Object.fromEntries(GROUPS.map(([k]) => [k, new Set()])),
     clients: [], properties: [], lists: null, nodes: {},
   };
@@ -101,6 +102,8 @@ function buildLayout(ctx) {
 /* ===== الفرز ===== */
 
 function passes(ctx, c, exceptGroup = null) {
+  // المؤرشف خارج القائمة ما لم يُطلَب (المرحلة ٤٥) — **ولا يُحذف**: رقاقةٌ تُظهره.
+  if (!ctx.showArchived && isArchived(c)) return false;
   for (const [g] of GROUPS) {
     if (g === exceptGroup) continue;
     const set = ctx.filters[g];
@@ -141,12 +144,54 @@ function renderFilters(ctx) {
     }
     wrap.append(el('div', { class: 'filter-row' }, el('span', { class: 'filter-label', text: label }), chips));
   }
+  /* الأرشيف (المرحلة ٤٥): رقاقةٌ تقول كم طُوي، لا إخفاءٌ صامت */
+  const archivedCount = ctx.clients.filter(isArchived).length;
+  const candidates = archiveCandidates(ctx.clients);
+  if (archivedCount || candidates.length) {
+    const chips = el('div', { class: 'chips' });
+    if (archivedCount) {
+      chips.append(el('button', {
+        type: 'button', class: `chip${ctx.showArchived ? ' active' : ''}`,
+        onClick: () => { ctx.showArchived = !ctx.showArchived; renderFilters(ctx); renderList(ctx); },
+      }, ctx.showArchived ? 'أخفِ المؤرشف' : '+ المؤرشف', el('span', { class: 'chip-count', text: String(archivedCount) })));
+    }
+    if (candidates.length) {
+      chips.append(el('button', {
+        type: 'button', class: 'btn btn-sm',
+        text: `أرشف المغلقين منذ سنة (${formatNumber(candidates.length)})`,
+        onClick: () => bulkArchive(ctx, candidates),
+      }));
+    }
+    wrap.append(el('div', { class: 'filter-row' }, el('span', { class: 'filter-label', text: 'الأرشيف' }), chips));
+  }
+
   if (GROUPS.some(([g]) => ctx.filters[g].size)) {
     wrap.append(el('div', {}, el('button', {
       type: 'button', class: 'btn btn-ghost btn-sm', text: 'مسح الفرز',
       onClick: () => { for (const [g] of GROUPS) ctx.filters[g].clear(); renderFilters(ctx); renderList(ctx); },
     })));
   }
+}
+
+/**
+ * أرشفةٌ بالجملة (المرحلة ٤٥) — بعددٍ يُقال قبلها وبقرارٍ يُطلب.
+ *
+ * ولا تُنفَّذ وحدها في الخلفية: تغييرُ آلاف السجلّات بلا أن تطلبه أسوأ من فوضى القائمة.
+ */
+async function bulkArchive(ctx, candidates) {
+  const ok = await confirmDialog({
+    title: 'أرشفة المغلقين',
+    message: `المرحلة «أُبرمت» أو «مغلق»، وبلا تعديلٍ منذ سنة: ${countOf(candidates.length, 'عميل')}.`
+      + '\n\nالأرشفة تُخرجهم من هذه القائمة وحدها — لا تحذف شيئًا، ولا تغيّر تقاريرك ولا أرقام الداشبورد،'
+      + ' ويعودون بضغطةٍ على «+ المؤرشف».',
+    confirmText: 'أرشفهم',
+  });
+  if (!ok) return;
+  const at = new Date().toISOString();
+  for (const c of candidates) await repo.clients.update(c.id, { archivedAt: at });
+  toast(`أُرشف ${countOf(candidates.length, 'عميل')}`, 'success');
+  window.dispatchEvent(new CustomEvent('kassab:data-changed'));
+  await refresh(ctx);
 }
 
 /* ===== القائمة ===== */
@@ -201,7 +246,8 @@ function renderList(ctx) {
   const head = el('tr', {}, ['الأولوية', 'الاسم', 'الجوال', 'الأدوار', 'المرحلة', 'التصنيفات', 'آخر تواصل', 'المتابعة القادمة'].map((t) => el('th', { text: t })));
   const body = el('tbody', {}, visible.map((c) => el('tr', { class: `row-priority-${clientPriority(c)}`, onClick: () => openDetail(ctx, c.id) },
     el('td', {}, scoreBadge(ctx, c)),
-    el('td', { class: 'strong' }, c.name || el('span', { class: 'muted', text: 'بلا اسم' }), sourceBadge(c.referralSource)),
+    el('td', { class: 'strong' }, c.name || el('span', { class: 'muted', text: 'بلا اسم' }), sourceBadge(c.referralSource),
+      isArchived(c) ? badge('مؤرشف', '') : null),
     el('td', {}, phoneLink(c.phone)),
     el('td', {}, (c.roles || []).map((r) => labelFor(ENUMS.clientRoles, r)).join('، ') || '—'),
     el('td', {}, stageBadge(c.stage)),
@@ -474,6 +520,21 @@ async function openForm(ctx, existing) {
           el('span', { class: 'field-hint', text: 'يُخرجه من لوحات «المتأخرون» و«ينتظرون ردّك» — ويبقى في قوائمه وسجلّه كما هو.' })),
         labeled('الملاحظات', notesInput, { full: true }))),
     footer: [
+      // أرشفةُ سجلٍّ بعينه (المرحلة ٤٥) — وليست حذفًا، فزرُّها ليس أحمر.
+      isEdit ? el('button', {
+        type: 'button', class: 'btn btn-ghost',
+        text: isArchived(existing) ? 'أعِدْه من الأرشيف' : 'أرشفه',
+        title: isArchived(existing)
+          ? 'يعود إلى القائمة اليومية'
+          : 'يخرج من القائمة اليومية ويبقى كما هو في تقاريرك وأرقامك',
+        onClick: async () => {
+          await repo.clients.update(existing.id, { archivedAt: isArchived(existing) ? null : new Date().toISOString() });
+          modal.close();
+          toast(isArchived(existing) ? 'عاد من الأرشيف' : 'أُرشف', 'success');
+          await refresh(ctx);
+        },
+      }) : null,
+      el('span', { class: 'spacer' }),
       el('button', { type: 'button', class: 'btn btn-ghost', text: 'إلغاء', onClick: () => modal.close() }),
       saveBtn,
     ],
@@ -488,7 +549,9 @@ async function openForm(ctx, existing) {
 function drawDupButton(ctx) {
   const btn = ctx.nodes.dupBtn;
   if (!btn) return;
-  const pairs = findDuplicates(ctx.clients);
+  // المؤرشف خارج فحص التكرار (المرحلة ٤٥): دمجُ ما طويتَه عمدًا ليس عملًا تريده،
+  // وهذا أثقلُ فحصٍ في الصفحة لأنه يقارن كلَّ عميلٍ بكلّ عميل.
+  const pairs = findDuplicates(ctx.clients.filter((c) => !isArchived(c)));
   btn.hidden = pairs.length === 0;
   btn.textContent = `عملاء مكرّرون (${formatNumber(pairs.length)})`;
 }
@@ -505,7 +568,7 @@ function openDuplicates(ctx) {
 
   const draw = async () => {
     clear(body);
-    const pairs = findDuplicates(ctx.clients);
+    const pairs = findDuplicates(ctx.clients.filter((c) => !isArchived(c)));
     if (!pairs.length) {
       body.append(el('p', { class: 'muted small', text: 'لا تكرار — كل عميل سجلّ واحد.' }));
       return;

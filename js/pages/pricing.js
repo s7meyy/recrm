@@ -10,9 +10,9 @@
 import { repo } from '../data/repository.js';
 import { getLists, typeLabel } from '../data/settings.js';
 import { priceSamples, estimatePrice, purposeKey } from '../util/price-stats.js';
-import { el, clear, labeled, selectEl, badge, emptyState, toast } from '../util/dom.js';
+import { el, clear, labeled, selectEl, checkbox, badge, emptyState, toast } from '../util/dom.js';
 import { formatSAR, formatArea, formatNumber, formatDate, countOf } from '../util/format.js';
-import { monthlyInstallment, rentalYield } from '../util/finance.js';
+import { monthlyInstallment, rentalYield, closingCosts } from '../util/finance.js';
 
 const MIN_SAMPLE = 3;
 
@@ -169,6 +169,7 @@ function draw(ctx) {
       }))));
 
   area.append(installmentPanel(Math.round(result.estimate)));
+  area.append(closingPanel(Math.round(result.estimate)));
   area.append(yieldPanel(Math.round(result.estimate)));
   area.append(comparablesTable(ctx, result.comparables, 'العقارات المقارَنة — من أين جاء الرقم'));
 }
@@ -207,6 +208,78 @@ function installmentPanel(defaultPrice) {
       labeled('المدة (سنوات)', yearsInput)),
     out,
     el('p', { class: 'muted small', text: 'حساب استرشادي بمعادلة القسط الثابت — ليس عرض تمويل. لا يشمل الرسوم الإدارية ولا التأمين ولا الدعم السكني، والنِّسب تختلف بين البنوك وبحسب ملف العميل.' }));
+  recalc();
+  return panel;
+}
+
+/**
+ * «وكم أحتاج نقدًا؟» (المرحلة ٤٥) — السؤال الذي يلي القسط، وكان بلا جواب.
+ *
+ * والقسطُ وحده يخدع: مشترٍ حسب قسطه فوجده يناسبه، ثم جاء يوم الإفراغ فوجد فوق دفعته
+ * الأولى رسومَ تصرّفٍ وعمولةً وضريبتَها ورسومَ بنك — فانكسرت الصفقة في آخرها. وهذه
+ * تضع الرقم أمامه **من أوّلها**، وبندًا بندًا كي يراجعه لا كي يصدّقه.
+ */
+function closingPanel(defaultPrice) {
+  const priceInput = el('input', { class: 'input', type: 'number', min: '0', step: '1000', value: defaultPrice });
+  const downInput = el('input', { class: 'input', type: 'number', min: '0', max: '100', step: '1', value: 10 });
+  const rettInput = el('input', { class: 'input', type: 'number', min: '0', max: '20', step: '0.5', value: 5 });
+  const commissionInput = el('input', { class: 'input', type: 'number', min: '0', max: '20', step: '0.25', value: 2.5 });
+  const vatInput = el('input', { class: 'input', type: 'number', min: '0', max: '30', step: '1', value: 15 });
+  const bankInput = el('input', { class: 'input', type: 'number', min: '0', max: '10', step: '0.25', value: 1 });
+  const otherInput = el('input', { class: 'input', type: 'number', min: '0', step: '500', value: 0 });
+  const exemptWrap = checkbox('معفًى من رسوم التصرفات', {});
+  const exemptBox = exemptWrap.querySelector('input');
+  const out = el('div', {});
+
+  const recalc = () => {
+    clear(out);
+    const r = closingCosts({
+      price: Number(priceInput.value),
+      downPaymentRate: Number(downInput.value),
+      rettRate: Number(rettInput.value),
+      rettExempt: exemptBox.checked,
+      commissionRate: Number(commissionInput.value),
+      vatRate: Number(vatInput.value),
+      bankFeeRate: Number(bankInput.value),
+      otherFees: Number(otherInput.value),
+    });
+    if (!r) { out.append(el('p', { class: 'muted small', text: 'اكتب سعرًا أوّلًا.' })); return; }
+    out.append(
+      el('div', { class: 'stat-strip' },
+        fact(formatSAR(Math.round(r.cashNeeded)), 'المطلوب نقدًا'),
+        fact(formatSAR(Math.round(r.financed)), 'ما يموّله البنك'),
+        fact(formatSAR(Math.round(r.cashNeeded - r.down)), 'فوق الدفعة الأولى')),
+      el('div', { class: 'table-wrap' }, el('table', { class: 'table' },
+        el('tbody', {}, [
+          ...r.lines.map((l) => el('tr', {},
+            el('td', { text: l.label }),
+            el('td', { class: 'num', text: formatSAR(Math.round(l.amount)) }))),
+          el('tr', {},
+            el('td', {}, el('span', { class: 'strong', text: 'المجموع النقدي' })),
+            el('td', { class: 'num' }, el('span', { class: 'strong', text: formatSAR(Math.round(r.cashNeeded)) }))),
+        ]))));
+  };
+  const inputs = [priceInput, downInput, rettInput, commissionInput, vatInput, bankInput, otherInput];
+  for (const input of inputs) input.addEventListener('input', recalc);
+  exemptBox.addEventListener('change', recalc);
+
+  const panel = el('div', { class: 'panel', style: { marginTop: '18px' } },
+    el('h2', { class: 'section-title', text: 'وكم يحتاج نقدًا يوم الإفراغ؟' }),
+    el('div', { class: 'form-grid' },
+      labeled('السعر', priceInput),
+      labeled('الدفعة الأولى (٪)', downInput),
+      labeled('رسوم التصرفات العقارية (٪)', rettInput, { hint: 'الأساس ٥٪ من قيمة التصرّف' }),
+      labeled('عمولة الوساطة (٪)', commissionInput),
+      labeled('ضريبة القيمة المضافة (٪)', vatInput, { hint: 'على العمولة لا على العقار' }),
+      labeled('رسوم البنك الإدارية (٪)', bankInput, { hint: 'من مبلغ التمويل، وبسقفٍ 5,000' }),
+      labeled('رسومٌ أخرى (ريال)', otherInput, { hint: 'تقييم، إفراغ، نقل عدّاد…' }),
+      el('div', { class: 'field' },
+        el('span', { class: 'field-label', text: 'الإعفاء' }),
+        exemptWrap)),
+    out,
+    el('p', { class: 'muted small', text: 'حساب استرشادي بالنِّسب التي تكتبها أنت — ليس فتوى ضريبية ولا عرض تمويل.'
+      + ' رسوم التصرفات العقارية لها إعفاءات (منها تملّك المواطن مسكنه الأول ضمن سقفٍ محدَّد)، فإن كانت حالته منها فعلِّم الإعفاء.'
+      + ' ورسوم البنك وسقفها يختلفان بين بنكٍ وآخر — راجعهما قبل أن تعد عميلك برقم.' }));
   recalc();
   return panel;
 }

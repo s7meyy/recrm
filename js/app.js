@@ -324,7 +324,8 @@ async function autoVaultBackup() {
     if (hours < VAULT_EVERY_HOURS) return;
     const counts = await repo.counts();
     if (!DATA_STORES.some((s) => counts[s] > 0)) return; // لا ترفع قاعدة فارغة فوق نسخة صالحة
-    // البيانات وحدها: سريعة ولا تتجاوز حدّ الرفعة مهما كثرت سجلاتك.
+    // البيانات وحدها، وتُقطَّع كتلًا إن كبرت (المرحلة ٤٥). وكان مكتوبًا هنا أنها «لا
+    // تتجاوز حدّ الرفعة مهما كثرت سجلاتك» — وهو غيرُ صحيح: آلافُ عميلٍ بمطابقاتهم تبلغه.
     const res = await uploadBackup(vault.passphrase);
     await setVaultSettings({ lastUploadAt: res.at });
     await markExported();
@@ -345,6 +346,31 @@ async function autoVaultBackup() {
   } catch (err) {
     console.warn('تعذر رفع كتل الصور تلقائيًا', err);
   }
+}
+
+/* ===== المزامنة بين الأجهزة (المرحلة ٤٥) ===== */
+
+/**
+ * يبدأ دورة المزامنة إن فُعّلت، ويقول للشاشة إن جاء الدمجُ بجديد.
+ *
+ * **ولا يُعاد تحميل الصفحة تلقائيًّا.** الاسترجاعُ اليدويّ يفعل ذلك لأنك طلبتَه ووقفتَ
+ * تنتظره؛ أما هذه فتعمل وأنت تكتب — وإعادةُ تحميلٍ في أثناء كتابتك تمحو ما لم تحفظه.
+ * فيُقال لك ما وصل، والتحديثُ بيدك.
+ */
+function startDeviceSync() {
+  import('./data/sync.js').then(({ startSync }) => {
+    window.addEventListener('kassab:synced', (e) => {
+      const s = e.detail || {};
+      const changed = (s.added || 0) + (s.updated || 0);
+      if (!changed) return;
+      const box = el('div', { class: 'toast toast-row' },
+        el('span', { text: `وصل ${countOf(changed, 'سجل')} من جهازك الآخر.` }),
+        el('button', { type: 'button', class: 'btn btn-sm', text: 'حدّث الشاشة', onClick: () => location.reload() }));
+      document.getElementById('toast-root')?.append(box);
+      setTimeout(() => box.remove(), 12000);
+    });
+    return startSync();
+  }).catch((err) => console.warn('تعذّر بدء المزامنة', err));
 }
 
 /* ===== البيانات التجريبية عند أول تشغيل ===== */
@@ -431,6 +457,7 @@ async function init() {
   // كان الداخل مساعدًا. والمنع الحقيقي على الخادم لا هنا.
   applyRole().catch(() => {});
   autoVaultBackup(); // بلا await: لا يؤخّر ظهور الصفحة
+  startDeviceSync();  // المزامنة بين الأجهزة (المرحلة ٤٥) — بلا await كذلك
   registerServiceWorker();
 }
 
@@ -446,7 +473,7 @@ async function initAutoLock() {
   startAutoLock({
     minutes,
     onWarn: (seconds, stay) => {
-      const box = el('div', { class: 'toast toast-error auto-lock-warn' },
+      const box = el('div', { class: 'toast error toast-row' },
         el('span', { text: `سيُقفل التطبيق بعد ${countOf(seconds, 'ثانية')} لعدم النشاط.` }),
         el('button', { type: 'button', class: 'btn btn-sm', text: 'ابقَ مفتوحًا', onClick: () => { stay(); box.remove(); } }));
       document.getElementById('toast-root')?.append(box);
