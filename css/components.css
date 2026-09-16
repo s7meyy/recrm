@@ -592,6 +592,12 @@ input[type="tel"].input, input[type="email"].input, input[type="url"].input {
   .print-photos { display: grid; grid-template-columns: 1fr 1fr; gap: 6mm; margin-bottom: 8mm; }
   .print-photo { width: 100%; height: 55mm; object-fit: cover; border: 1px solid #ccc; }
   .print-table th { text-align: right; background: #f4f4f4; }
+  /* خانتا التوقيع: **كانتا بلا أنماطٍ إطلاقًا** منذ اتفاقية الوساطة (المرحلة ٣١) — فتُطبع
+     الاتفاقيةُ بسطرَي «الطرف الأول/الثاني» متلاصقَين بلا خطٍّ يُوقَّع عليه. وسندُ القبض
+     (المرحلة ٤٦) يحتاجهما مثلها، فكُتبتا لهما معًا. */
+  .print-signatures { display: flex; gap: 20mm; margin-top: 18mm; break-inside: avoid; }
+  .print-signatures > div { flex: 1; font-size: 11pt; }
+  .print-sign-line { border-bottom: 1px solid #000; height: 14mm; }
   /* تقرير المقارنة السوقية (المرحلة ٢٦) */
   .print-section-title { font-size: 13pt; margin: 14px 0 6px; border-bottom: 1px solid #999; padding-bottom: 3px; }
   .print-cma-range { margin-bottom: 6px; }
@@ -1004,3 +1010,10 @@ body.modal-open .voice-dock { display: none; }
 .extract-fields { align-items: center; }
 .chip-copy { cursor: pointer; }
 .chip-copy:hover { border-color: var(--accent); }
+
+
+/* فرقُ الفترة عن سابقتها (المرحلة ٤٦): لونٌ **ودلالةٌ نصّيّة معه** — السهمُ ▲▼ يقرؤه
+   من لا يفرّق بين الأخضر والأحمر، فلا يقوم اللون وحده بالمعنى. */
+.delta { margin-inline-start: 6px; font-weight: 600; white-space: nowrap; unicode-bidi: isolate; }
+.delta-up { color: var(--ok); }
+.delta-down { color: var(--danger); }

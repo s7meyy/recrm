@@ -950,6 +950,100 @@ const properties = Object.assign(makeEntity('properties'), {
 
     return matches;
   },
+
+  /** ما سينتقل لو دُمج `dropId` في `keepId` — يُعرض عليك قبل الدمج (المرحلة ٤٦). */
+  async mergeImpact(keepId, dropId) {
+    const [matchRows, dealRows, showingRows, tasks, images, audio, drop] = await Promise.all([
+      adapter.getByIndex('matches', 'propertyId', dropId),
+      adapter.getByIndex('deals', 'propertyId', dropId),
+      adapter.getByIndex('showings', 'propertyId', dropId),
+      adapter.getAll('tasks'),
+      adapter.getByIndex('images', 'entityId', dropId),
+      adapter.getByIndex('audio', 'entityId', dropId),
+      this.get(dropId),
+    ]);
+    return {
+      matches: matchRows.length, deals: dealRows.length, showings: showingRows.length,
+      tasks: tasks.filter((t) => t.linkType === 'property' && t.linkId === dropId).length,
+      images: images.length, audio: audio.length,
+      priceHistory: (drop?.priceHistory || []).length,
+    };
+  },
+
+  /**
+   * دمج عقارين (المرحلة ٤٦): كلُّ ما يشير إلى `dropId` يصير يشير إلى `keepId`، ثم يُحذف المكرّر.
+   *
+   * **بنفس عهد دمج العملاء: لا يضيع شيء ولا يُطمس شيء.**
+   *   • المرتبطات (مطابقات · صفقات · معاينات · مهام · صور · صوتيّات) تُنقل لا تُحذف.
+   *   • الحقولُ الفارغة في المُبقى تُملأ من المحذوف، و**المملوءةُ لا تُمسّ أبدًا** — فسعرٌ
+   *     كتبتَه بيدك لا يُستبدل بسعرٍ أقدم لأن سجلَّه أغنى.
+   *   • تاريخُ السعر يُدمج ويُرتَّب زمنيًّا، فرحلةُ السعر تعود قطعةً واحدة.
+   *   • الملاحظاتُ تُلحق مفصولةً بسطرٍ يقول من أين جاءت.
+   *
+   * وهو **غير قابل للتراجع**: الشاشة تسأل، والمحذوف يذهب إلى سلّة المحذوفات كغيره.
+   */
+  async merge(keepId, dropId) {
+    if (keepId === dropId) throw new Error('لا يُدمج سجل في نفسه');
+    const [keep, drop] = await Promise.all([this.get(keepId), this.get(dropId)]);
+    if (!keep || !drop) throw new Error('أحد السجلين غير موجود');
+
+    const stamp = { updatedAt: nowISO(), updatedBy: currentUser.id };
+    const [matchRows, dealRows, showingRows, tasks, images, audio] = await Promise.all([
+      adapter.getByIndex('matches', 'propertyId', dropId),
+      adapter.getByIndex('deals', 'propertyId', dropId),
+      adapter.getByIndex('showings', 'propertyId', dropId),
+      adapter.getAll('tasks'),
+      adapter.getByIndex('images', 'entityId', dropId),
+      adapter.getByIndex('audio', 'entityId', dropId),
+    ]);
+    for (const m of matchRows) await adapter.put('matches', { ...m, propertyId: keepId, ...stamp });
+    for (const d of dealRows) await adapter.put('deals', { ...d, propertyId: keepId, ...stamp });
+    for (const sh of showingRows) await adapter.put('showings', { ...sh, propertyId: keepId, ...stamp });
+    for (const t of tasks) {
+      if (t.linkType === 'property' && t.linkId === dropId) await adapter.put('tasks', { ...t, linkId: keepId, ...stamp });
+    }
+    // الصور والصوتيّات تُنسب بـ`entityId`، ومصفوفة `images` في العقار تحمل معرّفاتها.
+    for (const img of images) await adapter.put('images', { ...img, entityId: keepId });
+    for (const a of audio) await adapter.put('audio', { ...a, entityId: keepId });
+
+    const notes = [
+      keep.notes,
+      drop.notes ? `— من السجل المدموج:\n${drop.notes}` : '',
+    ].filter(Boolean).join('\n');
+
+    const priceHistory = [...(keep.priceHistory || []), ...(drop.priceHistory || [])]
+      .sort((a, b) => String(a.at || '').localeCompare(String(b.at || '')));
+
+    await adapter.put('properties', {
+      ...keep,
+      district: keep.district || drop.district,
+      type: keep.type || drop.type,
+      area: keep.area ?? drop.area,
+      price: keep.price ?? drop.price,
+      deedNumber: keep.deedNumber || drop.deedNumber,
+      ownerId: keep.ownerId || drop.ownerId,
+      location: keep.location || drop.location,
+      signboardImageId: keep.signboardImageId || drop.signboardImageId,
+      agreementSignedAt: keep.agreementSignedAt || drop.agreementSignedAt,
+      agreementDays: keep.agreementDays ?? drop.agreementDays,
+      agreementNumber: keep.agreementNumber || drop.agreementNumber,
+      agreementScopes: uniq([...(keep.agreementScopes || []), ...(drop.agreementScopes || [])]),
+      adLicense: keep.adLicense || drop.adLicense,
+      management: keep.management || drop.management,
+      referralSource: keep.referralSource || drop.referralSource,
+      purposes: uniq([...(keep.purposes || []), ...(drop.purposes || [])]),
+      images: uniq([...(keep.images || []), ...(drop.images || [])]),
+      typeFields: { ...(drop.typeFields || {}), ...(keep.typeFields || {}) },
+      extra: { ...(drop.extra || {}), ...(keep.extra || {}) },
+      priceHistory,
+      notes,
+      createdAt: [keep.createdAt, drop.createdAt].filter(Boolean).sort()[0] || keep.createdAt,
+      ...stamp,
+    });
+
+    await this.remove(dropId);   // إلى السلّة كغيره، بشاهدِ حذفٍ تحترمه المزامنة
+    return this.get(keepId);
+  },
 });
 
 const externalListings = Object.assign(makeEntity('externalListings'), {

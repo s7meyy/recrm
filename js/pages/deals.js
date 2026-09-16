@@ -18,6 +18,7 @@ import {
 } from '../util/dom.js';
 import { formatDate, formatSAR, formatNumber, countWord, toInputDate, fromInputDate } from '../util/format.js';
 import { commissionState } from '../util/receivables.js';
+import { printReceipt } from '../util/property-print.js';
 
 const clientName = (c) => (c ? (c.name || c.phone || 'عميل') : '');
 
@@ -136,6 +137,21 @@ function dealRow(ctx, d) {
       el('button', { type: 'button', class: 'btn btn-sm', text: 'تعديل', onClick: () => openForm(ctx, d) })));
 }
 
+/** سندُ قبضٍ لقسط عمولة — ببيانات المكتب وترخيصه (المرحلة ٤٦). */
+async function instalmentReceipt(ctx, instalment, { clientId, propertyId, date }) {
+  const company = await getCompany();
+  const client = ctx.clientById.get(clientId);
+  await printReceipt({
+    amount: instalment.amount,
+    receivedAt: instalment.paidAt,
+    from: client ? clientName(client) : '',
+    about: propertyId ? propertyLabel(ctx, propertyId) : '',
+    statement: ['قسط عمولة وساطة', instalment.note || '', date ? `عن صفقة ${formatDate(fromInputDate(date))}` : '']
+      .filter(Boolean).join(' · '),
+    company,
+  });
+}
+
 /* ===== الاستمارة ===== */
 
 function openForm(ctx, deal) {
@@ -159,6 +175,46 @@ function openForm(ctx, deal) {
   const notesInput = el('textarea', { class: 'input', rows: 2, value: d.notes || '' });
   const invoiceBox = checkbox('أنشئ فاتورة بالعمولة لهذا العميل', { checked: false });
   const errorsBox = el('div', { class: 'form-errors', hidden: true });
+
+  /* حالة العقار بعد الصفقة (المرحلة ٤٦) — **العطب الذي تُصلحه**:
+   *
+   * تسجيلُ الصفقة من المطابقة يقفل العقار (`matches.js`)، وهذه الصفحةُ لم تكن تفعل شيئًا.
+   * فالعقار المبيع يبقى «متاحًا»: يُطابَق على طلبات عملائك فتعرض على مشترٍ ما بِيع،
+   * ويُنشر في صفحتك العامة، ويُحسب في مؤشّر سعر الحي **مخزونًا حيًّا** لا صفقةً منجزة.
+   * وهذه الصفحةُ بُنيت أصلًا (المرحلة ٤٣) للبيعة التي تأتيك مباشرةً بلا مطابقة — أي
+   * للحالة التي **لا أحدَ فيها يقفل العقار بدلًا عنك**.
+   *
+   * **ولا يُخمَّن البيعُ من الإيجار:** هنا لا طلبَ يقول الغرض كما في المطابقة. فيُقترح
+   * بدلالةٍ ظاهرة (نهايةُ عقدٍ مكتوبة = إيجار، وإلا فغرضُ العقار نفسه)، **ويُعرض
+   * اختيارًا يُرى ويُغيَّر** — لا يقع صامتًا.
+   */
+  const statusSelect = selectEl({
+    options: [
+      { value: '', label: 'لا تُغيَّر' },
+      { value: 'sold', label: 'تم البيع' },
+      { value: 'rented', label: 'تم التأجير' },
+    ],
+    value: '',
+  });
+  const statusField = labeled('حالة العقار بعد الصفقة', statusSelect, {
+    hint: 'يُخرجه من المطابقة ومن النشر — فلا يُعرض على مشترٍ ما بِيع. و«لا تُغيَّر» تتركه كما هو.',
+  });
+  statusField.hidden = true;
+  const suggestStatus = () => {
+    const property = ctx.properties.find((x) => x.id === propertySelect.value);
+    // بلا عقارٍ مربوط لا حالةَ تُغيَّر؛ وما أُقفل من قبل لا يُسأل عنه ثانية.
+    const relevant = !!property && !['sold', 'rented'].includes(property.status);
+    statusField.hidden = !relevant;
+    if (!relevant) { statusSelect.value = ''; return; }
+    // في التعديل لا يُقترح شيء: الصفقةُ مسجَّلةٌ من قبل وقد أُقفل عقارُها بيدك.
+    if (isEdit) return;
+    const purposes = property.purposes || [];
+    const isLease = !!leaseEndInput.value || (purposes.includes('rent') && !purposes.includes('sale'));
+    statusSelect.value = isLease ? 'rented' : 'sold';
+  };
+  propertySelect.addEventListener('change', suggestStatus);
+  leaseEndInput.addEventListener('input', suggestStatus);
+  suggestStatus();
 
   /* أقساط العمولة (المرحلة ٤٥) — نصفٌ عند التوقيع ونصفٌ عند الإفراغ */
   const instalments = JSON.parse(JSON.stringify(d.commissionPayments || []));
@@ -203,7 +259,14 @@ function openForm(ctx, deal) {
         checked: !!p.paidAt,
         onChange: (e) => { p.paidAt = e.target.checked ? new Date().toISOString() : null; drawSummary(); },
       });
-      instWrap.append(el('div', { class: 'plan-step' }, due, amount, note, paidBox,
+      // سندُ القبض لقسطٍ قُبض فعلًا وحده (المرحلة ٤٦) — سندٌ عن مالٍ لم يصل ورقةٌ كاذبة.
+      const receiptBtn = el('button', {
+        type: 'button', class: 'icon-btn', text: '🧾', title: 'اطبع سند قبض لهذا القسط',
+        hidden: !p.paidAt,
+        onClick: () => instalmentReceipt(ctx, p, { clientId: clientSelect.value, propertyId: propertySelect.value, date: dateInput.value }),
+      });
+      paidBox.querySelector('input').addEventListener('change', (e) => { receiptBtn.hidden = !e.target.checked; });
+      instWrap.append(el('div', { class: 'plan-step' }, due, amount, note, paidBox, receiptBtn,
         el('button', {
           type: 'button', class: 'icon-btn', text: '✕', title: 'حذف القسط',
           onClick: () => { instalments.splice(i, 1); drawInstalments(); drawSummary(); },
@@ -265,8 +328,16 @@ function openForm(ctx, deal) {
         partnerShare: partnerShare.value === '' ? null : Number(partnerShare.value),
         notes: notesInput.value,
       };
+      // حالةُ العقار تُطبَّق في المسارين (جديدًا وتعديلًا): صفقةٌ قديمة تُدخلها اليوم
+      // عقارُها ما زال معروضًا في مخزونك، وهي أحقُّ ما يُقفل.
+      const newStatus = statusSelect.value;
+      const applyStatus = async () => {
+        if (!newStatus || !data.propertyId) return;
+        await repo.properties.update(data.propertyId, { status: newStatus });
+      };
       if (isEdit) {
         await repo.deals.update(d.id, data);
+        await applyStatus();
         toast('حُفظت التعديلات', 'success');
       } else {
         // مسار الصفقة يُنسخ من قالب الإعدادات لحظة الإنشاء — كما في مسار المطابقة تمامًا،
@@ -276,6 +347,7 @@ function openForm(ctx, deal) {
           .split('\n').map((line) => line.trim()).filter(Boolean)
           .map((label, i) => ({ key: `s${i + 1}`, label, done: false, doneAt: null }));
         await repo.deals.create({ ...data, checklist });
+        await applyStatus();
         if (invoiceBox.querySelector('input').checked) {
           if (!commission) toast('سُجّلت الصفقة — ولم تُنشأ فاتورة لأن العمولة فارغة', 'info', 5000);
           else {
@@ -334,6 +406,7 @@ function openForm(ctx, deal) {
         labeled('العمولة (ريال)', commissionInput),
         labeled('تاريخ قبض العمولة', paidInput, { hint: 'اتركه فارغًا إن لم تُقبض بعد — فتظهر في «مستحقات لم تُقبض». وإن جدولتَ أقساطًا أدناه فهي الحَكَم، ويُهمَل هذا الحقل.' }),
         labeled('نهاية عقد الإيجار', leaseEndInput, { hint: 'للإيجار فقط — يُذكّرك بالتجديد قبل شهر' }),
+        statusField,
         labeled('الوسيط الشريك', partnerName, { hint: 'اختياري' }),
         labeled('نصيب الشريك (ريال)', partnerShare),
         labeled('ملاحظات', notesInput, { full: true })),

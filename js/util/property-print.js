@@ -3,7 +3,7 @@
 // بلا مكتبة وبلا تصوير DOM (تصدير الصورة مرفوض بقرار المالك منذ المرحلة ٨).
 
 import { el, clear } from './dom.js';
-import { formatSAR, formatArea, formatDate, formatNumber, daysWord } from './format.js';
+import { formatSAR, formatArea, formatDate, formatNumber, daysWord, amountInWords } from './format.js';
 import { formatPhone } from './phone.js';
 import { getImageUrl, splitMedia } from '../data/images.js';
 import { labelFor, ENUMS, TYPE_FIELD_GROUPS } from '../data/schema.js';
@@ -256,4 +256,51 @@ export async function printCma(property, { lists, company = {}, owner = null, es
       'هذا التقرير مبني على بيانات هذا المكتب وحده (مخزونه وعروض معلنة رصدها وصفقات أتمّها) '
       + 'وقت طباعته، وهو تقديرٌ استرشادي للتفاوض — وليس تقييمًا عقاريًا معتمدًا ولا شهادة تقييم نظامية. '
       + (company.phone ? `للاستفسار: ${formatPhone(company.phone)}${company.name ? ` — ${company.name}` : ''}` : ''))));
+}
+
+
+/* ===== سند قبض (المرحلة ٤٦) ===== */
+
+/**
+ * سندُ قبضٍ يُطبع من الدفعة مباشرةً.
+ *
+ * **ما كان ناقصًا:** الدفعات مسجَّلةٌ منذ المرحلة ٢٤ (إيجارٌ) والمرحلة ٤٥ (أقساطُ عمولة)،
+ * **ولا شيء يعطي الدافعَ ورقة**. والفواتيرُ مبنيّةٌ لعمولتك أنت، لا لإيجارٍ تقبضه
+ * **نيابةً عن مالك** — ومن يدير أملاكًا يُسأل هذه الورقةَ في كلّ دفعة.
+ *
+ * **والمبلغُ يُكتب رقمًا وكتابةً**: الرقمُ وحده يُزاد عليه صفرٌ بقلم، والكتابةُ حارسُه.
+ *
+ * @param {object} o
+ * @param {number} o.amount المبلغ · @param {string} o.receivedAt تاريخ القبض
+ * @param {string} o.from ممّن قُبض · @param {string} o.about بمَ يتعلّق (عقارٌ أو صفقة)
+ * @param {string} o.statement بيانُ الدفعة (وصفُ القسط أو مدّةُ الإيجار)
+ * @param {string} o.number رقمُ السند إن وُجد
+ */
+export async function printReceipt({
+  amount, receivedAt, from = '', about = '', statement = '', number = '', company = {},
+} = {}) {
+  const value = Number(amount) || 0;
+  const rows = [
+    ['المبلغ', formatSAR(value)],
+    ['المبلغ كتابةً', amountInWords(value)],
+    ['استُلم من', from || '—'],
+    ['بتاريخ', formatDate(receivedAt || new Date().toISOString())],
+    ['وذلك عن', statement || '—'],
+    about ? ['العقار / الصفقة', about] : null,
+  ].filter(Boolean);
+
+  const page = el('article', { class: 'print-doc' },
+    await officeHeader(company, 'سند قبض', number ? `رقم ${number}` : ''),
+    el('table', { class: 'print-table' },
+      el('tbody', {}, rows.map(([k, v]) => el('tr', {},
+        el('th', { text: k, style: { width: '30%' } }),
+        el('td', { text: v }))))),
+    // التوقيعُ خانةٌ تُملأ بالقلم: سندٌ بلا توقيعٍ ورقةٌ لا حجّة فيها.
+    el('section', { class: 'print-signatures' },
+      el('div', {}, el('div', { text: 'المستلِم' }), el('div', { class: 'print-sign-line' })),
+      el('div', {}, el('div', { text: 'الدافع' }), el('div', { class: 'print-sign-line' }))),
+    company.footerNote ? el('div', { class: 'print-notes', text: company.footerNote }) : null,
+    el('div', { class: 'print-notes', text: 'هذا السند إقرارٌ باستلام المبلغ المذكور أعلاه فقط، ولا يُعدّ مخالصةً عن غيره.' }));
+
+  printNode(page);
 }

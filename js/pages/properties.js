@@ -13,7 +13,7 @@ import {
   el, clear, labeled, fieldGroup, selectEl, checkbox, badge, openModal, confirmDialog,
   promptDialog, toast, emptyState, debounce, allChip,
 } from '../util/dom.js';
-import { formatSAR, formatArea, formatDate, formatNumber, daysWord, toInputDate, fromInputDate, countOf } from '../util/format.js';
+import { formatSAR, formatArea, formatDate, formatNumber, relativeDays, daysWord, toInputDate, fromInputDate, countOf } from '../util/format.js';
 import { matchesQuery } from '../util/arabic.js';
 import { formatPhone } from '../util/phone.js';
 import { parseLocation, isShortMapLink, mapsLink, locationToText } from '../util/location.js';
@@ -31,7 +31,8 @@ import { adBlockers } from '../util/rega.js';
 import { propertyEvidence, priceDrops, MIN_SAMPLE } from '../util/property-evidence.js';
 import { historyBox } from '../util/history-view.js';
 import { capped, PAGE_SIZE } from '../util/render-cap.js';
-import { isArchived, archivePropertyCandidates } from '../util/archive.js';
+import { isArchived, archivePropertyCandidates, archiveRow } from '../util/archive.js';
+import { propertyDuplicates, suggestPropertyKeeper } from '../util/duplicates.js';
 import { parseOfferText } from '../data/listing-parse.js';
 import { runPlans } from '../util/plans.js';
 
@@ -139,6 +140,7 @@ function buildLayout(ctx) {
           title: 'اقرأ عقارًا من رسالة مالكٍ يعرضه عليك',
           onClick: () => openOfferPasteForm(ctx),
         }),
+        ctx.nodes.dupBtn = el('button', { type: 'button', class: 'btn', hidden: true, onClick: () => openPropertyDuplicates(ctx) }),
         el('button', { type: 'button', class: 'btn btn-primary', text: '+ إضافة عقار', onClick: () => openForm(ctx, null) }))),
   );
   ctx.nodes.search = search;
@@ -246,6 +248,21 @@ async function bulkArchiveProperties(ctx, candidates) {
   const at = new Date().toISOString();
   for (const p of candidates) await repo.properties.update(p.id, { archivedAt: at });
   toast(`أُرشف ${countOf(candidates.length, 'عقار')}`, 'success');
+  window.dispatchEvent(new CustomEvent('kassab:data-changed'));
+  await refresh(ctx);
+}
+
+/** التراجع عن آخر دفعة أرشفة (المرحلة ٤٦). */
+async function undoArchiveProperties(ctx, last) {
+  const ok = await confirmDialog({
+    title: 'إعادة آخر أرشفة',
+    message: `${countOf(last.rows.length, 'عقار')} أُرشف ${relativeDays(last.at)} — يعود إلى القائمة.`
+      + '\n\nوما أُرشف قبل هذه الدفعة يبقى مؤرشفًا.',
+    confirmText: 'أعِدْه',
+  });
+  if (!ok) return;
+  for (const p of last.rows) await repo.properties.update(p.id, { archivedAt: null });
+  toast(`عاد ${countOf(last.rows.length, 'عقار')}`, 'success');
   window.dispatchEvent(new CustomEvent('kassab:data-changed'));
   await refresh(ctx);
 }
@@ -360,25 +377,15 @@ function renderFilters(ctx) {
     wrap.append(el('div', { class: 'filter-row' }, el('span', { class: 'filter-label', text: label }), chips));
   }
   /* الأرشيف (المرحلة ٤٥) */
-  const archivedCount = ctx.properties.filter(isArchived).length;
-  const candidates = archivePropertyCandidates(ctx.properties);
-  if (archivedCount || candidates.length) {
-    const chips = el('div', { class: 'chips' });
-    if (archivedCount) {
-      chips.append(el('button', {
-        type: 'button', class: `chip${ctx.showArchived ? ' active' : ''}`,
-        onClick: () => { ctx.showArchived = !ctx.showArchived; renderFilters(ctx); renderList(ctx); },
-      }, ctx.showArchived ? 'أخفِ المؤرشف' : '+ المؤرشف', el('span', { class: 'chip-count', text: String(archivedCount) })));
-    }
-    if (candidates.length) {
-      chips.append(el('button', {
-        type: 'button', class: 'btn btn-sm',
-        text: `أرشف ما بِيع أو أُجِّر منذ سنة (${formatNumber(candidates.length)})`,
-        onClick: () => bulkArchiveProperties(ctx, candidates),
-      }));
-    }
-    wrap.append(el('div', { class: 'filter-row' }, el('span', { class: 'filter-label', text: 'الأرشيف' }), chips));
-  }
+  const archRow = archiveRow({
+    rows: ctx.properties, showArchived: ctx.showArchived,
+    candidates: archivePropertyCandidates(ctx.properties), bulkLabel: 'أرشف ما بِيع أو أُجِّر منذ سنة',
+    onToggle: () => { ctx.showArchived = !ctx.showArchived; renderFilters(ctx); renderList(ctx); },
+    onBulk: () => bulkArchiveProperties(ctx, archivePropertyCandidates(ctx.properties)),
+    onUndo: (last) => undoArchiveProperties(ctx, last),
+    el, formatNumber,
+  });
+  if (archRow) wrap.append(archRow);
 
   if (GROUPS.some(([g]) => ctx.filters[g].size)) {
     wrap.append(el('div', {}, el('button', {
@@ -388,10 +395,146 @@ function renderFilters(ctx) {
   }
 }
 
+/* ===== عقارٌ مكرَّر في مخزونك (المرحلة ٤٦) ===== */
+
+const REASON_LABEL = {
+  deed: 'رقم الصك نفسه',
+  spot: 'الموقع نفسه',
+  specs: 'الحي والنوع والمساحة والسعر متقاربة',
+};
+
+/** الزرّ لا يظهر إلا إن وُجد تكرار فعلًا — لا زرٌّ دائم يذكّرك بمشكلةٍ ليست عندك. */
+/**
+ * كشفُ التكرار يُحسب **مرّةً لكلّ تحميل** لا مرّةً لكلّ رسم.
+ *
+ * و`renderList` تُستدعى مع كلّ حرفٍ في البحث ومع كلّ رقاقةِ فلتر — وإعادةُ الكشف معها
+ * كانت تضاعف زمنَ الصفحة أضعافًا على مخزونٍ كبير. والنتيجةُ لا تتغيّر بالفلترة أصلًا:
+ * هي عن المخزون كلِّه لا عمّا يُعرض منه.
+ */
+function duplicatePairs(ctx) {
+  if (!ctx.dupCache || ctx.dupCache.src !== ctx.properties) {
+    ctx.dupCache = { src: ctx.properties, pairs: propertyDuplicates(ctx.properties) };
+  }
+  return ctx.dupCache.pairs;
+}
+
+function drawDupButton(ctx) {
+  const btn = ctx.nodes.dupBtn;
+  if (!btn) return;
+  const pairs = duplicatePairs(ctx);
+  btn.hidden = pairs.length === 0;
+  btn.textContent = `عقارات مكرّرة (${formatNumber(pairs.length)})`;
+}
+
+/**
+ * شاشة دمج العقارات: زوجًا زوجًا، **بمعاينة ما سينتقل** قبل التأكيد.
+ *
+ * ولا يُدمج شيءٌ آليًّا مهما بلغ اليقين: عمارتان في مخطّطٍ واحد بنفس المساحة والسعر
+ * عقاران لا عقار، والقرار قرارك. وصورةُ كلٍّ منهما أمامك لأنّ العين تحسم ما لا تحسمه
+ * المطابقة الرقمية.
+ */
+function openPropertyDuplicates(ctx) {
+  const body = el('div', {});
+  let modal = null;
+
+  const label = (p) => [
+    typeLabel(ctx.lists, p.type),
+    [p.district, p.city].filter(Boolean).join('، ') || 'بلا موقع',
+    p.area ? formatArea(p.area) : 'بلا مساحة',
+    p.price == null ? 'بلا سعر' : formatSAR(p.price),
+    p.deedNumber ? `صك ${p.deedNumber}` : '',
+  ].filter(Boolean).join(' · ');
+
+  const dupRow = async (pair, refreshRows) => {
+    const suggested = suggestPropertyKeeper(pair.a, pair.b);
+    let keep = suggested;
+    let drop = suggested.id === pair.a.id ? pair.b : pair.a;
+    const keepNode = el('div', { class: 'strong' });
+    const dropNode = el('div', { class: 'muted small' });
+    const impactNode = el('div', { class: 'muted small' });
+
+    const showImpact = async () => {
+      keepNode.textContent = `يبقى: ${label(keep)}`;
+      dropNode.textContent = `يُحذف: ${label(drop)}`;
+      const im = await repo.properties.mergeImpact(keep.id, drop.id);
+      const parts = [
+        im.matches ? countOf(im.matches, 'مطابقة') : '',
+        im.deals ? countOf(im.deals, 'صفقة') : '',
+        im.showings ? countOf(im.showings, 'معاينة') : '',
+        im.tasks ? countOf(im.tasks, 'مهمة') : '',
+        im.images ? countOf(im.images, 'صورة') : '',
+        im.priceHistory ? countOf(im.priceHistory, 'سعر') : '',
+      ].filter(Boolean);
+      impactNode.textContent = parts.length ? `سينتقل: ${parts.join(' · ')}` : 'لا مرتبطات تنتقل — السجل المكرّر فارغ.';
+    };
+    await showImpact();
+
+    return el('div', { class: 'today-row' },
+      el('div', {},
+        el('div', { class: 'row' },
+          badge(REASON_LABEL[pair.reason] || 'تشابه', pair.sure ? 'badge-ok' : 'badge-warn'),
+          pair.meters != null ? el('span', { class: 'muted small', text: `على بُعد ${pair.meters} م` }) : null,
+          pair.sure ? null : el('span', { class: 'muted small', text: 'تشابه مواصفات — تحقّق بنفسك' })),
+        keepNode, dropNode, impactNode),
+      el('div', { class: 'row' },
+        el('button', {
+          type: 'button', class: 'btn btn-ghost btn-sm', text: '⇄ اعكس',
+          title: 'اجعل الآخر هو الباقي',
+          onClick: async () => { const t = keep; keep = drop; drop = t; await showImpact(); },
+        }),
+        el('a', { class: 'btn btn-ghost btn-sm', href: `#/properties/${drop.id}`, text: 'افتح المكرّر', onClick: () => modal?.close() }),
+        el('button', {
+          type: 'button', class: 'btn btn-sm', text: 'ادمج',
+          onClick: async () => {
+            const ok = await confirmDialog({
+              title: 'دمج عقارين',
+              message: `سيبقى «${label(keep)}» وينتقل إليه كلُّ ما يخصّ الآخر، ثم يُحذف السجل الثاني.`
+                + '\n\nوالحقولُ المملوءة في الباقي لا تُمسّ — يُملأ الفارغُ منها فقط.'
+                + '\n\nهذا لا يُتراجع عنه بضغطة: المحذوف يبقى في سلّة المحذوفات بلا مرتبطاته.',
+              confirmText: 'ادمج',
+            });
+            if (!ok) return;
+            try {
+              await repo.properties.merge(keep.id, drop.id);
+              toast('دُمج العقاران', 'success');
+              await loadData(ctx);
+              renderFilters(ctx);
+              renderList(ctx);
+              drawDupButton(ctx);
+              await refreshRows();
+            } catch (err) {
+              toast(err.message || 'تعذّر الدمج', 'error');
+            }
+          },
+        })));
+  };
+
+  const draw = async () => {
+    clear(body);
+    const pairs = duplicatePairs(ctx);
+    if (!pairs.length) {
+      body.append(el('p', { class: 'muted small', text: 'لا تكرار — كل عقار سجلٌّ واحد.' }));
+      return;
+    }
+    body.append(el('p', { class: 'muted small', text: 'العقار المكرّر يُحسب مرّتين في مؤشّر سعر الحي،'
+      + ' ويُطابَق مرّتين فيصل العميلَ العرضُ نفسه مرّتين، ويُنشر مرّتين في صفحتك العامة.'
+      + ' والدمج ينقل المطابقات والصفقات والمعاينات والمهامّ والصور وتاريخ السعر، ثم يحذف المكرّر إلى السلّة.' }));
+    body.append(el('p', { class: 'muted small', text: 'وما بِيع أو أُجِّر أو أُرشف خارج الفحص: سجلٌّ منتهٍ تاريخٌ يُحفظ لا تكرارٌ يُدمج.' }));
+    for (const pair of pairs.slice(0, 20)) body.append(await dupRow(pair, draw));
+    if (pairs.length > 20) {
+      body.append(el('p', { class: 'muted small', text: `+ ${countOf(pairs.length - 20, 'زوج')} آخر — تظهر بعد دمج هذه.` }));
+    }
+  };
+
+  modal = openModal({ title: 'عقارات مكرّرة', size: 'wide', body });
+  draw();
+}
+
 /* ===== القائمة ===== */
 
 function renderList(ctx) {
   renderSelectionBar(ctx);
+  drawDupButton(ctx);   // يظهر أو يختفي بحسب ما في المخزون الآن
   const items = ctx.properties.filter((p) => passes(ctx, p));
   ctx.nodes.count.textContent = items.length === ctx.properties.length
     ? `(${ctx.properties.length})`

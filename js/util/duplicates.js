@@ -130,3 +130,154 @@ export function externalDuplicates({ properties = [], externals = [], areaPct = 
   }
   return out;
 }
+
+
+/* ===== عقارٌ مكرَّر في مخزونك أنت (المرحلة ٤٦) ===== */
+
+const norm = (v) => normalizeArabic(String(v ?? '')).trim();
+// الصكّ يُطبَّع أرقامًا لا غير: «١٢٣/أ» و«123 / أ» صكٌّ واحد بخطَّين.
+const deedKey = (v) => norm(v).replace(/[^0-9\u0600-\u06FF]+/g, '');
+
+/** مسافةٌ تقريبية بالأمتار بين نقطتين — تكفي للتمييز بين «هذا هو» و«جارُه». */
+function metersBetween(a, b) {
+  if (!a || !b || !Number.isFinite(a.lat) || !Number.isFinite(b.lat)) return null;
+  const R = 6371000;
+  const rad = (d) => (d * Math.PI) / 180;
+  const dLat = rad(b.lat - a.lat);
+  const dLng = rad(b.lng - a.lng);
+  const h = Math.sin(dLat / 2) ** 2
+    + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+/** كم مترًا بين نقطتين يُعدّ «الموقع نفسه». عشرون: دقّةُ GPS في الجوّال بهذا القدر. */
+export const SAME_SPOT_METERS = 20;
+
+/**
+ * عقاران في **مخزونك أنت** يُشتبه أنهما عقارٌ واحد دخل مرّتين.
+ *
+ * **ولم يكن لها كاشف.** `findDuplicates` للعملاء وحدهم، و`externalDuplicates` تقارن
+ * مخزونك بعروض **غيرك**. أمّا مخزونك بنفسه فلا شيء يمسّه — وأنت تجول الأحياء وتُدخل
+ * العقارات، فالفلّةُ تدخل من جولتين، أو من جولةٍ ومن لصق عرض.
+ *
+ * **والأثر ليس سطرًا زائدًا في قائمة:**
+ *   • يُحسب مرّتين في مؤشّر سعر الحي — وصفحةُ الصحّة تقول هذا بنفسها عن العروض الخارجية.
+ *   • يُطابَق مرّتين، فيصل العميلَ العرضُ نفسه مرّتين.
+ *   • يُنشر مرّتين في صفحتك العامة.
+ *
+ * **ودرجتان من اليقين:**
+ *   • **يقينيّ** — رقمُ صكٍّ واحد (الصكّ يُعرّف القطعة)، أو موقعٌ واحد ضمن عشرين مترًا.
+ *   • **ظنّيّ** — المدينة والحي والنوع نفسها، والمساحةُ والسعر متقاربان. وهذه يقرّرها بصرُك.
+ *
+ * **ولا يُقارَن ما أُقفل ولا ما أُرشف:** سجلٌّ بِيع ليس تكرارًا يُدمج، هو تاريخٌ يُحفظ.
+ * ودمجُ منجزٍ بحيٍّ يُفسد صفقةً مسجَّلة.
+ *
+ * @returns {[{ a, b, reason: 'deed'|'spot'|'specs', sure: boolean, meters: number|null }]}
+ */
+export function propertyDuplicates(properties = [], { areaPct = 5, pricePct = 5 } = {}) {
+  const live = properties.filter((p) => p && !p.archivedAt && !['sold', 'rented'].includes(p.status));
+
+  // **التهيئةُ مرّةً لكلّ سجلّ لا مرّةً لكلّ مقارنة.** أوّلُ صيغةٍ من هذه الدالة كانت
+  // تقارن كلَّ عقارٍ بكلّ عقار وتُطبّع النصوصَ داخل الحلقة — فصارت صفحةُ العقارات على
+  // خمسة آلاف سجلّ **٣٣ ثانية** بدل ثلاث. كشفتها حزمةُ `scale-perf`، ولولاها لشُحن.
+  const prep = live.map((p) => ({
+    p,
+    deed: deedKey(p.deedNumber),
+    bucket: `${norm(p.city)}|${norm(p.district)}|${p.type}`,
+    area: Number(p.area) || 0,
+    price: Number(p.price) || 0,
+    lat: Number(p.location?.lat),
+    lng: Number(p.location?.lng),
+  }));
+
+  const out = [];
+  const seen = new Set();
+  const push = (a, b, reason, sure, meters = null) => {
+    const [x, y] = [a, b].sort((m, n) => String(m.id).localeCompare(String(n.id)));
+    const key = `${x.id}|${y.id}`;
+    if (seen.has(key)) return;   // اليقينيُّ يُفحص أوّلًا، فلا يزحمه ظنّيٌّ على الزوج نفسه
+    seen.add(key);
+    out.push({ a: x, b: y, reason, sure, meters });
+  };
+
+  /* ١) الصكّ: خريطةٌ واحدة — لا مقارنةَ أصلًا */
+  const byDeed = new Map();
+  for (const r of prep) {
+    if (!r.deed) continue;
+    if (!byDeed.has(r.deed)) byDeed.set(r.deed, []);
+    byDeed.get(r.deed).push(r);
+  }
+  for (const group of byDeed.values()) {
+    for (let i = 0; i < group.length; i++) {
+      for (let j = i + 1; j < group.length; j++) push(group[i].p, group[j].p, 'deed', true);
+    }
+  }
+
+  /* ٢) الموقع: خلايا شبكةٍ بحجم عتبة التقارب، ولا يُقارَن إلا الجوار */
+  const CELL = 0.0002; // نحو ٢٠ مترًا عند خطوط عرض الجزيرة
+  const byCell = new Map();
+  for (const r of prep) {
+    if (!Number.isFinite(r.lat) || !Number.isFinite(r.lng)) continue;
+    const key = `${Math.round(r.lat / CELL)}|${Math.round(r.lng / CELL)}`;
+    if (!byCell.has(key)) byCell.set(key, []);
+    byCell.get(key).push(r);
+  }
+  for (const [key, group] of byCell) {
+    const [cx, cy] = key.split('|').map(Number);
+    // الخلايا التسع: نقطتان متجاورتان قد تقعان على طرفَي حدٍّ بين خليتين.
+    const neighbours = [];
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        const other = byCell.get(`${cx + dx}|${cy + dy}`);
+        if (other && (dx || dy)) neighbours.push(...other);
+      }
+    }
+    for (let i = 0; i < group.length; i++) {
+      const rest = [...group.slice(i + 1), ...neighbours];
+      for (const other of rest) {
+        if (other.p.id === group[i].p.id) continue;
+        const m = metersBetween(group[i].p.location, other.p.location);
+        if (m != null && m <= SAME_SPOT_METERS) push(group[i].p, other.p, 'spot', true, Math.round(m));
+      }
+    }
+  }
+
+  /* ٣) المواصفات: دلوٌ بالمدينة والحي والنوع، ثم فرزٌ بالمساحة ووقوفٌ عند أوّل بعيد */
+  const byBucket = new Map();
+  for (const r of prep) {
+    if (!r.p.district || !r.p.type || r.area <= 0) continue;
+    if (!byBucket.has(r.bucket)) byBucket.set(r.bucket, []);
+    byBucket.get(r.bucket).push(r);
+  }
+  for (const group of byBucket.values()) {
+    group.sort((a, b) => a.area - b.area);
+    for (let i = 0; i < group.length; i++) {
+      for (let j = i + 1; j < group.length; j++) {
+        // المساحاتُ مرتَّبةٌ تصاعديًّا، والفرقُ النسبيّ يزداد بازدياد `j` —
+        // فأوّلُ بعيدٍ يعني أنّ ما بعده أبعد، ولا حاجة إلى إكمال الحلقة.
+        const gap = ((group[j].area - group[i].area) / group[j].area) * 100;
+        if (gap > areaPct) break;
+        const bothPriced = group[i].price > 0 && group[j].price > 0;
+        if (bothPriced) {
+          const pGap = (Math.abs(group[i].price - group[j].price) / Math.max(group[i].price, group[j].price)) * 100;
+          if (pGap > pricePct) continue;
+        }
+        push(group[i].p, group[j].p, 'specs', false);
+      }
+    }
+  }
+
+  // اليقينيُّ أوّلًا: ما لا يحتاج نظرك يُحسم قبل ما يحتاجه.
+  return out.sort((x, y) => Number(y.sure) - Number(x.sure));
+}
+
+/** أيُّ السجلّين يُبقى: الأغنى بياناتٍ، وعند التعادل الأقدم (كما في العملاء). */
+export function suggestPropertyKeeper(a, b) {
+  const score = (p) => [p.price, p.area, p.district, p.type, p.deedNumber, p.ownerId, p.location,
+    p.notes, p.agreementSignedAt, p.adLicense].filter(Boolean).length
+    + (p.images || []).length + (p.priceHistory || []).length;
+  const sa = score(a);
+  const sb = score(b);
+  if (sa !== sb) return sa > sb ? a : b;
+  return String(a.createdAt || '') <= String(b.createdAt || '') ? a : b;
+}

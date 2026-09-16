@@ -14,10 +14,10 @@ import {
   el, clear, labeled, fieldGroup, selectEl, badge, openModal, confirmDialog, promptDialog,
   toast, emptyState, debounce, allChip,
 } from '../util/dom.js';
-import { formatSAR, formatArea, formatNumber, countOf } from '../util/format.js';
+import { formatSAR, formatArea, formatNumber, relativeDays, countOf } from '../util/format.js';
 import { matchesQuery } from '../util/arabic.js';
 import { formatPhone } from '../util/phone.js';
-import { isArchived, archiveRequestCandidates } from '../util/archive.js';
+import { isArchived, archiveRequestCandidates, archiveRow } from '../util/archive.js';
 
 const GROUPS = [['status', 'الحالة'], ['type', 'النوع'], ['purpose', 'الغرض'], ['city', 'المدينة']];
 const VALUES = {
@@ -162,25 +162,15 @@ function renderFilters(ctx) {
     wrap.append(el('div', { class: 'filter-row' }, el('span', { class: 'filter-label', text: label }), chips));
   }
   /* الأرشيف (المرحلة ٤٥) */
-  const archivedCount = ctx.requests.filter(isArchived).length;
-  const candidates = archiveRequestCandidates(ctx.requests);
-  if (archivedCount || candidates.length) {
-    const chips = el('div', { class: 'chips' });
-    if (archivedCount) {
-      chips.append(el('button', {
-        type: 'button', class: `chip${ctx.showArchived ? ' active' : ''}`,
-        onClick: () => { ctx.showArchived = !ctx.showArchived; renderFilters(ctx); renderList(ctx); },
-      }, ctx.showArchived ? 'أخفِ المؤرشف' : '+ المؤرشف', el('span', { class: 'chip-count', text: String(archivedCount) })));
-    }
-    if (candidates.length) {
-      chips.append(el('button', {
-        type: 'button', class: 'btn btn-sm',
-        text: `أرشف المنتهية منذ سنة (${formatNumber(candidates.length)})`,
-        onClick: () => bulkArchiveRequests(ctx, candidates),
-      }));
-    }
-    wrap.append(el('div', { class: 'filter-row' }, el('span', { class: 'filter-label', text: 'الأرشيف' }), chips));
-  }
+  const archRow = archiveRow({
+    rows: ctx.requests, showArchived: ctx.showArchived,
+    candidates: archiveRequestCandidates(ctx.requests), bulkLabel: 'أرشف المنتهية منذ سنة',
+    onToggle: () => { ctx.showArchived = !ctx.showArchived; renderFilters(ctx); renderList(ctx); },
+    onBulk: () => bulkArchiveRequests(ctx, archiveRequestCandidates(ctx.requests)),
+    onUndo: (last) => undoArchiveRequests(ctx, last),
+    el, formatNumber,
+  });
+  if (archRow) wrap.append(archRow);
 
   if (GROUPS.some(([g]) => ctx.filters[g].size)) {
     wrap.append(el('div', {}, el('button', {
@@ -188,6 +178,21 @@ function renderFilters(ctx) {
       onClick: () => { for (const [g] of GROUPS) ctx.filters[g].clear(); renderFilters(ctx); renderList(ctx); },
     })));
   }
+}
+
+/** التراجع عن آخر دفعة أرشفة (المرحلة ٤٦). */
+async function undoArchiveRequests(ctx, last) {
+  const ok = await confirmDialog({
+    title: 'إعادة آخر أرشفة',
+    message: `${countOf(last.rows.length, 'طلب')} أُرشف ${relativeDays(last.at)} — يعود إلى القائمة.`
+      + '\n\nوما أُرشف قبل هذه الدفعة يبقى مؤرشفًا.',
+    confirmText: 'أعِدْه',
+  });
+  if (!ok) return;
+  for (const r of last.rows) await repo.requests.update(r.id, { archivedAt: null });
+  toast(`عاد ${countOf(last.rows.length, 'طلب')}`, 'success');
+  window.dispatchEvent(new CustomEvent('kassab:data-changed'));
+  await refresh(ctx);
 }
 
 /**

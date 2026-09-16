@@ -10,7 +10,8 @@
 // والتوقّع والمطابقة لا ترى أرشفةً أصلًا. ولو أسقطناه منها لكذبت أرقامُ سنتك الماضية
 // لأنك رتّبت قائمتك اليوم.
 //
-// دوال خالصة: لا تخزين ولا شبكة.
+// دوالُّه خالصةٌ لا تلمس تخزينًا ولا شبكة — عدا `archiveRow` في آخره، وهي بانيةُ صفِّ
+// الرقائق المشترك بين ثلاث صفحات (كما تبني `history-view.js` و`source-field.js` عناصرَهما).
 
 /** كم يمضي على المغلق قبل أن يُقترح أرشفته. سنةٌ: أقصرُ منها يطوي عميلًا قد يعود. */
 export const ARCHIVE_AFTER_DAYS = 365;
@@ -70,4 +71,70 @@ export function archiveRequestCandidates(requests = [], { days = ARCHIVE_AFTER_D
     const age = ageDays(r.updatedAt || r.createdAt, now);
     return age != null && age >= days;
   });
+}
+
+
+/**
+ * آخرُ أرشفةٍ وقعت: السجلّات التي تحمل أحدثَ ختمٍ **بعينه** (المرحلة ٤٦).
+ *
+ * والأرشفةُ بالجملة تختم دفعتَها كلَّها بختمٍ واحد، فتساوي الختمِ هو ما يجمعها. وأرشفةُ
+ * سجلٍّ واحدٍ بيدك دفعةٌ من واحد — وإعادتُها صحيحةٌ كإعادة المئتين.
+ *
+ * @returns {{ at: string, rows: Array } | null}
+ */
+export function lastArchiveBatch(rows = []) {
+  let at = '';
+  for (const r of rows) if (r?.archivedAt && r.archivedAt > at) at = r.archivedAt;
+  if (!at) return null;
+  return { at, rows: rows.filter((r) => r?.archivedAt === at) };
+}
+
+/**
+ * صفُّ رقائق الأرشيف: «+ المؤرشف» · «أرشف …» · «أعِدْ آخر أرشفة».
+ *
+ * جُمع هنا لأنه كان مكرَّرًا حرفًا بحرف في ثلاث صفحات، **وثالثُ زرٍّ يُضاف إليه هو ما
+ * يجعل التكرار عطبًا ينتظر**: تعديلٌ في واحدةٍ ونسيانُ أختيها.
+ *
+ * @param {object} o
+ * @param {Array} o.rows السجلّات كاملةً (مؤرشفةً وغيرَها)
+ * @param {boolean} o.showArchived حالةُ الإظهار الآن
+ * @param {Array} o.candidates ما يُقترح أرشفته
+ * @param {string} o.bulkLabel نصّ زرّ الأرشفة بالجملة
+ * @param {Function} o.onToggle · o.onBulk · o.onUndo
+ * @param {Function} o.el · o.formatNumber حقنٌ كي لا يستورد هذا الملفّ DOM المشروع
+ * @returns {Node|null} — `null` حين لا مؤرشفَ ولا مرشَّح، فلا يُعرض صفٌّ فارغ
+ */
+export function archiveRow({
+  rows = [], showArchived = false, candidates = [], bulkLabel = '',
+  onToggle, onBulk, onUndo, el, formatNumber,
+}) {
+  const archived = rows.filter(isArchived);
+  const last = lastArchiveBatch(rows);
+  if (!archived.length && !candidates.length) return null;
+
+  const chips = el('div', { class: 'chips' });
+  if (archived.length) {
+    chips.append(el('button', {
+      type: 'button', class: `chip${showArchived ? ' active' : ''}`, onClick: onToggle,
+    }, showArchived ? 'أخفِ المؤرشف' : '+ المؤرشف',
+    el('span', { class: 'chip-count', text: String(archived.length) })));
+  }
+  if (candidates.length) {
+    chips.append(el('button', {
+      type: 'button', class: 'btn btn-sm',
+      text: `${bulkLabel} (${formatNumber(candidates.length)})`,
+      onClick: onBulk,
+    }));
+  }
+  // **التراجع** (المرحلة ٤٦): الأرشفةُ بالجملة كانت تسأل مرّةً ثم تمضي بلا رجعة، وسلّةُ
+  // المحذوفات تغطّي الحذفَ لا الأرشفة. فإرجاعُ مئتين أُرشفت بالخطأ كان مئتَي نافذة.
+  if (last && onUndo) {
+    chips.append(el('button', {
+      type: 'button', class: 'btn btn-ghost btn-sm',
+      text: `أعِدْ آخر أرشفة (${formatNumber(last.rows.length)})`,
+      title: 'يُرجع دفعةَ الأرشفة الأخيرة وحدها إلى القائمة',
+      onClick: () => onUndo(last),
+    }));
+  }
+  return el('div', { class: 'filter-row' }, el('span', { class: 'filter-label', text: 'الأرشيف' }), chips);
 }

@@ -17,6 +17,7 @@ import { formatPhone, toInternational } from '../util/phone.js';
 import { audioPlayer } from '../util/audio-note.js';
 import { historyBox } from '../util/history-view.js';
 import { ejarPackage, ejarText } from '../util/ejar-package.js';
+import { printReceipt } from '../util/property-print.js';
 
 function routeClientId() {
   const m = /^#\/client\/([^/?#]+)/.exec(location.hash || '');
@@ -195,6 +196,33 @@ function commissionLine(deal) {
   return st.paid > 0 ? `بقي ${formatSAR(st.remaining)} من العمولة` : 'لم تُقبض';
 }
 
+/**
+ * سندُ قبضٍ لدفعةِ إيجار أو لقسط عمولة (المرحلة ٤٦).
+ *
+ * والعقارُ يُقرأ من مخزنه لا من ذاكرةِ الشاشة: النافذةُ تُفتح من مواضعَ شتّى، وقراءةُ
+ * سجلٍّ واحد أرخصُ من تمرير خريطةِ العقارات كلِّها إليها.
+ */
+async function paymentReceipt(payment, { client = null, deal = null, lists = null, kind = 'rent' } = {}) {
+  const company = await getCompany();
+  let about = '';
+  if (deal?.propertyId) {
+    const property = await repo.properties.get(deal.propertyId);
+    if (property) about = `${typeLabel(lists, property.type)} — ${[property.district, property.city].filter(Boolean).join('، ')}`;
+  }
+  await printReceipt({
+    amount: payment.amount,
+    receivedAt: payment.paidAt,
+    from: client?.name || client?.phone || '',
+    about,
+    statement: [
+      kind === 'rent' ? 'دفعة إيجار' : 'قسط عمولة وساطة',
+      payment.note || '',
+      payment.dueAt ? `المستحقّة في ${formatDate(payment.dueAt)}` : '',
+    ].filter(Boolean).join(' · '),
+    company,
+  });
+}
+
 function openDeal(deal, lists, client = null) {
   const draft = JSON.parse(JSON.stringify(deal));
   draft.payments = draft.payments || [];
@@ -240,7 +268,14 @@ function openDeal(deal, lists, client = null) {
       const amountInput = el('input', { class: 'input', type: 'number', min: '0', step: '100', value: p.amount ?? '', onInput: (e) => { p.amount = e.target.value === '' ? null : Number(e.target.value); } });
       const noteInput = el('input', { class: 'input', type: 'text', value: p.note || '', placeholder: 'وصف (الدفعة الأولى…)', onInput: (e) => { p.note = e.target.value; } });
       const paidBox = checkbox('قُبضت', { checked: !!p.paidAt, onChange: (e) => { p.paidAt = e.target.checked ? new Date().toISOString() : null; } });
-      paymentsWrap.append(el('div', { class: 'plan-step' }, dateInput, amountInput, noteInput, paidBox,
+      // سندُ القبض لا يُطبع إلا لدفعةٍ قُبضت فعلًا (المرحلة ٤٦): سندٌ عن مالٍ لم يصل ورقةٌ كاذبة.
+      const receiptBtn = el('button', {
+        type: 'button', class: 'icon-btn', text: '🧾', title: 'اطبع سند قبض لهذه الدفعة',
+        hidden: !p.paidAt,
+        onClick: () => paymentReceipt(p, { client, deal, lists }),
+      });
+      paidBox.querySelector('input').addEventListener('change', (e) => { receiptBtn.hidden = !e.target.checked; });
+      paymentsWrap.append(el('div', { class: 'plan-step' }, dateInput, amountInput, noteInput, paidBox, receiptBtn,
         el('button', { type: 'button', class: 'icon-btn', text: '✕', title: 'حذف الدفعة', onClick: () => { draft.payments.splice(i, 1); drawPayments(); } })));
     });
     paymentsWrap.append(el('div', { class: 'row' },

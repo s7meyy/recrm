@@ -75,3 +75,64 @@ const noMine = externalDuplicates({ properties: [mine], externals: [ext('e4', '0
 ok('ومن لم يسجّل جوّاله لا يُقال له «معلنٌ آخر»', noMine[0].advertiser === 'unknown', noMine[0]?.advertiser);
 
 ok('والحقول القديمة باقية كما هي', typeof noMine[0].priceGap === 'number' && noMine[0].samePrice === true);
+
+/* ===== عقارٌ مكرَّر في مخزونك أنت (المرحلة ٤٦) ===== */
+import { propertyDuplicates, suggestPropertyKeeper, SAME_SPOT_METERS } from '../js/util/duplicates.js';
+
+const P = (id, extra = {}) => ({
+  id, city: 'الرياض', district: 'الياسمين', type: 'villa', area: 400, price: 2500000,
+  status: 'agreed', archivedAt: null, deedNumber: '', location: null, createdAt: '2026-01-01', ...extra,
+});
+
+const specs = propertyDuplicates([P('a'), P('b'), P('z', { district: 'النرجس' })]);
+ok('المواصفات المتقاربة تُكشف', specs.length === 1 && specs[0].reason === 'specs', JSON.stringify(specs.map((x) => x.reason)));
+ok('وتُعدّ ظنًّا لا يقينًا', specs[0].sure === false);
+ok('وحيٌّ آخر ليس تكرارًا', !specs.some((x) => x.a.id === 'z' || x.b.id === 'z'));
+
+const deed = propertyDuplicates([
+  P('a', { deedNumber: '٣١٠١٠٢٠٤٥٦٧٨', district: 'الياسمين', area: 400 }),
+  P('b', { deedNumber: '310102045678', district: 'النرجس', area: 900, price: 9000000 }),
+]);
+ok('الصكّ نفسه يقينٌ ولو اختلف كل شيء', deed.length === 1 && deed[0].reason === 'deed' && deed[0].sure === true);
+ok('والصكّ يُطبَّع من الفواصل', propertyDuplicates([P('a', { deedNumber: '123/أ' }), P('b', { deedNumber: '123 / أ', district: 'حطين' })])[0]?.reason === 'deed');
+
+const spot = propertyDuplicates([
+  P('a', { location: { lat: 24.7600, lng: 46.6000 }, district: 'الياسمين' }),
+  P('b', { location: { lat: 24.76005, lng: 46.60005 }, district: 'النرجس', type: 'land', area: 900 }),
+]);
+ok('الموقع نفسه ضمن ٢٠ مترًا يقين', spot.length === 1 && spot[0].reason === 'spot' && spot[0].sure === true, JSON.stringify(spot[0]?.meters));
+ok('والمسافة تُقال بالأمتار', typeof spot[0].meters === 'number' && spot[0].meters <= SAME_SPOT_METERS);
+
+const far = propertyDuplicates([
+  P('a', { location: { lat: 24.7600, lng: 46.6000 }, district: 'الياسمين', type: 'villa' }),
+  P('b', { location: { lat: 24.7700, lng: 46.6100 }, district: 'النرجس', type: 'land', area: 900 }),
+]);
+ok('وموقعان متباعدان ليسا تكرارًا', far.length === 0, JSON.stringify(far.map((x) => x.reason)));
+
+/* ما انتهى أمرُه خارج الفحص — تاريخٌ يُحفظ لا تكرارٌ يُدمج */
+ok('المبيع لا يُقارَن', propertyDuplicates([P('a', { status: 'sold' }), P('b')]).length === 0);
+ok('والمؤجَّر لا يُقارَن', propertyDuplicates([P('a', { status: 'rented' }), P('b')]).length === 0);
+ok('والمؤرشف لا يُقارَن', propertyDuplicates([P('a', { archivedAt: '2026-01-01' }), P('b')]).length === 0);
+
+/* اليقينيّ أوّلًا، ولا يُكرَّر الزوج */
+const pmixed = propertyDuplicates([
+  P('a'), P('b'),
+  P('x', { district: 'حطين', deedNumber: '555' }),
+  P('y', { district: 'قرطبة', deedNumber: '555', area: 1200, price: 8000000 }),
+]);
+ok('اليقينيّ يُعرض قبل الظنّي', pmixed[0].sure === true && pmixed.at(-1).sure === false, pmixed.map((x) => x.reason).join(','));
+ok('والزوج الواحد لا يظهر مرّتين', new Set(pmixed.map((x) => [x.a.id, x.b.id].sort().join('|'))).size === pmixed.length);
+
+/* حدودٌ لا تنهار */
+ok('السعر الغائب في أحدهما لا يمنع الشبهة', propertyDuplicates([P('a', { price: null }), P('b')]).length === 1);
+ok('والسعر البعيد يمنعها', propertyDuplicates([P('a', { price: 900000 }), P('b')]).length === 0);
+ok('وبلا حيٍّ لا شبهة بالمواصفات', propertyDuplicates([P('a', { district: '' }), P('b', { district: '' })]).length === 0);
+ok('وقائمة فارغة تردّ فارغة', propertyDuplicates([]).length === 0 && propertyDuplicates().length === 0);
+
+/* أيّهما يبقى */
+const pRich = P('a', { deedNumber: '1', ownerId: 'o1', images: ['i1', 'i2'], notes: 'مهم' });
+const pPoor = P('b', { price: null, area: null });
+ok('الأغنى سجلًّا هو المقترح', suggestPropertyKeeper(pRich, pPoor).id === 'a');
+ok('والترتيب لا يغيّر النتيجة', suggestPropertyKeeper(pPoor, pRich).id === 'a');
+ok('وعند التعادل يبقى الأقدم',
+  suggestPropertyKeeper(P('b', { createdAt: '2026-05-01' }), P('a', { createdAt: '2025-01-01' })).id === 'a');

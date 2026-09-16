@@ -42,6 +42,7 @@ const SUITES = [
   ['commission-instalments-unit.mjs', null],
   ['closing-costs-unit.mjs', null],
   ['archive-unit.mjs', null],
+  ['delta-receipt-unit.mjs', null],
   ['offer-paste-unit.mjs', null],
   ['rega-unit.mjs', null],
   ['task-intake-unit.mjs', null],

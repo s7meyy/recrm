@@ -34,10 +34,15 @@ export const PUSH_QUIET_MS = 20000;
 /** أقصر مدّة بين رفعتين مهما كثر التغيير — كي لا تُستنزف بيانات جوّالك. */
 export const PUSH_EVERY_MS = 120000;
 
+/** تباعدُ المحاولات بعد فشلٍ: ثانيةٌ ثم ثمانٍ ثم دقيقةٌ ثم أربعٌ ثم ربعُ ساعة، ثم يقف. */
+export const RETRY_BACKOFF_MS = [1000, 8000, 60000, 240000, 900000];
+
 let running = null;      // وعدُ المزامنة الجارية: اثنتان معًا تتدافعان على نفس المخازن
 let dirty = false;       // تغيّر شيءٌ منذ آخر رفعة؟
 let lastPushAt = 0;
 let timer = null;
+let retryTimer = null;
+let retryStep = 0;       // أين نحن من سلّم التباعد
 let started = false;
 
 /** هل جهازك فارغ؟ لا تُرفع قاعدةٌ فارغة فوق نسخةٍ صالحة. */
@@ -118,6 +123,37 @@ function announce(stats) {
   window.dispatchEvent(new CustomEvent('kassab:data-changed'));
 }
 
+/**
+ * يُشغّل دورةً ويتصرّف بنتيجتها: ينشر ما جاء، ويُعيد المحاولة إن فشلت.
+ *
+ * **وهذه هي الثغرة التي تُسدّ** (المرحلة ٤٦): كانت الرفعةُ الفاشلة تنتهي عند رسالةٍ
+ * تُكتب في الإعدادات، و`dirty` باقيةٌ صحيحة والمؤقّت انطفأ — فلا تُرفع حتى تُغيّر شيئًا
+ * آخر أو تُغلق التطبيق وتفتحه. وأكثرُ ما يقع هذا في السيارة: تُضيف عميلًا، تنقطع الشبكة،
+ * فتظنّ أنّ جهازيك التقيا وهما لم يلتقيا.
+ */
+async function runCycle(opts = {}) {
+  const res = await syncNow(opts);
+  if (res.merged) announce(res.stats);
+  if (res.error) scheduleRetry();
+  else retryStep = 0;   // نجاحٌ يصفّر السلّم، فلا يرث تباعدَ فشلٍ قديم
+  return res;
+}
+
+/**
+ * يعيد المحاولة بتباعدٍ متزايد، ثم يقف عند آخر درجة.
+ *
+ * **ولا يُحاوَل بلا حدّ:** جوّالٌ خارج التغطية ساعةً كاملة يُستنزف بمحاولةٍ كلَّ ثانية،
+ * وهي لن تنجح. فآخرُ الدرجات ربعُ ساعة، ثم يُترك الأمر لحدث `online` أو لتغييرٍ جديد.
+ */
+function scheduleRetry() {
+  if (retryTimer) return;             // محاولةٌ مجدولةٌ تكفي
+  const wait = RETRY_BACKOFF_MS[Math.min(retryStep, RETRY_BACKOFF_MS.length - 1)];
+  retryStep++;
+  // **ولا تُشترط تغييراتٌ محلّية:** السحبُ الفاشل يستحقّ الإعادة ولو لم تكتب أنت شيئًا —
+  // فقد كتب جهازُك الآخر. واشتراطُ `dirty` هنا كان يعني أن فشلًا عند الفتح لا يُعاد أبدًا.
+  retryTimer = setTimeout(() => { retryTimer = null; runCycle(); }, wait);
+}
+
 /** يجدول رفعةً بعد هدوء، ويحترم أقصر مدّةٍ بين رفعتين. */
 function schedulePush() {
   if (timer) clearTimeout(timer);
@@ -126,8 +162,7 @@ function schedulePush() {
   timer = setTimeout(async () => {
     timer = null;
     if (!dirty) return;
-    const res = await syncNow();
-    if (res.merged) announce(res.stats);
+    await runCycle();
   }, wait);
 }
 
@@ -155,13 +190,26 @@ export async function startSync() {
     syncNow({ pull: false });
   });
 
-  const first = await syncNow();
-  if (first.merged) announce(first.stats);
-  return first;
+  // عودةُ الشبكة أصدقُ إشارةٍ من أيّ مؤقّت — فتُلغى المحاولةُ المؤجَّلة ويُبدأ فورًا.
+  // (ورجوعُ التطبيق إلى الواجهة مثلُها: كثيرًا ما يعود الاتصال والتطبيقُ في الخلفية.)
+  const wake = () => {
+    if (!dirty && !retryStep) return;   // لا تغييرَ معلّق ولا فشلٌ ينتظر الإعادة
+    if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+    retryStep = 0;
+    runCycle();
+  };
+  window.addEventListener('online', wake);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && navigator.onLine !== false) wake();
+  });
+
+  return runCycle();
 }
 
 /** للفحص: يُعيد الحالة إلى ما كانت عليه قبل `startSync`. */
 export function resetSyncForTests() {
   if (timer) clearTimeout(timer);
-  timer = null; running = null; dirty = false; lastPushAt = 0; started = false;
+  if (retryTimer) clearTimeout(retryTimer);
+  timer = null; retryTimer = null; retryStep = 0;
+  running = null; dirty = false; lastPushAt = 0; started = false;
 }

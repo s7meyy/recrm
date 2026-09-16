@@ -14,7 +14,7 @@ import { sourceReport, propertyProfit } from '../util/sources.js';
 import { showingStats } from '../util/showings.js';
 import { revenueForecast } from '../util/forecast.js';
 import { el, clear, badge } from '../util/dom.js';
-import { formatNumber, formatSAR, daysBetween, relativeDays, countWord, countOf } from '../util/format.js';
+import { formatNumber, formatSAR, daysBetween, relativeDays, countWord, countOf, deltaOf } from '../util/format.js';
 import { formatPhone, toInternational } from '../util/phone.js';
 import { discountEffect } from '../util/property-evidence.js';
 
@@ -482,30 +482,61 @@ function funnelSection({ requests, matches }) {
   return [...rows, ...tail];
 }
 
+/** يرسم فرقَ `deltaOf`: سهمٌ ونسبةٌ ولون، أو عبارةٌ لمن لا نسبةَ له. */
+function deltaNode(current, previous, opts = {}) {
+  const d = deltaOf(current, previous, opts);
+  const title = `الفترة السابقة: ${formatSAR(Number(previous) || 0)}`;
+  if (d.kind === 'same') return el('span', { class: 'muted small', text: ' — كما كان', title });
+  if (d.kind === 'noBase') return el('span', { class: 'muted small', text: ' — وكان صفرًا', title });
+  return el('span', {
+    class: `small delta ${d.good ? 'delta-up' : 'delta-down'}`,
+    text: ` ${d.up ? '▲' : '▼'} ${Math.abs(d.pct)}٪`,
+    title,
+  });
+}
+
 /** عمولاتك ناقص مصاريفك — سعر البيع نفسه ليس دخلك فلا يدخل هنا. */
 function profitSection({ deals, expenses, incomes = [] }) {
   const now = new Date();
-  const inRange = (iso, kind) => {
+  // **والسابقُ فترةٌ كاملة لا ما مضى منها:** الشهرُ الماضي كلُّه يُقارَن بهذا الشهر ولو
+  // كنّا في يومه الثالث. ومقارنةُ ثلاثة أيامٍ بثلاثين تُخرج «انخفاضًا» كلَّ أوّل شهر
+  // وليس فيه انخفاض — فيُقال ذلك تحت اللوحة صراحةً بدل أن يُخمَّن.
+  const inRange = (iso, kind, back = 0) => {
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return false;
-    return kind === 'month' ? d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() : d.getFullYear() === now.getFullYear();
+    if (kind === 'year') return d.getFullYear() === now.getFullYear() - back;
+    const ref = new Date(now.getFullYear(), now.getMonth() - back, 1);
+    return d.getFullYear() === ref.getFullYear() && d.getMonth() === ref.getMonth();
   };
-  const sum = (list, key, kind) => list.filter((x) => inRange(x.date, kind)).reduce((a, x) => a + (Number(x[key]) || 0), 0);
-  const rows = [['month', 'هذا الشهر'], ['year', 'هذه السنة']].map(([kind, label]) => {
-    const commission = sum(deals, 'commission', kind);
-    // الإيراد المسجَّل (المرحلة ٣٨): إدارة أملاك واستشارات وغيرها. وبدونه كان الرقم
-    // يقول أقلّ من الحقيقة، فيُظنّ شهرٌ خاسرًا وهو رابح.
-    const income = sum(incomes, 'amount', kind);
-    const spent = sum(expenses, 'amount', kind);
-    return { label, commission, income, spent, net: commission + income - spent };
+  const sum = (list, key, kind, back = 0) => list
+    .filter((x) => inRange(x.date, kind, back))
+    .reduce((a, x) => a + (Number(x[key]) || 0), 0);
+  const rows = [['month', 'هذا الشهر', 'الشهر الماضي'], ['year', 'هذه السنة', 'السنة الماضية']].map(([kind, label, prevLabel]) => {
+    const at = (back) => {
+      const commission = sum(deals, 'commission', kind, back);
+      // الإيراد المسجَّل (المرحلة ٣٨): إدارة أملاك واستشارات وغيرها. وبدونه كان الرقم
+      // يقول أقلّ من الحقيقة، فيُظنّ شهرٌ خاسرًا وهو رابح.
+      const income = sum(incomes, 'amount', kind, back);
+      const spent = sum(expenses, 'amount', kind, back);
+      return { commission, income, spent, net: commission + income - spent };
+    };
+    return { label, prevLabel, now: at(0), prev: at(1) };
   });
+  const line = (label, value, prev, opts) => [
+    el('dt', { text: label }),
+    el('dd', {}, el('span', { text: formatSAR(value) }), deltaNode(value, prev, opts)),
+  ];
   return [
     el('dl', { class: 'kv' }, rows.flatMap((r) => [
-      el('dt', { text: `عمولات ${r.label}` }), el('dd', { text: formatSAR(r.commission) }),
-      el('dt', { text: `إيرادات أخرى ${r.label}` }), el('dd', { text: formatSAR(r.income) }),
-      el('dt', { text: `مصاريف ${r.label}` }), el('dd', { text: formatSAR(r.spent) }),
-      el('dt', { text: `صافي ${r.label}` }), el('dd', {}, badge(formatSAR(r.net), r.net < 0 ? 'badge-danger' : 'badge-ok')),
+      ...line(`عمولات ${r.label}`, r.now.commission, r.prev.commission),
+      ...line(`إيرادات أخرى ${r.label}`, r.now.income, r.prev.income),
+      ...line(`مصاريف ${r.label}`, r.now.spent, r.prev.spent, { lowerIsBetter: true }),
+      el('dt', { text: `صافي ${r.label}` }),
+      el('dd', {}, badge(formatSAR(r.now.net), r.now.net < 0 ? 'badge-danger' : 'badge-ok'),
+        deltaNode(r.now.net, r.prev.net)),
     ])),
+    el('div', { class: 'muted small', text: 'السهم يقارن بالفترة السابقة كاملةً — والشهر الماضي ثلاثون يومًا،'
+      + ' فأوّلَ الشهر يبدو النزول أشدّ مما هو. وفي المصاريف النزول أخضر لأنه خبرٌ سارّ.' }),
     el('div', { class: 'muted small', text: 'الإيراد في لوحة «الصفقات» هو سعر البيع لا دخلك؛ الدخل هو العمولة، والصافي بعد المصاريف.' }),
     el('a', { class: 'btn btn-sm', href: '#/expenses', text: 'افتح المصاريف →' }),
   ];
