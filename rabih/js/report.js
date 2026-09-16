@@ -403,6 +403,7 @@ code{background:#f3f5f8;padding:0 1mm;border-radius:3px;font-size:10pt}
 .check-foot b{display:block;font-size:8.5pt;color:var(--muted)}
 .check-foot span{font-size:11pt;font-weight:700;color:var(--navy)}
 /* المسوّدات بنصّها كما وُلِّدت. */
+.msg-tie{margin:0 0 3mm;padding:3mm 4mm;border-inline-start:3px solid var(--gold);background:#faf7ef;border-radius:6px;font-size:10pt;line-height:1.85}
 .ticon{font-style:normal;display:inline-block;width:5mm;color:var(--gold);font-size:11pt;text-align:center}
 /* بطاقةُ النشر — ثناءُ العميل بنصّه. */
 .card-mkt{break-inside:avoid}

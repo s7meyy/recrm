@@ -15,7 +15,7 @@
 
 import { topicStats } from './lexicon.js';
 import { relativeDays } from './anomaly.js';
-import { wilson } from './interval.js';
+import { wilson, significant } from './interval.js';
 
 /** حدّةٌ من التقييم: النجمة الواحدة ضعف الأربع في الأثر. */
 function severityOf(rating) {
@@ -106,8 +106,24 @@ export function priorityBlock(place) {
       <td class="rid-cell">${r.ids.slice(0, 6).map((x) => `<span class="rid">${esc(x)}</span>`).join(' ')}</td>
     </tr>`).join('');
 
+  /* الترتيبُ رقمٌ محسوب، وقد يكون الفرقُ بين أولٍ وثانٍ داخل هامشهما:
+     شكويان بعشرين بالمئة وهامشٍ اثنين وعشرين لا يُقال في إحداهما إنها أولى.
+     وصفُّهما «١» و«٢» بشريطِ وزنٍ يُوهِم ترتيبًا لا تحمله العيّنة، فيُصرَف
+     صاحب المحل إلى الأولى ويؤخّر الثانية بلا سبب. فيُقال ذلك. */
+  const tie = (() => {
+    if (rows.length < 2) return '';
+    const a2 = rows[0].ci;
+    const b2 = rows[1].ci;
+    if (!a2 || !b2) return '';
+    return significant(a2, b2).decided ? ''
+      : `<div class="msg-tie"><b>الأولى والثانية متقاربتان بقدر لا تفصله عيّنتك</b>
+        (${rows[0].name}: ${rows[0].share}% ±${a2.margin} · ${rows[1].name}: ${rows[1].share}% ±${b2.margin}).
+        فابدأ بأيسرهما عليك، أو بهما معًا — والترتيب بينهما ترجيحُ وزنٍ لا حكمُ فرق.</div>`;
+  })();
+
   return `<section class="priority">
     <h2>أولويات الإصلاح — بماذا تبدأ</h2>
+    ${tie}
     <p class="note">مرتَّبة بوزنٍ محسوب من بياناتك: تكرار الشكوى × حدّة تقييمها × حداثتها. والمعرّفات بجانب كل بند لتراجعها بنفسك.</p>
     <table class="prio"><thead><tr><th>#</th><th>الموضوع</th><th>الوزن</th><th>الشواهد</th></tr></thead>
     <tbody>${body}</tbody></table>

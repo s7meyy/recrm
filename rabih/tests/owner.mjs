@@ -11,7 +11,7 @@ import { buildReportHtml } from '../js/report.js';
 import { TEMPLATES, DEFAULT_TEMPLATE } from '../js/templates.js';
 import { build as buildMessage } from '../js/messages.js';
 import { topicCoverage, topicSentimentDetail } from '../js/lexicon.js';
-import { priorities } from '../js/priority.js';
+import { priorities, priorityBlock } from '../js/priority.js';
 import { recentVsOlder } from '../js/recency.js';
 import { voice, cardBlock } from '../js/voice.js';
 import { topicIcon } from '../js/lexicon.js';
@@ -220,6 +220,19 @@ const gone = onDisk.filter((f) => !listed.includes(f));
 gone.length === 0 ? ok(`كل وحدات js مسرودةٌ في عامل الخدمة (${onDisk.length})`) : bad('وحدات لا تُخزَّن', gone.join('، '));
 const dupes = listed.filter((f, i) => listed.indexOf(f) !== i);
 dupes.length === 0 ? ok('ولا تكرار في القائمة') : bad('تكرار', dupes.join('، '));
+
+console.log('١٦) الترتيب لا يُوهِم فرقًا لا تحمله العيّنة');
+// عيّنةٌ صغيرة: الأولى والثانية متساويتان تقريبًا وهامشُهما يبتلع الفرق.
+const tied = build([mk(1, 'الانتظار طويل'), mk(1, 'انتظرت كثير'), mk(1, 'الموظف وقح'),
+  mk(2, 'الخدمه سيئه والتعامل بارد'), mk(5, 'ممتاز')]);
+priorityBlock(tied).includes('متقاربتان بقدر لا تفصله عيّنتك')
+  ? ok('يُقال حين لا تفصل العيّنةُ بين أوّلٍ وثانٍ') : bad('ترتيبٌ موهِم');
+
+// وعيّنةٌ تفصل: شكوى غالبة مقابل شكوى نادرة.
+const clear = build([...Array(25)].map(() => mk(1, 'الانتظار طويل جدا'))
+  .concat([mk(2, 'مافي مواقف')]).concat([...Array(14)].map(() => mk(5, 'ممتاز'))));
+!priorityBlock(clear).includes('متقاربتان')
+  ? ok('ولا يُقال حين تفصل — فلا يُبطَل الترتيب حيث يصحّ') : bad('تحفّظ في غير موضعه');
 
 console.log('\n' + (fails.length ? `فشل ${fails.length}:\n` + fails.map((f) => ' - ' + f).join('\n') : '✅ نجحت كل الاختبارات'));
 process.exit(fails.length ? 1 : 0);
