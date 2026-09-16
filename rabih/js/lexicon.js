@@ -293,6 +293,18 @@ export function topicCoverage(place) {
   };
 }
 
+/* رمزٌ لكل موضوع — يُعين العين على التقاط الصف في جدولٍ طويل.
+   ومقصودٌ أن تكون رموزًا خطّيّةً هادئة لا ملوّنة: التقرير يُطبَع بالأبيض
+   والأسود عند كثيرين، وتقريرُ عملٍ لا يليق به زخرف. */
+const TOPIC_ICONS = {
+  wait: '⏱', quality: '★', price: '◈', service: '☺', clean: '✦',
+  place: '⌂', crowd: '▦', parking: '⊞', delivery: '➤', wifi: '≋',
+  hygiene_staff: '⌛', money: '▤', kids: '☗', access: '⚑',
+};
+
+/** @returns {string} رمز الموضوع، أو نقطةٌ محايدة إن لم يُعرَف. */
+export const topicIcon = (id) => TOPIC_ICONS[id] || '•';
+
 export function topicStats(place) {
   const reviews = place?.reviews || [];
   const map = new Map(TOPICS.map((t) => [t.id, {

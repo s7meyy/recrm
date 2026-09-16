@@ -11,7 +11,8 @@ import { buildReportHtml } from '../js/report.js';
 import { topicCoverage } from '../js/lexicon.js';
 import { priorities } from '../js/priority.js';
 import { recentVsOlder } from '../js/recency.js';
-import { voice } from '../js/voice.js';
+import { voice, cardBlock } from '../js/voice.js';
+import { topicIcon } from '../js/lexicon.js';
 import { extract } from '../js/entities.js';
 import { emptyPlace, emptyReview, assignReviewIds } from '../js/schema.js';
 
@@ -144,6 +145,18 @@ coverHtml.includes('التعليقات المحلَّلة') ? ok('ويُملأ �
 html.includes('class="running"') ? ok('وترويسةٌ جاريةٌ تتكرّر في كل صفحةٍ مطبوعة') : bad('بلا ترويسة');
 !/text-align:justify/.test(html) ? ok('ولا ضبطَ يفتح فجواتٍ بيضاء في العربية') : bad('الضبط باقٍ');
 /break-inside:avoid/.test(html) ? ok('والأقسام لا تنكسر بين صفحتين') : bad('بلا قواعد كسر');
+
+console.log('١١) بطاقة النشر ورموز المواضيع');
+const PRAISE = 'القهوة ممتازة والباريستا محترف جدا والمكان هادئ مريح للعمل والجلسات واسعة';
+const pc = build([mk(5, PRAISE), mk(1, 'الانتظار طويل')]);
+const card = cardBlock(pc);
+card.includes(PRAISE) ? ok('الثناء منقولٌ بنصّه حرفًا بحرف') : bad('نصّ محرَّف');
+/R\d{3}/.test(card) ? ok('ومعه معرّفه ليُراجَع في مصدره') : bad('بلا معرّف');
+card.includes('بنصّها لا تُهذَّب') ? ok('ومشروطٌ ألّا تُهذَّب — وإلا صارت شهادةً منسوبةً إلى من لم يقلها') : bad('بلا شرط');
+cardBlock(build([mk(1, 'سيء جدا والخدمة بطيئة ولا انصح به ابدا')])) === ''
+  ? ok('وبلا ثناءٍ لا تُختلَق بطاقة') : bad('بطاقة من لا شيء');
+topicIcon('wait') !== topicIcon('clean') && topicIcon('لا يوجد') === '•'
+  ? ok('ولكل موضوعٍ رمزُه، والمجهولُ نقطةٌ محايدة') : bad('الرموز');
 
 console.log('\n' + (fails.length ? `فشل ${fails.length}:\n` + fails.map((f) => ' - ' + f).join('\n') : '✅ نجحت كل الاختبارات'));
 process.exit(fails.length ? 1 : 0);

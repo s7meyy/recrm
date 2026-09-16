@@ -90,3 +90,41 @@ export function voiceBlock(place, { maxChars = 220 } = {}) {
     ${body}
   </section>`;
 }
+
+/**
+ * بطاقةُ ثناءٍ تصلح للنشر.
+ *
+ * صاحب المحل يجد في تقريره عشرات الشكاوى وسطرًا واحدًا من الثناء، ثم
+ * ينشر على حساباته كلامًا يكتبه بنفسه عن نفسه. وعنده ثناءٌ **كتبه عميله
+ * بيده**، وهو أنفعُ في التسويق من كل ما يكتبه — ولا يُستعمَل.
+ *
+ * وشرطُها الذي لا يُتجاوَز: **بنصّها كما كُتبت**. لا تُهذَّب ولا تُختصر
+ * ولا تُجمَّل، ومعها معرّفها لتُراجَع في مصدرها. فبطاقةٌ محرَّفةٌ عن نصّ
+ * عميلٍ حقيقيّ أسوأُ من لا شيء: هي شهادةٌ منسوبةٌ إلى من لم يقلها.
+ */
+export function cardBlock(place) {
+  const reviews = place?.reviews || [];
+  // الأعلى نجومًا، ثم الأطول نصًّا — فالثناء المفصَّل أنفعُ من «ممتاز».
+  const best = reviews
+    .filter((r) => Number(r.rating) >= 5 && (r.text || '').trim().length >= 40)
+    .sort((a, b) => (b.text || '').length - (a.text || '').length)[0];
+  if (!best) return '';
+
+  const esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const name = (best.author || '').trim();
+  const who = name ? esc(name) : 'عميل';
+
+  return `<section class="card-mkt">
+    <h2 class="no-count">بطاقةٌ تصلح للنشر</h2>
+    <p class="fine">ثناءُ عميلك بنصّه كما كتبه. انشرها كما هي إن شئت.</p>
+    <figure class="mkt">
+      <div class="mkt-stars">★★★★★</div>
+      <blockquote>${esc(best.text)}</blockquote>
+      <figcaption>— ${who}${best.date ? ` · ${esc(best.date)}` : ''}
+        <span class="rid">${esc(best.id)}</span></figcaption>
+      <div class="mkt-foot">${esc(place?.identity?.name || '')}</div>
+    </figure>
+    <p class="fine"><b>بنصّها لا تُهذَّب</b>: لو غُيِّرت كلمةٌ منها لصارت شهادةً منسوبةً إلى من لم يقلها.
+    وهي منشورةٌ في قوقل أصلًا، ومعرّفها بجانبها لتراجعها في مصدرها قبل نشرها.</p>
+  </section>`;
+}

@@ -3,7 +3,7 @@
 // وإن أراد المستخدم تصميمًا من نموذج (الخطوة الاختيارية التاسعة) فله ذلك، وهذا هو الأساس المضمون.
 
 import { stats, assignReviewIds } from './schema.js';
-import { topicStats } from './lexicon.js';
+import { topicStats, topicIcon } from './lexicon.js';
 import { recentVsOlder, monthly, alerts, topicAges } from './recency.js';
 import { themeCss, coverHeader, footerLine, OFFICE_CSS } from './brand.js';
 import { extract as extractEntities } from './entities.js';
@@ -11,7 +11,7 @@ import { analyze as analyzeReplies } from './replies.js';
 import { block as confidenceBlock } from './confidence.js';
 import { priorityBlock } from './priority.js';
 import { starsBlock } from './stars.js';
-import { voiceBlock } from './voice.js';
+import { voiceBlock, cardBlock } from './voice.js';
 import { impactBlock } from './impact.js';
 import { sourcesBlock } from './sources.js';
 import { cooccurBlock } from './cooccur.js';
@@ -169,7 +169,7 @@ function topicsBlock(place, lead = []) {
     const posPct = Math.round((t.pos / max) * 100);
     const neuPct = Math.round((t.neu / max) * 100);
     return `<div class="topic-row">
-      <span class="topic-name">${esc(t.name)}</span>
+      <span class="topic-name"><i class="ticon">${topicIcon(t.id)}</i>${esc(t.name)}</span>
       <span class="topic-track">
         <span class="seg pos" style="width:${posPct}%"></span><span class="seg neu" style="width:${neuPct}%"></span><span class="seg neg" style="width:${negPct}%"></span>
       </span>
@@ -177,7 +177,7 @@ function topicsBlock(place, lead = []) {
     </div>`;
   }).join('');
 
-  const table = rows.map((t) => `<tr><td>${esc(t.name)}</td><td>${t.total}</td><td>${t.pos}</td><td>${t.neg}</td><td>${esc(t.verdict)}</td></tr>`).join('');
+  const table = rows.map((t) => `<tr><td><i class="ticon">${topicIcon(t.id)}</i>${esc(t.name)}</td><td>${t.total}</td><td>${t.pos}</td><td>${t.neg}</td><td>${esc(t.verdict)}</td></tr>`).join('');
 
   return `<section class="topics">
     <h2 class="no-count">المواضيع الواردة في التعليقات</h2>
@@ -398,6 +398,14 @@ code{background:#f3f5f8;padding:0 1mm;border-radius:3px;font-size:10pt}
 .check-foot b{display:block;font-size:8.5pt;color:var(--muted)}
 .check-foot span{font-size:11pt;font-weight:700;color:var(--navy)}
 /* المسوّدات بنصّها كما وُلِّدت. */
+.ticon{font-style:normal;display:inline-block;width:5mm;color:var(--gold);font-size:11pt;text-align:center}
+/* بطاقةُ النشر — ثناءُ العميل بنصّه. */
+.card-mkt{break-inside:avoid}
+.mkt{margin:0;border:1px solid var(--line);border-radius:10px;padding:6mm;background:#fbfcfd;text-align:center}
+.mkt-stars{color:var(--gold);font-size:15pt;letter-spacing:.15em;margin-bottom:3mm}
+.mkt blockquote{margin:0 0 3mm;padding:0;border:0;background:none;font-size:13pt;line-height:1.9;color:var(--navy)}
+.mkt figcaption{font-size:10pt;color:var(--muted)}
+.mkt-foot{margin-top:4mm;padding-top:3mm;border-top:1px solid var(--line);font-size:10pt;font-weight:700;color:var(--navy)}
 /* أنت مقابل نفسك. */
 .sc-cols{display:grid;grid-template-columns:repeat(2,1fr);gap:4mm;margin-top:4mm}
 .sc-col{border:1px solid var(--line);border-radius:8px;padding:3mm 4mm;background:#fff}
@@ -535,7 +543,7 @@ export function buildReportHtml({ place: rawPlace, ctx = {}, markdown = '', phot
   assignReviewIds(place);
   const opt = { toc: true, stars: true, topics: true, photos: true, recency: true, entities: true, replies: true, confidence: true,
     priority: true, calc: true, voice: true, impact: true, sources: true, brief: true, coverage: true,
-    actions: true, checklist: true, commit: true, drafts: true, selfCompare: true,
+    actions: true, checklist: true, commit: true, drafts: true, selfCompare: true, card: true,
     cooccur: true, timing: true, promises: true, effect: true, bias: true, ...show, ...(sector?.show || {}) };
   const s = stats(place);
   const body = tocFrom(mdToHtml(markdown));
@@ -598,6 +606,7 @@ ${opt.priority ? priorityBlock(place) : ''}
 ${opt.actions ? actionsBlock(place, job || {}) : ''}
 ${opt.commit ? commitBlock(place, job || {}) : ''}
 ${opt.voice ? voiceBlock(place) : ''}
+${opt.card ? cardBlock(place) : ''}
 ${opt.selfCompare && job?.prevJob ? selfCompareBlock(job.prevJob, job) : ''}
 ${opt.effect && job?.prevJob ? effectBlock(job.prevJob, job) : ''}
 ${opt.promises ? promisesBlock(place) : ''}
