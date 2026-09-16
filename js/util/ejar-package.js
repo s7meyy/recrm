@@ -11,6 +11,7 @@
 
 import { formatSAR, formatDate, formatArea, formatNumber } from './format.js';
 import { formatPhone } from './phone.js';
+import { countOf } from './format.js';
 
 /** حقول العقد مرتَّبةً كما تُطلب: الأطراف، ثم العين، ثم المال، ثم المدّة. */
 export function ejarPackage({ deal, property = null, tenant = null, owner = null, company = {} } = {}) {
@@ -33,7 +34,7 @@ export function ejarPackage({ deal, property = null, tenant = null, owner = null
     ['عدد الدفعات', (deal?.payments || []).length ? formatNumber(deal.payments.length) : null],
     ['تاريخ بداية العقد', deal?.date ? formatDate(deal.date) : null],
     ['تاريخ نهاية العقد', deal?.leaseEndAt ? formatDate(deal.leaseEndAt) : null],
-    ['مدّة العقد', months ? `${formatNumber(months)} شهرًا` : null],
+    ['مدّة العقد', months ? `${countOf(months, 'شهر')}` : null],
     ['عمولة الوساطة', deal?.commission ? formatSAR(deal.commission) : null],
     ['المكتب الوسيط', company?.name || null],
     ['رقم الوسيط المعتمد', company?.licenseNumber || null],

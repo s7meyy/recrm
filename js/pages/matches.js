@@ -18,7 +18,7 @@ import { runPlans } from '../util/plans.js';
 import {
   el, clear, labeled, selectEl, checkbox, badge, openModal, toast, emptyState, allChip,
 } from '../util/dom.js';
-import { formatSAR, formatArea, formatNumber, countWord, toInputDate, fromInputDate, toInputDateTime, fromInputDateTime } from '../util/format.js';
+import { formatSAR, formatArea, formatNumber, countWord, toInputDate, fromInputDate, toInputDateTime, fromInputDateTime, countOf } from '../util/format.js';
 import { formatPhone } from '../util/phone.js';
 import { capped } from '../util/render-cap.js';
 
@@ -286,7 +286,7 @@ function renderList(ctx) {
     } else {
       block.append(el('div', { class: 'match-list' }, rows.map((row) => matchRow(ctx, request, row))));
       if (rows.length >= ROWS_PER_REQUEST) {
-        block.append(el('p', { class: 'muted small', text: `أعلى ${formatNumber(ROWS_PER_REQUEST)} مرشّحًا درجةً. ارفع الشريط أو ضيّق الطلب لترى غيرهم.` }));
+        block.append(el('p', { class: 'muted small', text: `أعلى ${countOf(ROWS_PER_REQUEST, 'مرشح')} درجةً. ارفع الشريط أو ضيّق الطلب لترى غيرهم.` }));
       }
     }
     area.append(block);
@@ -294,7 +294,7 @@ function renderList(ctx) {
   if (moreRequests) {
     area.append(el('div', { class: 'row', style: { justifyContent: 'center', marginTop: '16px' } },
       el('button', {
-        type: 'button', class: 'btn', text: `أظهر ${formatNumber(Math.min(moreRequests, MATCH_PAGE))} طلبًا آخر (بقي ${formatNumber(moreRequests)})`,
+        type: 'button', class: 'btn', text: `أظهر ${countOf(Math.min(moreRequests, MATCH_PAGE), 'طلب')} آخر (بقي ${formatNumber(moreRequests)})`,
         onClick: () => { ctx.shownRequests = (ctx.shownRequests || MATCH_PAGE) + MATCH_PAGE; renderList(ctx); },
       })));
   }
@@ -501,7 +501,7 @@ function openQuickMatch(ctx) {
       return;
     }
     results.append(
-      el('p', { class: 'muted small', text: `${formatNumber(rows.length)} مرشّحًا بالمحرك نفسه — أعلاها نسبةً أولًا.` }),
+      el('p', { class: 'muted small', text: `${countOf(rows.length, 'مرشح')} بالمحرك نفسه — أعلاها نسبةً أولًا.` }),
       el('div', { class: 'table-wrap' }, el('table', { class: 'table' },
         el('thead', {}, el('tr', {}, ['النسبة', 'النوع', 'الحي', 'المساحة', 'السعر', ''].map((t) => el('th', { text: t })))),
         el('tbody', {}, rows.slice(0, 12).map((r) => el('tr', {},
@@ -586,7 +586,7 @@ async function scheduleAfterShowing(ctx, request, row) {
       linkType: client ? 'client' : null,
       linkId: client ? client.id : null,
     });
-    toast(`أُنشئت مهمة متابعة بعد ${days} أيام`, 'success');
+    toast(`أُنشئت مهمة متابعة بعد ${countOf(days, 'يوم')}`, 'success');
   } catch (err) {
     console.warn('تعذر إنشاء مهمة المتابعة', err);
   }

@@ -57,7 +57,8 @@ await page.waitForTimeout(2600);
 await page.locator('button:has-text("خطّط جولة اليوم")').click();
 await page.waitForTimeout(700);
 const routeModal = page.locator('.modal');
-ok('نافذة الجولة تُفتح بالمحطات الظاهرة', (await routeModal.innerText()).includes('عقارًا ظاهرًا'), (await routeModal.innerText()).split('\n')[1]);
+// الصيغةُ تتبع العدد: «٣ عقارات ظاهرة» أو «١١ عقارًا ظاهرًا» (المرحلة ٤٤).
+ok('نافذة الجولة تُفتح بالمحطات الظاهرة', /عقار(ات ظاهرة|ًا ظاهرًا|ين ظاهرين)|عقارٍ واحدٍ ظاهر/.test(await routeModal.innerText()), (await routeModal.innerText()).split('\n')[1]);
 ok('زر الفتح معطَّل قبل الاختيار', await routeModal.locator('button:has-text("افتح في خرائط جوجل")').isDisabled());
 const boxes = routeModal.locator('.route-list input[type="checkbox"]');
 const n = await boxes.count();

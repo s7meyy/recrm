@@ -7,6 +7,7 @@ import { SCHEMAS, ENUMS, STORES, invoiceGrandTotal } from './schema.js';
 import { buildSearchKey, matchesQuery } from '../util/arabic.js';
 import { normalizePhone, phoneSearchForms } from '../util/phone.js';
 import { distanceMeters } from '../util/location.js';
+import { countOf } from '../util/format.js';
 
 let adapter = indexedDbAdapter;
 let currentUser = { id: 'local', name: '' };
@@ -44,6 +45,47 @@ function toNumberOrNull(v) {
   return Number.isFinite(n) ? n : null;
 }
 
+/* ===== حارس المدخلات (المرحلة ٤٤) ===== */
+
+/**
+ * **ما كتبتَه ولم يُقرأ يُقال، ولا يُبتلع.**
+ *
+ * كان `toNumberOrNull('مليونين')` يعيد `null` فيُحفظ العقارُ بلا سعرٍ ولا كلمة، و«جوالي
+ * عندك» في حقل الجوال يصير فراغًا فيُحفظ العميلُ بلا رقمٍ يظنّه مسجَّلًا. وذلك ينقض قاعدةَ
+ * النظام المعلَنة في عشرين موضعًا: **ما لا يُقرأ يُقال ولا يُخمَّن**.
+ *
+ * فيُجمع ما سقط في `dropped` أثناء التهيئة، ويُحوَّل أخطاءً في التحقّق — لأن التهيئة لا
+ * تملك قائمةَ الأخطاء، والتحقّقُ يليها.
+ */
+const DROPPED = Symbol('dropped');
+function noteDropped(rec, label, raw, kind = 'number') {
+  if (!rec[DROPPED]) Object.defineProperty(rec, DROPPED, { value: [], enumerable: false, writable: true });
+  rec[DROPPED].push({ label, raw: String(raw).trim().slice(0, 40), kind });
+}
+
+/** رقمٌ من مدخلٍ حرّ: الفراغُ فراغ، وما كُتب ولم يُقرأ **يُشتكى منه**. */
+function numField(rec, label, v) {
+  if (v === '' || v == null) return null;
+  const n = Number(v);
+  if (Number.isFinite(n)) return n;
+  noteDropped(rec, label, v);
+  return null;
+}
+
+/** ولا يقبل المحال: سعرٌ سالبٌ يُفسد وسيط الحي وتقريرَ المالك، ومساحةٌ سالبةٌ لا معنى لها. */
+function nonNegative(rec, label, v, errors) {
+  if (v != null && v < 0) errors.push(`«${label}» لا يكون بالسالب — اكتب رقمًا موجبًا أو اتركه فارغًا`);
+}
+
+/** ما سقط من الحقول يُذكر باسمه وبما كُتب فيه. */
+function reportDropped(rec, errors) {
+  for (const d of rec[DROPPED] || []) {
+    errors.push(d.kind === 'key'
+      ? `حقلٌ مجهول في ${d.label}: «${d.raw}» — راجع اسمه، فما لا يُعرف لا يُحفظ`
+      : `لم يُقرأ «${d.label}»: كُتب فيه «${d.raw}» وليس رقمًا — صحّحه أو أفرغه`);
+  }
+}
+
 function cleanLocation(loc) {
   if (!loc || typeof loc !== 'object') return null;
   const lat = Number(loc.lat);
@@ -58,14 +100,25 @@ function cleanLocation(loc) {
  * null إن لم يكن العقار تحت الإدارة. والأجر إمّا نسبةً من الإيجار وإمّا مبلغًا شهريًّا —
  * لا ثالث لهما في العُرف هنا، فأيُّ قيمةٍ أخرى تُردّ إلى النسبة لا تُحفظ خطأً صامتًا.
  */
-function cleanManagement(m) {
+/** مفاتيحُ عقد الإدارة المعروفة — وما عداها يُشتكى منه لا يُبتلع (المرحلة ٤٤). */
+const MANAGEMENT_KEYS = new Set(['startAt', 'endAt', 'feeType', 'feeValue', 'notes', 'active']);
+
+function cleanManagement(m, rec = null) {
   if (!m || typeof m !== 'object') return null;
+  // **مفتاحٌ مجهولٌ يُقال ولا يُهمَل.** شكلُ `management` موصوفٌ في `schema.js` لكنّه لم يكن
+  // **مفروضًا**: من كتب `contractEnd` بدل `endAt` ضاع حقلُه صامتًا وقرأ النظامُ «بلا نهاية
+  // محدَّدة» — وهو صادقٌ فيما قرأ، لكنّ المستخدم يظنّ أنّه سجّل نهايةً.
+  if (rec) {
+    for (const k of Object.keys(m)) {
+      if (!MANAGEMENT_KEYS.has(k)) noteDropped(rec, 'عقد الإدارة', k, 'key');
+    }
+  }
   const feeType = m.feeType === 'fixed' ? 'fixed' : 'percent';
   const out = {
     startAt: m.startAt || null,
     endAt: m.endAt || null,
     feeType,
-    feeValue: toNumberOrNull(m.feeValue),
+    feeValue: rec ? numField(rec, 'أجر الإدارة', m.feeValue) : toNumberOrNull(m.feeValue),
     notes: trim(m.notes),
   };
   // عقدٌ بلا بدايةٍ ولا نهايةٍ ولا أجرٍ ولا ملاحظة ليس عقدًا — يُعامَل كأنّه ليس.
@@ -95,8 +148,13 @@ const inEnum = (list, key) => list.some((x) => x.key === key);
 const PREPARE = {
   clients(rec) {
     rec.name = trim(rec.name);
+    // **جوالٌ كُتب فيه شيءٌ ولم يبقَ منه رقم لا يُبتلع**: «جوالي عندك» كانت تصير فراغًا
+    // فيُحفظ العميل بلا رقمٍ يظنّه مسجَّلًا (المرحلة ٤٤).
+    const rawPhone = rec.phone; const rawPhone2 = rec.phone2;
     rec.phone = normalizePhone(rec.phone);
     rec.phone2 = normalizePhone(rec.phone2);
+    if (!rec.phone && String(rawPhone ?? '').trim()) noteDropped(rec, 'الجوال', rawPhone);
+    if (!rec.phone2 && String(rawPhone2 ?? '').trim()) noteDropped(rec, 'الجوال الثاني', rawPhone2);
     rec.notes = trim(rec.notes);
     rec.roles = uniq(rec.roles);
     rec.tags = uniq(rec.tags);
@@ -117,8 +175,8 @@ const PREPARE = {
     rec.type = trim(rec.type);
     rec.notes = trim(rec.notes);
     rec.purposes = uniq(rec.purposes);
-    rec.area = toNumberOrNull(rec.area);
-    rec.price = toNumberOrNull(rec.price);
+    rec.area = numField(rec, 'المساحة', rec.area);
+    rec.price = numField(rec, 'السعر', rec.price);
     rec.location = cleanLocation(rec.location);
     rec.images = uniq(rec.images);
     rec.ownerId = rec.ownerId || null;
@@ -140,7 +198,7 @@ const PREPARE = {
     rec.typeFields = obj(rec.typeFields);
     rec.extra = obj(rec.extra);
     rec.referralSource = trim(rec.referralSource); // تاق المصدر — غير `source` (مسار الإدخال)
-    rec.management = cleanManagement(rec.management); // إدارة الأملاك (المرحلة ٣٨)
+    rec.management = cleanManagement(rec.management, rec); // إدارة الأملاك (المرحلة ٣٨)
     // العقد الموثَّق ونطاقه، وترخيص الإعلان (المرحلة ٤٠)
     rec.agreementNumber = trim(rec.agreementNumber);
     rec.agreementScopes = uniq(rec.agreementScopes).filter((k) => inEnum(ENUMS.agreementScopes, k));
@@ -165,16 +223,16 @@ const PREPARE = {
   requests(rec) {
     rec.city = trim(rec.city);
     rec.districts = uniq(rec.districts);
-    rec.budgetMax = toNumberOrNull(rec.budgetMax);
-    rec.budgetMin = toNumberOrNull(rec.budgetMin);
-    rec.rooms = toNumberOrNull(rec.rooms);
-    rec.baths = toNumberOrNull(rec.baths);
+    rec.budgetMax = numField(rec, 'سقف الميزانية', rec.budgetMax);
+    rec.budgetMin = numField(rec, 'أدنى الميزانية', rec.budgetMin);
+    rec.rooms = numField(rec, 'عدد الغرف', rec.rooms);
+    rec.baths = numField(rec, 'دورات المياه', rec.baths);
     rec.rentCycle = trim(rec.rentCycle);
     // حدٌّ أدنى فوق الأعلى قلبٌ لا نيّة — يُبدَّلان بدل أن يُرفض الطلب أو يُصمَت عنه.
     if (rec.budgetMin != null && rec.budgetMax != null && rec.budgetMin > rec.budgetMax) {
       const lo = rec.budgetMax; rec.budgetMax = rec.budgetMin; rec.budgetMin = lo;
     }
-    rec.area = toNumberOrNull(rec.area);
+    rec.area = numField(rec, 'المساحة المطلوبة', rec.area);
     rec.priceFlexibility = toNumberOrNull(rec.priceFlexibility);
     rec.priceFlexAmount = toNumberOrNull(rec.priceFlexAmount);
     rec.areaFlexibility = toNumberOrNull(rec.areaFlexibility);
@@ -219,8 +277,8 @@ const PREPARE = {
     rec.searchKey = buildSearchKey([rec.notes]);
   },
   deals(rec) {
-    rec.finalPrice = toNumberOrNull(rec.finalPrice);
-    rec.commission = toNumberOrNull(rec.commission);
+    rec.finalPrice = numField(rec, 'السعر النهائي', rec.finalPrice);
+    rec.commission = numField(rec, 'العمولة', rec.commission);
     rec.notes = trim(rec.notes);
     // الدفعات والمسار والشريك (المرحلة ٢٤)
     rec.payments = (Array.isArray(rec.payments) ? rec.payments : [])
@@ -321,17 +379,32 @@ const PREPARE = {
 /* تحقق خاص بكل كيان (بعد الحقول المطلوبة العامة) */
 const VALIDATE = {
   clients(rec, errors) {
+    reportDropped(rec, errors);
     if (!rec.name && !rec.phone) errors.push('يلزم اسم العميل أو رقم جواله على الأقل');
     if (rec.roles.some((r) => !inEnum(ENUMS.clientRoles, r))) errors.push('دور العميل غير معروف');
     if (!inEnum(ENUMS.clientStages, rec.stage)) errors.push('مرحلة العميل غير معروفة');
   },
   properties(rec, errors) {
+    reportDropped(rec, errors);
+    nonNegative(rec, 'السعر', rec.price, errors);
+    nonNegative(rec, 'أجر الإدارة', rec.management?.feeValue, errors);
+    if (rec.management?.startAt && rec.management?.endAt
+      && new Date(rec.management.endAt) < new Date(rec.management.startAt)) {
+      errors.push('نهاية عقد الإدارة قبل بدايته');
+    }
+    nonNegative(rec, 'المساحة', rec.area, errors);
     if (rec.purposes.some((p) => !inEnum(ENUMS.purposes, p))) errors.push('الغرض غير معروف');
     if (!inEnum(ENUMS.propertySources, rec.source)) errors.push('مصدر العقار غير معروف');
     if (!inEnum(ENUMS.captureStatuses, rec.captureStatus)) errors.push('حالة الالتقاط غير معروفة');
     if (!rec.status) errors.push('حالة العقار مطلوبة');
   },
   requests(rec, errors) {
+    reportDropped(rec, errors);
+    nonNegative(rec, 'سقف الميزانية', rec.budgetMax, errors);
+    nonNegative(rec, 'أدنى الميزانية', rec.budgetMin, errors);
+    nonNegative(rec, 'المساحة المطلوبة', rec.area, errors);
+    nonNegative(rec, 'عدد الغرف', rec.rooms, errors);
+    nonNegative(rec, 'دورات المياه', rec.baths, errors);
     if (!inEnum(ENUMS.purposes, rec.purpose)) errors.push('غرض الطلب غير معروف');
     if (!inEnum(ENUMS.requestStatuses, rec.status)) errors.push('حالة الطلب غير معروفة');
   },
@@ -354,6 +427,10 @@ const VALIDATE = {
     if (rec.impression && !inEnum(ENUMS.showingImpressions, rec.impression)) errors.push('الانطباع غير معروف');
   },
   deals(rec, errors) {
+    reportDropped(rec, errors);
+    nonNegative(rec, 'السعر النهائي', rec.finalPrice, errors);
+    nonNegative(rec, 'العمولة', rec.commission, errors);
+    nonNegative(rec, 'نصيب الشريك', rec.partnerShare, errors);
     // نصيب الشريك أكبر من العمولة يجعل صافيك سالبًا — خطأ إدخال غالبًا (المرحلة ٢٤).
     if (rec.partnerShare != null && rec.commission != null && rec.partnerShare > rec.commission) {
       errors.push('نصيب الشريك أكبر من العمولة');
@@ -643,9 +720,9 @@ const clients = Object.assign(makeEntity('clients'), {
     ]);
     if (!force && (properties.length || requests.length || deals.length)) {
       const parts = [];
-      if (properties.length) parts.push(`${properties.length} عقار`);
-      if (requests.length) parts.push(`${requests.length} طلب`);
-      if (deals.length) parts.push(`${deals.length} صفقة`);
+      if (properties.length) parts.push(`${countOf(properties.length, 'عقار')}`);
+      if (requests.length) parts.push(`${countOf(requests.length, 'طلب')}`);
+      if (deals.length) parts.push(`${countOf(deals.length, 'صفقة')}`);
       throw new Error(`العميل مرتبط بـ ${parts.join(' و')}؛ حذفه يحتاج تأكيدًا صريحًا منك`);
     }
     const stamp = { updatedAt: nowISO(), updatedBy: currentUser.id };
@@ -961,7 +1038,7 @@ const trash = {
     const entry = await adapter.get('trash', trashId);
     if (!entry) throw new Error('العنصر لم يعد في السلة');
     // الشاهد الخفيف لا يُستعاد: سطرٌ يقول «حُذف» ولا يحمل السجل نفسه.
-    if (!entry.data) throw new Error(`مضى على الحذف أكثر من ${TRASH_DAYS} يومًا، فلم يبقَ إلا أثرُه — استعِده من نسخةٍ احتياطية`);
+    if (!entry.data) throw new Error(`مضى على الحذف أكثر من ${countOf(TRASH_DAYS, 'يوم')} فلم يبقَ إلا أثرُه — استعِده من نسخةٍ احتياطية`);
     const existing = await adapter.get(entry.store, entry.recordId);
     if (existing) throw new Error('يوجد سجل بالمعرّف نفسه الآن — لم يُستبدل');
     await adapter.put(entry.store, entry.data);

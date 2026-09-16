@@ -9,7 +9,7 @@ import { monthEvents, monthGrid, icsCalendar, EVENT_KINDS, dayKey } from '../uti
 import { agreementState } from '../util/agreements.js';
 import { downloadBlob } from '../data/backup.js';
 import { el, clear, badge, toast } from '../util/dom.js';
-import { formatNumber, formatDateTime, hijriMode } from '../util/format.js';
+import { formatNumber, formatDateTime, hijriMode, countOf } from '../util/format.js';
 import { hijriSupported, hijriDay, hijriRange, formatHijri } from '../util/hijri.js';
 
 const MONTHS = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
@@ -126,5 +126,5 @@ function exportMonth(ctx, events) {
   if (!events.length) { toast('لا مواعيد في هذا الشهر', 'info'); return; }
   const text = icsCalendar(events, { name: `كسّاب — ${MONTHS[ctx.month]} ${ctx.year}` });
   downloadBlob(new Blob([text], { type: 'text/calendar;charset=utf-8' }), `kassab-${ctx.year}-${String(ctx.month + 1).padStart(2, '0')}.ics`);
-  toast(`صُدّر ${formatNumber(events.length)} موعدًا`, 'success');
+  toast(`صُدّر ${countOf(events.length, 'موعد')}`, 'success');
 }

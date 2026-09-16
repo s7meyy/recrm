@@ -20,7 +20,7 @@ import { ENUMS } from '../data/schema.js';
 import { LISTING_GROUPS, LISTING_VALUES, listingFilterOptions } from '../util/property-filters.js';
 import { el, clear, badge, checkbox, openModal, toast, appendChildren, allChip } from '../util/dom.js';
 import { orderRoute, routeLength, googleMapsRoute, MAX_STOPS } from '../util/route.js';
-import { formatNumber, countWord } from '../util/format.js';
+import { formatNumber, countWord, countOf } from '../util/format.js';
 import { MAP_SCHEMES, colorFor, legendFor, schemeValue, SCHEME_FILTER_GROUP, EXTERNAL_COLOR } from '../util/map-colors.js';
 
 const RIYADH_CENTER = [24.7136, 46.6753];
@@ -222,7 +222,7 @@ function openRoutePlanner(ctx) {
     appendChildren(summary, [
       el('div', { class: 'strong', text: `الترتيب: ${ordered.map((s, i) => `${i + 1}. ${s.label}`).join('  ←  ')}` }),
       el('div', { text: `مسافة تقديرية: ${(routeLength(ordered, origin) / 1000).toFixed(1)} كم — مسافة هواء لا طريق، فالواقع أطول.` }),
-      dropped ? el('div', { class: 'warn-text', text: `خرائط جوجل تقبل ${MAX_STOPS} محطات في الرابط الواحد؛ سقطت ${dropped} من الآخر.` }) : null,
+      dropped ? el('div', { class: 'warn-text', text: `خرائط جوجل تقبل ${countOf(MAX_STOPS, 'محطة')} في الرابط الواحد؛ سقطت ${dropped} من الآخر.` }) : null,
       origin ? el('div', { text: 'البداية: موقعك الحالي.' }) : null,
     ]);
     openBtn.onclick = () => { if (url) window.open(url, '_blank', 'noopener'); };
@@ -261,7 +261,7 @@ function openRoutePlanner(ctx) {
     title: 'جولة اليوم',
     size: 'wide',
     body: el('div', {},
-      el('p', { class: 'muted small', text: `اختر من ${formatNumber(items.length)} عقارًا ظاهرًا على الخريطة الآن. الترتيب بالأقرب فالأقرب — تقريبٌ سريع لا مسارٌ أمثل.` }),
+      el('p', { class: 'muted small', text: `اختر من ${countOf(items.length, 'عقار ظاهر')} على الخريطة الآن. الترتيب بالأقرب فالأقرب — تقريبٌ سريع لا مسارٌ أمثل.` }),
       el('div', { class: 'row' }, locBtn,
         el('button', { type: 'button', class: 'btn btn-ghost btn-sm', text: 'مسح الاختيار', onClick: () => {
           picked.clear();

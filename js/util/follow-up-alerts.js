@@ -15,6 +15,7 @@
 import { repo } from '../data/repository.js';
 import { getFollowUpSettings } from '../data/settings.js';
 import { daysBetween } from './format.js';
+import { countOf } from './format.js';
 
 const SEEN_KEY = 'kassab_followup_notified_v1';
 const CHECK_INTERVAL_MS = 30 * 60 * 1000;
@@ -50,8 +51,8 @@ async function checkClientsOnce() {
   if (!newlyStale.length) return;
 
   const n = newlyStale.length === 1
-    ? new Notification('عميل يحتاج متابعة', { body: `${newlyStale[0].name || 'عميل بلا اسم'} لم يُتواصل معه منذ أكثر من ${settings.staleContactDays} يومًا.`, tag: 'kassab-followup' })
-    : new Notification('عملاء يحتاجون متابعة', { body: `${newlyStale.length} عملاء تجاوزوا حدّ عدم التواصل. افتح الداشبورد لمراجعتهم.`, tag: 'kassab-followup' });
+    ? new Notification('عميل يحتاج متابعة', { body: `${newlyStale[0].name || 'عميل بلا اسم'} لم يُتواصل معه منذ أكثر من ${countOf(settings.staleContactDays, 'يوم')}.`, tag: 'kassab-followup' })
+    : new Notification('عملاء يحتاجون متابعة', { body: `${countOf(newlyStale.length, 'عميل')} تجاوزوا حدّ عدم التواصل. افتح الداشبورد لمراجعتهم.`, tag: 'kassab-followup' });
   n.onclick = goTo(newlyStale.length === 1 ? `#/clients/${newlyStale[0].id}` : '#/dashboard');
 }
 

@@ -49,7 +49,8 @@ const beforeReqs = await page.evaluate(async () => (await (await import('/js/dat
 await modal.locator('input[type="number"]').first().fill('5000000');
 await page.waitForTimeout(700);
 const withResults = await modal.innerText();
-ok('النتائج تظهر فورًا بلا إنشاء طلب', /مرشّحًا بالمحرك نفسه/.test(withResults), withResults.split('\n').find((l) => l.includes('مرشّح')) || '');
+// «٥ مرشّحين» و«١١ مرشّحًا» كلتاهما صحيحة بحسب العدد (المرحلة ٤٤).
+ok('النتائج تظهر فورًا بلا إنشاء طلب', /مرشّح(ين|ًا|ان|ٌ واحد) بالمحرك نفسه/.test(withResults), withResults.split('\n').find((l) => l.includes('مرشّح')) || '');
 const afterReqs = await page.evaluate(async () => (await (await import('/js/data/repository.js')).repo.requests.list()).length);
 ok('ولا سجل طلب يُكتب', beforeReqs === afterReqs, `${beforeReqs} → ${afterReqs}`);
 

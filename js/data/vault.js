@@ -8,6 +8,7 @@
 // الجهاز لا اختراقه محليًا — ومن يملك جهازك المفتوح يرى البيانات نفسها في التطبيق أصلًا.
 
 import { exportBackup, readBackupFile, importBackup, mergeBackup, restoreRisk, importSettings } from './backup.js';
+import { countOf } from '../util/format.js';
 
 const ENDPOINT = '/api/vault';
 const PBKDF2_ROUNDS = 200000;
@@ -174,7 +175,7 @@ export async function restoreImages(passphrase) {
   const mine = metas.filter((m) => (m.at || '') === batch);
   const expected = mine[0]?.parts ?? mine.length;
   if (mine.length !== expected) {
-    throw new Error(`الدفعة ناقصة: ${mine.length} من ${expected} كتلة — ارفع الصور من جديد قبل الاسترجاع.`);
+    throw new Error(`الدفعة ناقصة: ${mine.length} من ${countOf(expected, 'كتلة')} — ارفع الصور من جديد قبل الاسترجاع.`);
   }
   const { repo } = await import('./repository.js');
   const { deserializeImage } = await import('./backup.js');

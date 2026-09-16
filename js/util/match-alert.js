@@ -11,6 +11,7 @@ import { getCurrentUser } from '../data/repository.js';
 import { el, openModal, toast, selectEl } from './dom.js';
 import { formatPhone } from '../util/phone.js';
 import { renderTemplate, templateValues, whatsappLink } from './templates.js';
+import { countOf } from './format.js';
 
 /**
  * يحسب الطلبات النشطة التي يطابقها العقار، مرتّبة بالنسبة تنازليًا.
@@ -79,12 +80,12 @@ export async function announceMatches(property, { title = 'هذا العقار �
     title,
     size: 'wide',
     body: el('div', {},
-      el('p', { class: 'muted small', text: `${matches.length} طلب نشط يطابق هذا العقار. أرسل لكل عميل رسالة جاهزة من قوالبك، أو افتح طلبه.` }),
+      el('p', { class: 'muted small', text: `${countOf(matches.length, 'طلب نشط')} يطابق هذا العقار. أرسل لكل عميل رسالة جاهزة من قوالبك، أو افتح طلبه.` }),
       el('div', { class: 'row' }, el('span', { class: 'field-label', text: 'القالب' }), templateSelect),
       list,
       matches.length > 12 ? el('p', { class: 'muted small', text: `و${matches.length - 12} طلبًا آخر — افتح صفحة المطابقات لبقيتهم.` }) : null),
     footer: [el('button', { type: 'button', class: 'btn btn-primary', text: 'حسنًا', onClick: () => modal.close() })],
   });
-  toast(`${matches.length} طلب نشط يطابق هذا العقار`, 'success', 4000);
+  toast(`${countOf(matches.length, 'طلب نشط')} يطابق هذا العقار`, 'success', 4000);
   return matches;
 }

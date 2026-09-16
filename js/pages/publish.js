@@ -12,7 +12,7 @@ import { repo } from '../data/repository.js';
 import { ENUMS, labelFor } from '../data/schema.js';
 import { getLists, typeLabel, getCompany, getPublishSettings, setPublishSettings } from '../data/settings.js';
 import { el, clear, labeled, selectEl, checkbox, badge, toast, emptyState, confirmDialog, debounce, openModal } from '../util/dom.js';
-import { formatSAR, formatArea, formatDateTime, formatNumber } from '../util/format.js';
+import { formatSAR, formatArea, formatDateTime, formatNumber, countOf } from '../util/format.js';
 import { mapsLink } from '../util/location.js';
 import { isVideo } from '../data/images.js';
 import { matchesQuery } from '../util/arabic.js';
@@ -146,9 +146,9 @@ function drawStatus(ctx) {
   const p = ctx.publish;
   body.append(el('dl', { class: 'kv' },
     el('dt', { text: 'آخر نشر' }),
-    el('dd', {}, p.lastPublishAt ? `${formatDateTime(p.lastPublishAt)} — ${p.lastPublishCount} عرض` : badge('لم يُنشر شيء بعد', 'badge-warn')),
+    el('dd', {}, p.lastPublishAt ? `${formatDateTime(p.lastPublishAt)} — ${countOf(p.lastPublishCount, 'عرض')}` : badge('لم يُنشر شيء بعد', 'badge-warn')),
     el('dt', { text: 'المختار الآن' }),
-    el('dd', { text: `${ctx.selected.size} عقار` })));
+    el('dd', { text: `${countOf(ctx.selected.size, 'عقار')}` })));
 
   const publishBtn = el('button', { type: 'button', class: 'btn btn-primary', text: '🚀 نشر الآن' });
   publishBtn.addEventListener('click', () => doPublish(ctx, publishBtn));
@@ -200,7 +200,7 @@ function drawList(ctx) {
         const vids = all.filter((id) => ctx.videoIds.has(id)).length;
         return el('span', {},
           String(all.length - vids),
-          vids ? el('span', { class: 'muted small', title: 'المقاطع لا تُنشر في الصفحة العامة', text: ` (+${vids} مقطع لا يُنشر)` }) : null);
+          vids ? el('span', { class: 'muted small', title: 'المقاطع لا تُنشر في الصفحة العامة', text: ` (+${countOf(vids, 'مقطع')} لا يُنشر)` }) : null);
       })()),
       el('td', {}, viewCell(ctx, p)),
       el('td', {}, shareButton(ctx, p)));
@@ -357,7 +357,7 @@ function toPublicListing(ctx, property, index) {
 async function doPublish(ctx, btn) {
   const chosen = ctx.properties.filter((p) => ctx.selected.has(p.id));
   if (!chosen.length) { toast('اختر عقارًا واحدًا على الأقل قبل النشر', 'error'); return; }
-  if (chosen.length > PREVIEW_LIMIT) { toast(`الحد الأعلى ${PREVIEW_LIMIT} عرضًا في النشرة الواحدة`, 'error'); return; }
+  if (chosen.length > PREVIEW_LIMIT) { toast(`الحد الأعلى ${countOf(PREVIEW_LIMIT, 'عرض')} في النشرة الواحدة`, 'error'); return; }
 
   btn.disabled = true;
   const original = btn.textContent;
@@ -413,7 +413,7 @@ async function doPublish(ctx, btn) {
     ctx.publishedRefs = new Map(ctx.publish.publishedRefs);
     drawStatus(ctx);
     drawList(ctx);
-    toast(`نُشر ${result.count} عرض — الصفحة العامة محدَّثة الآن`, 'success', 5000);
+    toast(`نُشر ${countOf(result.count, 'عرض')} — الصفحة العامة محدَّثة الآن`, 'success', 5000);
   } catch (err) {
     console.error(err);
     toast(err.message || 'تعذر النشر', 'error', 7000);

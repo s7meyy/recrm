@@ -10,7 +10,7 @@ import { startFollowUpAlerts } from './util/follow-up-alerts.js';
 import { initGlobalSearch } from './util/global-search.js';
 import { applySidebarOrder } from './util/sidebar.js';
 import { applyTheme } from './util/theme.js';
-import { setHijriMode, formatNumber } from './util/format.js';
+import { setHijriMode, formatNumber, countOf } from './util/format.js';
 import { initVoiceBar } from './util/voice-bar.js';
 import { startAutoLock } from './util/auto-lock.js';
 import { initClientMode, applyClientMode, clientModeOn } from './util/client-mode.js';
@@ -199,6 +199,37 @@ async function navigate() {
       el('strong', { text: 'تعذر عرض الصفحة' }),
       el('div', { text: err.message || String(err) })));
   }
+}
+
+/* ===== تبويبٌ آخر مفتوح ===== */
+
+/**
+ * **تبويبان على البيانات نفسها: آخرُ كتابةٍ تغلب.**
+ *
+ * وذلك سلوكٌ صحيحٌ لجهازٍ واحد ولا يُراد تغييره — قفلُ السجلّات بين تبويبَي المستخدم نفسه
+ * تعقيدٌ بلا مقابل. **لكنّه كان صامتًا**: من فتح تبويبين وكتب في كليهما فقَد ما كتبه في
+ * الأول ولا شيء يقول له. فيُقال: تبويبٌ يعلم بفتح غيره فيُنبّه مرّةً واحدة.
+ *
+ * والقناةُ `BroadcastChannel` حين تتوفّر، وإلّا `storage` — وكلتاهما بين تبويبات الأصل
+ * نفسه لا تخرجان منه، ولا يُرسَل فيهما إلا وقتٌ (المرحلة ٤٤).
+ */
+function watchOtherTabs() {
+  const KEY = 'kassab:tab-ping';
+  let warned = false;
+  const warn = () => {
+    if (warned) return;
+    warned = true;
+    toast('تبويبٌ آخر من كسّاب مفتوح على البيانات نفسها — واكتب في واحدٍ منهما: آخرُ حفظٍ يغلب.', 'info', 9000);
+  };
+  const announce = () => { try { localStorage.setItem(KEY, String(Date.now())); } catch (_) { /* تصفّح خاص */ } };
+  try {
+    const ch = new BroadcastChannel(KEY);
+    ch.addEventListener('message', (e) => { if (e.data === 'hello') { ch.postMessage('here'); warn(); } else if (e.data === 'here') warn(); });
+    ch.postMessage('hello');
+    return;
+  } catch (_) { /* لا BroadcastChannel — نرجع إلى التخزين */ }
+  window.addEventListener('storage', (e) => { if (e.key === KEY) warn(); });
+  announce();
 }
 
 /* ===== الفلاتر على الجوّال: تُطوى خلف زرّ ===== */
@@ -390,6 +421,7 @@ async function init() {
   await initSidebarState(); // قبل أول تنقّل كي لا تُطوى القائمة ثم تُفتح أمام عينك
   initGlobalSearch();
   initVoiceBar(); // أمرٌ بالصوت في كل صفحة (المرحلة ٣٨) — لا يسمع شيئًا حتى تضغطه
+  watchOtherTabs(); // تبويبٌ آخر مفتوح: يُقال ولا يُترك صامتًا (المرحلة ٤٤)
   initClientMode(); // وضع العرض للعميل (المرحلة ١٣)
   startFollowUpAlerts();
   await initAutoLock(); // القفل التلقائي بعد خمول (المرحلة ٣٢)
@@ -415,7 +447,7 @@ async function initAutoLock() {
     minutes,
     onWarn: (seconds, stay) => {
       const box = el('div', { class: 'toast toast-error auto-lock-warn' },
-        el('span', { text: `سيُقفل التطبيق بعد ${seconds} ثانية لعدم النشاط.` }),
+        el('span', { text: `سيُقفل التطبيق بعد ${countOf(seconds, 'ثانية')} لعدم النشاط.` }),
         el('button', { type: 'button', class: 'btn btn-sm', text: 'ابقَ مفتوحًا', onClick: () => { stay(); box.remove(); } }));
       document.getElementById('toast-root')?.append(box);
       setTimeout(() => box.remove(), seconds * 1000);

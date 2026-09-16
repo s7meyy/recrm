@@ -11,7 +11,7 @@ import { repo } from '../data/repository.js';
 import { getLists, typeLabel } from '../data/settings.js';
 import { priceSamples, estimatePrice, purposeKey } from '../util/price-stats.js';
 import { el, clear, labeled, selectEl, badge, emptyState, toast } from '../util/dom.js';
-import { formatSAR, formatArea, formatNumber, formatDate } from '../util/format.js';
+import { formatSAR, formatArea, formatNumber, formatDate, countOf } from '../util/format.js';
 import { monthlyInstallment, rentalYield } from '../util/finance.js';
 
 const MIN_SAMPLE = 3;
@@ -110,7 +110,7 @@ function build(ctx) {
       el('strong', { text: 'ليس تثمينًا معتمدًا. ' }),
       'رقمٌ من بياناتك وحدها: مخزونك المعتمد، والعروض الخارجية النشطة، وصفقاتك المنجزة. ',
       'لا يرى عمر المبنى ولا الشارع ولا التشطيب، ولا يُقدِّر أصلًا إن قلّت العيّنة عن ',
-      `${formatNumber(MIN_SAMPLE)} سجلات — والقرار قرارك.`),
+      `${countOf(MIN_SAMPLE, 'سجل')} — والقرار قرارك.`),
     el('div', { class: 'panel' }, el('div', { class: 'form-grid' },
       labeled('الغرض', purposeSelect),
       labeled('المدينة', citySelect),
@@ -133,7 +133,7 @@ function draw(ctx) {
   if (!result.ok) {
     area.append(result.reason === 'area'
       ? emptyState('اكتب المساحة بالمتر المربع ليُحسب التقدير.')
-      : emptyState(`لا عيّنة كافية: ${formatNumber(result.count)} سجل فقط بهذه المواصفات، والحد ${formatNumber(MIN_SAMPLE)}. `
+      : emptyState(`لا عيّنة كافية: ${countOf(result.count, 'سجل')} فقط بهذه المواصفات، والحد ${formatNumber(MIN_SAMPLE)}. `
         + 'أضف عروضًا خارجية من هذا الحي أو اعتمد عقارات مخزونك — الصمت هنا أصدق من رقم مخترَع.'));
     if (result.comparables.length) area.append(comparablesTable(ctx, result.comparables, 'ما وجدناه رغم قلّته'));
     return;
@@ -233,7 +233,7 @@ function yieldPanel(defaultPrice) {
       fact(`${formatNumber(Math.round(r.net * 100) / 100)}٪`, 'العائد بعد المصاريف'),
       fact(`${formatNumber(Math.round(r.gross * 100) / 100)}٪`, 'العائد الإجمالي'),
       fact(formatSAR(Math.round(r.monthly)), 'الدخل الشهري الصافي'),
-      fact(r.payback == null ? '—' : `${formatNumber(Math.round(r.payback))} سنة`, 'مدّة الاسترداد'));
+      fact(r.payback == null ? '—' : `${countOf(Math.round(r.payback), 'سنة')}`, 'مدّة الاسترداد'));
   };
   for (const input of [priceInput, rentInput, costsInput, occInput]) input.addEventListener('input', recalc);
 

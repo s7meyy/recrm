@@ -144,7 +144,8 @@ const picks = page.locator('.card-pick');
 await picks.nth(0).check();
 await picks.nth(1).check();
 await page.waitForTimeout(500);
-ok('شريط التحديد يظهر بعدد المختار', (await page.locator('.selection-bar').innerText()).includes('2'), await page.locator('.selection-bar').innerText());
+// المثنّى في العربية لا يُسبق برقم: «عقاران مختاران» لا «٢ عقار مختار» (المرحلة ٤٤).
+ok('شريط التحديد يظهر بعدد المختار', /عقاران مختاران/.test(await page.locator('.selection-bar').innerText()), await page.locator('.selection-bar').innerText());
 await page.locator('.selection-bar button:has-text("قارن")').click();
 await page.waitForTimeout(700);
 const compare = await page.locator('.modal').last().innerText();

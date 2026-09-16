@@ -12,7 +12,7 @@ import {
 } from '../util/dom.js';
 import { micButton } from '../util/voice.js';
 import { syncReminders } from '../util/push.js';
-import { formatDateTime, formatDate, formatNumber, countWord, toInputDateTime, fromInputDateTime } from '../util/format.js';
+import { formatDateTime, formatDate, formatNumber, countWord, toInputDateTime, fromInputDateTime , countOf} from '../util/format.js';
 import { clientName } from './requests.js';
 import { proposeTasks } from '../util/task-intake.js';
 import { allChip, debounce } from '../util/dom.js';
@@ -650,7 +650,7 @@ function tableBody(ctx, redrawAll) {
   }
 
   return el('div', {},
-    el('p', { class: 'muted small', text: `${formatNumber(rows.length)} من ${formatNumber(ctx.tasks.length)} مهمة` }),
+    el('p', { class: 'muted small', text: `${formatNumber(rows.length)} من ${countOf(ctx.tasks.length, 'مهمة')}` }),
     el('div', { class: 'table-wrap' },
       el('table', { class: 'table tasks-table' },
         el('thead', {}, head),

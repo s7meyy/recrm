@@ -11,7 +11,7 @@ import { getImageUrl } from '../data/images.js';
 import {
   el, clear, labeled, selectEl, badge, openModal, confirmDialog, toast, emptyState, debounce, appendChildren,
 } from '../util/dom.js';
-import { formatDate, formatNumber, formatSAR, toInputDate, fromInputDate } from '../util/format.js';
+import { formatDate, formatNumber, formatSAR, toInputDate, fromInputDate, countOf } from '../util/format.js';
 import { vatSummary, invoiceYears, QUARTERS, quarterOf } from '../util/vat-report.js';
 import { receivables } from '../util/receivables.js';
 import { formatPhone } from '../util/phone.js';
@@ -642,7 +642,7 @@ function openVatReport(ctx) {
         el('dt', { text: 'ضريبة المخرجات' }), el('dd', {}, badge(formatSAR(report.vat), 'badge-ok')),
         el('dt', { text: 'الإجمالي بعد الضريبة' }), el('dd', { text: formatSAR(report.gross) })),
       report.zeroRated
-        ? el('p', { class: 'muted small', text: `${formatNumber(report.zeroRated)} فاتورة بلا ضريبة في هذا الربع — تأكّد أنها مقصودة.` })
+        ? el('p', { class: 'muted small', text: `${countOf(report.zeroRated, 'فاتورة')} بلا ضريبة في هذا الربع — تأكّد أنها مقصودة.` })
         : null,
       el('div', { class: 'table-wrap' }, el('table', { class: 'table' },
         el('thead', {}, el('tr', {}, ['الرقم', 'التاريخ', 'العميل', 'قبل الضريبة', 'الضريبة'].map((t) => el('th', { text: t })))),

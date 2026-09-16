@@ -13,7 +13,7 @@ import {
   el, clear, labeled, fieldGroup, selectEl, checkbox, badge, openModal, confirmDialog,
   promptDialog, toast, emptyState, debounce, allChip,
 } from '../util/dom.js';
-import { formatSAR, formatArea, formatDate, formatNumber, daysWord, toInputDate, fromInputDate } from '../util/format.js';
+import { formatSAR, formatArea, formatDate, formatNumber, daysWord, toInputDate, fromInputDate, countOf } from '../util/format.js';
 import { matchesQuery } from '../util/arabic.js';
 import { formatPhone } from '../util/phone.js';
 import { parseLocation, isShortMapLink, mapsLink, locationToText } from '../util/location.js';
@@ -164,7 +164,7 @@ function renderSelectionBar(ctx) {
   if (!ids.length) return;
   const chosen = () => ctx.properties.filter((p) => ctx.selected.has(p.id));
   bar.append(
-    el('span', { class: 'strong', text: `${ids.length} عقار مختار` }),
+    el('span', { class: 'strong', text: `${countOf(ids.length, 'عقار مختار')}` }),
     el('button', {
       type: 'button', class: 'btn btn-sm', text: '⇄ قارن',
       onClick: () => (ids.length < 2 ? toast('اختر عقارين على الأقل للمقارنة', 'error') : openCompare(ctx, chosen())),
@@ -197,7 +197,7 @@ function openCompare(ctx, items) {
     ['ملاحظات', (p) => p.notes || '—'],
   ];
   const modal = openModal({
-    title: `مقارنة ${items.length} عقارات`,
+    title: `مقارنة ${countOf(items.length, 'عقار')}`,
     size: 'wide',
     body: el('div', { class: 'table-wrap' }, el('table', { class: 'table compare-table' },
       el('thead', {}, el('tr', {}, el('th', { text: 'المعيار' }),
@@ -303,10 +303,16 @@ function renderFilters(ctx) {
     // «الكل» أوّل الصفّ (المرحلة ٣٨): تحديد الكلّ ثم نزع اثنين أسرع من تحديد ستّة.
     chips.append(allChip(ctx.filters[group], options.map((o) => o.value),
       () => { renderFilters(ctx); renderList(ctx); renderSaved(ctx); }));
+    // **الرقائقُ الصفريّة تُطوى خلف واحدة** (المرحلة ٤٤): إضافةُ ستّة أنواعٍ مدمجة في
+    // المرحلة ٤٢ (عمارة · محل · مكتب · مستودع · استراحة · مزرعة) جعلت صفَّ «النوع» ستَّ
+    // رقائقَ بأصفارها لمن لا يملك منها شيئًا — صفٌّ كاملٌ بلا خبر في أكثر صفحةٍ تُفتح.
+    // **ولا تُحذف**: «لا محلّات عندك» خبرٌ لا فراغ، فتُطوى وتُفتح بنقرة.
+    const zeros = el('span', { class: 'chips chips-zero', hidden: true });
     for (const opt of options) {
       const n = ctx.properties.filter((p) => passes(ctx, p, group) && VALUES[group](p).includes(opt.value)).length;
       const active = ctx.filters[group].has(opt.value);
-      chips.append(el('button', {
+      const target = n === 0 && !active ? zeros : chips;
+      target.append(el('button', {
         type: 'button', class: `chip${active ? ' active' : ''}${n === 0 && !active ? ' zero' : ''}`,
         onClick: () => {
           if (active) ctx.filters[group].delete(opt.value); else ctx.filters[group].add(opt.value);
@@ -319,6 +325,17 @@ function renderFilters(ctx) {
           renderSaved(ctx);
         },
       }, opt.label, el('span', { class: 'chip-count', text: String(n) })));
+    }
+    if (zeros.children.length > 2) {
+      const more = el('button', {
+        type: 'button', class: 'chip zero',
+        onClick: () => { zeros.hidden = !zeros.hidden; more.hidden = !zeros.hidden ? true : false; },
+        text: `+ ${formatNumber(zeros.children.length)} بلا نتائج`,
+      });
+      chips.append(more, zeros);
+    } else {
+      zeros.hidden = false;
+      chips.append(zeros);
     }
     wrap.append(el('div', { class: 'filter-row' }, el('span', { class: 'filter-label', text: label }), chips));
   }
@@ -412,7 +429,7 @@ function renderGrid(ctx, items) {
     const imgBox = el('div', { class: 'card-img' });
     if (p.images?.length) {
       thumbInto(imgBox, p);
-      if (p.images.length > 1) imgBox.append(el('span', { class: 'card-imgcount', text: `${p.images.length} صور` }));
+      if (p.images.length > 1) imgBox.append(el('span', { class: 'card-imgcount', text: `${countOf(p.images.length, 'صورة')}` }));
     } else {
       imgBox.append(el('span', { class: 'card-noimg', text: typeLabel(ctx.lists, p.type) }));
     }
@@ -1125,6 +1142,21 @@ async function openForm(ctx, existing, prefill = {}) {
     if (wantsNewOwner && !newOwnerName.value.trim() && !newOwnerPhone.value.trim()) errors.push('أدخل اسم العميل الجديد أو جواله');
     if (errors.length) { showErrors(errors); return; }
 
+    // **سقفُ المعقول يُسأل عنه ولا يُمنع** (المرحلة ٤٤): «٩٩٩٬٩٩٩٬٩٩٩٬٩٩٩» خطأُ أصفارٍ
+    // يقع بالإصبع، ويُفسد وسيطَ سعر الحي فيُخرج بقيّةَ عقاراته عن نصابها. والمنعُ خطأ:
+    // بُرجٌ بمليارٍ موجودٌ فعلًا. فيُسأل مرّةً، ومن أكّد مضى.
+    if (data.price != null && data.area != null && data.area > 0) {
+      const perM = data.price / data.area;
+      if (perM > 500000) {
+        const okBig = await confirmDialog({
+          title: 'تأكَّد من السعر',
+          message: `${formatSAR(data.price)} على ${formatArea(data.area)} = ${formatSAR(Math.round(perM))} للمتر — وهو بعيدٌ جدًّا عن أسعار السوق. أهذا صحيح؟`,
+          confirmText: 'نعم، السعر صحيح',
+        });
+        if (!okBig) return;
+      }
+    }
+
     saveBtn.disabled = true;
     try {
       if (wantsNewOwner) {
@@ -1353,7 +1385,7 @@ function openAdCopy(ctx, property, company) {
           class: ch.over ? 'badge badge-danger' : 'muted small',
           text: ch.limit
             ? `${formatNumber([...area.value].length)} / ${formatNumber(ch.limit)} حرفًا${ch.over ? ' — تجاوز الحدّ' : ''}`
-            : `${formatNumber([...area.value].length)} حرفًا`,
+            : `${countOf([...area.value].length, 'حرف')}`,
         })));
   });
 

@@ -8,7 +8,7 @@ import { loadMatchingContext } from '../data/matching.js';
 import { getLists, typeLabel } from '../data/settings.js';
 import { buildOpportunityIndex, collapseByDistrict, surplusRows } from '../util/opportunity.js';
 import { el, clear, badge, selectEl, checkbox, emptyState, openModal, toast } from '../util/dom.js';
-import { formatSAR, formatArea, formatNumber } from '../util/format.js';
+import { formatSAR, formatArea, formatNumber, countOf } from '../util/format.js';
 import { formatPhone } from '../util/phone.js';
 import { clientName } from './requests.js';
 import { revivedRequests } from '../util/revived-requests.js';
@@ -81,7 +81,7 @@ function drawRevived(ctx) {
             client?.phone ? el('a', { class: 'tel small', href: `tel:${client.phone}`, text: formatPhone(client.phone) }) : null),
           el('td', { text: `${typeLabel(ctx.lists, r.request.type)} — ${(r.request.districts || []).join('، ') || r.request.city || ''}` }),
           el('td', {}, el('div', { class: 'small', text: formatDate(new Date(r.closedAt).toISOString()) }),
-            el('div', { class: 'muted small', text: `قبل ${formatNumber(r.monthsAgo)} شهرًا` })),
+            el('div', { class: 'muted small', text: `قبل ${countOf(r.monthsAgo, 'شهر')}` })),
           el('td', { text: `${typeLabel(ctx.lists, listing.type)} — ${listing.district || listing.city || ''}`
             + (listing.price ? ` · ${formatSAR(listing.price)}` : '') }),
           el('td', {}, badge(`${formatNumber(r.best?.score || 0)}٪`, 'badge-ok')),
@@ -185,7 +185,7 @@ function openRequests(ctx, row) {
   if (!items.length) { toast('لا طلبات غير ملبّاة في هذا الصف', 'info'); return; }
 
   const body = el('div', {},
-    el('p', { class: 'muted small', text: `${items.length} طلب نشط يشمل ${row.district} ولا يجد مرشحًا — هذه هي الفرصة.` }),
+    el('p', { class: 'muted small', text: `${countOf(items.length, 'طلب')} نشط يشمل ${row.district} ولا يجد مرشحًا — هذه هي الفرصة.` }),
     el('div', { class: 'table-wrap' }, el('table', { class: 'table' },
       el('thead', {}, el('tr', {}, ['العميل', 'الجوال', 'سقف الميزانية', 'المساحة', ''].map((t) => el('th', { text: t })))),
       el('tbody', {}, items.map((r) => {

@@ -16,7 +16,7 @@ import { expiringAgreements } from '../util/agreements.js';
 import { dealAnniversaries } from '../util/calendar.js';
 import { runPlans } from '../util/plans.js';
 import { el, clear, badge, emptyState, confirmDialog, toast, openModal, labeled, selectEl } from '../util/dom.js';
-import { formatSAR, formatDate, formatDateTime, formatNumber, relativeDays, daysBetween, daysWord, countWord } from '../util/format.js';
+import { formatSAR, formatDate, formatDateTime, formatNumber, relativeDays, daysBetween, daysWord, countWord, countOf } from '../util/format.js';
 import { formatPhone, toInternational } from '../util/phone.js';
 import { clientName } from './requests.js';
 import { audioNoteField } from '../util/audio-note.js';
@@ -539,7 +539,7 @@ function build(container, d) {
         el('p', { class: 'muted small', text: 'سُجّلوا ولم يُسجَّل معهم أي تواصل. سجّل المكالمة بعدها فيخرجون من هنا.' }),
         ...d.waiting.slice(0, 8).map(({ client, waitedMinutes }) => row(
           clientName(client),
-          waitedMinutes < 120 ? `منذ ${waitedMinutes} دقيقة` : `منذ ${Math.round(waitedMinutes / 60)} ساعة`,
+          waitedMinutes < 120 ? `منذ ${countOf(waitedMinutes, 'دقيقة')}` : `منذ ${Math.round(waitedMinutes / 60)} ساعة`,
           clientActions(client)))),
       { href: '#/clients', hrefText: 'العملاء →', tone: 'today-warn' }));
   }
@@ -551,7 +551,7 @@ function build(container, d) {
         el('p', { class: 'muted small', text: 'من يفتح قائمة عقاراته مرّتين يقرأ لا يتصفّح. ولا يظهر هنا من كلّمتَه بعد فتحه.' }),
         ...d.openedLists.slice(0, 8).map(({ client, list, opens, lastOpenAt }) => row(
           clientName(client) || list.clientName || list.title || 'قائمة',
-          `${formatNumber(opens)} فتحة · آخرها ${formatDateTime(lastOpenAt)}`,
+          `${countOf(opens, 'فتحة')} · آخرها ${formatDateTime(lastOpenAt)}`,
           clientActions(client)))),
       { href: '#/publish', hrefText: 'القوائم →', tone: 'today-ok' }));
   }
@@ -709,7 +709,7 @@ function build(container, d) {
         t.title,
         `${formatDateTime(t.dueAt)}${new Date(t.dueAt).getTime() < Date.now() ? ' — متأخرة' : ''}`,
         el('a', { class: 'btn btn-ghost btn-sm', href: `#/tasks/${t.id}`, text: 'فتح' }))))
-      : el('p', { class: 'muted small', text: `لا مهام مستحقة اليوم${d.tasksPending ? ` (${d.tasksPending} مهمة بلا موعد أو لاحقة)` : ''}.` }),
+      : el('p', { class: 'muted small', text: `لا مهام مستحقة اليوم${d.tasksPending ? ` (${countOf(d.tasksPending, 'مهمة')} بلا موعد أو لاحقة)` : ''}.` }),
     { href: '#/tasks', hrefText: 'المهام →', tone: d.dueTasks.some((t) => new Date(t.dueAt) < Date.now()) ? 'today-warn' : '' }));
 
   /* مطابقات جديدة */
@@ -757,20 +757,20 @@ function build(container, d) {
     d.opportunities.length
       ? el('div', {}, d.opportunities.map((o) => row(
         o.district,
-        `${o.unmet} طلب بلا أي مطابقة · مخزونك هناك: ${o.supply}`,
+        `${countOf(o.unmet, 'طلب')} بلا أي مطابقة · مخزونك هناك: ${o.supply}`,
         el('a', { class: 'btn btn-ghost btn-sm', href: '#/opportunities', text: 'من يطلبه؟' }))))
       : el('p', { class: 'muted small', text: 'لا عجز — كل طلب نشط يجد مرشحًا.' }),
     { href: '#/opportunities', hrefText: 'الفرص →', tone: d.opportunities.length ? 'today-warn' : '' }));
 
   /* ما يحتاج إكمالًا */
   const chores = [];
-  if (d.awaitingApproval.length) chores.push(row(`${d.awaitingApproval.length} التقاط بانتظار الاعتماد`, 'لا يدخل المطابقة قبل اعتماده',
+  if (d.awaitingApproval.length) chores.push(row(`${countOf(d.awaitingApproval.length, 'التقاط')} بانتظار الاعتماد`, 'لا يدخل المطابقة قبل اعتماده',
     el('a', { class: 'btn btn-ghost btn-sm', href: '#/tours/queue', text: 'فتح' })));
-  if (d.incomplete.length) chores.push(row(`${d.incomplete.length} عقار ناقص البيانات`, 'بحسب تعريف «مكتمل البيانات» في الإعدادات',
+  if (d.incomplete.length) chores.push(row(`${countOf(d.incomplete.length, 'عقار ناقص')}`, 'بحسب تعريف «مكتمل البيانات» في الإعدادات',
     el('a', { class: 'btn btn-ghost btn-sm', href: '#/properties', text: 'فتح' })));
-  if (d.unreadyExternals.length) chores.push(row(`${d.unreadyExternals.length} عرض خارجي بانتظار الإكمال`, 'ينقصه النوع أو الغرض أو المدينة فلا يطابق شيئًا',
+  if (d.unreadyExternals.length) chores.push(row(`${countOf(d.unreadyExternals.length, 'عرض خارجي')} بانتظار الإكمال`, 'ينقصه النوع أو الغرض أو المدينة فلا يطابق شيئًا',
     el('a', { class: 'btn btn-ghost btn-sm', href: '#/external', text: 'فتح' })));
-  if (d.quotesOpen) chores.push(row(`${d.quotesOpen} عرض سعر لم يتحوّل إلى فاتورة`, 'تابعه قبل أن يبرد',
+  if (d.quotesOpen) chores.push(row(`${countOf(d.quotesOpen, 'عرض')} سعر لم يتحوّل إلى فاتورة`, 'تابعه قبل أن يبرد',
     el('a', { class: 'btn btn-ghost btn-sm', href: '#/invoices', text: 'فتح' })));
 
   grid.append(section('يحتاج إكمالًا', chores.length,

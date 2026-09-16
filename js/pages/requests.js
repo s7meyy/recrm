@@ -14,7 +14,7 @@ import {
   el, clear, labeled, fieldGroup, selectEl, badge, openModal, confirmDialog, promptDialog,
   toast, emptyState, debounce, allChip,
 } from '../util/dom.js';
-import { formatSAR, formatArea, formatNumber } from '../util/format.js';
+import { formatSAR, formatArea, formatNumber, countOf } from '../util/format.js';
 import { matchesQuery } from '../util/arabic.js';
 import { formatPhone } from '../util/phone.js';
 
@@ -209,7 +209,7 @@ function renderList(ctx) {
       el('td', {}, badge(labelFor(ENUMS.requestStatuses, r.status), STATUS_STYLE[r.status] || '')),
       el('td', {}, r.status === 'active'
         ? el('a', {
-          class: 'btn btn-sm', href: `#/matches/${r.id}`, text: n ? `${formatNumber(n)} مطابقة` : 'لا مطابقات',
+          class: 'btn btn-sm', href: `#/matches/${r.id}`, text: n ? countOf(n, 'مطابقة') : 'لا مطابقات',
           onClick: (e) => e.stopPropagation(),
         })
         : el('span', { class: 'muted small', text: '—' })));
@@ -493,7 +493,7 @@ async function openForm(ctx, existing, prefill = null) {
       const active = selectedZones.has(zone.key);
       zonesBox.append(el('button', {
         type: 'button', class: `chip${active ? ' active' : ''}`,
-        title: `${zone.districts.length} حي`,
+        title: `${countOf(zone.districts.length, 'حي')}`,
         onClick: () => { if (active) selectedZones.delete(zone.key); else selectedZones.add(zone.key); drawZones(); },
       }, zone.label, el('span', { class: 'chip-count', text: String(zone.districts.length) })));
     }

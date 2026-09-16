@@ -16,7 +16,7 @@ import {
   el, clear, badge, labeled, fieldGroup, selectEl, checkbox, emptyState, debounce,
   openModal, confirmDialog, toast, allChip,
 } from '../util/dom.js';
-import { formatSAR, formatArea, formatNumber, formatDate, toInputDate, fromInputDate } from '../util/format.js';
+import { formatSAR, formatArea, formatNumber, formatDate, toInputDate, fromInputDate, countOf } from '../util/format.js';
 import { matchesQuery } from '../util/arabic.js';
 import { parseLocation, isShortMapLink, mapsLink, locationToText } from '../util/location.js';
 
@@ -115,7 +115,7 @@ function renderNotice(ctx) {
   if (!incomplete.length) return;
   const onlyIncomplete = ctx.filters.ready.size === 1 && ctx.filters.ready.has('incomplete');
   wrap.append(el('div', { class: 'notice' },
-    el('span', { text: `${formatNumber(incomplete.length)} عرضًا بانتظار الإكمال: ينقصها النوع أو الغرض أو المدينة، فلا تدخل المطابقة حتى تُكمل.` }),
+    el('span', { text: `${countOf(incomplete.length, 'عرض')} بانتظار الإكمال: ينقصها النوع أو الغرض أو المدينة، فلا تدخل المطابقة حتى تُكمل.` }),
     el('button', {
       type: 'button', class: 'btn btn-sm', text: onlyIncomplete ? 'إظهار الكل' : 'أظهر الناقصة',
       onClick: () => {
@@ -346,10 +346,10 @@ async function openForm(ctx, existing) {
       const others = hits.filter((h) => h.reason === 'phone');
       if (inventory.length) {
         phoneHint.classList.add('error');
-        phoneHint.textContent = `تنبيه: هذا الرقم مسجَّل مالكًا لـ${formatNumber(inventory.length)} عقار في مخزونك (${inventory[0].detail}) — قد يكون العرض لعقارك نفسه`;
+        phoneHint.textContent = `تنبيه: هذا الرقم مسجَّل مالكًا لـ${countOf(inventory.length, 'عقار')} في مخزونك (${inventory[0].detail}) — قد يكون العرض لعقارك نفسه`;
       } else if (others.length) {
         phoneHint.classList.add('error');
-        phoneHint.textContent = `هذا الرقم موجود في ${formatNumber(others.length)} عرض خارجي آخر`;
+        phoneHint.textContent = `هذا الرقم موجود في ${countOf(others.length, 'عرض خارجي')} آخر`;
       }
     } catch (_) { /* التنبيه تحسيني: فشله لا يعطّل النموذج */ }
   };

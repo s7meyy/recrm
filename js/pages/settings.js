@@ -36,7 +36,7 @@ import { audioSummary } from '../data/audio.js';
 import { seedExists, insertSeed, clearSeed } from '../data/seed.js';
 import { el, clear, labeled, selectEl, checkbox, badge, confirmDialog, openModal, toast, appendChildren, debounce } from '../util/dom.js';
 import { clientTagClass } from '../data/schema.js';
-import { formatDate, formatDateTime, relativeDays, setHijriMode, formatNumber, countWord, toInputDate, fromInputDate } from '../util/format.js';
+import { formatDate, formatDateTime, relativeDays, setHijriMode, formatNumber, countWord, toInputDate, fromInputDate, countOf } from '../util/format.js';
 import { hijriSupported } from '../util/hijri.js';
 
 const dataChanged = () => window.dispatchEvent(new CustomEvent('kassab:data-changed'));
@@ -253,12 +253,12 @@ async function backupBody(redraw) {
 async function storageBody() {
   const [summary, voice] = await Promise.all([imagesSummary(), audioSummary()]);
   const rows = [
-    el('dt', { text: 'الصور' }), el('dd', { text: `${summary.count} صورة — ${formatBytes(summary.bytes)}` }),
+    el('dt', { text: 'الصور' }), el('dd', { text: `${countOf(summary.count, 'صورة')} — ${formatBytes(summary.bytes)}` }),
   ];
   // الملاحظات الصوتية (المرحلة ٢٦): لا تظهر ما لم توجد — سطرٌ بصفرٍ دائم ضجيج.
   if (voice.count) {
     rows.push(el('dt', { text: 'الملاحظات الصوتية' }),
-      el('dd', { text: `${voice.count} تسجيلًا — ${formatBytes(voice.bytes)}` }));
+      el('dd', { text: `${countOf(voice.count, 'تسجيل')} — ${formatBytes(voice.bytes)}` }));
   }
   let warning = null;
   if (navigator.storage?.estimate) {
@@ -352,7 +352,7 @@ async function listsBody(redraw) {
     const extras = new Set(lists.extras.districts[city] || []);
     const items = lists.districtsByCity[city] || [];
     districtsChips.append(
-      el('p', { class: 'muted small', text: `${items.length} حي في ${city}` }),
+      el('p', { class: 'muted small', text: `${countOf(items.length, 'حي')} في ${city}` }),
       items.length
         ? chipList(items, { removable: (d) => extras.has(d), onRemove: (d) => act(() => removeDistrict(city, d))() })
         : el('p', { class: 'muted small', text: 'لا أحياء بعد لهذه المدينة.' }));
@@ -512,11 +512,11 @@ async function openZoneForm({ city, zone, districts, onSaved }) {
     for (const d of items) {
       box.append(checkbox(d, {
         value: d, checked: selected.has(d),
-        onChange: (e) => { if (e.target.checked) selected.add(d); else selected.delete(d); countNode.textContent = `${selected.size} حي مختار`; },
+        onChange: (e) => { if (e.target.checked) selected.add(d); else selected.delete(d); countNode.textContent = `${countOf(selected.size, 'حي مختار')}`; },
       }));
     }
     if (!items.length) box.append(el('span', { class: 'muted small', text: 'لا حي يطابق التصفية.' }));
-    countNode.textContent = `${selected.size} حي مختار`;
+    countNode.textContent = `${countOf(selected.size, 'حي مختار')}`;
   };
   searchInput.addEventListener('input', draw);
   draw();
@@ -566,7 +566,7 @@ async function zonesBody(redraw) {
       listBox.append(el('div', { class: 'zone-item' },
         el('div', {},
           el('span', { class: 'strong', text: zone.label }),
-          el('span', { class: 'muted small', text: ` — ${zone.districts.length} حي` }),
+          el('span', { class: 'muted small', text: ` — ${countOf(zone.districts.length, 'حي')}` }),
           el('div', { class: 'muted small', text: zone.districts.slice(0, 8).join('، ') + (zone.districts.length > 8 ? ' …' : '') })),
         el('div', { class: 'row' },
           el('button', { type: 'button', class: 'btn btn-sm', text: 'تعديل', onClick: () => openZoneForm({ city, zone, districts, onSaved: redraw }) }),
@@ -855,7 +855,7 @@ async function seedBody(redraw) {
         e.currentTarget.disabled = true;
         try {
           const ids = await insertSeed();
-          toast(`أُدرج ${ids.clients.length} عملاء و${ids.properties.length} عقارات`, 'success');
+          toast(`أُدرج ${countOf(ids.clients.length, 'عميل')} و${ids.properties.length} عقارات`, 'success');
           dataChanged();
           await redraw();
         } catch (err) { errToast(err); await redraw(); }
@@ -869,10 +869,10 @@ async function seedBody(redraw) {
         try {
           const removed = await clearSeed();
           const keptBits = [];
-          if (removed.keptClients) keptBits.push(`${removed.keptClients} عميل لارتباطه بعقارات أضفتها`);
-          if (removed.keptProperties) keptBits.push(`${removed.keptProperties} عقار لوجود صفقة مسجّلة عليه`);
+          if (removed.keptClients) keptBits.push(`${countOf(removed.keptClients, 'عميل')} لارتباطه بعقارات أضفتها`);
+          if (removed.keptProperties) keptBits.push(`${countOf(removed.keptProperties, 'عقار')} لوجود صفقة مسجّلة عليه`);
           const kept = keptBits.length ? ` — بقي ${keptBits.join(' و')}` : '';
-          toast(`حُذف ${removed.clients} عملاء و${removed.properties} عقارات${kept}`, 'success', kept ? 7000 : 3500);
+          toast(`حُذف ${countOf(removed.clients, 'عميل')} و${removed.properties} عقارات${kept}`, 'success', kept ? 7000 : 3500);
           dataChanged();
           await redraw();
         } catch (err) { errToast(err); }
@@ -1143,7 +1143,7 @@ async function vaultBody(redraw) {
     if (!ok) return;
     try {
       const res = await settingsFromVault(passInput.value.trim(), key);
-      toast(`نُقل ${res.moved} إعدادًا — يُعاد التحميل…`, 'success');
+      toast(`نُقل ${countOf(res.moved, 'إعداد')} — يُعاد التحميل…`, 'success');
       setTimeout(() => location.reload(), 1200);
     } catch (err) { errToast(err); }
   };
@@ -1163,7 +1163,7 @@ async function vaultBody(redraw) {
     const lines = ['سيُستبدل كل ما في هذا المتصفح بمحتوى النسخة.'];
     if (risk.wouldLose) {
       lines.push('');
-      lines.push(`⚠️ في هذا الجهاز ${risk.newerCount} سجلًّا أحدث من النسخة.`);
+      lines.push(`⚠️ في هذا الجهاز ${countOf(risk.newerCount, 'سجل')} أحدث من النسخة.`);
       lines.push(`آخر عمل هنا: ${formatDateTime(risk.localNewest)}`);
       lines.push(`وتاريخ النسخة: ${formatDateTime(risk.snapshotAt)}`);
       lines.push('');
@@ -1235,7 +1235,7 @@ async function vaultBody(redraw) {
         onProgress: (done, all) => { imgUploadBtn.textContent = `كتلة ${done} من ${all}…`; },
       });
       await setVaultSettings({ passphrase: pass, lastImagesAt: new Date().toISOString() });
-      toast(res.images ? `رُفعت ${res.images} صورة في ${res.parts} كتلة` : 'لا صور لرفعها', 'success');
+      toast(res.images ? `رُفعت ${countOf(res.images, 'صورة')} في ${res.parts} كتلة` : 'لا صور لرفعها', 'success');
       await drawImages();
     } catch (err) { errToast(err); }
     finally { busy(imgUploadBtn, false, '🖼️ ارفع الصور'); }
@@ -1246,7 +1246,7 @@ async function vaultBody(redraw) {
     busy(imgRestoreBtn, true, 'يسترجع…');
     try {
       const res = await restoreImages(passInput.value.trim());
-      toast(`استُرجعت ${res.images} صورة من ${res.parts} كتلة`, 'success');
+      toast(`استُرجعت ${countOf(res.images, 'صورة')} من ${res.parts} كتلة`, 'success');
       dataChanged();
     } catch (err) { errToast(err); }
     finally { busy(imgRestoreBtn, false, 'استرجع الصور'); }
@@ -1391,14 +1391,14 @@ async function exchangeBody(redraw) {
         if (!contacts.length) { toast('لم يُقرأ أي جهة اتصال من الملف', 'error'); return; }
         const ok = await confirmDialog({
           title: 'استيراد جهات الاتصال',
-          message: `قُرئت ${contacts.length} جهة اتصال. ستُضاف عملاء جددًا فقط — والجوال المسجَّل عندك مسبقًا يُتخطّى ولا يُعدَّل. المتابعة؟`,
+          message: `قُرئت ${countOf(contacts.length, 'جهة')} اتصال. ستُضاف عملاء جددًا فقط — والجوال المسجَّل عندك مسبقًا يُتخطّى ولا يُعدَّل. المتابعة؟`,
           confirmText: 'استيراد',
         });
         if (!ok) return;
         const stats = await importContacts(contacts);
         clear(resultBox);
         resultBox.append(el('p', { class: 'muted small', text: `أُضيف ${stats.added} · تُخطّي ${stats.skipped} (مسجَّل مسبقًا) · تُجوهل ${stats.invalid} (بلا اسم ولا جوال)` }));
-        toast(`أُضيف ${stats.added} عميلًا`, 'success');
+        toast(`أُضيف ${countOf(stats.added, 'عميل')}`, 'success');
         dataChanged();
       } catch (err) { errToast(err); }
     },
@@ -1414,7 +1414,7 @@ async function exchangeBody(redraw) {
         const { blob, filename, count } = await buildCsv(key, ctx);
         if (!count) { toast('لا بيانات لتصديرها', 'info'); return; }
         downloadBlob(blob, filename);
-        toast(`صُدّر ${count} سجلًا`, 'success');
+        toast(`صُدّر ${countOf(count, 'سجل')}`, 'success');
       } catch (err) { errToast(err); } finally { btn.disabled = false; }
     },
   }));
@@ -1470,7 +1470,7 @@ async function exchangeBody(redraw) {
               const withPhone = all.filter((c) => c.phone || c.phone2).length;
               if (!withPhone) { toast('لا عملاء بأرقام لتصديرهم', 'info'); return; }
               downloadBlob(new Blob([text], { type: 'text/vcard;charset=utf-8' }), 'kassab-contacts.vcf');
-              toast(`صُدّر ${withPhone} جهة اتصال`, 'success');
+              toast(`صُدّر ${countOf(withPhone, 'جهة')} اتصال`, 'success');
             } catch (err) { errToast(err); } finally { btn.disabled = false; }
           },
         }),
@@ -1547,7 +1547,7 @@ function openCsvMapping(entity, headers, rows, lists, onDone) {
     title: `استيراد ${def.label} من CSV`,
     size: 'wide',
     body: el('div', {},
-      el('p', { class: 'muted small', text: `قُرئ ${rows.length} صفًا و${headers.length} عمودًا. اربط كل حقل بعموده — والحقول المتروكة تبقى فارغة.` }),
+      el('p', { class: 'muted small', text: `قُرئ ${countOf(rows.length, 'صف')} و${headers.length} عمودًا. اربط كل حقل بعموده — والحقول المتروكة تبقى فارغة.` }),
       grid, previewBox),
     footer: [importBtn, el('button', { type: 'button', class: 'btn btn-ghost', text: 'إلغاء', onClick: () => modal.close() })],
   });
@@ -1577,7 +1577,7 @@ async function autoLockBody(redraw) {
         onClick: async () => {
           const value = Math.max(0, Math.min(240, Math.round(Number(input.value) || 0)));
           await setUI({ autoLockMinutes: value });
-          toast(value ? `سيُقفل بعد ${value} دقيقة بلا نشاط — يبدأ عند إعادة فتح التطبيق` : 'أُلغي القفل التلقائي', 'success', 6000);
+          toast(value ? `سيُقفل بعد ${countOf(value, 'دقيقة')} بلا نشاط — يبدأ عند إعادة فتح التطبيق` : 'أُلغي القفل التلقائي', 'success', 6000);
           await redraw();
         },
       })));

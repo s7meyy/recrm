@@ -12,7 +12,7 @@ import { getLists, typeLabel, getCompany } from '../data/settings.js';
 import { loadMatchingContext, candidatesFor } from '../data/matching.js';
 import { receivables } from '../util/receivables.js';
 import { el, clear, badge, emptyState, openModal, labeled, checkbox, promptDialog, toast } from '../util/dom.js';
-import { formatSAR, formatArea, formatDate, formatDateTime, formatNumber, daysWord, toInputDate, fromInputDate } from '../util/format.js';
+import { formatSAR, formatArea, formatDate, formatDateTime, formatNumber, daysWord, toInputDate, fromInputDate, countOf } from '../util/format.js';
 import { formatPhone, toInternational } from '../util/phone.js';
 import { audioPlayer } from '../util/audio-note.js';
 import { historyBox } from '../util/history-view.js';
@@ -93,7 +93,7 @@ export async function render(container) {
           r.budgetMax == null ? 'بلا سقف' : `حتى ${formatSAR(r.budgetMax)}`,
           r.area == null ? null : formatArea(r.area),
           labelFor(ENUMS.requestStatuses, r.status),
-          count == null ? null : `${formatNumber(count)} مرشّح`,
+          count == null ? null : `${countOf(count, 'مرشح')}`,
         ].filter(Boolean).join(' · '),
         el('a', { class: 'btn btn-ghost btn-sm', href: `#/matches/${r.id}`, text: 'المطابقات' }));
     }))
@@ -153,7 +153,7 @@ export async function render(container) {
           d.partnerName ? `شريك ${d.partnerName} (${formatSAR(d.partnerShare || 0)})` : null,
           d.commission && !d.commissionPaidAt ? 'لم تُقبض' : null,
           progress ? `المسار ${progress.done}/${progress.total}` : null,
-          due.length ? `${formatNumber(due.length)} دفعة مستحقّة` : null,
+          due.length ? `${countOf(due.length, 'دفعة مستحقة')}` : null,
         ].filter(Boolean).join(' · '),
         el('button', { type: 'button', class: 'btn btn-ghost btn-sm', text: 'إدارة', onClick: () => openDeal(d, lists, client) }));
     }))

@@ -9,6 +9,7 @@ import { getImageUrl, splitMedia } from '../data/images.js';
 import { labelFor, ENUMS, TYPE_FIELD_GROUPS } from '../data/schema.js';
 import { typeLabel, typeGroup } from '../data/settings.js';
 import { propertyEvidence, MIN_SAMPLE } from './property-evidence.js';
+import { countOf } from './format.js';
 
 const MAX_IMAGES = 4;
 
@@ -111,7 +112,7 @@ export async function printPropertyCatalog(properties, { lists, company = {}, ti
   const cards = [];
   for (const p of properties) cards.push(await propertyCard(p, { lists }));
   printNode(el('article', { class: 'print-doc' },
-    await officeHeader(company, title, `${properties.length} عرض · ${formatDate(new Date().toISOString())}`),
+    await officeHeader(company, title, `${countOf(properties.length, 'عرض')} · ${formatDate(new Date().toISOString())}`),
     ...cards.map((card, i) => el('div', { class: i ? 'print-page-break' : '' }, card)),
     company.phone ? el('footer', { class: 'print-footer' },
       `للاستفسار: ${formatPhone(company.phone)}${company.name ? ` — ${company.name}` : ''}`) : null));
@@ -187,13 +188,13 @@ export async function printCma(property, { lists, company = {}, owner = null, es
           el('tr', {}, el('th', { text: 'الأقرب إلى الوسيط' }), el('td', { text: formatSAR(estimate.estimate) })),
           el('tr', {}, el('th', { text: 'وسيط سعر المتر' }), el('td', { text: `${formatSAR(estimate.ppm.median)} / م²` })),
           el('tr', {}, el('th', { text: 'العيّنة' }),
-            el('td', { text: `${formatNumber(estimate.count)} عقارًا ${estimate.basis === 'district' ? 'في الحي نفسه' : 'في المدينة'}`
+            el('td', { text: `${countOf(estimate.count, 'عقار')} ${estimate.basis === 'district' ? 'في الحي نفسه' : 'في المدينة'}`
               + ` (${formatNumber(estimate.sources.inventory)} من مخزونك · ${formatNumber(estimate.sources.external)} معلنة · ${formatNumber(estimate.sources.deal)} صفقات)` })),
           el('tr', {}, el('th', { text: 'درجة الثقة' }),
             el('td', { text: `${CONFIDENCE_LABEL[estimate.confidence] || '—'} — تشتّت العيّنة ${formatNumber(Math.round(estimate.spread * 100))}٪` })))))
     : el('p', { class: 'print-notes', text: estimate?.reason === 'area'
         ? 'لا مساحة مسجَّلة لهذا العقار، فلا يمكن حساب سعر المتر — أضف المساحة ثم أعد التقرير.'
-        : `العيّنة المتاحة ${formatNumber(estimate?.count || 0)} عقارًا، وهي لا تكفي لنطاقٍ يُبنى عليه قرار. التقرير يعرض ما توفّر من مقارنات دون رقم مقترح.` });
+        : `العيّنة المتاحة ${countOf(estimate?.count || 0, 'عقار')} وهي لا تكفي لنطاقٍ يُبنى عليه قرار. التقرير يعرض ما توفّر من مقارنات دون رقم مقترح.` });
 
   const rows = (estimate?.comparables || []).map((c) => el('tr', {},
     el('td', { text: [c.district, c.city].filter(Boolean).join('، ') || '—' }),
@@ -210,7 +211,7 @@ export async function printCma(property, { lists, company = {}, owner = null, es
     : el('p', { class: 'print-notes', text: 'لا مقارنات متاحة بعد لهذا النوع في هذا الموقع.' });
 
   const history = trend
-    ? el('p', { class: 'print-notes', text: `حركة السعر المسجَّلة: ${formatNumber(trend.changes)} تغييرًا`
+    ? el('p', { class: 'print-notes', text: `حركة السعر المسجَّلة: ${countOf(trend.changes, 'تغيير')}`
         + `${trend.dropPct > 0 ? ` · خُفّض ${formatNumber(trend.dropPct)}٪ عن أول سعر` : ''}`
         + `${trend.days != null ? ` · مضى على السعر الحالي ${daysWord(trend.days)}` : ''}` })
     : null;
@@ -224,12 +225,12 @@ export async function printCma(property, { lists, company = {}, owner = null, es
   const market = ev.opinions
     ? el('div', {},
         el('p', { class: 'print-statement', text: [
-          `سُجّلت ${formatNumber(ev.showings.done)} معاينة لهذا العقار`,
-          ev.showings.noShow ? `و${formatNumber(ev.showings.noShow)} موعدًا لم يحضره صاحبه` : '',
-          `و${formatNumber(ev.opinions)} رأيًا`,
+          `سُجّلت ${countOf(ev.showings.done, 'معاينة')} لهذا العقار`,
+          ev.showings.noShow ? `و${countOf(ev.showings.noShow, 'موعد')} لم يحضره صاحبه` : '',
+          `و${countOf(ev.opinions, 'رأي')}`,
           ev.dominant && ev.enough
             ? `— وأكثرها على سببٍ واحد: ${labelFor(ENUMS.matchRejectReasons, ev.dominant.key)} (${formatNumber(ev.dominant.count)} من ${formatNumber(ev.opinions)}).`
-            : `— ولم تبلغ عيّنةً تكفي لحكمٍ واحد (الحدّ ${formatNumber(MIN_SAMPLE)} آراء فأكثر يجتمع أكثرها على سبب).`,
+            : `— ولم تبلغ عيّنةً تكفي لحكمٍ واحد (الحدّ ${countOf(MIN_SAMPLE, 'رأي')} فأكثر يجتمع أكثرها على سبب).`,
         ].filter(Boolean).join(' ') }),
         reasonRows.length
           ? el('table', { class: 'print-table' },

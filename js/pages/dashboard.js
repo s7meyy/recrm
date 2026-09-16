@@ -14,7 +14,7 @@ import { sourceReport, propertyProfit } from '../util/sources.js';
 import { showingStats } from '../util/showings.js';
 import { revenueForecast } from '../util/forecast.js';
 import { el, clear, badge } from '../util/dom.js';
-import { formatNumber, formatSAR, daysBetween, relativeDays, countWord } from '../util/format.js';
+import { formatNumber, formatSAR, daysBetween, relativeDays, countWord, countOf } from '../util/format.js';
 import { formatPhone, toInternational } from '../util/phone.js';
 import { discountEffect } from '../util/property-evidence.js';
 
@@ -180,12 +180,12 @@ function buildLayout(container, data) {
 
   /* عملاء لم يُتواصل معهم منذ أكثر من أسبوعين — الأهم */
   grid.append(panel(
-    `عملاء لم يُتواصل معهم منذ أكثر من ${formatNumber(staleDays)} يومًا (${formatNumber(stale.length)})`,
+    `عملاء لم يُتواصل معهم منذ أكثر من ${countOf(staleDays, 'يوم')} (${formatNumber(stale.length)})`,
     'مرتّبون: الأطول انقطاعًا أولًا. اتصل أو راسل مباشرة من هنا.',
     stale.length
       ? el('div', { class: 'stale-list' }, stale.slice(0, 12).map((x) => staleClientRow(x)))
-      : el('div', { class: 'muted small', text: `لا يوجد — كل عملائك تم التواصل معهم خلال آخر ${formatNumber(staleDays)} يومًا.` }),
-    stale.length > 12 ? el('div', { class: 'muted small', text: `+ ${formatNumber(stale.length - 12)} عميلًا آخر` }) : null,
+      : el('div', { class: 'muted small', text: `لا يوجد — كل عملائك تم التواصل معهم خلال آخر ${countOf(staleDays, 'يوم')}.` }),
+    stale.length > 12 ? el('div', { class: 'muted small', text: `+ ${countOf(stale.length - 12, 'عميل')} آخر` }) : null,
   ));
 
   /* طابور بانتظار الاعتماد */
@@ -228,7 +228,7 @@ function buildLayout(container, data) {
             el('span', { text: s.label }),
             el('span', { class: 'row' },
               el('span', { class: 'num strong', text: formatNumber(list.length) }),
-              external ? el('span', { class: 'muted small', text: `(منها ${formatNumber(external)} خارجي)` }) : null));
+              external ? el('span', { class: 'muted small', text: `(منها ${countOf(external, 'عرض خارجي')})` }) : null));
         }))
       : el('div', { class: 'muted small', text: 'لا مطابقات محفوظة بعد.' })));
 
@@ -293,8 +293,8 @@ function forecastSection({ requests, matches, deals, company }) {
       el('dl', { class: 'kv' },
         el('dt', { text: 'قيمة الطلبات النشطة' }), el('dd', { text: formatSAR(f.pipeline) }),
         el('dt', { text: 'طلبات بميزانية' }), el('dd', { text: formatNumber(f.counted) })),
-      el('div', { class: 'muted small', text: `لا توقّع بعد: يحتاج ${formatNumber(f.minDeals)} صفقات مكتملة فأكثر ليُبنى على تاريخك أنت. عندك ${formatNumber(f.closed)}.` }),
-      f.noBudget ? el('div', { class: 'muted small', text: `${formatNumber(f.noBudget)} طلبًا نشطًا بلا ميزانية — لا يدخل الحساب.` }) : null,
+      el('div', { class: 'muted small', text: `لا توقّع بعد: يحتاج ${countOf(f.minDeals, 'صفقة مكتملة')} فأكثر ليُبنى على تاريخك أنت. عندك ${formatNumber(f.closed)}.` }),
+      f.noBudget ? el('div', { class: 'muted small', text: `${countOf(f.noBudget, 'طلب')} نشطًا بلا ميزانية — لا يدخل الحساب.` }) : null,
     ].filter(Boolean);
   }
   return [
@@ -311,7 +311,7 @@ function forecastSection({ requests, matches, deals, company }) {
         el('td', { class: 'num', text: formatSAR(st.value) }),
         el('td', { class: 'num', text: pct(st.rate) }),
         el('td', { class: 'num strong', text: formatSAR(st.expected) })))))),
-    f.noBudget ? el('div', { class: 'muted small', text: `${formatNumber(f.noBudget)} طلبًا نشطًا بلا ميزانية — خارج الحساب لأن قيمته لا تُخمَّن.` }) : null,
+    f.noBudget ? el('div', { class: 'muted small', text: `${countOf(f.noBudget, 'طلب')} نشطًا بلا ميزانية — خارج الحساب لأن قيمته لا تُخمَّن.` }) : null,
     el('div', { class: 'muted small', text: 'الاحتمال محسوب من طلباتك التي أُنجزت فعلًا، والقيمة من سقف الميزانية. وهو تقدير يتحرك مع بياناتك — لا وعد.' }),
   ].filter(Boolean);
 }
@@ -331,14 +331,14 @@ function discountSection({ properties, deals }) {
   if (d.sample < 3) {
     return el('div', { class: 'panel' },
       el('h2', { text: 'هل ينفع التخفيض معك؟' }),
-      el('p', { class: 'panel-desc', text: `بِعتَ ${formatNumber(d.sold)} عقارًا، منها ${formatNumber(d.soldAfterCut)} بعد تخفيضٍ مسجَّل.`
+      el('p', { class: 'panel-desc', text: `بِعتَ ${countOf(d.sold, 'عقار')} منها ${formatNumber(d.soldAfterCut)} بعد تخفيضٍ مسجَّل.`
         + ' والعيّنة أقلّ من ثلاث، فلا رقم — نسبةٌ من صفقتين ليست نسبة.' }));
   }
   return el('div', { class: 'panel' },
     el('h2', { text: 'هل ينفع التخفيض معك؟' }),
     el('p', { class: 'panel-desc', text: 'من تاريخك أنت لا من قاعدةٍ عامة — وآخر تخفيضٍ سبق الصفقة هو المحسوب، فلا تُنسب صفقةٌ إلى تخفيضٍ جاء بعدها.' }),
     el('div', { class: 'stat-strip' },
-      statChip(d.soldAfterCut, `من ${formatNumber(d.sold)} صفقة سبقها تخفيض`),
+      statChip(d.soldAfterCut, `من ${countOf(d.sold, 'صفقة')} سبقها تخفيض`),
       statChip(Math.round(d.medianCut * 100), 'وسيط نسبة التخفيض (٪)'),
       statChip(d.medianDays, 'يومًا وسطيًّا من التخفيض إلى البيع')));
 }
@@ -397,8 +397,8 @@ function sourceSection({ clients, requests, deals, expenses }) {
           ? badge(formatSAR(r.net), r.net >= 0 ? 'badge-ok' : 'badge-danger')
           : el('span', { text: formatSAR(r.commission) })))))))
     ,
-    rows.length > 10 ? el('div', { class: 'muted small', text: `+ ${formatNumber(rows.length - 10)} مصدرًا آخر` }) : null,
-    el('div', { class: 'muted small', text: `${formatNumber(totals.sources)} مصدرًا مسمّى · العمولة صافية بعد نصيب الشريك.`
+    rows.length > 10 ? el('div', { class: 'muted small', text: `+ ${countOf(rows.length - 10, 'مصدر')} آخر` }) : null,
+    el('div', { class: 'muted small', text: `${countOf(totals.sources, 'مصدر مسمى')} · العمولة صافية بعد نصيب الشريك.`
       + (totals.spent ? ` · صُرف ${formatSAR(totals.spent)} موسومًا بمصدره.` : ' · لا مصروف موسوم بمصدره بعد — وسم المصروف في صفحة المصاريف يجعل هذا الجدول ربحًا لا عدًّا.') }),
     totals.deals < 5
       ? el('div', { class: 'muted small', text: 'العيّنة صغيرة: لا تُلغِ مصدرًا قبل أن تتجاوز صفقاتك خمسًا.' })
@@ -422,7 +422,7 @@ function propertySection({ properties, deals, expenses, lists }) {
         el('td', { class: 'num', text: formatSAR(r.spent) }),
         el('td', { class: 'num' }, badge(formatSAR(r.net), r.net < 0 ? 'badge-danger' : 'badge-ok')))))))
     ,
-    rows.length > 10 ? el('div', { class: 'muted small', text: `+ ${formatNumber(rows.length - 10)} عقارًا آخر` }) : null,
+    rows.length > 10 ? el('div', { class: 'muted small', text: `+ ${countOf(rows.length - 10, 'عقار')} آخر` }) : null,
   ].filter(Boolean);
 }
 
@@ -441,7 +441,7 @@ function priceSection({ properties, externals, deals, lists }) {
     el('td', { class: 'small', text: r.purpose === 'rent' ? 'إيجار' : 'بيع' }),
     el('td', { class: 'num strong', text: `${formatNumber(Math.round(r.median))}` }),
     el('td', { class: 'num', text: formatNumber(r.count) }),
-    el('td', { class: 'small muted', text: [r.sources.deal ? `${r.sources.deal} صفقة` : '', r.sources.external ? `${r.sources.external} خارجي` : ''].filter(Boolean).join(' · ') || 'مخزونك' })));
+    el('td', { class: 'small muted', text: [r.sources.deal ? `${countOf(r.sources.deal, 'صفقة')}` : '', r.sources.external ? `${r.sources.external} خارجي` : ''].filter(Boolean).join(' · ') || 'مخزونك' })));
   return [
     el('div', { class: 'table-wrap' }, el('table', { class: 'table' },
       el('thead', {}, el('tr', {}, ['الحي', 'النوع', 'الغرض', 'وسيط سعر المتر', 'العيّنة', 'المصدر'].map((t) => el('th', { text: t })))),
@@ -599,7 +599,7 @@ function dealStageSection(deals) {
       el('div', { class: 'goal-track' },
         el('div', { class: `goal-fill${r.done === r.total ? ' done' : ''}`, style: { width: `${Math.round((r.done / r.total) * 100)}%` } })))),
     stuck && stuck.done < stuck.total
-      ? el('p', { class: 'muted small', text: `أكثر ما تتعثّر عنده صفقاتك: «${stuck.label}» — ${formatNumber(stuck.total - stuck.done)} صفقة تنتظره.` })
+      ? el('p', { class: 'muted small', text: `أكثر ما تتعثّر عنده صفقاتك: «${stuck.label}» — ${countOf(stuck.total - stuck.done, 'صفقة')} تنتظره.` })
       : null,
   ].filter(Boolean);
 }

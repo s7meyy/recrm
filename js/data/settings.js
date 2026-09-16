@@ -5,6 +5,7 @@ import { repo, newId, setCurrentUser } from './repository.js';
 import { BUILTIN_PROPERTY_TYPES, BUILTIN_PROPERTY_STATUSES, BUILTIN_CLIENT_TAGS, DEFAULT_COMPLETENESS } from './schema.js';
 import { DEFAULT_CITY, BUILTIN_CITIES, builtinDistricts, builtinZones } from './saudi-cities.js';
 import { DEFAULT_TEMPLATES } from '../util/templates.js';
+import { countOf } from '../util/format.js';
 
 export const SETTINGS_KEYS = {
   matching: 'matching', // أوزان المعايير وحدود المرونة والحدّ الأدنى للظهور (المرحلة ٣)
@@ -124,7 +125,7 @@ export async function removePropertyType(key) {
   const extras = await readExtras();
   if (!extras.propertyTypes.some((t) => t.key === key)) throw new Error('لا يمكن حذف الأنواع المدمجة');
   const inUse = await repo.properties.where('type', key);
-  if (inUse.length) throw new Error(`لا يمكن الحذف: ${inUse.length} عقار يستعمل هذا النوع`);
+  if (inUse.length) throw new Error(`لا يمكن الحذف: ${countOf(inUse.length, 'عقار')} يستعمل هذا النوع`);
   extras.propertyTypes = extras.propertyTypes.filter((t) => t.key !== key);
   await writeExtras(extras);
 }
@@ -146,7 +147,7 @@ export async function removePropertyStatus(key) {
   const extras = await readExtras();
   if (!extras.propertyStatuses.some((s) => s.key === key)) throw new Error('لا يمكن حذف الحالات المدمجة');
   const inUse = await repo.properties.where('status', key);
-  if (inUse.length) throw new Error(`لا يمكن الحذف: ${inUse.length} عقار بهذه الحالة`);
+  if (inUse.length) throw new Error(`لا يمكن الحذف: ${countOf(inUse.length, 'عقار')} بهذه الحالة`);
   extras.propertyStatuses = extras.propertyStatuses.filter((s) => s.key !== key);
   await writeExtras(extras);
 }
@@ -170,7 +171,7 @@ export async function removeClientTag(label) {
   const extras = await readExtras();
   const all = await repo.clients.list();
   const inUse = all.filter((c) => (c.tags || []).includes(label)).length;
-  if (inUse) throw new Error(`لا يمكن الحذف: ${inUse} عميل بهذا التصنيف`);
+  if (inUse) throw new Error(`لا يمكن الحذف: ${countOf(inUse, 'عميل')} بهذا التصنيف`);
   extras.clientTags = extras.clientTags.filter((t) => t !== label);
   await writeExtras(extras);
 }

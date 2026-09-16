@@ -137,6 +137,9 @@ input[type="tel"].input, input[type="email"].input, input[type="url"].input {
 .chip.active { background: var(--accent); border-color: var(--accent); color: var(--on-fill); font-weight: 600; }
 .chip.active::before { content: "✓"; font-size: var(--dhad-font-size-200); line-height: 1; }
 .chip.zero { color: var(--muted); }
+/* الرقائق الصفريّة داخل الصفّ نفسه — تُطوى وتُفتح بلا كسرِ التفافه (المرحلة ٤٤). */
+.chips-zero { display: contents; }
+.chips-zero[hidden] { display: none; }
 .chip-count {
   font-variant-numeric: tabular-nums; font-size: 12px; padding: 0 6px; border-radius: 999px;
   background: var(--surface-2); color: var(--muted);

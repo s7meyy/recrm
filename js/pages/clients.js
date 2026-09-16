@@ -10,8 +10,7 @@ import {
 } from '../util/dom.js';
 import {
   formatDate, formatDateTime, formatSAR, formatNumber, relativeDays, daysBetween, daysWord,
-  toInputDateTime, fromInputDateTime, fromInputDate,
-} from '../util/format.js';
+  toInputDateTime, fromInputDateTime, fromInputDate, countOf } from '../util/format.js';
 import { matchesQuery } from '../util/arabic.js';
 import { scoreClient } from '../util/lead-score.js';
 import { formatPhone } from '../util/phone.js';
@@ -515,7 +514,7 @@ function openDuplicates(ctx) {
     for (const pair of pairs.slice(0, 20)) {
       body.append(await dupRow(ctx, pair, draw));
     }
-    if (pairs.length > 20) body.append(el('p', { class: 'muted small', text: `+ ${formatNumber(pairs.length - 20)} زوجًا آخر — تظهر بعد دمج هذه.` }));
+    if (pairs.length > 20) body.append(el('p', { class: 'muted small', text: `+ ${countOf(pairs.length - 20, 'زوج')} آخر — تظهر بعد دمج هذه.` }));
   };
 
   const dupRow = async (context, pair, refreshRows) => {
@@ -523,7 +522,7 @@ function openDuplicates(ctx) {
     let keep = suggested;
     let drop = suggested.id === pair.a.id ? pair.b : pair.a;
     const impactNode = el('div', { class: 'muted small' });
-    const label = (c) => `${c.name || 'بلا اسم'} · ${formatPhone(c.phone) || 'بلا جوال'} · ${formatNumber((c.contacts || []).length)} تواصل`;
+    const label = (c) => `${c.name || 'بلا اسم'} · ${formatPhone(c.phone) || 'بلا جوال'} · ${countOf((c.contacts || []).length, 'تواصل')}`;
     const keepNode = el('div', { class: 'strong' });
     const dropNode = el('div', { class: 'muted small' });
 
@@ -532,12 +531,12 @@ function openDuplicates(ctx) {
       dropNode.textContent = `يُحذف: ${label(drop)}`;
       const impact = await repo.clients.mergeImpact(keep.id, drop.id);
       const parts = [
-        impact.properties ? `${formatNumber(impact.properties)} عقار` : '',
-        impact.requests ? `${formatNumber(impact.requests)} طلب` : '',
-        impact.deals ? `${formatNumber(impact.deals)} صفقة` : '',
-        impact.invoices ? `${formatNumber(impact.invoices)} فاتورة` : '',
-        impact.tasks ? `${formatNumber(impact.tasks)} مهمة` : '',
-        impact.contacts ? `${formatNumber(impact.contacts)} تواصل` : '',
+        impact.properties ? `${countOf(impact.properties, 'عقار')}` : '',
+        impact.requests ? `${countOf(impact.requests, 'طلب')}` : '',
+        impact.deals ? `${countOf(impact.deals, 'صفقة')}` : '',
+        impact.invoices ? `${countOf(impact.invoices, 'فاتورة')}` : '',
+        impact.tasks ? `${countOf(impact.tasks, 'مهمة')}` : '',
+        impact.contacts ? countOf(impact.contacts, 'تواصل') : '',
       ].filter(Boolean);
       impactNode.textContent = parts.length ? `سينتقل: ${parts.join(' · ')}` : 'لا مرتبطات تنتقل — السجل المكرّر فارغ.';
     };
