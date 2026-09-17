@@ -911,6 +911,35 @@ try {
      كان منعُ الكسر مفروضًا على الأقسام كلها — وفيها ما يبلغ الصفحةَ طولًا
      («صوت العميل» و«قائمة المتابعة» نحو ألف بكسل). وحاويةٌ بهذا الطول لا
      تُصان بل تُدفَع، فتترك ما قبلها فارغًا: خمسُ صفحاتٍ من اثنتين وعشرين. */
+  /* إمكانيةُ الوصول في التقرير نفسه — لا في التطبيق وحده. */
+  console.log('٩-أ) التقرير لقارئ الشاشة');
+  const ap = await browser.newPage();
+  await ap.setContent(rep);
+  await ap.waitForTimeout(250);
+  const a11y = await ap.evaluate(() => {
+    const tables = [...document.querySelectorAll('table')];
+    const bars = [...document.querySelectorAll('.seg,.bar-fill')];
+    const hs = [...document.querySelectorAll('h1,h2,h3,h4')].map((h) => +h.tagName[1]);
+    const jumps = hs.filter((n, i) => i && n - hs[i - 1] > 1).length;
+    return {
+      unnamed: tables.filter((t) => !t.getAttribute('aria-label') && !t.querySelector('caption')).length,
+      tables: tables.length,
+      loudBars: bars.filter((e) => !e.closest('[aria-hidden="true"]')).length,
+      jumps,
+      h1: document.querySelectorAll('h1').length,
+      svgNoName: [...document.querySelectorAll('svg')]
+        .filter((x) => !x.closest('[role="img"]') && !x.getAttribute('aria-label') && !x.querySelector('title')).length,
+    };
+  });
+  /* قارئُ الشاشة يتنقّل بين الجداول مستقلًّا عن النصّ، فجدولٌ بلا اسم يُسمَع
+     «جدولٌ بخمسة أعمدة» ولا يُعرَف أيُّها — وكان سبعةٌ من ثمانية كذلك. */
+  a11y.unnamed === 0 ? ok(`كلُّ جدولٍ يُنادى باسم قسمه (${a11y.tables})`) : bad('جداول بلا اسم', `${a11y.unnamed}/${a11y.tables}`);
+  // والأشرطةُ زخرفة: معناها مكتوبٌ بجانبها، فلا تُتلى فارغةً.
+  a11y.loudBars === 0 ? ok('والأشرطةُ زخرفةٌ مُخفاةٌ عن القارئ — معناها مكتوبٌ بجانبها') : bad('أشرطة تُتلى فارغة', a11y.loudBars);
+  a11y.jumps === 0 && a11y.h1 === 1 ? ok('وتسلسلُ العناوين متّصل بعنوانٍ رئيسٍ واحد') : bad('تسلسل العناوين', `قفزات ${a11y.jumps} · h1 ${a11y.h1}`);
+  a11y.svgNoName === 0 ? ok('ولكل رسمٍ متّجهٍ وصفُه') : bad('رسمٌ بلا وصف', a11y.svgNoName);
+  await ap.close();
+
   console.log('٩-ب) قواعد الطباعة');
   const pp = await browser.newPage();
   await pp.setContent(rep);

@@ -140,6 +140,27 @@ function numberSections(html) {
   return { html: out, items };
 }
 
+/**
+ * يُسمّي كل جدولٍ باسم قسمه.
+ *
+ * قارئُ الشاشة يتنقّل بين الجداول تنقّلًا مستقلًّا عن النصّ، فجدولٌ بلا اسم
+ * يُسمَع «جدولٌ بخمسة أعمدة» ولا يُعرَف أيُّ جدولٍ هو. وقِيس فكان سبعةٌ من
+ * ثمانية بلا اسم.
+ *
+ * والاسمُ يُؤخَذ من عنوان القسم الذي يسبقه، فلا يُكتَب مرتين ولا يُنسى.
+ */
+function nameTables(html) {
+  let title = '';
+  return String(html).replace(/<h2[^>]*>([\s\S]*?)<\/h2>|<table(?![^>]*aria-label)/g, (m, inner) => {
+    if (inner !== undefined) {
+      title = inner.replace(/<span class="secno">[\s\S]*?<\/span>/g, '')
+        .replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+      return m;
+    }
+    return title ? `<table aria-label="${esc(`جدول: ${title}`)}"` : m;
+  });
+}
+
 /** فهرسٌ من الأقسام المطبوعة نفسها — لا من عناوين النموذج وحدها. */
 function tocOf(items) {
   if (items.length < 2) return '';
@@ -207,7 +228,7 @@ function starBars(place) {
     const share = s.rated ? Math.round((v / s.rated) * 100) : 0;
     return `<div class="bar-row">
       <span class="bar-label">${n} ★</span>
-      <span class="bar-track"><span class="bar-fill" style="width:${pct}%"></span></span>
+      <span class="bar-track" aria-hidden="true"><span class="bar-fill" style="width:${pct}%"></span></span>
       <span class="bar-value">${v} <small>(${share}%)</small></span>
     </div>`;
   }).join('');
@@ -245,7 +266,7 @@ function topicsBlock(place, lead = []) {
     const neuPct = Math.round((t.neu / max) * 100);
     return `<div class="topic-row${t.decided ? '' : ' faint'}">
       <span class="topic-name"><i class="ticon" style="color:${topicColor(t.id)}">${topicIcon(t.id)}</i>${esc(t.name)}</span>
-      <span class="topic-track">
+      <span class="topic-track" aria-hidden="true">
         <span class="seg pos" style="width:${posPct}%"></span><span class="seg neu" style="width:${neuPct}%"></span><span class="seg neg" style="width:${negPct}%"></span>
       </span>
       <span class="topic-nums">${t.pos ? `<b class="p">${t.pos}+</b>` : ''}${t.neg ? `<b class="n">${t.neg}−</b>` : ''}</span>
@@ -845,7 +866,7 @@ export function buildReportHtml({ place: rawPlace, ctx = {}, markdown = '', phot
   ].filter(Boolean).join('\n');
 
   const numbered = numberSections(sectionsRaw);
-  const sections = numbered.html
+  const sections = nameTables(numbered.html)
     + `<div class="appendix"><p class="appendix-head">ملحق: كيف بُني هذا التقرير</p>
        <p class="fine">ما بعد هذا الخط مرجعٌ يُراجَع عند الحاجة، لا قراءةٌ تُتابَع: كيف قيست الأرقام وما حدودها.</p>
        ${appendix}</div>`;
@@ -910,7 +931,7 @@ export function buildGroupReportHtml({ brand, analysis, markdown = '', font = nu
     body.html,
   ].filter(Boolean).join('\n');
   const groupNumbered = numberSections(groupRaw);
-  const groupSections = groupNumbered.html;
+  const groupSections = nameTables(groupNumbered.html);
   const groupToc = tocOf(groupNumbered.items);
 
   return `<!doctype html>
