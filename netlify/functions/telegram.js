@@ -49,6 +49,8 @@ function safeEqual(a, b) {
 
 /** آخرُ خطإٍ في الإرسال — يُقرأ في السرد فيُعرف سببُ الصمت. */
 const REPLY_ERR = 'tg/_reply-error';
+/** صاحبُ البوت — يُربط بأوّل رسالة، ويُفصل من صفحة «الوارد». */
+const OWNER_KEY = 'tg/_owner';
 
 /**
  * يردّ على المحادثة نفسِها — **وهو الطريقُ الوحيدُ لتعرف معرّفك**.
@@ -135,14 +137,25 @@ export default async (request) => {
     // يعيد ما لم نؤكّده بـ200، فالصمتُ هنا صوابٌ لا إهمال.
     if (!up || !up.chatId) return json({ ok: true, ignored: true });
 
-    const allowed = process.env.TELEGRAM_CHAT_ID;
-    if (!allowed) {
-      await reply(store, up.chatId, `مرحبًا. معرّفُ محادثتك هو:\n${up.chatId}\n\n`
-        + 'ضعه في متغيّر البيئة TELEGRAM_CHAT_ID على Netlify، ثم أعد إرسال رسالتك — '
-        + 'ولا يُحفظ شيءٌ قبل ذلك.');
-      return json({ ok: true, needsChatId: true });
+    /* **البوتُ يربط نفسَه** (المرحلة ٥١، بعد تجربةٍ مريرة).
+       جعلتُ المعرّفَ أوّلَ مرّةٍ متغيّرَ بيئة، فألزمتُ صاحبَه برقصةٍ من ثلاث خطوات:
+       البوتُ يعطيه رقمًا، فيلصقه في Netlify، ثم ينشر من جديد. **وكلُّ خطوةٍ منها
+       تفشل بصمت**: لقطةُ المتغيّرات تُؤخذ لحظةَ بدء النشرة، فمن حفظ متغيّرَه بعدها
+       بثوانٍ لم يره خادمُه — وهذا ما وقع فعلًا.
+       فصار الربطُ **بأوّل رسالة**: أوّلُ من يراسل البوت يصير صاحبَه ويُحفظ في التخزين
+       لا في متغيّر. ولا نشرةَ ولا لصقَ ولا سباقَ توقيتات. والمتغيّرُ يبقى مقبولًا إن
+       وُجد فلا ينكسر ما ضُبط، **وهو الأعلى** — فمن أراد تثبيتَه بيده فله ذلك. */
+    const envChat = String(process.env.TELEGRAM_CHAT_ID || '').trim();
+    const bound = envChat || String((await store.get(OWNER_KEY, { type: 'json' }))?.chatId || '');
+
+    if (!bound) {
+      await store.setJSON(OWNER_KEY, { chatId: up.chatId, at: new Date().toISOString(), name: up.fromName });
+      await reply(store, up.chatId, 'تمّ الربط ✅\n\nصار هذا البوتُ لمكتبك، ولا يستقبل من غيرك. '
+        + 'حوّل إليه رسائل عملائك وسأفرزها طلبًا أو عرضًا، وتعتمدها أنت من صفحة «الوارد».\n\n'
+        + 'وإن لم تكن أنت من ربطه فافصله من صفحة «الوارد» في التطبيق.');
+      return json({ ok: true, bound: up.chatId });
     }
-    if (String(allowed).trim() !== up.chatId) {
+    if (bound !== up.chatId) {
       await reply(store, up.chatId, 'هذا البوت خاصٌّ بمكتبٍ بعينه ولا يستقبل من غيره.');
       return json({ ok: true, rejected: true });
     }
@@ -199,8 +212,10 @@ export default async (request) => {
       messages: rows,
       // **وسببُ الصمت يُقال**: بوتٌ لا يردّ يجعلك تظنّ أنّ شيئًا لم يصل، وقد وصل.
       lastReplyError: (await store.get(REPLY_ERR, { type: 'json' })) || null,
-      linked: !!(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_SECRET && process.env.TELEGRAM_CHAT_ID),
-      missing: ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_SECRET', 'TELEGRAM_CHAT_ID'].filter((k) => !process.env[k]),
+      owner: (await store.get(OWNER_KEY, { type: 'json' })) || null,
+      // **والربطُ لا يحتاج متغيّرَ المعرّف**: يكفي الرمزُ والسرّ، والمحادثةُ تُربط بنفسها.
+      linked: !!(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_SECRET),
+      missing: ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_SECRET'].filter((k) => !process.env[k]),
     });
   }
 
@@ -208,6 +223,8 @@ export default async (request) => {
   if (request.method === 'DELETE') {
     if (!(await signedIn(request))) return unauthorized();
     const body = await request.json().catch(() => null);
+    // **فصلُ الربط**: يُعيد البوتَ حرًّا فيرتبط بأوّل من يراسله بعدها.
+    if (body?.unbind) { await store.delete(OWNER_KEY); return json({ ok: true, unbound: true }); }
     const k = String(body?.key || '');
     if (k.startsWith(PREFIX) && /^[\w\-.:/]+$/.test(k)) await store.delete(k);
     return json({ ok: true });
