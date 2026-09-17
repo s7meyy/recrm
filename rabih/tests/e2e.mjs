@@ -906,6 +906,29 @@ try {
   });
   rm.over <= 1 ? ok('والتقرير لا يفيض على الهاتف') : bad('فيض التقرير', rm.over + 'px');
   rm.tiny === 0 ? ok('ولا نصَّ دون 11 بكسلًا فيه') : bad('خطٌّ دقيق في التقرير', rm.tiny + ' عنصرًا');
+
+  /* **الطباعة: تُصان الوحدةُ الصغيرة وتجري الحاويةُ الكبيرة.**
+     كان منعُ الكسر مفروضًا على الأقسام كلها — وفيها ما يبلغ الصفحةَ طولًا
+     («صوت العميل» و«قائمة المتابعة» نحو ألف بكسل). وحاويةٌ بهذا الطول لا
+     تُصان بل تُدفَع، فتترك ما قبلها فارغًا: خمسُ صفحاتٍ من اثنتين وعشرين. */
+  console.log('٩-ب) قواعد الطباعة');
+  const pp = await browser.newPage();
+  await pp.setContent(rep);
+  await pp.emulateMedia({ media: 'print' });
+  await pp.waitForTimeout(250);
+  const brk = await pp.evaluate(() => {
+    const bi = (sel) => { const e = document.querySelector(sel); return e ? getComputedStyle(e).breakInside : null; };
+    return {
+      quote: bi('.voice .q'), card: bi('.act'), bcard: bi('.bcard'),
+      voice: bi('.voice'), topics: bi('.topics'), recency: bi('.recency'),
+    };
+  });
+  [brk.quote, brk.card, brk.bcard].filter((v) => v === 'avoid').length >= 2
+    ? ok('الوحدةُ الصغيرة مصونةٌ من الكسر (اقتباس · بطاقة)') : bad('وحدةٌ بلا صون', JSON.stringify(brk));
+  [brk.voice, brk.topics, brk.recency].every((v) => v === null || v === 'auto')
+    ? ok('والحاويةُ الكبيرة تجري — فلا تُدفَع فتترك صفحةً بيضاء') : bad('حاويةٌ محبوسة', JSON.stringify(brk));
+  await pp.close();
+
   await rp.close();
 
 } catch (e) {

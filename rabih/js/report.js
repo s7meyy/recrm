@@ -394,14 +394,14 @@ code{background:#f3f5f8;padding:0 1mm;border-radius:3px;font-size:10pt}
 .toc{border:1px solid var(--line);border-radius:8px;padding:5mm 7mm;background:#fbfcfd;break-inside:avoid;margin-bottom:8mm}
 .toc ol{padding-inline-start:6mm;margin:0}
 .toc a{color:var(--navy);text-decoration:none}
-.stats-block{break-inside:avoid;margin:8mm 0}
+.stats-block{margin:8mm 0}
 .bars{display:flex;flex-direction:column;gap:2mm}
 .bar-row{display:grid;grid-template-columns:14mm 1fr 24mm;align-items:center;gap:3mm}
 .bar-label{color:var(--gold);font-weight:700;font-size:10.5pt}
 .bar-track{background:#eef1f5;border-radius:3px;height:5mm;overflow:hidden}
 .bar-fill{display:block;height:100%;background:linear-gradient(90deg,var(--navy),#3a6ea5)}
 .bar-value{font-size:10pt;color:var(--muted);text-align:left}
-.priority,.stars-calc,.voice,.impact,.sources,.cooccur,.timing,.promises,.effect,.network,.signature,.bias,.method{break-inside:avoid;margin:0 0 7mm}
+.priority,.stars-calc,.voice,.impact,.sources,.cooccur,.timing,.promises,.effect,.network,.signature,.bias,.method{margin:0 0 7mm}
 .promise{margin:0 0 4mm;padding:3mm 4mm;border:1px solid var(--line);border-radius:6px;break-inside:avoid}
 .promise .q{margin:2mm 0;padding:2mm 3mm;background:#fbfcfd;border-inline-start:3px solid var(--gold);border-radius:4px}
 .promise .q p{margin:0;font-size:10pt;line-height:1.8}
@@ -424,7 +424,7 @@ code{background:#f3f5f8;padding:0 1mm;border-radius:3px;font-size:10pt}
 .voice-cols{display:grid;grid-template-columns:1fr 1fr;gap:4mm;margin-bottom:4mm}
 .voice-cols.one{grid-template-columns:1fr}
 /* الخلاصة التنفيذية — أول ما تقع عليه عين صاحب المنشأة. */
-.brief{break-inside:avoid;margin:0 0 9mm;border:1px solid var(--line);border-radius:10px;padding:6mm;background:#fbfcfd}
+.brief{margin:0 0 9mm;border:1px solid var(--line);border-radius:10px;padding:6mm;background:#fbfcfd}
 .brief-hero{display:flex;align-items:center;gap:6mm;margin-bottom:5mm;flex-wrap:wrap}
 .brief-hero .hero-num{display:flex;align-items:baseline;gap:2mm;flex-wrap:wrap}
 .brief-hero .hero-num .n{font-size:32pt;font-weight:700;color:var(--navy);line-height:1}
@@ -494,8 +494,6 @@ code{background:#f3f5f8;padding:0 1mm;border-radius:3px;font-size:10pt}
 .fixit>b{display:block;font-size:10.5pt;color:var(--navy);margin-bottom:2mm}
 .fixit p{margin:0;font-size:10pt;line-height:1.9}
 /* ما ينجح، وما ينتظر ردًّا. */
-.keep{break-inside:avoid}
-.next{break-inside:avoid}
 .next-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(60mm,1fr));gap:4mm;margin-bottom:4mm}
 .next-grid>div{border:1px solid var(--line);border-radius:8px;padding:4mm 5mm;background:#fbfcfd}
 .next-grid b{display:block;color:var(--navy);margin-bottom:2mm;font-size:10.5pt}
@@ -537,7 +535,7 @@ code{background:#f3f5f8;padding:0 1mm;border-radius:3px;font-size:10pt}
 .commit td.write::after{content:"";position:absolute;inset-inline:3mm;bottom:3mm;border-bottom:1px solid var(--navy);opacity:.35}
 .commit td.write .hint{font-size:8.5pt;color:var(--muted);opacity:.7}
 /* قائمة المتابعة — تُطبَع وتُعلَّق، فتبدأ صفحةً جديدة. */
-.checklist{break-before:page;break-inside:avoid}
+.checklist{break-before:page}
 .checks{list-style:none;margin:0 0 5mm;padding:0}
 .checks li{display:grid;grid-template-columns:5mm 1fr auto auto;align-items:center;gap:3mm;padding:3mm 0;border-bottom:1px solid var(--line);font-size:10.5pt}
 .checks .box{width:5mm;height:5mm;border:1.5px solid var(--navy);border-radius:2px}
@@ -562,7 +560,6 @@ code{background:#f3f5f8;padding:0 1mm;border-radius:3px;font-size:10pt}
 .msg-tie{margin:0 0 3mm;padding:3mm 4mm;border-inline-start:3px solid var(--gold);background:#faf7ef;border-radius:6px;font-size:10pt;line-height:1.85}
 .ticon{font-style:normal;display:inline-block;width:5mm;color:var(--gold);font-size:11pt;text-align:center}
 /* بطاقةُ النشر — ثناءُ العميل بنصّه. */
-.card-mkt{break-inside:avoid}
 .mkt{margin:0;border:1px solid var(--line);border-radius:10px;padding:6mm;background:#fbfcfd;text-align:center}
 .mkt-stars{color:var(--gold);font-size:15pt;letter-spacing:.15em;margin-bottom:3mm}
 .mkt blockquote{margin:0 0 3mm;padding:0;border:0;background:none;font-size:13pt;line-height:1.9;color:var(--navy)}
@@ -589,7 +586,7 @@ code{background:#f3f5f8;padding:0 1mm;border-radius:3px;font-size:10pt}
 .voice .q footer{font-size:8.5pt;color:var(--muted)}
 .impact .assume{padding:3mm 4mm;background:#fbfcfd;border:1px solid var(--line);border-radius:6px;margin-bottom:3mm;font-size:9.5pt}
 .impact .total{font-size:11pt;margin-top:3mm}
-.confidence{break-inside:avoid;margin:0 0 8mm;border:1px solid var(--line);border-radius:8px;padding:5mm 6mm;background:#fbfcfd}
+.confidence{margin:0 0 8mm;border:1px solid var(--line);border-radius:8px;padding:5mm 6mm;background:#fbfcfd}
 .honesty{margin-top:4mm;padding-top:3mm;border-top:1px dashed var(--line);font-size:9.5pt;color:#333}
 .honesty b{color:var(--navy)}
 .honesty ul{margin:2mm 0 0;padding-inline-start:5mm}
@@ -605,7 +602,7 @@ code{background:#f3f5f8;padding:0 1mm;border-radius:3px;font-size:10pt}
 .conf-track{background:#eef1f5;border-radius:3px;height:4mm;overflow:hidden}
 .conf-fill{display:block;height:100%;background:linear-gradient(90deg,var(--navy),#3a6ea5)}
 .conf-val{font-size:9.5pt;color:var(--muted);text-align:left}
-.recency{break-inside:avoid;margin:8mm 0}
+.recency{margin:8mm 0}
 .rec-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:4mm;margin:4mm 0}
 .rec-cell{border:1px solid var(--line);border-radius:6px;padding:3mm 4mm;text-align:center}
 .rec-cell b{display:block;font-size:9pt;color:var(--muted);font-weight:600}
@@ -622,8 +619,8 @@ code{background:#f3f5f8;padding:0 1mm;border-radius:3px;font-size:10pt}
 .alerts{border-inline-start:3px solid #b5462f;background:#fdf6f4;padding:3mm 5mm;border-radius:0 6px 6px 0;margin:4mm 0}
 .alerts b{color:#b5462f;font-size:10.5pt}
 .alerts ul{margin:2mm 0 0;padding-inline-start:6mm;font-size:10pt}
-.entities,.replies{break-inside:avoid;margin:8mm 0}
-.topics{break-inside:avoid;margin:8mm 0}
+.entities,.replies{margin:8mm 0}
+.topics{margin:8mm 0}
 .topics-chart{display:flex;flex-direction:column;gap:2mm;margin:4mm 0}
 .topic-row{display:grid;grid-template-columns:48mm 1fr 16mm 18mm 20mm;align-items:center;gap:2mm;margin-bottom:1mm}
 .topic-name{font-size:10.5pt;color:var(--navy)}
@@ -635,7 +632,7 @@ code{background:#f3f5f8;padding:0 1mm;border-radius:3px;font-size:10pt}
 .legend span{display:flex;align-items:center;gap:1.5mm}
 .legend .sw{width:3mm;height:3mm;border-radius:2px;display:inline-block}
 .sw.pos{background:#2f7d55}.sw.neu{background:#b9c2ce}.sw.neg{background:#b5462f}
-.photos{break-inside:avoid;margin:8mm 0}
+.photos{margin:8mm 0}
 .photo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:3mm}
 .photo-grid img{width:100%;height:38mm;object-fit:cover;border-radius:6px;border:1px solid var(--line)}
 figcaption{font-size:9pt;color:var(--muted);margin-top:1mm;text-align:center}
@@ -698,9 +695,12 @@ figcaption{font-size:9pt;color:var(--muted);margin-top:1mm;text-align:center}
     font-size:8pt;color:var(--muted);padding-bottom:2mm;border-bottom:1px solid var(--line);
     display:flex;justify-content:space-between;gap:4mm}
   .body{margin-top:8mm}
-  /* القسم لا يُبتَر: عنوانٌ في آخر الصفحة وجدولُه في التي تليها يُفقد الربط. */
-  section{break-inside:avoid-page}
-  .actions,.voice,.topics,.recency{break-inside:auto}
+  /* **تُصان الوحدةُ الصغيرة، وتجري الحاويةُ الكبيرة.**
+     كان منعُ الكسر مفروضًا على الأقسام كلها — وفيها ما يبلغ الصفحةَ طولًا
+     («صوت العميل» 992 بكسلًا، «قائمة المتابعة» 1014). وحاويةٌ بهذا الطول لا
+     تُصان: تُدفَع إلى صفحةٍ جديدة فتترك ما قبلها فارغًا. قِيس فبلغ الثمنُ
+     خمسَ صفحاتٍ من اثنتين وعشرين — ثلاثةً وعشرين بالمئة بياضًا.
+     فالصونُ لما لا ينقسم: اقتباسٌ، وبطاقةُ خطة، وصفُّ جدول، وبندُ قائمة. */
   .act,.brief,.bcard,.commit,.coverage{break-inside:avoid}
   /* والاقتباس لا يُشطَر: نصفُ شكوى في صفحةٍ ونصفُها في أخرى يُقرأ محرَّفًا. */
   blockquote,.q{break-inside:avoid}
