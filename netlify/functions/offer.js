@@ -10,6 +10,14 @@ const esc = (v) => String(v ?? '')
 
 const nf = new Intl.NumberFormat('en-US');
 
+/** شهرُ التسليم وسنتُه بلغة الصفحة — والمجهولُ يبقى كما جاء لا يُخترع له شكل. */
+function handover(iso, lang) {
+  const at = new Date(iso || '');
+  if (Number.isNaN(at.getTime())) return String(iso || '');
+  try { return at.toLocaleDateString(lang === 'en' ? 'en-GB' : 'ar-SA-u-ca-gregory', { year: 'numeric', month: 'long' }); }
+  catch (_) { return at.toISOString().slice(0, 10); }
+}
+
 // النسخة الإنجليزية (المرحلة ٣٠): الواجهة تُترجَم والبيانات لا — الحي والوصف كما كتبتَهما.
 const T = {
   ar: {
@@ -20,6 +28,9 @@ const T = {
     gone: 'هذا العرض لم يعد متاحًا', goneNote: 'قد يكون بيع أو سُحب من النشر.',
     browse: 'تصفّح العروض المتاحة', contact: 'للاستفسار',
     disclaimer: 'الأسعار والتفاصيل قابلة للتغيير — للتأكد تواصل معنا مباشرة.',
+    // على الخارطة (المرحلة ٤٩): إفصاحٌ في صفحة العرض الواحد كما في القائمة العامة.
+    offPlan: 'على الخارطة — تحت الإنشاء',
+    delivery: 'التسليم المتوقَّع',
     hello: (t, r) => `السلام عليكم، مهتم بالعرض رقم ${r}: ${t}`,
   },
   en: {
@@ -30,6 +41,8 @@ const T = {
     gone: 'This listing is no longer available', goneNote: 'It may have been sold or unpublished.',
     browse: 'Browse available listings', contact: 'Enquiries',
     disclaimer: 'Prices and details are subject to change — please contact us to confirm.',
+    offPlan: 'Off-plan — under construction',
+    delivery: 'Expected handover',
     hello: (t, r) => `Hello, I am interested in listing ${r}: ${t}`,
   },
 };
@@ -108,6 +121,8 @@ ${image ? `<meta property="og:image" content="${esc(image)}">` : ''}
   <div class="card-meta">
     ${purposeNames.map((p) => `<span class="tag">${esc(p)}</span>`).join('')}
     ${listing.area ? `<span class="tag">${esc(t.area(listing.area))}</span>` : ''}
+    ${listing.offPlan ? `<span class="tag tag-warn">${esc(t.offPlan)}</span>` : ''}
+    ${listing.offPlan && listing.deliveryAt ? `<span class="tag">${esc(t.delivery)}: ${esc(handover(listing.deliveryAt, t.lang))}</span>` : ''}
     <span class="tag">${esc(t.ref)} ${esc(listing.ref)}</span>
   </div>
   ${listing.notes ? `<p class="card-notes">${esc(listing.notes)}</p>` : ''}

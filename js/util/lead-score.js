@@ -17,6 +17,10 @@ export const SIGNALS = [
   { key: 'opened', weight: 20, label: 'فتح رابط عروضه' },
   { key: 'replied', weight: 18, label: 'تواصلتما فعلًا' },
   { key: 'activeRequest', weight: 15, label: 'له طلب نشط' },
+  // **كيف يدفع** (المرحلة ٤٩): أقوى مؤهِّلٍ للمشتري وأقلُّه ذكرًا. والنقديُّ فوق
+  // المعتمَدِ سلفًا فوق من ينتظر بنكًا — ومن لم يُسأل لا يُرفع ولا يُخفض.
+  { key: 'cashBuyer', weight: 16, label: 'يدفع نقدًا' },
+  { key: 'preapproved', weight: 8, label: 'تمويلُه معتمَدٌ مسبقًا' },
   { key: 'hasCandidates', weight: 12, label: 'عندك ما يناسبه الآن' },
   { key: 'complete', weight: 10, label: 'بياناته مكتملة' },
   { key: 'stale', weight: -20, label: 'مضى وقت طويل بلا تواصل' },
@@ -44,6 +48,10 @@ export function scoreClient(client, {
   add('opened', opens > 0);
   add('replied', (client?.contacts || []).length > 0);
   add('activeRequest', requests.some((r) => r.status === 'active'));
+  // من له طلبٌ نقديٌّ واحدٌ يُحسب نقديًّا: أقربُ طلباته إلى الإبرام هو الذي يستحقّ وقتك.
+  add('cashBuyer', requests.some((r) => r.payMethod === 'cash'));
+  add('preapproved', !requests.some((r) => r.payMethod === 'cash')
+    && requests.some((r) => r.payMethod === 'preapproved'));
   add('hasCandidates', candidates > 0);
   add('complete', !!(client?.name && client?.phone));
   add('noPhone', !client?.phone && !client?.phone2);

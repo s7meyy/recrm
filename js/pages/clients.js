@@ -1,8 +1,9 @@
 // صفحة العملاء: الأدوار المتعددة، المراحل، التصنيفات، وسجل التواصل بمواعيد المتابعة.
 
 import { repo, ValidationError, getCurrentUser } from '../data/repository.js';
+import { renderSavedViews } from '../util/saved-views.js';
 import { ENUMS, labelFor, clientTagClass, clientPriority } from '../data/schema.js';
-import { getLists, addClientTag, typeLabel, statusLabel, getFollowUpSettings } from '../data/settings.js';
+import { getLists, addClientTag, typeLabel, statusLabel, getFollowUpSettings, getCampaigns } from '../data/settings.js';
 import { sourceField, rememberSource, sourceBadge } from '../util/source-field.js';
 import {
   el, clear, labeled, fieldGroup, selectEl, checkbox, badge, openModal, confirmDialog,
@@ -40,6 +41,12 @@ export async function render(container) {
   };
   await loadData(ctx);
   buildLayout(ctx);
+  // اختصارُ `Alt+C` (المرحلة ٤٩) — تُمحى العلامةُ بعد استهلاكها، كنمط `?paste=1` القائم.
+  if (/[?&]new=1/.test(location.hash || '')) {
+    history.replaceState(null, '', '#/clients');
+    await openForm(ctx, null);
+    return;
+  }
   const focusId = routeClientId();
   if (focusId) {
     const target = ctx.clients.find((c) => c.id === focusId);
@@ -49,10 +56,12 @@ export async function render(container) {
 }
 
 async function loadData(ctx) {
-  const [clients, properties, lists, requests, followUp, team] = await Promise.all([
+  const [clients, properties, lists, requests, followUp, team, campaigns] = await Promise.all([
     repo.clients.list(), repo.properties.list(), getLists(), repo.requests.list(), getFollowUpSettings(), getTeam(),
+    getCampaigns(), // الحملات (المرحلة ٤٩)
   ]);
   ctx.team = team;
+  ctx.campaigns = campaigns;
   ctx.meId = getCurrentUser()?.id || '';
   // درجة الأولوية (المرحلة ٢٣): تُحسب من سجلات موجودة — لا تخزين ولا نموذج.
   const byClient = new Map();
@@ -86,7 +95,7 @@ function buildLayout(ctx) {
     el('div', { class: 'head-actions' },
       ctx.nodes.search = el('input', {
         class: 'input search', type: 'search', placeholder: 'بحث بالاسم أو الجوال أو الملاحظات…',
-        onInput: debounce((e) => { ctx.query = e.target.value; renderFilters(ctx); renderList(ctx); }, 150),
+        onInput: debounce((e) => { ctx.query = e.target.value; renderFilters(ctx); renderList(ctx); renderSaved(ctx); }, 150),
       }),
       ctx.nodes.dupBtn = el('button', { type: 'button', class: 'btn', hidden: true, onClick: () => openDuplicates(ctx) }),
       // «لصق رسالة عميل» كان في «الطلبات» وحدها — ومن يريد التقاط **عميل** يفتح «العملاء»
@@ -98,10 +107,60 @@ function buildLayout(ctx) {
       el('button', { type: 'button', class: 'btn btn-primary', text: '+ إضافة عميل', onClick: () => openForm(ctx, null) }))));
   drawDupButton(ctx);
   ctx.nodes.filters = el('div', { class: 'filters' });
+  ctx.nodes.saved = el('div', { class: 'saved-row' });
   ctx.nodes.list = el('div');
-  ctx.container.append(ctx.nodes.filters, ctx.nodes.list);
+  ctx.container.append(quickAddClient(ctx), ctx.nodes.saved, ctx.nodes.filters, ctx.nodes.list);
   renderFilters(ctx);
   renderList(ctx);
+  renderSaved(ctx);
+}
+
+/**
+ * **الإضافةُ السريعة** (المرحلة ٤٩) — النمطُ نفسُه الذي في صفحة المهامّ منذ المرحلة ٧،
+ * ولم يخرج من صفحته اثنتين وأربعين مرحلة.
+ *
+ * وإضافةُ عميلٍ كانت تفتح نافذةً باستمارةٍ كاملة. **والوسيطُ واقفٌ في معرضٍ أو في
+ * سيّارته**، ومعه اسمٌ وجوّالٌ لا أكثر — فيؤجّل الإدخال إلى المساء، وفي المساء ينساه.
+ * **وسجلٌّ ناقصٌ محفوظٌ خيرٌ من سجلٍّ كاملٍ لم يُكتب.**
+ *
+ * والحفظُ يمرّ بالمستودع كما يمرّ النموذج: التطبيعُ والتحقّقُ وكشفُ التكرار كما هي،
+ * فجوّالٌ غيرُ صحيحٍ يُشتكى منه هنا كما يُشتكى هناك.
+ */
+function quickAddClient(ctx) {
+  const name = el('input', { class: 'input', type: 'text', placeholder: 'اسم العميل', 'aria-label': 'اسم العميل — إضافة سريعة' });
+  const phone = el('input', { class: 'input', type: 'tel', inputMode: 'tel', placeholder: 'الجوال', 'aria-label': 'جوال العميل — إضافة سريعة' });
+  const add = async () => {
+    if (!name.value.trim() && !phone.value.trim()) return;
+    try {
+      const created = await repo.clients.create({ name: name.value.trim(), phone: phone.value.trim() });
+      name.value = ''; phone.value = '';
+      name.focus();
+      // **ويُقال أين ذهب**: سجلٌّ يُحفظ بلا أثرٍ ظاهرٍ يُعاد إدخالُه ظنًّا أنّه لم يُحفظ.
+      toast(`أُضيف ${created.name || 'عميل بلا اسم'} — أكمِل بياناته متى شئت`, 'success');
+      await refresh(ctx);
+    } catch (err) {
+      toast((err.errors || [err.message]).join(' · '), 'error');
+    }
+  };
+  const onKey = (e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } };
+  name.addEventListener('keydown', onKey);
+  phone.addEventListener('keydown', onKey);
+  return el('div', { class: 'quick-add' },
+    name, phone,
+    el('button', { type: 'button', class: 'btn btn-sm', text: '+ أضِف', onClick: add }),
+    el('span', { class: 'muted small', text: 'الباقي يُكمَّل لاحقًا' }));
+}
+
+/**
+ * البحوثُ المحفوظة (المرحلة ٤٩) — كانت في العقارات وحدها منذ المرحلة ١٧.
+ * «عملاء النرجس الجادّون» بحثٌ يُعاد كلَّ صباح، وبناؤه ستُّ نقرات.
+ */
+function renderSaved(ctx) {
+  renderSavedViews({
+    wrap: ctx.nodes.saved, page: 'clients', ctx, groups: GROUPS,
+    placeholder: 'ملّاكٌ جادّون',
+    onApply: () => { renderFilters(ctx); renderList(ctx); },
+  });
 }
 
 /* ===== الفرز ===== */
@@ -135,7 +194,7 @@ function renderFilters(ctx) {
     if (!options.length) continue;
     const chips = el('div', { class: 'chips' });
     chips.append(allChip(ctx.filters[group], options.map((o) => o.value),
-      () => { renderFilters(ctx); renderList(ctx); }));
+      () => { renderFilters(ctx); renderList(ctx); renderSaved(ctx); }));
     for (const opt of options) {
       const n = ctx.clients.filter((c) => passes(ctx, c, group) && VALUES[group](c).includes(opt.value)).length;
       const active = ctx.filters[group].has(opt.value);
@@ -143,6 +202,7 @@ function renderFilters(ctx) {
         type: 'button', class: `chip${active ? ' active' : ''}${n === 0 && !active ? ' zero' : ''}`,
         onClick: () => {
           if (active) ctx.filters[group].delete(opt.value); else ctx.filters[group].add(opt.value);
+          renderSaved(ctx);
           renderFilters(ctx);
           renderList(ctx);
         },
@@ -171,7 +231,7 @@ function renderFilters(ctx) {
   if (GROUPS.some(([g]) => ctx.filters[g].size)) {
     wrap.append(el('div', {}, el('button', {
       type: 'button', class: 'btn btn-ghost btn-sm', text: 'مسح الفرز',
-      onClick: () => { for (const [g] of GROUPS) ctx.filters[g].clear(); renderFilters(ctx); renderList(ctx); },
+      onClick: () => { for (const [g] of GROUPS) ctx.filters[g].clear(); renderFilters(ctx); renderList(ctx); renderSaved(ctx); },
     })));
   }
 }
@@ -478,6 +538,14 @@ async function openForm(ctx, existing) {
   const stageSelect = selectEl({ options: ENUMS.clientStages.map((s) => ({ value: s.key, label: s.label })), value: draft.stage || 'new' });
   const notesInput = el('textarea', { class: 'input', rows: 3, value: draft.notes || '' });
   const source = sourceField(draft.referralSource, ctx.lists.sources);
+  /**
+   * **من أيّ حملة دخل؟** (المرحلة ٤٩) — والقائمةُ لا تُعرض ما لم تُنشَأ حملةٌ واحدة:
+   * حقلٌ فارغٌ دائمًا في استمارةٍ طويلةٍ يُتخطّى بالعين، ووجودُه بلا معنًى ضجيج.
+   */
+  const campaignSelect = selectEl({
+    options: (ctx.campaigns || []).map((c) => ({ value: c.key, label: c.label })),
+    value: draft.campaign || '', placeholder: 'بلا حملة',
+  });
   // تفضيلات التواصل (المرحلة ٣٢)
   const dncBox = checkbox('لا تتصل به (طلب ذلك)', { checked: !!draft.doNotContact });
   const bestTimeSelect = selectEl({
@@ -520,6 +588,7 @@ async function openForm(ctx, existing) {
       roles: [...rolesBox.querySelectorAll('input:checked')].map((i) => i.value),
       stage: stageSelect.value, tags: [...selectedTags], notes: notesInput.value,
       referralSource: source.input.value,
+      campaign: campaignSelect.value || '',
       doNotContact: dncBox.querySelector('input').checked,
       bestTime: bestTimeSelect.value,
     };
@@ -559,6 +628,9 @@ async function openForm(ctx, existing) {
         fieldGroup('الأدوار', rolesBox, { full: true }),
         fieldGroup('التصنيفات', tagsBox, { full: true }),
         labeled('المصدر (وسيط الإحالة)', source.node, { hint: 'اختياري — لا يظهر شيء ما لم يُعبَّأ' }),
+        (ctx.campaigns || []).length
+          ? labeled('الحملة', campaignSelect, { hint: 'المصدرُ قناة، والحملةُ حملةٌ بعينها فيها — وبها يُقاس ما جلبته كلُّ واحدةٍ على حدة.' })
+          : null,
         labeled('أفضل وقت للاتصال', bestTimeSelect, { hint: 'يظهر لك قبل أن تتصل' }),
         activeMembers(ctx.team).length > 1
           ? labeled('المسند إليه', assignSelect, { hint: 'من يتولّى هذا العميل — تنسيقٌ لا حجب' })

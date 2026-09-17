@@ -20,7 +20,34 @@ export function el(tag, attrs = null, ...children) {
     }
   }
   appendChildren(node, children);
+  nameIfIconOnly(node);
   return node;
+}
+
+/**
+ * **اسمٌ لكلّ زرٍّ رمزيّ** (المرحلة ٤٩).
+ *
+ * في الصفحات ستةَ عشرَ زرًّا محتواه رمزٌ واحد — 📞 و🗑 و✏️ و📍 — وقارئُ الشاشة يقرؤها
+ * كلَّها: **«زر»**. لا أكثر. وعددُ سمات `aria-*` في المشروع كلِّه كان سبعًا وعشرين،
+ * موزّعةً على خمسة ملفّاتٍ من خمسةٍ وعشرين.
+ *
+ * **والإصلاحُ هنا لا في ستّةَ عشرَ موضعًا**: كلُّ زرٍّ نصُّه رموزٌ وحدها وله `title`
+ * يأخذ عنوانَه اسمًا. فما كُتب من قبل يُصلَح، وما يُكتب بعدُ يُصلَح وحدَه.
+ *
+ * **وما له `aria-label` مكتوبٌ لا يُمسّ**، وما لا `title` له لا يُخترع له اسم:
+ * اسمٌ مخترَعٌ أسوأُ من لا اسم — يقول لقارئ الشاشة غيرَ ما يفعل الزرّ.
+ */
+const SYMBOLS_ONLY = /^[^\p{L}\p{N}]+$/u;
+
+function nameIfIconOnly(node) {
+  if (node.tagName !== 'BUTTON' && node.tagName !== 'A') return;
+  if (node.hasAttribute('aria-label') || node.getAttribute('aria-hidden') === 'true') return;
+  const title = node.getAttribute('title');
+  if (!title) return;
+  const text = (node.textContent || '').trim();
+  // نصٌّ فيه حرفٌ أو رقمٌ يُقرأ وحدَه — ولا يُزاحَم باسمٍ ثانٍ.
+  if (text && !SYMBOLS_ONLY.test(text)) return;
+  node.setAttribute('aria-label', title);
 }
 
 export function appendChildren(node, children) {
@@ -122,8 +149,17 @@ export function echoDates(root) {
 export function openModal({ title, body, footer = null, size = null, onClose = null }) {
   const root = document.getElementById('modal-root');
   const overlay = el('div', { class: 'modal-overlay' });
-  const box = el('div', { class: `modal${size === 'wide' ? ' modal-wide' : ''}`, role: 'dialog', 'aria-modal': 'true' });
+  // **عنوانٌ يُنطَق** (المرحلة ٤٩): النافذةُ كانت `role="dialog"` بلا اسم، فيقرؤها
+  // قارئُ الشاشة «حوار» ولا يقول أيُّ حوار. و`aria-labelledby` يربطها بعنوانها المكتوب.
+  const titleId = `modal-title-${Math.random().toString(36).slice(2, 9)}`;
+  const box = el('div', {
+    class: `modal${size === 'wide' ? ' modal-wide' : ''}`,
+    role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': titleId,
+  });
   let closed = false;
+  // **إلى أين يعود التركيز؟** من فتح النافذة بزرٍّ يعود إليه عند إغلاقها — وإلّا قفز
+  // التركيزُ إلى أوّل الصفحة، فيبدأ من يتنقّل بلوحة المفاتيح من الصفر في كل مرّة.
+  const opener = document.activeElement;
 
   function close() {
     if (closed) return;
@@ -131,10 +167,27 @@ export function openModal({ title, body, footer = null, size = null, onClose = n
     overlay.remove();
     document.removeEventListener('keydown', onKey);
     if (!root.children.length) document.body.classList.remove('modal-open');
+    try { if (opener && opener.isConnected && typeof opener.focus === 'function') opener.focus(); } catch (_) { /* عنصرٌ زال مع إعادة الرسم */ }
     if (onClose) onClose();
   }
+
+  /** ما يمكن الوصول إليه بالمفاتيح داخل النافذة — بترتيب ظهوره. */
+  const focusables = () => [...box.querySelectorAll(
+    'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+  )].filter((n) => !n.hidden && n.offsetParent !== null);
+
   function onKey(e) {
-    if (e.key === 'Escape' && root.lastElementChild === overlay) close();
+    if (root.lastElementChild !== overlay) return;
+    if (e.key === 'Escape') { close(); return; }
+    // **حبسُ التركيز**: `Tab` كان يخرج من النافذة إلى الصفحة تحتها — وهي محجوبةٌ
+    // بصريًّا فيتنقّل المستخدمُ في شيءٍ لا يراه ولا يعلم أين هو.
+    if (e.key !== 'Tab') return;
+    const items = focusables();
+    if (!items.length) return;
+    const first = items[0];
+    const last = items[items.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
   }
 
   const bodyEl = el('div', { class: 'modal-body' }, body);
@@ -142,7 +195,7 @@ export function openModal({ title, body, footer = null, size = null, onClose = n
   // الشاشة. ونافذةٌ بلا تذييل (البحث، مشاركة العقار، عملاء مكرّرون) كانت تعرضه فعلًا.
   appendChildren(box, [
     el('div', { class: 'modal-head' },
-      el('h2', { class: 'modal-title', text: title }),
+      el('h2', { class: 'modal-title', id: titleId, text: title }),
       el('button', { class: 'icon-btn', type: 'button', 'aria-label': 'إغلاق', text: '✕', onClick: close })),
     bodyEl,
     footer ? el('div', { class: 'modal-foot' }, footer) : null,
@@ -153,6 +206,13 @@ export function openModal({ title, body, footer = null, size = null, onClose = n
   document.addEventListener('keydown', onKey);
   root.append(overlay);
   document.body.classList.add('modal-open');
+  // **أوّلُ ما يُملأ لا أوّلُ ما يُضغط**: التركيزُ يبدأ بأوّل حقلِ إدخال إن وُجد،
+  // فمن فتح استمارةً كتب فيها مباشرةً. وبلا حقلٍ يبدأ بالنافذة نفسِها لا بزرّ الإغلاق.
+  const firstField = box.querySelector('.modal-body input:not([type="hidden"]), .modal-body select, .modal-body textarea');
+  try {
+    if (firstField) firstField.focus();
+    else { box.setAttribute('tabindex', '-1'); box.focus(); }
+  } catch (_) { /* لا تركيز في بيئةٍ بلا عرض */ }
   return { close, element: box, body: bodyEl };
 }
 
@@ -237,7 +297,18 @@ export function promptDialog({ title, label, placeholder = '', value = '', confi
 export function toast(message, kind = 'info', ms = 3500) {
   const root = document.getElementById('toast-root');
   if (!root) return;
-  const node = el('div', { class: `toast ${kind}`, text: message });
+  /**
+   * **التنبيهُ يُعلَن لا يُرى فقط** (المرحلة ٤٩).
+   *
+   * «حُفظت الصفقة» و«تعذّر الحفظ» كانا يظهران في زاوية الشاشة بلا أن يُقالا — فمن
+   * لا يرى الزاوية لا يعلم أحفِظ أم لم يُحفظ. و`status` تُقرأ عند فراغ القارئ،
+   * و`alert` تقاطعه — والخطأُ وحدَه يستحقّ المقاطعة.
+   */
+  const node = el('div', {
+    class: `toast ${kind}`, text: message,
+    role: kind === 'error' ? 'alert' : 'status',
+    'aria-live': kind === 'error' ? 'assertive' : 'polite',
+  });
   root.append(node);
   setTimeout(() => node.remove(), ms);
 }

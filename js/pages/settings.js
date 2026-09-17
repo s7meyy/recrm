@@ -13,6 +13,7 @@ import {
   getSidebarOrder, setSidebarOrder, resetSidebarOrder, orderedPageKeys,
   getCompany, setCompany, getVaultSettings, setVaultSettings, getTemplates, setTemplates, resetTemplates,
   getGoals, setGoals,
+  getCampaigns, setCampaigns, // الحملات (المرحلة ٤٩)
 } from '../data/settings.js';
 import {
   listBackupBatches, uploadBackup, restoreBackup, uploadImages, listImageBackups, restoreImages,
@@ -20,6 +21,8 @@ import {
 } from '../data/vault.js';
 import { pushSupported, enablePush, disablePush, currentSubscription, syncReminders } from '../util/push.js';
 import { TEMPLATE_VARS } from '../util/templates.js';
+import { CAMPAIGN_CHANNELS } from '../util/campaigns.js';
+import { SHORTCUTS } from '../util/shortcuts.js';
 import {
   parseVCards, importContacts, buildVCards, buildCsv, CSV_EXPORTS, supportsRange,
   parseCsv, CSV_IMPORTS, suggestMapping, previewImport, runImport,
@@ -29,6 +32,7 @@ import { SIDEBAR_PAGES, DEFAULT_PAGE_KEYS, pageLabel, applySidebarOrder } from '
 import { applyTheme } from '../util/theme.js';
 import { storeImage, getImageUrl, removeImage } from '../data/images.js';
 import { requestFollowUpPermission } from '../util/follow-up-alerts.js';
+import { ALERT_RULES, ruleOn } from '../util/alert-rules.js';
 import { getPlans, setPlans, PLAN_TRIGGERS, PLAN_STEP_TYPES, SAMPLE_PLAN } from '../data/settings.js';
 import { getPlaybooks, setPlaybooks } from '../data/settings.js';
 import { exportBackup, downloadBlob, markExported, readBackupFile, importBackup } from '../data/backup.js';
@@ -67,10 +71,12 @@ export async function render(container) {
     panel('نطاقات الأحياء', 'مجموعة أحياء بمسمّى واحد («شمال الدائري الشمالي») تُعرَّف مرة وتُستعمل في أي طلب. نطاقات الرياض الخمسة مسودّة تقريبية — راجعها وعدّلها.', zonesBody),
     panel('تعريف "مكتمل البيانات"', 'العقار يُعدّ مكتملًا عندما تتوفر فيه الحقول المحددة هنا.', completenessBody),
     panel('الأهداف والتنبيهات', 'هدفك الشهري يظهر شريط تقدّم في «يومي»، وحدّ العرض البائت ينبّهك على المخزون الراكد.', goalsBody),
-    panel('متابعة العملاء', 'حدّ "لم يُتواصل معه" في الداشبورد، وتنبيه المتصفح عند تجاوز عميل له.', followUpBody),
+    panel('متابعة العملاء والتنبيهات', 'حدّ "لم يُتواصل معه"، وقائمةُ ما يوقظك: العقودُ والمستحقّاتُ والتمويلُ والصيانةُ والمعاينات.', followUpBody),
     panel('استيراد وتصدير', 'استيراد جهات اتصالك عملاءَ دفعة واحدة، وتصدير جداولك إلى ملفات تفتحها في إكسل.', exchangeBody),
     panel('خطط المتابعة', 'سلسلة خطوات بأيامها تُنشأ مهامها تلقائيًا عند حدث — بدل أن تتذكّر أنت. لا تعمل خطة حتى تُفعّلها.', plansBody),
     panel('نقاط المكالمات', 'ما تقوله في كل نوع مكالمة — يظهر مطويًّا داخل نافذة تسجيل التواصل. نصّ محض: لا يُنشئ مهمة ولا يُرسل شيئًا.', playbooksBody),
+    panel('اختصارات لوحة المفاتيح', 'ثلاثةٌ لا رابعَ لها — ومن يُدخل عشرين سجلًّا في الجلسة توفّر عليه الفأرة.', shortcutsBody),
+    panel('الحملات التسويقيّة', 'المصدرُ قناة، والحملةُ حملةٌ بعينها فيها بمدّتها وميزانيتها — وبها يُقاس ما جلبته كلُّ واحدةٍ على حدة: كم طلبًا، وكم جادًّا، وبكم كلّفك الطلب.', campaignsBody),
     panel('قوالب رسائل واتساب', 'رسائل جاهزة تُرسل بنقرة من قائمة مشاركة العقار، وتُعبَّأ ببيانات العقار والعميل تلقائيًا.', templatesBody),
     panel('تنبيهات الخلفية', 'تذكير المهام يصلك على الجهاز حتى بعد إغلاق التبويب. لا يغادر جهازك إلا موعد التذكير — بلا عناوين ولا أسماء.', pushBody),
     panel('سلة المحذوفات', 'نسخة من كل سجل حذفته خلال ثلاثين يومًا. يُستعاد السجل نفسه — أما ما حُذف تبعًا له (طلبات العميل مثلًا) فلا يعود.', trashBody),
@@ -625,6 +631,19 @@ async function followUpBody() {
   }
   updateNote();
 
+  /**
+   * **قواعدُ التنبيه** (المرحلة ٤٩) — النظامُ كان يوقظك بشيئين وهو يعرف سبعة.
+   * وتُعرض قائمةً تُشغَّل وتُطفَأ: من لا يدير أملاكًا يُطفئ الصيانة، ومن لا يُعاين
+   * يُطفئ التقييم — فلا يصير التنبيهُ ضجيجًا يُتجاهَل كلُّه.
+   */
+  const ruleBoxes = ALERT_RULES.map((r) => ({
+    key: r.key,
+    node: checkbox(r.label, { checked: ruleOn(fu.alertRules, r.key) }),
+    hint: r.hint,
+  }));
+  const rulesWrap = el('div', { class: 'rule-list' },
+    ...ruleBoxes.map((b) => el('div', { class: 'rule-row' }, b.node, el('span', { class: 'muted small', text: b.hint }))));
+
   return el('div', {},
     el('div', { class: 'form-grid' },
       labeled('لم يُتواصَل معه منذ (أيام)', daysInput),
@@ -632,6 +651,9 @@ async function followUpBody() {
       labeled('متابعة تلقائية بعد المعاينة (أيام)', afterShowingInput, {
         hint: 'عند تعليم مطابقة بـ«عُرضت» تُنشأ مهمة متابعة بعد هذه المدة. صفر = معطَّل.',
       })),
+    el('h3', { class: 'section-title', style: { marginTop: '12px' }, text: 'ما الذي يوقظك؟' }),
+    el('p', { class: 'muted small', text: 'كلُّ ما تحته محسوبٌ في النظام أصلًا — وهذه القائمةُ تقول أيُّه يصل إليك تنبيهًا. وكلُّه يحتاج «تنبيه المتصفح» أعلاه مُفعَّلًا.' }),
+    rulesWrap,
     note,
     el('p', { class: 'muted small', style: { marginTop: '4px' } },
       'قيد مهم: التنبيه يعمل فقط أثناء بقاء هذا التبويب مفتوحًا في المتصفح — لا تنبيهات بعد إغلاقه؛ ذلك يحتاج خادمًا حقيقيًا، خارج نطاق التطبيق الحالي.'),
@@ -647,7 +669,8 @@ async function followUpBody() {
           }
         }
         try {
-          await setFollowUpSettings({ staleContactDays: daysInput.value, notify, afterShowingDays: afterShowingInput.value });
+          const alertRules = Object.fromEntries(ruleBoxes.map((b) => [b.key, b.node.querySelector('input').checked]));
+          await setFollowUpSettings({ staleContactDays: daysInput.value, notify, afterShowingDays: afterShowingInput.value, alertRules });
           toast('تم الحفظ', 'success');
         } catch (err) { errToast(err); }
         updateNote();
@@ -1141,6 +1164,29 @@ async function teamBody(redraw) {
   const add = async () => {
     const name = newName.value.trim();
     if (!name) return;
+    /**
+     * **يُقال قبل أن يوظّف، لا بعد أن يخسر** (المرحلة ٤٩).
+     *
+     * الحدُّ مكتوبٌ في وصف اللوحة وفي صندوق التنبيه أسفلها وفي لوحة الأداء — **ويُقرأ
+     * بعد الفعل لا قبله**. ومن يضيف أوّلَ عضوٍ إلى فريقه يتّخذ قرارًا عن بياناته كلِّها،
+     * فيُوقَف عنده مرّةً واحدةً ليقرأ ما يترتّب عليه.
+     *
+     * **ومرّةً واحدة**: عند أوّل عضوٍ وحده. وسؤالٌ يتكرّر مع كلّ إضافةٍ يُقرأ مرّةً
+     * ويُضغط «موافق» بعدها بلا قراءة — فيبطل مقصودُه.
+     */
+    if (!team.length) {
+      const ok = await confirmDialog({
+        title: 'قبل أن تضيف فريقك',
+        confirmText: 'فهمتُ — أضِفه',
+        message: 'إضافةُ الأعضاء تمييزٌ وتنسيق: تعرف من أدخل، وتوزّع العمل، وتقيس كلَّ واحد.'
+          + '\n\nولا تمنع أحدًا من رؤية شيء. فالتطبيق يعمل على قاعدةٍ في متصفّح كلّ جهاز،'
+          + ' ومن فتح الجهاز رأى كلَّ عميلٍ وكلَّ عمولةٍ وكلَّ صفقة مهما أخفت الواجهة.'
+          + ' والموظّفُ الذي يترك المكتب قد يأخذ معه نسخةً كاملة.'
+          + '\n\nوالفصلُ الحقيقيّ يحتاج خادمًا يملك السجلّات ويسأل: من أنت؟ وهل لك أن ترى هذا؟'
+          + ' وذلك تحوّلٌ في بنية النظام بكلفةٍ شهريّةٍ قائمة — لا إعدادٌ يُضاف.',
+      });
+      if (!ok) return;
+    }
     // معرّفٌ محلّيّ يُولَّد هنا: لا حساباتٍ ولا خادم — هو وسمُ نسبةٍ لا هوّيةُ دخول.
     await setTeam([...team, { id: `m${Date.now().toString(36)}`, name, active: true }]);
     toast(`أُضيف ${name}`, 'success');
@@ -1830,4 +1876,97 @@ async function themeBody(redraw) {
       hijriSupported()
         ? el('div', {}, hijriBox, sample)
         : el('div', { class: 'muted small', text: 'متصفّحك لا يعرف تقويم أمّ القرى، فيبقى التاريخ ميلاديًّا. جرّب متصفّحًا أحدث.' })));
+}
+
+
+/* ===== الحملات التسويقيّة (المرحلة ٤٩) ===== */
+
+/**
+ * الدورُ الذي كان بلا صفحة: المسوّق. و`sources.js` تقيس **القناة** لا **الحملة**،
+ * وحملتان على القناة نفسِها تذوبان في رقمٍ واحد فلا يُعرف أيُّهما جلبت مشترين.
+ */
+async function campaignsBody(redraw) {
+  const stored = await getCampaigns();
+  const draft = stored.map((c) => ({ ...c }));
+  const wrap = el('div', {});
+
+  const draw = () => {
+    clear(wrap);
+    if (!draft.length) {
+      wrap.append(el('p', { class: 'muted small', text: 'لا حملة بعد. أنشئ واحدةً، ثم اخترها في استمارة العميل — ويظهر أداؤها في الداشبورد.' }));
+    }
+    draft.forEach((c, i) => {
+      wrap.append(el('div', { class: 'plan-step' },
+        el('input', {
+          class: 'input', type: 'text', value: c.label, placeholder: 'اسم الحملة (فلل قرطبة)',
+          'aria-label': 'اسم الحملة', onInput: (e) => { c.label = e.target.value; },
+        }),
+        el('input', {
+          class: 'input', type: 'text', value: c.channel || '', placeholder: 'القناة (سناب…)',
+          list: 'campaign-channels', 'aria-label': 'قناة الحملة', onInput: (e) => { c.channel = e.target.value; },
+        }),
+        el('input', {
+          class: 'input', type: 'date', value: c.startAt ? toInputDate(c.startAt) : '', title: 'من',
+          'aria-label': 'بداية الحملة', onInput: (e) => { c.startAt = e.target.value ? fromInputDate(e.target.value) : null; },
+        }),
+        el('input', {
+          class: 'input', type: 'date', value: c.endAt ? toInputDate(c.endAt) : '', title: 'إلى',
+          'aria-label': 'نهاية الحملة', onInput: (e) => { c.endAt = e.target.value ? fromInputDate(e.target.value) : null; },
+        }),
+        el('input', {
+          class: 'input', type: 'number', min: '0', step: '100', value: c.budget ?? '', placeholder: 'الميزانية',
+          'aria-label': 'ميزانية الحملة', onInput: (e) => { c.budget = e.target.value === '' ? null : Number(e.target.value); },
+        }),
+        el('button', {
+          type: 'button', class: 'icon-btn', text: '✕', title: 'حذف الحملة', 'aria-label': `حذف حملة ${c.label || 'بلا اسم'}`,
+          onClick: () => { draft.splice(i, 1); draw(); },
+        })));
+    });
+    wrap.append(el('button', {
+      type: 'button', class: 'btn btn-ghost btn-sm', text: '+ حملة',
+      onClick: () => { draft.push({ label: '', channel: '', startAt: null, endAt: null, budget: null }); draw(); },
+    }));
+  };
+  draw();
+
+  return el('div', {},
+    // قائمةُ اقتراحاتٍ لا حصر: قناةٌ غيرُ مذكورةٍ تُكتب كما هي.
+    el('datalist', { id: 'campaign-channels' }, CAMPAIGN_CHANNELS.map((ch) => el('option', { value: ch }))),
+    wrap,
+    el('p', { class: 'muted small', style: { marginTop: '8px' }, text: 'ميزانيةٌ متروكةٌ فارغةً تعني «مجهولةُ الكلفة» لا «مجّانيّة» — فلا تُحسب لها كلفةُ طلبٍ كاذبة.' }),
+    el('div', { style: { marginTop: '10px' } }, el('button', {
+      type: 'button', class: 'btn btn-primary', text: 'حفظ',
+      onClick: async () => {
+        try {
+          await setCampaigns(draft);
+          toast('حُفظت الحملات', 'success');
+          redraw();
+        } catch (err) { errToast(err); }
+      },
+    })));
+}
+
+
+/* ===== اختصارات لوحة المفاتيح (المرحلة ٤٩) ===== */
+
+/**
+ * **تُعرض حيث يراها من يريدها ولا تزاحم من لا يريدها.**
+ * وثلاثةٌ تكفي: قائمةٌ طويلةٌ لا يحفظها أحدٌ وتزاحم اختصاراتِ المتصفّح.
+ */
+async function shortcutsBody() {
+  /**
+   * **قائمةٌ لا جدول** — وثلاثةُ صفوفٍ لا تستحقّ جدولًا أصلًا.
+   *
+   * و`.table` في هذا المشروع عرضُها الأدنى ٩٠٠ بكسل، فتُجبر عمودَ الإعدادات على ذلك
+   * العرض ولو كانت في حاوية تُمرَّر — **فيفيض عرضُ الصفحة كلِّها على الآيباد**.
+   * كشفتها `design-dhad`، وهي تقيس فيض الصفحة لا فيض الحاوية.
+   */
+  return el('div', {},
+    el('div', { class: 'rule-list' }, SHORTCUTS.map((sc) => el('div', { class: 'rule-row' },
+      // المفاتيحُ لاتينيّةٌ داخل سطرٍ عربيّ: تُعزل كي لا يقلب الاتجاهُ الثنائيُّ ترتيبَها.
+      el('code', { class: 'num', text: sc.keys }),
+      el('span', { class: 'strong', text: sc.label }),
+      el('span', { class: 'muted small', text: sc.hint })))),
+    el('p', { class: 'muted small', style: { marginTop: '8px' },
+      text: 'تُقرأ بموضع الزرّ لا بحرفه، فتعمل بلوحةٍ عربيّة وإنجليزيّة سواء. ولا تُخطف حرفًا من يدِ من يكتب في حقل — إلا الحفظ، وهو موضعه.' }));
 }

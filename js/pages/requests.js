@@ -20,6 +20,8 @@ import { formatPhone } from '../util/phone.js';
 import { isArchived, archiveRequestCandidates, archiveRow } from '../util/archive.js';
 import { memberName, assignOptions, activeMembers, assignRow, passesAssign } from '../util/team.js';
 import { getTeam } from '../data/settings.js';
+import { payMethod } from '../util/financing.js';
+import { renderSavedViews } from '../util/saved-views.js';
 
 const GROUPS = [['status', 'الحالة'], ['type', 'النوع'], ['purpose', 'الغرض'], ['city', 'المدينة']];
 const VALUES = {
@@ -100,15 +102,26 @@ function buildLayout(ctx) {
     el('div', { class: 'head-actions' },
       ctx.nodes.search = el('input', {
         class: 'input search', type: 'search', placeholder: 'بحث بالمدينة أو الحي أو الملاحظات…',
-        onInput: debounce((e) => { ctx.query = e.target.value; renderFilters(ctx); renderList(ctx); }, 150),
+        onInput: debounce((e) => { ctx.query = e.target.value; renderFilters(ctx); renderList(ctx); renderSaved(ctx); }, 150),
       }),
       el('button', { type: 'button', class: 'btn', text: '📋 لصق رسالة عميل', title: 'اقرأ طلبًا من رسالة واتساب', onClick: () => openPasteForm(ctx) }),
       el('button', { type: 'button', class: 'btn btn-primary', text: '+ إضافة طلب', onClick: () => openForm(ctx, null) }))));
   ctx.nodes.filters = el('div', { class: 'filters' });
+  ctx.nodes.saved = el('div', { class: 'saved-row' });
   ctx.nodes.list = el('div');
-  ctx.container.append(ctx.nodes.filters, ctx.nodes.list);
+  ctx.container.append(ctx.nodes.saved, ctx.nodes.filters, ctx.nodes.list);
   renderFilters(ctx);
   renderList(ctx);
+  renderSaved(ctx);
+}
+
+/** البحوثُ المحفوظة (المرحلة ٤٩) — «طلبات فلل الرياض النشطة» يُبنى كلَّ يومٍ من جديد. */
+function renderSaved(ctx) {
+  renderSavedViews({
+    wrap: ctx.nodes.saved, page: 'requests', ctx, groups: GROUPS,
+    placeholder: 'طلبات فلل نشطة',
+    onApply: () => { renderFilters(ctx); renderList(ctx); },
+  });
 }
 
 /* ===== الفرز ===== */
@@ -151,7 +164,7 @@ function renderFilters(ctx) {
     if (!options.length) continue;
     const chips = el('div', { class: 'chips' });
     chips.append(allChip(ctx.filters[group], options.map((o) => o.value),
-      () => { renderFilters(ctx); renderList(ctx); }));
+      () => { renderFilters(ctx); renderList(ctx); renderSaved(ctx); }));
     for (const opt of options) {
       const n = ctx.requests.filter((r) => passes(ctx, r, group) && VALUES[group](r).includes(opt.value)).length;
       const active = ctx.filters[group].has(opt.value);
@@ -161,6 +174,7 @@ function renderFilters(ctx) {
           if (active) ctx.filters[group].delete(opt.value); else ctx.filters[group].add(opt.value);
           renderFilters(ctx);
           renderList(ctx);
+          renderSaved(ctx);
         },
       }, opt.label, el('span', { class: 'chip-count', text: String(n) })));
     }
@@ -187,7 +201,7 @@ function renderFilters(ctx) {
   if (GROUPS.some(([g]) => ctx.filters[g].size)) {
     wrap.append(el('div', {}, el('button', {
       type: 'button', class: 'btn btn-ghost btn-sm', text: 'مسح الفرز',
-      onClick: () => { for (const [g] of GROUPS) ctx.filters[g].clear(); renderFilters(ctx); renderList(ctx); },
+      onClick: () => { for (const [g] of GROUPS) ctx.filters[g].clear(); renderFilters(ctx); renderList(ctx); renderSaved(ctx); },
     })));
   }
 }
@@ -281,7 +295,11 @@ function renderList(ctx) {
       el('td', { text: labelFor(ENUMS.purposes, r.purpose) }),
       el('td', { text: r.city || '—' }),
       el('td', {}, placesNode(ctx, r)),
-      el('td', { class: 'num', text: r.budgetMax == null ? '—' : formatSAR(r.budgetMax) }),
+      el('td', { class: 'num' },
+        el('span', { text: r.budgetMax == null ? '—' : formatSAR(r.budgetMax) }),
+        // **الميزانيةُ وحدها نصفُ الخبر** (المرحلة ٤٩): مليونٌ ونصف نقدًا غيرُ مليونٍ
+        // ونصفٍ ينتظر بنكًا، فتُقرأ الطريقةُ حيث يُقرأ المبلغ لا في عمودٍ آخر.
+        payBadge(r.payMethod)),
       el('td', { class: 'num', text: formatArea(r.area) }),
       el('td', {}, badge(labelFor(ENUMS.requestStatuses, r.status), STATUS_STYLE[r.status] || '')),
       el('td', {}, r.status === 'active'
@@ -292,6 +310,15 @@ function renderList(ctx) {
         : el('span', { class: 'muted small', text: '—' })));
   }));
   area.append(el('div', { class: 'table-wrap' }, el('table', { class: 'table' }, el('thead', {}, head), body)));
+}
+
+/** رقاقةُ طريقة الدفع — ولا شيءَ لمن لم يُسأل: فراغٌ أصدقُ من «غير معروف». */
+function payBadge(key) {
+  if (!key) return null;
+  const m = payMethod(key);
+  if (!m) return null;
+  const cls = key === 'cash' ? 'badge-ok' : (key === 'preapproved' ? 'badge-accent' : 'badge-outline');
+  return el('span', { class: 'nowrap' }, ' ', badge(m.label, cls));
 }
 
 /* ===== النموذج ===== */
@@ -541,6 +568,14 @@ async function openForm(ctx, existing, prefill = null) {
   const budgetMinInput = el('input', { class: 'input', type: 'number', min: '0', step: '1000', value: draft.budgetMin ?? '' });
   const roomsInput = el('input', { class: 'input', type: 'number', min: '0', step: '1', value: draft.rooms ?? '' });
   const bathsInput = el('input', { class: 'input', type: 'number', min: '0', step: '1', value: draft.baths ?? '' });
+  /**
+   * **كيف يدفع؟** (المرحلة ٤٩) — أقوى مؤهِّلٍ للمشتري، وكان الطلبُ يخلو منه.
+   * و«لم يُسأل» خيارٌ صريحٌ لا فراغٌ صامت: الصمتُ لا يُقرأ «يحتاج تمويلًا».
+   */
+  const payMethodSelect = selectEl({
+    options: ENUMS.payMethods.map((m) => ({ value: m.key, label: m.label })),
+    value: draft.payMethod || '', placeholder: 'لم يُسأل',
+  });
   const rentCycleSelect = selectEl({
     options: ENUMS.rentCycles.map((c) => ({ value: c.key, label: c.label })),
     value: draft.rentCycle || '', placeholder: 'غير مذكورة',
@@ -666,6 +701,7 @@ async function openForm(ctx, existing, prefill = null) {
       districts: [...selectedDistricts], districtZones: [...selectedZones],
       budgetMax: num(budgetInput), budgetMin: num(budgetMinInput), area: num(areaInput),
       rooms: num(roomsInput), baths: num(bathsInput), rentCycle: rentCycleSelect.value || '',
+      payMethod: payMethodSelect.value || '',
       notes: notesInput.value, status: statusSelect.value,
       // السبب لا يُحفظ إلا مع حالة «موقوف»: طلبٌ أُعيد تنشيطه، أو تمّت صفقته، لا سببَ لموته.
       closeReason: DEAD.includes(statusSelect.value) ? (closeReasonSelect.value || null) : null,
@@ -731,6 +767,7 @@ async function openForm(ctx, existing, prefill = null) {
         labeled('المدينة', citySelect, { required: true, hint: 'فاصل قاطع' }),
         labeled('سقف الميزانية (ريال)', budgetInput),
         labeled('أدنى الميزانية (ريال)', budgetMinInput, { hint: 'اختياري — ما دونه يُعرض عليك موسومًا «أقلّ من أرضيّتك»، ولا يُحجب' }),
+        labeled('كيف يدفع؟', payMethodSelect, { hint: 'نقديٌّ بمليونٍ ونصف مشترٍ خلال أسبوعين، ومثلُه ينتظر بنكًا مشترٍ بعد شهرين وقد لا يشتري — ويُرتَّب بها ترتيبُ طلباتك.' }),
         labeled('دورة الإيجار', rentCycleSelect, { hint: 'سنويّ أم شهريّ — والفرق اثنا عشر ضعفًا، فلا يُخمَّن' }),
         labeled('المساحة المطلوبة (م²)', areaInput, { hint: 'تُعدّ حدًّا أدنى: الأكبر لا يُخصم منه' }),
         labeled('أقلّ عدد غرف', roomsInput, { hint: 'معيارٌ مرجّح لا قاطع: الأقلُّ يهبط في الترتيب ولا يختفي، وعرضٌ بلا عددٍ مسجَّل يُوسَم' }),

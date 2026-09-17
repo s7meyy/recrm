@@ -2,7 +2,7 @@
 // التصدير PDF عبر طباعة المتصفح فقط (Ctrl+P ← حفظ كـPDF) بتنسيق طباعة مخصَّص —
 // بلا مكتبة وبلا تصدير صورة (مؤجَّل صراحة بقرار المالك).
 
-import { repo, ValidationError } from '../data/repository.js';
+import { repo, ValidationError, getCurrentUser } from '../data/repository.js';
 import { ENUMS, labelFor, invoiceTotal, invoiceVat, invoiceGrandTotal, invoiceCollection, invoiceRemaining, invoicePaid, COLLECTION_LABELS } from '../data/schema.js';
 import { zatcaTlvBase64, zatcaReady } from '../util/zatca.js';
 import { qrSvg } from '../util/qr.js';
@@ -11,9 +11,11 @@ import { getImageUrl } from '../data/images.js';
 import {
   el, clear, labeled, selectEl, badge, openModal, confirmDialog, toast, emptyState, debounce, appendChildren,
 } from '../util/dom.js';
-import { formatDate, formatNumber, formatSAR, toInputDate, fromInputDate, countOf } from '../util/format.js';
+import { formatDate, formatNumber, formatSAR, toInputDate, fromInputDate, countOf, daysWord } from '../util/format.js';
 import { vatSummary, invoiceYears, QUARTERS, quarterOf } from '../util/vat-report.js';
 import { receivables } from '../util/receivables.js';
+import { dunningList, dunningDraft } from '../util/dunning.js';
+import { whatsappButton } from '../util/outreach.js';
 import { formatPhone } from '../util/phone.js';
 import { matchesQuery } from '../util/arabic.js';
 import { runIntegration, explain } from '../data/integrations.js';
@@ -174,6 +176,57 @@ function renderSummary(ctx) {
     overdueCount ? el('div', { class: 'stat-chip' },
       el('div', { class: 'stat-num', text: money(overdueTotal) }),
       el('div', { class: 'stat-label', text: `متأخر عن استحقاقه (${formatNumber(overdueCount)})` })) : null));
+  // **المطالبة** (المرحلة ٤٩): التعميرُ كان يقف عند العرض، والرسالةُ تُكتب بيدٍ عشرين مرّة.
+  if (overdueCount) {
+    area.append(el('button', {
+      type: 'button', class: 'btn btn-sm', text: '💬 طالِب بالمتأخّر',
+      title: 'رسائلُ مطالبةٍ مملوءةٌ بالاسم والمبلغ وأيّام التأخّر — بنبرةٍ تتبع طول التأخّر',
+      onClick: () => openDunning(ctx),
+    }));
+  }
+}
+
+/**
+ * **نافذةُ المطالبة** (المرحلة ٤٩) — واحدةً بعد واحدة، ونبرةٌ تتبع الشريحة العمريّة.
+ *
+ * ولا إرسالَ جماعيٍّ بضغطة: عشرون رسالةً تُفتح دفعةً واحدةً يمنعها المتصفّح أصلًا،
+ * **والمطالبةُ قرارٌ لكلّ واحدٍ على حدة** — فيهم من كلّمتَه أمس، وفيهم من له عذر.
+ * وكلُّ ما يُفتح يُسجَّل تواصلًا مستنتَجًا فلا يُطالَب أحدٌ مرّتين في يوم.
+ */
+async function openDunning(ctx) {
+  const { rows } = receivables({ invoices: ctx.invoices });
+  const list = dunningList(rows, ctx.clientsById);
+  const user = getCurrentUser();
+  const body = el('div', {});
+  if (!list.length) {
+    body.append(el('p', { class: 'muted', text: 'لا متأخّرَ له جوّالٌ يُطالَب عليه. ومن لا جوّالَ له لا يُدرَج هنا: زرُّ رسالةٍ لا تُرسَل وعدٌ كاذب.' }));
+  } else {
+    body.append(el('p', { class: 'muted small', text: 'النبرةُ تتبع طولَ التأخّر: تذكيرٌ لطيفٌ في الشهر الأوّل، ومطالبةٌ صريحةٌ بعد التسعين. والنصُّ يُقرأ ويُعدَّل داخل واتساب قبل أن يُرسَل.' }));
+    for (const item of list.slice(0, 20)) {
+      const { text, tone } = dunningDraft({
+        row: item.row, client: item.client, company: ctx.company, user, daysWord, formatDate,
+      });
+      const area2 = el('textarea', { class: 'input', rows: 4, value: text, 'aria-label': 'نصّ المطالبة' });
+      body.append(el('div', { class: 'panel-block' },
+        el('div', { class: 'row' },
+          el('strong', { text: item.client?.name || item.row.name || 'بلا اسم' }),
+          badge(tone.label, item.row.bucket === 'older' ? 'badge-danger' : 'badge-warn'),
+          el('span', { class: 'muted small', text: `${money(item.row.remaining)} · متأخّرٌ ${daysWord(item.row.days)}` })),
+        area2,
+        el('div', { class: 'row' },
+          whatsappButton(el, {
+            clientId: item.client?.id || null,
+            phone: item.phone,
+            // النصُّ المعدَّل هو الذي يُرسَل — لا النصُّ الذي وُلِّد أوّلًا.
+            textOf: () => area2.value,
+            note: `مطالبة: ${tone.lead}`,
+            label: '💬 افتح المحادثة',
+            cls: 'btn btn-sm',
+            sensitive: false,
+          }))));
+    }
+  }
+  openModal({ title: 'المطالبة بالمتأخّر', size: 'wide', body, footer: [] });
 }
 
 /**

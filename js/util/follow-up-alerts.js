@@ -15,16 +15,19 @@
 import { repo } from '../data/repository.js';
 import { getFollowUpSettings } from '../data/settings.js';
 import { daysBetween } from './format.js';
+import { evaluateRules } from './alert-rules.js';
 import { countOf } from './format.js';
 
 const SEEN_KEY = 'kassab_followup_notified_v1';
+/** مانعُ تكرارِ قواعد المرحلة ٤٩ — مفتاحٌ منفصلٌ فلا يختلط بمانع العملاء القائم. */
+const RULES_SEEN_KEY = 'kassab_rule_notified_v1';
 const CHECK_INTERVAL_MS = 30 * 60 * 1000;
 
-function readSeen() {
-  try { return new Set(JSON.parse(localStorage.getItem(SEEN_KEY) || '[]')); } catch (_) { return new Set(); }
+function readSeen(key = SEEN_KEY) {
+  try { return new Set(JSON.parse(localStorage.getItem(key) || '[]')); } catch (_) { return new Set(); }
 }
-function writeSeen(set) {
-  try { localStorage.setItem(SEEN_KEY, JSON.stringify([...set])); } catch (_) { /* تجاهل (وضع تصفح خاص مثلًا) */ }
+function writeSeen(set, key = SEEN_KEY) {
+  try { localStorage.setItem(key, JSON.stringify([...set])); } catch (_) { /* تجاهل (وضع تصفح خاص مثلًا) */ }
 }
 function goTo(hash) {
   return () => { window.focus(); location.hash = hash; };
@@ -67,12 +70,54 @@ async function checkTasksOnce() {
   }
 }
 
+/**
+ * **بقيّةُ القواعد** (المرحلة ٤٩) — العقدُ الذي ينتهي، والمستحقُّ الذي تأخّر، والتمويلُ
+ * الذي وقف، والصيانةُ التي لم تُغلق، والمعاينةُ التي مضت بلا رأي.
+ *
+ * وفحصُ العملاء والمهامّ أعلاه **باقيان كما هما**: للمهمّة مانعُ تكرارٍ في سجلّها
+ * (`reminded`)، وللعميل مانعٌ في `localStorage` — ولا يُعاد بناؤهما بلا حاجة.
+ * وهذا يتولّى ما عداهما، بمانعِ تكرارٍ واحدٍ يقرأ `id` القاعدة الثابت.
+ */
+async function checkRulesOnce() {
+  let settings;
+  try { settings = await getFollowUpSettings(); } catch (_) { return; }
+  if (!settings.notify) return;
+  if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+
+  const [deals, properties, invoices, showings] = await Promise.all([
+    repo.deals.list(), repo.properties.list(), repo.invoices.list(), repo.showings.list(),
+  ]);
+  // العميلُ والمهمّةُ لهما فحصُهما الخاصُّ أعلاه — فيُطفآن هنا كي لا يُنبَّه عليهما مرّتين.
+  const enabled = { ...(settings.alertRules || {}), staleClient: false, dueTask: false };
+  const alerts = evaluateRules(
+    { deals, properties, invoices, showings },
+    { enabled, countOf, now: Date.now() },
+  );
+  if (!alerts.length) return;
+
+  const seen = readSeen(RULES_SEEN_KEY);
+  const fresh = alerts.filter((a) => !seen.has(a.id));
+  for (const a of alerts) seen.add(a.id);
+  // **ما لم يعد قائمًا يُنسى**: لولا ذلك لانتفخ المانعُ أبدًا، ولَما نُبِّه ثانيةً على
+  // حالةٍ عادت بعد أن زالت (عقدٌ جُدِّد ثم قارب الانتهاء من جديد).
+  const live = new Set(alerts.map((a) => a.id));
+  writeSeen(new Set([...seen].filter((id) => live.has(id))), RULES_SEEN_KEY);
+
+  // **ثلاثةٌ على الأكثر في الفحص الواحد**: عشرون إشعارًا تُغلق الإشعاراتِ كلَّها،
+  // وما زاد يبقى في لوحة «يومي» حيث يُقرأ على مهل.
+  for (const a of fresh.slice(0, 3)) {
+    const n = new Notification(a.title, { body: a.body, tag: `kassab-${a.rule}-${a.id}` });
+    n.onclick = goTo(a.hash);
+  }
+}
+
 async function checkAllOnce() {
   await checkClientsOnce().catch((err) => console.warn('تعذر فحص تنبيهات المتابعة', err));
   await checkTasksOnce().catch((err) => console.warn('تعذر فحص تذكير المهام', err));
+  await checkRulesOnce().catch((err) => console.warn('تعذر فحص قواعد التنبيه', err));
 }
 
-/** يبدأ الفحص الدوري (العملاء المتأخرون + المهام المستحقة). استدعها مرة واحدة عند تشغيل التطبيق. */
+/** يبدأ الفحص الدوري (العملاء المتأخرون + المهام المستحقة + بقيّة القواعد). استدعها مرة واحدة عند تشغيل التطبيق. */
 export function startFollowUpAlerts() {
   checkAllOnce();
   setInterval(checkAllOnce, CHECK_INTERVAL_MS);

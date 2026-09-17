@@ -55,10 +55,26 @@ export async function openWhatsApp({ clientId = null, phone = '', text = '', not
  *
  * @param {Function} el باني العناصر (يُمرَّر كي لا تعتمد هذه الوحدة على DOM في الاختبار)
  */
-export function whatsappButton(el, { clientId, phone, text = '', note = '', label = '💬 واتساب', cls = 'btn' }) {
+export function whatsappButton(el, {
+  clientId, phone, text = '', note = '', label = '💬 واتساب', cls = 'btn',
+  /**
+   * **نصٌّ يُقرأ لحظةَ الضغط لا لحظةَ البناء** (المرحلة ٤٩).
+   *
+   * حيث يُعرض النصُّ في رقعةٍ تُحرَّر (المطالبة بالمتأخّر مثلًا) كان الزرُّ يرسل
+   * ما وُلِّد أوّلًا لا ما كتبتَه أنت — **فيُرسَل غيرُ ما على الشاشة**. و`textOf`
+   * دالّةٌ تُقرأ عند الضغط فيُرسَل ما يراه صاحبُه.
+   */
+  textOf = null,
+  /**
+   * **`sensitive`**: الزرُّ يحمل `data-sensitive` افتراضًا لأنّ أكثرَ مواضعه رسائلُ
+   * فيها أسعارٌ وعمولات، ووضعُ المساعد يخفيها. وفي المطالبة بالمتأخّر لا يُخفى:
+   * زرٌّ غائبٌ في نافذةٍ عنوانُها «طالِب بالمتأخّر» يترك من يفتحها بلا فعل.
+   */
+  sensitive = true,
+}) {
   return el('button', {
-    type: 'button', class: cls, text: label, 'data-sensitive': true,
+    type: 'button', class: cls, text: label, ...(sensitive ? { 'data-sensitive': true } : {}),
     title: 'يفتح المحادثة ويسجّل تواصلًا مُستنتَجًا في سجلّ العميل',
-    onClick: () => openWhatsApp({ clientId, phone, text, note }),
+    onClick: () => openWhatsApp({ clientId, phone, text: textOf ? textOf() : text, note }),
   });
 }

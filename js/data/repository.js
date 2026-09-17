@@ -161,6 +161,7 @@ const PREPARE = {
     rec.tags = uniq(rec.tags);
     rec.contacts = Array.isArray(rec.contacts) ? rec.contacts : [];
     rec.referralSource = trim(rec.referralSource);
+    rec.campaign = trim(rec.campaign); // الحملة (المرحلة ٤٩)
     rec.doNotContact = !!rec.doNotContact; // تفضيلات التواصل (المرحلة ٣٢)
     rec.bestTime = inEnum(ENUMS.contactTimes, rec.bestTime) ? rec.bestTime : '';
     rec.searchKey = buildSearchKey([
@@ -197,6 +198,26 @@ const PREPARE = {
     } else {
       rec.captureContact = null;
     }
+    /**
+     * **العروضُ المقدَّمة** (المرحلة ٤٩) — تُطبَّع كما تُطبَّع الدفعات والصيانة.
+     * وعرضٌ بلا مبلغٍ يُسقط: «قدّم عرضًا» بلا رقمٍ لا يُقارَن بسعرٍ ولا يُحاجَّ به مالك.
+     */
+    // البيعُ على الخارطة (المرحلة ٤٩): تاريخُ تسليمٍ ورخصةُ وافي لا معنى لهما لعقارٍ قائم،
+    // فيُصفَّران مع إطفاء العلم — ولا يبقى تاريخُ تسليمٍ يُنبَّه عليه في عقارٍ مبنيٍّ أصلًا.
+    rec.offPlan = !!rec.offPlan;
+    rec.deliveryAt = rec.offPlan ? (rec.deliveryAt || null) : null;
+    rec.wafiLicense = rec.offPlan ? trim(rec.wafiLicense) : '';
+    rec.offers = (Array.isArray(rec.offers) ? rec.offers : [])
+      .map((o) => ({
+        id: o.id || newId(),
+        at: o.at || null,
+        amount: numField(rec, 'مبلغ العرض', o.amount),
+        from: trim(o.from),
+        clientId: o.clientId || null,
+        status: ['open', 'accepted', 'rejected', 'expired'].includes(o.status) ? o.status : 'open',
+        note: trim(o.note),
+      }))
+      .filter((o) => o.amount != null && o.amount > 0);
     rec.typeFields = obj(rec.typeFields);
     rec.extra = obj(rec.extra);
     rec.building = trim(rec.building);   // المبنى ورقم الوحدة (المرحلة ٤٨)
@@ -237,6 +258,9 @@ const PREPARE = {
       // رقما العقد والترخيص يُبحث بهما: يأتيك سؤالٌ برقمٍ فتجد صاحبه (المرحلة ٤٠).
       rec.agreementNumber,
       rec.adLicense?.number || '',
+      // على الخارطة: كلمةٌ يبحث بها من يبحث، ورقمُ وافي يأتيك سؤالٌ به (المرحلة ٤٩).
+      rec.offPlan ? 'على الخارطة بيع على الخارطة وافي' : '',
+      rec.wafiLicense,
     ]);
   },
   tours(rec) {
@@ -254,6 +278,8 @@ const PREPARE = {
     rec.rooms = numField(rec, 'عدد الغرف', rec.rooms);
     rec.baths = numField(rec, 'دورات المياه', rec.baths);
     rec.rentCycle = trim(rec.rentCycle);
+    // طريقةُ الدفع (المرحلة ٤٩): غيرُ المعروفة تُردّ إلى الفراغ — و«لم يُسأل» ليست جوابًا.
+    rec.payMethod = inEnum(ENUMS.payMethods, rec.payMethod) ? rec.payMethod : '';
     // حدٌّ أدنى فوق الأعلى قلبٌ لا نيّة — يُبدَّلان بدل أن يُرفض الطلب أو يُصمَت عنه.
     if (rec.budgetMin != null && rec.budgetMax != null && rec.budgetMin > rec.budgetMax) {
       const lo = rec.budgetMax; rec.budgetMax = rec.budgetMin; rec.budgetMin = lo;
@@ -305,6 +331,13 @@ const PREPARE = {
   },
   deals(rec) {
     rec.assignedTo = rec.assignedTo || null; // من أتمّها من فريقك (المرحلة ٤٨)
+    // **التمويل** (المرحلة ٤٩): مرحلةٌ غيرُ معروفةٍ تُردّ إلى الفراغ لا تُحفظ نصًّا لا يُفرز به.
+    rec.financeStage = inEnum(ENUMS.financeStages, rec.financeStage) ? rec.financeStage : '';
+    rec.financeBank = trim(rec.financeBank);
+    rec.financeNote = trim(rec.financeNote);
+    // **تاريخٌ بلا مرحلةٍ لا معنى له** — ومرحلةٌ بلا تاريخٍ مشروعة (تُقرأ «بلا تاريخ»)،
+    // لأن اختراعَ «اليوم» لحالةٍ قديمةٍ يُسكت التنبيهَ عن صفقةٍ واقفةٍ منذ شهر.
+    rec.financeAt = rec.financeStage ? (rec.financeAt || null) : null;
     rec.finalPrice = numField(rec, 'السعر النهائي', rec.finalPrice);
     rec.commission = numField(rec, 'العمولة', rec.commission);
     // حصّةُ وسيطك نسبةً — وما خرج عن ٠–١٠٠ خطأٌ يُردّ لا يُبتلع، ومئةٌ حدُّها فالعمولةُ عمولةُ المكتب.
@@ -351,7 +384,7 @@ const PREPARE = {
     // نصيبٌ بلا اسم **لا يُمحى صامتًا** — يُردّ بخطأ في VALIDATE، لأن محو رقمٍ كتبه المستخدم
     // أسوأ من رفضه. وما لا نصيب فيه لا تسليم له.
     rec.partnerPaidAt = (rec.partnerShare == null ? null : rec.partnerPaidAt) || null;
-    rec.searchKey = buildSearchKey([rec.notes, rec.partnerName]);
+    rec.searchKey = buildSearchKey([rec.notes, rec.partnerName, rec.financeBank, rec.financeNote]);
   },
   images(rec) {
     rec.size = toNumberOrNull(rec.size) ?? 0;
@@ -598,12 +631,16 @@ const CASCADE = {
  * وبياناتك في متصفحٍ له حدّ مساحة.
  */
 const TRACKED = {
-  properties: ['price', 'status', 'captureStatus', 'area', 'ownerName', 'agreementSignedAt', 'assignedTo'],
+  properties: ['price', 'status', 'captureStatus', 'area', 'ownerName', 'agreementSignedAt', 'assignedTo', 'deliveryAt'],
   clients: ['stage', 'phone', 'phone2', 'doNotContact', 'referralSource', 'assignedTo'],
-  requests: ['status', 'budgetMax', 'budgetMin', 'area', 'rooms', 'closeReason', 'assignedTo'],
+  requests: ['status', 'budgetMax', 'budgetMin', 'area', 'rooms', 'closeReason', 'assignedTo', 'payMethod'],
   // الإسنادُ يُتتبَّع كما تُتتبَّع الحالة (المرحلة ٤٨): «من نُقلت إليه ومتى» سؤالُ مديرٍ لا فضول.
-  deals: ['assignedTo', 'agentShare', 'commission', 'finalPrice'],
-  deals: ['finalPrice', 'commission', 'partnerName', 'partnerShare', 'commissionPaidAt'],
+  //
+  // **وكانا مفتاحين اثنين باسم `deals` في كائنٍ واحد** (المرحلة ٤٩): الثاني يمحو الأوّل
+  // صامتًا، فكان الإسنادُ وحصّةُ الوسيط لا يُتتبَّعان أصلًا مع أن السطر مكتوبٌ فوقهما.
+  // كُتب السطران في مرحلتين، ولا شيء في الجافاسكربت يشتكي من مفتاحٍ مكرَّر. فدُمجا.
+  deals: ['finalPrice', 'commission', 'partnerName', 'partnerShare', 'commissionPaidAt',
+    'assignedTo', 'agentShare', 'financeStage'],
   invoices: ['type', 'number', 'status'],
 };
 
@@ -699,6 +736,17 @@ function makeEntity(store) {
             : history;
           rec.priceHistory = [...seeded, { at: rec.updatedAt, price: after }];
         }
+      }
+      /**
+       * **ختمُ تاريخ التمويل** (المرحلة ٤٩) — هنا لا في الصفحة، كتاريخ السعر تمامًا.
+       *
+       * ويُختم **عند تغيّر المرحلة وحدها**: لو خُتم عند كل حفظٍ لأسكت تنبيهَ «وقف عند
+       * البنك» كلَّما فتحتَ الصفقةَ وحفظتَها، فيصير التنبيهُ يقيس فتحاتِك لا حركةَ البنك.
+       * ومن كتب تاريخًا بيده في الرقعة يُحترم ما كتب.
+       */
+      if (store === 'deals' && 'financeStage' in patch
+        && rec.financeStage !== current.financeStage && !('financeAt' in patch)) {
+        rec.financeAt = rec.updatedAt;
       }
       recordHistory(store, current, rec);
       prepare(rec);

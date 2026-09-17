@@ -6,7 +6,7 @@
 
 import { repo, getCurrentUser } from '../data/repository.js';
 import { ENUMS, labelFor, clientPriority, clientTagClass, reviewCandidates } from '../data/schema.js';
-import { getLists, getCompleteness, getFollowUpSettings, typeLabel, getUI, setUI, getGoals, getCompany, getPlaybooks, getPublishSettings, getBackupInfo, getTemplates } from '../data/settings.js';
+import { getLists, getCompleteness, getFollowUpSettings, typeLabel, getUI, setUI, getGoals, getCompany, getPlaybooks, getPublishSettings, getBackupInfo, getTemplates, getTeam } from '../data/settings.js';
 import { loadMatchingContext, candidatesFor, matchReadiness } from '../data/matching.js';
 import { buildOpportunityIndex, topOpportunities } from '../util/opportunity.js';
 import { receivables } from '../util/receivables.js';
@@ -14,14 +14,15 @@ import { awaitingReply } from '../util/lead-score.js';
 import { upcomingShowings, needFeedback } from '../util/showings.js';
 import { expiringAgreements } from '../util/agreements.js';
 import { expiryAlerts, STATE_LABEL as REGA_STATE } from '../util/rega.js';
-import { externalDuplicates } from '../util/duplicates.js';
+import { externalDuplicates, matchLead } from '../util/duplicates.js';
+import { stalledFinancing, STALL_DAYS } from '../util/financing.js';
 import { publishDrift } from '../util/publish-drift.js';
 import { storageStatus, formatBytes } from '../data/images.js';
 import { dealAnniversaries } from '../util/calendar.js';
 import { runPlans } from '../util/plans.js';
 import { el, clear, badge, emptyState, confirmDialog, toast, openModal, labeled, selectEl } from '../util/dom.js';
-import { startSteps, startProgress, shouldShowStart } from '../util/onboarding.js';
-import { goalFor } from '../util/team.js';
+import { startSteps, startProgress, shouldShowStart, memberSteps } from '../util/onboarding.js';
+import { goalFor, activeMembers } from '../util/team.js';
 import { suggestTemplate, renderTemplate, templateValues, TEMPLATE_CONTEXTS } from '../util/templates.js';
 import { whatsappButton } from '../util/outreach.js';
 import { formatSAR, formatDate, formatDateTime, formatNumber, relativeDays, daysBetween, daysWord, countWord, countOf } from '../util/format.js';
@@ -56,6 +57,8 @@ async function loadData() {
   // حصّةُ التخزين (المرحلة ٤٧): كان الإنذارُ في صفحة الإعدادات وحدها — وهي التي لا تُفتح
   // في الجولة ولا قبلها، ونصُّه بيده يقول إنّ الامتلاءَ فيها يُضيّع التقاطَ اليوم.
   const storage = await storageStatus();
+  const team = await getTeam(); // بدايةُ الموظّف (المرحلة ٤٩)
+  const meId = getCurrentUser()?.id || '';
   // «ابدأ من هنا» (المرحلة ٤٧): حالُ كل خطوةٍ تُقرأ من بياناتك لا من علامةٍ تُرفع بالنقر.
   const backup = await getBackupInfo();
   // القالبُ في موضع الحاجة (المرحلة ٤٧): يُقترح حيث تُرى الحالة، لا في صفحةٍ تُفتح لتُختار منها.
@@ -72,7 +75,9 @@ async function loadData() {
   // يعني طلبًا لا يراه أحد. وبقاؤه في المخزن هو علامة أنه لم يُردَّ عليه: إدخالُه عميلًا
   // أو صرفُه يحذفه.
   const pendingLeads = (((await readPublicApi('/api/lead', { leads: [] })) || {}).leads || [])
-    .map((l) => ({ ...l, kind: 'lead' }));
+    // **يُقارَن بعملائك قبل أن يُعرض** (المرحلة ٤٩): من ترك رقمَه وهو عميلُك منذ شهرين
+    // ليس غريبًا، وزرُّه «افتح ملفّه» لا «أدخِله».
+    .map((l) => ({ ...l, kind: 'lead', known: matchLead(l, ctx.clients) }));
   const since = ui.lastVisitAt || null;
   const due = receivables({ invoices, deals }); // المستحقات (المرحلة ١٧)
   // عملاء جدد بلا ردّ (المرحلة ٢٣): «سرعة الردّ» أقوى ما تبيعه الأنظمة الكبرى، وحسابه بسيط.
@@ -201,6 +206,23 @@ async function loadData() {
     company,
     // ذكرى الصفقة السنوية (المرحلة ٣٢)
     anniversaries: dealAnniversaries(deals),
+    /**
+     * **ما أُسند إليّ** (المرحلة ٤٩) — لمكتبٍ فيه فريقٌ ولعضوٍ عُرف بعينه.
+     * وفارغةً لمن لا فريقَ له، فلا تُرسم بطاقةٌ لا مخاطَبَ لها.
+     */
+    memberSteps: (activeMembers(team).length > 1 && meId)
+      ? memberSteps({
+        meId,
+        properties: ctx.properties, clients: ctx.clients, requests: ctx.requests, deals,
+        goal: goalFor(goals, meId),
+        lastContactOf: (c) => repo.clients.lastContactAt(c),
+      })
+      : [],
+    /**
+     * **وقف عند البنك** (المرحلة ٤٩) — الصفقةُ لا تموت عند السعر.
+     * مرحلةٌ مفتوحةٌ سكت عنها البنكُ أسبوعًا: أحقُّ ما يُسأل عنه اليوم.
+     */
+    stalled: stalledFinancing(deals, { days: STALL_DAYS, now }),
     // اتفاقيات توشك أو انتهت (المرحلة ٣١)
     agreements: expiringAgreements(ctx.properties, { defaultDays: company.agreementDurationDays || 90 }),
     // ما ينتهي خلال شهر (المرحلة ٤٨): رخصةُ «فال» وتراخيصُ الإعلان — وكانتا تُحسبان
@@ -584,6 +606,28 @@ function build(container, d) {
   });
   if (shouldShowStart(steps, d.ui || {})) container.append(startCard(steps, container));
 
+  /**
+   * **بدايةُ الموظّف** (المرحلة ٤٩) — بطاقةُ البدء أعلاه تقيس حالَ المكتب، وهذه تقيس
+   * حالَ **من أُسند إليه**. ولا تظهر إلّا لمكتبٍ فيه فريقٌ ولعضوٍ منه أُسند إليه شيء:
+   * مكتبٌ من شخصٍ واحدٍ لا موظّفَ فيه يُوجَّه، وبطاقةٌ فارغةٌ ضجيج.
+   */
+  if (d.memberSteps?.length) {
+    const mp = startProgress(d.memberSteps);
+    container.append(el('section', { class: 'start-card' },
+      el('h2', { text: 'ما أُسند إليك' }),
+      el('p', { class: 'muted small' },
+        'هذه قراءةٌ ممّا أُسند إليك أنت لا من حال المكتب. ',
+        el('strong', { text: 'وهي تمييزٌ وتنسيق لا تصريحٌ وحجب' }),
+        ' — ما لا يظهر هنا لا يعني أنّه محجوبٌ عنك.'),
+      el('ul', { class: 'start-steps' }, d.memberSteps.map((s) => el('li', { class: `start-step${s.done ? ' done' : ''}` },
+        el('span', { class: 'start-num', text: s.done ? '✓' : '•' }),
+        el('span', { class: 'start-text' },
+          el('span', { class: 'strong', text: s.title }),
+          el('span', { class: 'muted small', text: s.hint })),
+        el('a', { class: 'btn btn-sm', href: s.href, text: s.cta })))),
+      el('p', { class: 'muted small', text: `أنجزتَ ${formatNumber(mp.done)} من ${formatNumber(mp.total)}.` })));
+  }
+
   container.append(el('div', { class: 'stat-strip' },
     chip(d.followUps.length, 'متابعة اليوم'),
     chip(d.dueTasks.length, 'مهمة مستحقة'),
@@ -612,12 +656,31 @@ function build(container, d) {
         el('p', { class: 'muted small', text: 'زائرٌ ترك رقمه ولم يُدخَل بعد. إدخاله عميلًا — أو صرفه — يُخرجه من هنا.' }),
         ...d.pendingLeads.slice(0, 8).map((lead) => row(
           el('span', {}, lead.name || 'بلا اسم',
-            lead.ref ? badge(`عرض ${lead.ref}`, '') : null),
-          `${lead.phone ? formatPhone(lead.phone) : 'بلا رقم'} · ${relativeDays(lead.createdAt)}`,
+            lead.ref ? badge(`عرض ${lead.ref}`, '') : null,
+            // **ليس غريبًا** (المرحلة ٤٩): جوالُه جوالُ عميلٍ عندك، فيُقال باسمه.
+            lead.known ? badge('عميلُك', 'badge-ok') : null),
+          `${lead.phone ? formatPhone(lead.phone) : 'بلا رقم'} · ${relativeDays(lead.createdAt)}`
+            + (lead.known ? ` · مسجَّلٌ عندك باسم ${clientName(lead.known)} منذ ${relativeDays(lead.known.createdAt)}` : ''),
           el('div', { class: 'row' },
             lead.phone ? el('a', { class: 'btn btn-ghost btn-sm', href: `tel:${lead.phone}`, text: '📞', title: 'اتصال' }) : null,
-            el('a', { class: 'btn btn-sm', href: '#/publish', text: 'أدخِله' }))))),
+            lead.known
+              ? el('a', { class: 'btn btn-sm', href: `#/clients/${lead.known.id}`, text: 'افتح ملفّه' })
+              : el('a', { class: 'btn btn-sm', href: '#/publish', text: 'أدخِله' }))))),
       { href: '#/publish', hrefText: 'الطلبات →', tone: 'today-warn' }));
+  }
+
+  /* وقف عند البنك (المرحلة ٤٩) — أكثرُ ما يقتل الصفقة، وكان خارج النظام كلِّه */
+  if (d.stalled.length) {
+    grid.append(section('صفقاتٌ وقفت عند البنك', d.stalled.length,
+      el('div', {},
+        el('p', { class: 'muted small', text: `تمويلٌ ما زال مفتوحًا ولم تتحرّك حالتُه منذ ${countOf(STALL_DAYS, 'يوم')} أو أكثر. مكالمةٌ واحدةٌ تكشف إن كانت تمشي أم وقفت.` }),
+        ...d.stalled.slice(0, 6).map(({ deal, days, stage }) => row(
+          el('span', {}, clientName(d.clientsById.get(deal.clientId)) || 'صفقة بلا عميل',
+            deal.financeBank ? badge(deal.financeBank, '') : null),
+          `${stage.label} · ${days == null ? 'بلا تاريخ حركة' : `ساكنةٌ منذ ${daysWord(days)}`}`
+            + (deal.financeNote ? ` · ${deal.financeNote}` : ''),
+          el('a', { class: 'btn btn-sm', href: `#/deals/${deal.id}`, text: 'افتحها' })))),
+      { href: '#/deals', hrefText: 'الصفقات →', tone: 'today-warn' }));
   }
 
   /* التخزين يوشك (المرحلة ٤٧) — الإنذارُ حيث تراه لا حيث لا تفتح */

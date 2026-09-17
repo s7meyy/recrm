@@ -32,6 +32,14 @@ const el = (tag, attrs = null, ...children) => {
 const nf = new Intl.NumberFormat('en-US');
 const money = (n) => (n == null ? 'السعر عند الطلب' : `${nf.format(n)} ريال`);
 
+/** شهرُ التسليم وسنتُه — والمجهولُ يبقى كما جاء لا يُخترع له شكل. */
+function deliveryText(iso) {
+  const at = new Date(iso || '');
+  if (Number.isNaN(at.getTime())) return String(iso || '');
+  try { return at.toLocaleDateString('ar-SA-u-ca-gregory', { year: 'numeric', month: 'long' }); }
+  catch (_) { return at.toISOString().slice(0, 10); }
+}
+
 function card(listing) {
   const images = listing.images || [];
   const single = `/offers/l/${encodeURIComponent(listing.ref)}`;
@@ -57,7 +65,13 @@ function card(listing) {
         ...Object.entries(listing.facts || {})
           .map(([k, v]) => FACT_AR[k] && (COUNTED_AR.has(k) ? `${nf.format(v)} ${FACT_AR[k]}` : `${FACT_AR[k]}: ${v}`))
           .filter(Boolean)
-          .map((text) => el('span', { class: 'tag', text }))),
+          .map((text) => el('span', { class: 'tag', text })),
+        // **«على الخارطة» إفصاحٌ كالترخيص** (المرحلة ٤٩): القائمةُ المخصّصة إعلانٌ كغيرها،
+        // ومن اشترى ظانًّا أنّه قائمٌ يرجع عليك — سواءٌ رآه في الصفحة العامة أو في قائمته.
+        listing.offPlan ? el('span', { class: 'tag tag-warn', text: 'على الخارطة — تحت الإنشاء' }) : null,
+        listing.offPlan && listing.deliveryAt
+          ? el('span', { class: 'tag', text: `التسليم المتوقَّع: ${deliveryText(listing.deliveryAt)}` })
+          : null),
       listing.notes ? el('p', { class: 'card-notes', text: listing.notes }) : null,
       el('div', { class: 'card-actions' },
         wa ? el('a', { class: 'btn btn-primary', href: wa, target: '_blank', rel: 'noopener', text: 'واتساب' }) : null,

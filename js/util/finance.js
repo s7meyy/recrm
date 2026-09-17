@@ -188,3 +188,71 @@ export function leveragedYield({
     positive: netIncome > 0,
   };
 }
+
+/**
+ * **أُبقيه أم أبيعه فأشتري غيره؟** (المرحلة ٤٩)
+ *
+ * الحاسباتُ هنا كلُّها تُجيب عن **عقارٍ واحدٍ بمعزل**: كم يعود؟ وكم القسط؟ وكم بعد
+ * الدَّين؟ **وسؤالُ المستثمر الحقيقيُّ دائمًا بين اثنين.** والفرقُ بين الخيارين ليس
+ * فرقَ عائدين: البيعُ يُخرج نقدًا بعد كلفةِ البيع وسدادِ ما بقي من الدَّين، وذلك النقدُ
+ * هو رأسُ المال الذي يُشترى به الثاني — فقد يكون الثاني أعلى عائدًا وأقلَّ ربحًا
+ * بالريال، لأنّ ما بقي في اليد أقلّ.
+ *
+ * **وحدودُه تُقال**: `sellCostPct` كلفةُ البيع (عمولةٌ ورسومٌ وضريبة) نسبةً من السعر،
+ * ولا يُحسب هنا نموُّ قيمة العقارين ولا الضريبةُ على الربح — وكلاهما يغيّر الصورة،
+ * ولا يعلمهما النظام. **حسابٌ استرشاديٌّ يُعين على السؤال، لا يُجيب عنه.**
+ *
+ * @returns {{ keep, sell, netCash, better, gap } | null}
+ */
+export function holdVsSell({
+  // الحالي
+  currentValue, currentRent, currentCosts = 0, currentOccupancy = 100,
+  loanBalance = 0, sellCostPct = 5,
+  // البديل
+  altPrice, altRent, altCosts = 0, altOccupancy = 100,
+  altDownPct = 100, altCashCosts = 0, altRate = 5.5, altMonths = 240,
+} = {}) {
+  const keepBase = rentalYield({
+    price: currentValue, annualRent: currentRent, annualCosts: currentCosts, occupancy: currentOccupancy,
+  });
+  if (!keepBase) return null;
+
+  const value = Number(currentValue);
+  const cost = value * (Math.min(100, Math.max(0, Number(sellCostPct) || 0)) / 100);
+  // **ما يبقى في اليد بعد البيع**: الثمنُ ناقصَ كلفةِ البيع وما بقي من الدَّين.
+  // وسالبًا يُقصّ إلى صفر: بيعٌ لا يغطّي دَينَه لا يُخرج نقدًا — ولا يُخرج نقدًا سالبًا.
+  const netCash = Math.max(0, value - cost - Math.max(0, Number(loanBalance) || 0));
+
+  const altBase = rentalYield({
+    price: altPrice, annualRent: altRent, annualCosts: altCosts, occupancy: altOccupancy,
+  });
+  const alt = altBase
+    ? leveragedYield({
+      price: altPrice, annualRent: altRent, annualCosts: altCosts, occupancy: altOccupancy,
+      downPct: altDownPct, cashCosts: altCashCosts, annualRate: altRate, months: altMonths,
+    })
+    : null;
+
+  // الإبقاءُ يُقاس على **حقوق الملكية** لا على القيمة: ما بقي لك في العقار بعد الدَّين.
+  // فلو قِيس على القيمة كاملةً لظُلم الإبقاءُ أمام بديلٍ يُشترى بالنقد وحده.
+  const keepEquity = Math.max(0, value - Math.max(0, Number(loanBalance) || 0));
+  const keep = {
+    cashIn: keepEquity,
+    netIncome: keepBase.netIncome,
+    cashYield: keepEquity > 0 ? (keepBase.netIncome / keepEquity) * 100 : null,
+    monthlyNet: keepBase.netIncome / 12,
+  };
+  const sell = alt
+    ? { cashIn: alt.cashIn, netIncome: alt.netIncome, cashYield: alt.cashYield, monthlyNet: alt.monthlyNet, netCash }
+    : null;
+
+  // **المقارنةُ بالريال لا بالنسبة**: نسبةٌ أعلى على رأس مالٍ أقلّ قد تعني دخلًا أقلّ.
+  const gap = sell ? sell.netIncome - keep.netIncome : null;
+  return {
+    keep,
+    sell,
+    netCash,
+    gap,
+    better: gap == null ? null : (gap > 0 ? 'sell' : (gap < 0 ? 'keep' : 'equal')),
+  };
+}

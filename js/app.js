@@ -10,6 +10,7 @@ import { startFollowUpAlerts } from './util/follow-up-alerts.js';
 import { initGlobalSearch } from './util/global-search.js';
 import { installTableCards } from './util/table-cards.js';
 import { installSyncDot } from './util/sync-dot.js';
+import { installShortcuts } from './util/shortcuts.js';
 import { applySidebarOrder } from './util/sidebar.js';
 import { applyTheme } from './util/theme.js';
 import { setHijriMode, formatNumber, countOf } from './util/format.js';
@@ -454,6 +455,7 @@ async function init() {
   installTableCards(document.body);
   // حالُ المزامنة (المرحلة ٤٨): كانت تعمل في صمتٍ تامّ — تنجح وتفشل ولا تقول.
   installSyncDot();
+  installShortcuts(); // ثلاثةُ اختصاراتٍ للوحة المفاتيح (المرحلة ٤٩)
   initVoiceBar(); // أمرٌ بالصوت في كل صفحة (المرحلة ٣٨) — لا يسمع شيئًا حتى تضغطه
   watchOtherTabs(); // تبويبٌ آخر مفتوح: يُقال ولا يُترك صامتًا (المرحلة ٤٤)
   initClientMode(); // وضع العرض للعميل (المرحلة ١٣)

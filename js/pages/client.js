@@ -20,7 +20,7 @@ import { historyBox } from '../util/history-view.js';
 import { ejarPackage, ejarText } from '../util/ejar-package.js';
 import { printReceipt } from '../util/property-print.js';
 import { whatsappButton, INFERRED_LABEL } from '../util/outreach.js';
-import { investorPortfolio, yieldPct } from '../util/investor.js';
+import { investorPortfolio, yieldPct, concentration } from '../util/investor.js';
 
 function routeClientId() {
   const m = /^#\/client\/([^/?#]+)/.exec(location.hash || '');
@@ -189,7 +189,11 @@ export async function render(container) {
   }
 
   /* ===== محفظته: المتوقَّع والواقع (المرحلة ٤٧) ===== */
-  if (properties.length) container.append(portfolioPanel({ client, properties, deals, lists }));
+  if (properties.length) {
+    // أسماءُ المستأجرين لقياس التركُّز (المرحلة ٤٩) — من عملاء المطابقة المحمَّلين أصلًا.
+    const clientsById = new Map(match.clients.map((c) => [c.id, c]));
+    container.append(portfolioPanel({ client, properties, deals, lists, clientsById }));
+  }
 }
 
 /**
@@ -202,9 +206,29 @@ export async function render(container) {
  * **والعمودان متقابلان قصدًا:** المتوقَّعُ من جدول الدفعات سنةً أمامنا، والواقعُ من
  * المقبوض سنةً خلفنا. وافتراقُهما هو الخبر — لا مجموعُهما.
  */
-function portfolioPanel({ client, properties, deals, lists }) {
+function portfolioPanel({ client, properties, deals, lists, clientsById = new Map() }) {
   const pf = investorPortfolio({ ownerId: client.id, properties, deals });
   const pct = (n) => { const v = yieldPct(n); return v == null ? '—' : `${formatNumber(v)}٪`; };
+
+  /**
+   * **التركُّز** (المرحلة ٤٩) — اللوحةُ كانت كلُّها أسئلةَ ربح، ولا سؤالَ عن الخسارة.
+   * وسطرٌ واحدٌ صادقٌ يقول أين تقع المخاطرة، بلا حكمٍ ولا نصيحة.
+   */
+  const conc = concentration(pf.rows, { nameOf: (id) => clientsById.get(id)?.name || '' });
+  const concParts = [];
+  if (conc.topDistrict && conc.districts.length > 1) {
+    concParts.push(`${formatNumber(conc.topDistrict.pct)}٪ من ${conc.basis === 'income' ? 'دخله' : 'قيمة محفظته'} من حيٍّ واحد (${conc.topDistrict.label})`);
+  }
+  if (conc.topTenant && conc.tenants.length > 1) {
+    concParts.push(`${formatNumber(conc.topTenant.pct)}٪ من مستأجرٍ واحد (${conc.topTenant.label})`);
+  }
+  // **سطرٌ لا يُكتب إلّا إن كان فيه خبر**: محفظةٌ من عقارٍ واحدٍ تركُّزُها ١٠٠٪ بداهةً،
+  // وقولُه لصاحبه ضجيجٌ لا معلومة.
+  const concNode = concParts.length
+    ? el('p', { class: 'muted small' },
+      el('strong', { text: 'التركُّز: ' }), concParts.join(' · '),
+      el('span', { text: conc.basis === 'income' ? ' — مقيسًا بالمقبوض فعلًا.' : ' — مقيسًا بالقيمة، إذ لم يُقبض شيءٌ بعد.' }))
+    : null;
 
   const head = ['العقار', 'قيمته', 'المتوقَّع سنويًّا', 'العائد المتوقَّع', 'قُبض في سنة', 'العائد الواقع', 'مقارنةً بمحفظته', 'لم يُحصَّل'];
   return el('section', { class: 'panel' },
@@ -215,6 +239,7 @@ function portfolioPanel({ client, properties, deals, lists }) {
       stat(pct(pf.expectedYield), 'العائد المتوقَّع'),
       stat(pct(pf.actualYield), 'العائد الواقع — من المقبوض فعلًا'),
       pf.missed ? stat(formatSAR(pf.missed), 'استُحقّ ولم يُقبض في سنة') : null),
+    concNode,
     el('div', { class: 'table-wrap' }, el('table', { class: 'table' },
       el('thead', {}, el('tr', {}, head.map((h) => el('th', { text: h })))),
       el('tbody', {}, pf.rows.map((r) => el('tr', {},

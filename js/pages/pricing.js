@@ -12,7 +12,7 @@ import { getLists, typeLabel } from '../data/settings.js';
 import { priceSamples, estimatePrice, purposeKey } from '../util/price-stats.js';
 import { el, clear, labeled, selectEl, checkbox, badge, emptyState, toast } from '../util/dom.js';
 import { formatSAR, formatArea, formatNumber, formatDate, countOf } from '../util/format.js';
-import { monthlyInstallment, rentalYield, leveragedYield, closingCosts } from '../util/finance.js';
+import { monthlyInstallment, rentalYield, leveragedYield, closingCosts, holdVsSell } from '../util/finance.js';
 
 const MIN_SAMPLE = 3;
 
@@ -316,6 +316,8 @@ function yieldPanel(defaultPrice) {
 
   const recalc = () => {
     clear(out);
+    // المقارنةُ تقرأ السعرَ والإيجارَ نفسَهما، فتُعاد كلَّما تغيّرا.
+    drawCompare();
     const r = rentalYield({
       price: Number(priceInput.value), annualRent: Number(rentInput.value),
       annualCosts: Number(costsInput.value), occupancy: Number(occInput.value),
@@ -347,6 +349,78 @@ function yieldPanel(defaultPrice) {
     input.addEventListener('input', recalc);
   }
 
+  /**
+   * **أُبقيه أم أبيعه فأشتري غيره؟** (المرحلة ٤٩)
+   *
+   * الحاسبةُ أعلاه تُجيب عن عقارٍ واحدٍ بمعزل، وسؤالُ المستثمر الحقيقيُّ بين اثنين.
+   * وعمودان جنبًا إلى جنبٍ أوضحُ من رقمين يُقرآن في وقتين.
+   */
+  const cmpBox = checkbox('قارِنه ببديل', { checked: false });
+  const loanInput = el('input', { class: 'input', type: 'number', min: '0', step: '10000', value: 0 });
+  const sellCostInput = el('input', { class: 'input', type: 'number', min: '0', max: '20', step: '0.5', value: 5 });
+  const altPriceInput = el('input', { class: 'input', type: 'number', min: '0', step: '10000', value: Math.round(defaultPrice) });
+  const altRentInput = el('input', { class: 'input', type: 'number', min: '0', step: '1000', value: Math.round(defaultPrice * 0.07) });
+  const cmpFields = el('div', { class: 'form-grid', hidden: true },
+    labeled('ما بقي من دَينه', loanInput, { hint: 'يُسدَّد من ثمن البيع — وما بقي بعده هو رأس مالك للبديل.' }),
+    labeled('كلفة البيع (٪)', sellCostInput, { hint: 'عمولةٌ ورسومٌ وضريبة — تُخصم من الثمن.' }),
+    labeled('سعر البديل', altPriceInput),
+    labeled('إيجار البديل السنوي', altRentInput));
+  const cmpOut = el('div', { style: { marginTop: '12px' } });
+  cmpBox.querySelector('input').addEventListener('change', (e) => {
+    cmpFields.hidden = !e.target.checked;
+    cmpOut.hidden = !e.target.checked;
+    recalc();
+  });
+  cmpOut.hidden = true;
+
+  const drawCompare = () => {
+    clear(cmpOut);
+    if (!cmpBox.querySelector('input').checked) return;
+    const cmp = holdVsSell({
+      currentValue: Number(priceInput.value), currentRent: Number(rentInput.value),
+      currentCosts: Number(costsInput.value), currentOccupancy: Number(occInput.value),
+      loanBalance: Number(loanInput.value), sellCostPct: Number(sellCostInput.value),
+      altPrice: Number(altPriceInput.value), altRent: Number(altRentInput.value),
+    });
+    if (!cmp || !cmp.sell) {
+      cmpOut.append(el('p', { class: 'muted small', text: 'اكتب سعرًا وإيجارًا للبديل أكبر من صفر.' }));
+      return;
+    }
+    const money = (n) => formatSAR(Math.round(n));
+    const pct = (n) => (n == null ? '—' : `${formatNumber(Math.round(n * 100) / 100)}٪`);
+    cmpOut.append(el('div', { class: 'table-wrap' }, el('table', { class: 'table' },
+      el('thead', {}, el('tr', {}, ['', 'أُبقيه', 'أبيعه وأشتري البديل'].map((h) => el('th', { text: h })))),
+      el('tbody', {},
+        el('tr', {},
+          el('td', { class: 'strong', text: 'رأسُ المال الداخل' }),
+          el('td', { class: 'num', text: money(cmp.keep.cashIn) }),
+          el('td', { class: 'num', text: money(cmp.sell.cashIn) })),
+        el('tr', {},
+          el('td', { class: 'strong', text: 'الدخلُ الصافي سنويًّا' }),
+          el('td', { class: 'num', text: money(cmp.keep.netIncome) }),
+          el('td', { class: 'num', text: money(cmp.sell.netIncome) })),
+        el('tr', {},
+          el('td', { class: 'strong', text: 'العائدُ على رأس المال' }),
+          el('td', { class: 'num', text: pct(cmp.keep.cashYield) }),
+          el('td', { class: 'num', text: pct(cmp.sell.cashYield) })),
+        el('tr', {},
+          el('td', { class: 'strong', text: 'الصافي شهريًّا' }),
+          el('td', { class: 'num', text: money(cmp.keep.monthlyNet) }),
+          el('td', { class: 'num', text: money(cmp.sell.monthlyNet) }))))));
+    // **الحكمُ بالريال لا بالنسبة**: نسبةٌ أعلى على رأس مالٍ أقلّ قد تعني دخلًا أقلّ.
+    cmpOut.append(el('p', { class: 'strong' },
+      cmp.better === 'sell'
+        ? `البديلُ يزيدك ${money(cmp.gap)} في السنة — ويبقى في يدك بعد البيع ${money(cmp.netCash)}.`
+        : cmp.better === 'keep'
+          ? `الإبقاءُ أفضلُ بـ${money(Math.abs(cmp.gap))} في السنة — والبيعُ يُخرج ${money(cmp.netCash)} نقدًا.`
+          : 'الخياران متساويان في الدخل السنويّ.'));
+    cmpOut.append(el('p', { class: 'muted small', text: 'حسابٌ استرشاديٌّ يُعين على السؤال لا يُجيب عنه: لا يحسب نموَّ قيمة العقارين ولا الضريبةَ على الربح، وكلاهما يغيّر الصورة ولا يعلمهما النظام.' }));
+  };
+
+  for (const input of [loanInput, sellCostInput, altPriceInput, altRentInput]) {
+    input.addEventListener('input', drawCompare);
+  }
+
   const panel = el('div', { class: 'panel', style: { marginTop: '18px' } },
     el('h2', { class: 'section-title', text: 'وكم يعود عليّ؟' }),
     el('div', { class: 'form-grid' },
@@ -360,6 +434,11 @@ function yieldPanel(defaultPrice) {
       leverFields,
       leverOut,
       el('p', { class: 'muted small', text: 'العائدُ على ما خرج من جيبك — لا على ثمن العقار. وهو يختلف عن الأعلى اختلافًا كبيرًا، وكلاهما صادقٌ في موضعه: الأوّلُ يقيس العقار، وهذا يقيس الصفقة. ويفترض بقاءَ القسط ثابتًا، ولا يحسب إطفاءَ أصل الدين — وهو ثروةٌ تتراكم لا تظهر هنا.' })),
+    el('div', { class: 'panel-block' },
+      el('div', { class: 'field' }, cmpBox),
+      cmpFields,
+      cmpOut,
+      el('p', { class: 'muted small', text: 'سؤالُ المستثمر الحقيقيُّ دائمًا بين اثنين: أُبقي هذا أم أبيعه فأشتري ذاك؟ والبيعُ يُخرج نقدًا بعد كلفته وسدادِ دَينه — وذلك النقدُ هو رأسُ مالك في البديل.' })),
     el('p', { class: 'muted small', text: 'حساب استرشادي: لا يشمل تغيّر قيمة العقار ولا الضريبة، ومدّة الاسترداد بالدخل الحالي وحده. والإيجار المقترح افتراض أوّليّ عدّله بما تعرفه عن الحي.' }));
   recalc();
   return panel;

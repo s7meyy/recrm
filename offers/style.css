@@ -94,6 +94,9 @@ h1 { margin: 0; font-size: clamp(22px, 4vw, 30px); line-height: var(--dhad-line-
   padding: 2px var(--dhad-space-3, 12px); font-size: var(--dhad-font-size-300, 13px);
   line-height: var(--dhad-line-heading, 1.4);
 }
+/* «على الخارطة» (المرحلة ٤٩): إفصاحٌ يُرى قبل السعر — من اشترى ظانًّا أنّه قائمٌ يرجع. */
+.tag-warn { background: var(--warn-soft, #F8EFDC); color: var(--warn-text, #8A5C0E); }
+
 .card-notes { margin: var(--dhad-space-1, 4px) 0 0; white-space: pre-line; }
 /* «مُدرَجٌ منذ…» (المرحلة ٤٨): خبرٌ يُقال ولا يُصرَخ به — والمشتري يسأل عنه، ومعرفتُه
    في صالح العرض: الطازجُ يُقرأ طازجًا، والقديمُ يُعرف فيُفاوَض عليه. */

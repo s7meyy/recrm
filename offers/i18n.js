@@ -37,6 +37,9 @@ export const STRINGS = {
     listedNew: 'مُدرَجٌ حديثًا',
     listedMonths: (n) => (n === 1 ? 'مُدرَجٌ منذ شهر' : n === 2 ? 'مُدرَجٌ منذ شهرين' : n <= 10 ? `مُدرَجٌ منذ ${n} أشهر` : `مُدرَجٌ منذ ${n} شهرًا`),
     listedYears: (n) => (n === 1 ? 'مُدرَجٌ منذ سنة' : n === 2 ? 'مُدرَجٌ منذ سنتين' : `مُدرَجٌ منذ ${n} سنوات`),
+    // على الخارطة (المرحلة ٤٩): لا يُباع تحت الإنشاء كأنّه جاهز.
+    offPlan: 'على الخارطة — تحت الإنشاء',
+    delivery: (d) => `التسليم المتوقَّع: ${d}`,
   },
   en: {
     dir: 'ltr', lang: 'en', other: 'العربية', title: 'Available Listings',
@@ -56,6 +59,8 @@ export const STRINGS = {
     listedNew: 'Newly listed',
     listedMonths: (n) => `Listed ${n} month${n === 1 ? '' : 's'} ago`,
     listedYears: (n) => `Listed ${n} year${n === 1 ? '' : 's'} ago`,
+    offPlan: 'Off-plan — under construction',
+    delivery: (d) => `Expected handover: ${d}`,
   },
 };
 

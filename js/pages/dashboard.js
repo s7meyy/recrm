@@ -11,6 +11,7 @@ import { tourStats } from './tours.js';
 import { buildPriceIndex, INDEX_SCOPE_NOTE } from '../util/price-stats.js';
 import { conversionFunnel } from '../util/funnel.js';
 import { sourceReport, propertyProfit } from '../util/sources.js';
+import { campaignReport } from '../util/campaigns.js';
 import { showingStats } from '../util/showings.js';
 import { revenueForecast } from '../util/forecast.js';
 import { el, clear, badge } from '../util/dom.js';
@@ -21,7 +22,7 @@ import { memberStats, activeMembers } from '../util/team.js';
 import { columnsChart, lineChart, donutChart, monthsBack } from '../util/charts.js';
 import { whatsappButton } from '../util/outreach.js';
 
-import { getTeam } from '../data/settings.js';
+import { getTeam, getCampaigns } from '../data/settings.js';
 
 const DISTRICT_MIN_SAMPLE = 3;
 
@@ -39,12 +40,13 @@ async function loadData() {
   const showings = await repo.showings.list(); // المعاينات (المرحلة ٢٧)
   const team = await getTeam(); // أداءُ الفريق (المرحلة ٤٧)
   const incomes = await repo.incomes.list(); // الإيرادات (المرحلة ٣٨)
+  const campaigns = await getCampaigns(); // الحملات التسويقيّة (المرحلة ٤٩)
   const company = await getCompany(); // نسبة العمولة لتوقّع الإيراد (المرحلة ٢٨)
   const goals = await getGoals();     // أهدافُ الأعضاء (المرحلة ٤٨)
   const approved = properties.filter((p) => p.captureStatus === 'approved');
   const clientMap = new Map(clients.map((c) => [c.id, c]));
   const dealPropertyIds = new Set(deals.map((d) => d.propertyId).filter(Boolean));
-  return { clients, properties, approved, tours, matches, externals, deals, lists, completeness, followUp, tasks, invoices, expenses, incomes, requests, showings, company, clientMap, dealPropertyIds, team, goals };
+  return { clients, properties, approved, tours, matches, externals, deals, lists, completeness, followUp, tasks, invoices, expenses, incomes, requests, showings, company, clientMap, dealPropertyIds, team, goals, campaigns };
 }
 
 /* ===== أدوات تجميع عامة ===== */
@@ -159,7 +161,7 @@ function statChip(value, label) {
 }
 
 function buildLayout(container, data) {
-  const { clients, properties, approved, tours, matches, externals, deals, lists, completeness, followUp, tasks, invoices, expenses, incomes, requests, showings, company, clientMap, dealPropertyIds } = data;
+  const { clients, properties, approved, tours, matches, externals, deals, lists, completeness, followUp, tasks, invoices, expenses, incomes, requests, showings, company, clientMap, dealPropertyIds, campaigns = [] } = data;
   clear(container);
 
   const pending = properties.filter((p) => p.captureStatus !== 'approved').length;
@@ -311,6 +313,11 @@ function buildLayout(container, data) {
 
   /* من أين يأتي المال، وأي عقار يستحق جهدك (المرحلة ٢٤) */
   grid.append(moneyPanel('مصادر العملاء', 'أي مصدرٍ أعطاك صفقات لا مجرد أسماء.', ...sourceSection({ clients, requests, deals, expenses })));
+  // **الحملات** (المرحلة ٤٩) — ولا تظهر اللوحةُ لمن لا حملةَ عنده: لوحةٌ فارغةٌ دائمًا ضجيج.
+  if (campaigns.length) {
+    grid.append(moneyPanel('الحملات التسويقيّة', 'حملتان على القناة نفسِها تختلفان كلَّ اختلاف — وهذه تفصلهما.',
+      ...campaignSection({ campaigns, clients, requests, deals })));
+  }
   grid.append(moneyPanel('ربحية العقارات', 'العمولة الصافية ناقص ما صُرف على العقار.', ...propertySection({ properties, deals, expenses, lists })));
 
   /* مؤشر السوق من بياناتك (المرحلة ١١) */
@@ -454,6 +461,35 @@ function sourceSection({ clients, requests, deals, expenses }) {
     totals.deals < 5
       ? el('div', { class: 'muted small', text: 'العيّنة صغيرة: لا تُلغِ مصدرًا قبل أن تتجاوز صفقاتك خمسًا.' })
       : null,
+  ].filter(Boolean);
+}
+
+/**
+ * **أداءُ الحملات** (المرحلة ٤٩) — السطرُ الذي يُحاسَب به المسوّقُ ويُدافع به عن نفسه.
+ * «١٤ طلبًا · ٣ جادّة · صفقةٌ واحدة · كلفةُ الطلب ٢١٤ ريالًا» — وكلاهما نافعٌ له.
+ */
+function campaignSection({ campaigns, clients, requests, deals }) {
+  const { rows, totals } = campaignReport({ campaigns, clients, requests, deals });
+  const money = (v) => (v == null ? '—' : formatSAR(Math.round(v)));
+  return [
+    el('div', { class: 'table-wrap' }, el('table', { class: 'table' },
+      el('thead', {}, el('tr', {}, ['الحملة', 'القناة', 'الميزانية', 'طلبات', 'جادّ', 'صفقات', 'كلفة الطلب', 'الصافي'].map((t) => el('th', { text: t })))),
+      el('tbody', {}, rows.map((r) => el('tr', {},
+        el('td', { class: 'strong' }, r.campaign.label,
+          r.running ? badge('جارية', 'badge-ok') : null),
+        el('td', { text: r.campaign.channel || '—' }),
+        // ميزانيةٌ غير مكتوبةٍ «—» لا «٠»: مجهولةُ الكلفة لا مجّانيّة.
+        el('td', { class: 'num', text: r.budget ? formatSAR(r.budget) : '—' }),
+        el('td', { class: 'num', text: formatNumber(r.clients) }),
+        el('td', { class: 'num', text: formatNumber(r.serious) }),
+        el('td', { class: 'num', text: formatNumber(r.deals) }),
+        el('td', { class: 'num', text: money(r.costPerLead) }),
+        el('td', { class: 'num strong' }, r.budget
+          ? badge(formatSAR(r.net), r.net >= 0 ? 'badge-ok' : 'badge-danger')
+          : el('span', { text: formatSAR(r.commission) })))))))
+    ,
+    el('div', { class: 'muted small', text: '«الجادّ» محسوبٌ من بياناتك لا من ظنّ: مصنَّفٌ «جادّ» أو له تواصلٌ مسجَّل.'
+      + (totals.budget ? ` · صُرف ${formatSAR(totals.budget)} على ${countOf(totals.running, 'حملة جارية')} وغيرِها.` : ' · لا ميزانيةَ مكتوبةٌ بعد — واكتبُها يجعل هذا الجدول ربحًا لا عدًّا.') }),
   ].filter(Boolean);
 }
 

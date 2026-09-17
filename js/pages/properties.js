@@ -25,7 +25,8 @@ import {
   MAINTENANCE_STATUSES, MAINTENANCE_BEARERS, openMaintenance,
 } from '../util/management.js';
 import { announceMatches } from '../util/match-alert.js';
-import { getTemplates, getCompany, getSavedSearches, addSavedSearch, removeSavedSearch, getPublishSettings } from '../data/settings.js';
+import { getTemplates, getCompany, getPublishSettings } from '../data/settings.js';
+import { renderSavedViews } from '../util/saved-views.js';
 import { getCurrentUser } from '../data/repository.js';
 import { renderTemplate, templateValues, whatsappLink } from '../util/templates.js';
 import { buildPriceIndex, comparePrice, priceTrend, priceSamples, estimatePrice, INDEX_SCOPE_NOTE } from '../util/price-stats.js';
@@ -35,6 +36,7 @@ import { adBlockers } from '../util/rega.js';
 import { whatsappButton } from '../util/outreach.js';
 import { capitalValue, portfolioRow, yieldPct, dealsByProperty } from '../util/investor.js';
 import { propertyEvidence, priceDrops, MIN_SAMPLE } from '../util/property-evidence.js';
+import { OFFER_STATUSES, offerSummary, ownerTalkingPoint, offerStatus } from '../util/offers.js';
 import { historyBox } from '../util/history-view.js';
 import { capped, PAGE_SIZE } from '../util/render-cap.js';
 import { isArchived, archivePropertyCandidates, archiveRow } from '../util/archive.js';
@@ -77,6 +79,13 @@ export async function render(container) {
   ctx.view = (await getUI()).propertiesView === 'table' ? 'table' : 'grid';
   await loadData(ctx);
   buildLayout(ctx);
+  // اختصارُ لوحة المفاتيح (المرحلة ٤٩): `Alt+P` يأتي بهذه العلامة — وتُمحى بعد استهلاكها
+  // فلا تُفتح الاستمارةُ من تلقاء نفسها في كل زيارةٍ لاحقة، كنمط `?paste=1` القائم.
+  if (/[?&]new=1/.test(location.hash || '')) {
+    history.replaceState(null, '', '#/properties');
+    await openForm(ctx, null);
+    return;
+  }
   const focusId = routePropertyId();
   if (focusId) {
     const target = ctx.properties.find((p) => p.id === focusId);
@@ -302,61 +311,16 @@ async function undoArchiveProperties(ctx, last) {
   await refresh(ctx);
 }
 
-/* ===== بحوث محفوظة (المرحلة ١٧) ===== */
+/* ===== بحوث محفوظة (المرحلة ١٧ · نُقلت إلى وحدةٍ مشتركة في المرحلة ٤٩) ===== */
 
 const SEARCH_PAGE = 'properties';
 
-/** حالة الفرز الحالية في شكلٍ يُحفظ (المجموعات إلى مصفوفات). */
-function currentSearchState(ctx) {
-  return {
-    query: ctx.query || '',
-    filters: Object.fromEntries(GROUPS.map(([g]) => [g, [...ctx.filters[g]]])),
-  };
-}
-
-/** تطبيق حالة محفوظة. المجموعات المجهولة (فرزٌ حُذف لاحقًا) تُتجاهل بلا خطأ. */
-function applySearchState(ctx, state) {
-  ctx.query = state?.query || '';
-  if (ctx.nodes.search) ctx.nodes.search.value = ctx.query;
-  for (const [g] of GROUPS) {
-    ctx.filters[g].clear();
-    for (const v of state?.filters?.[g] || []) ctx.filters[g].add(v);
-  }
-  renderFilters(ctx);
-  renderList(ctx);
-}
-
 async function renderSaved(ctx) {
-  const wrap = ctx.nodes.saved;
-  if (!wrap) return;
-  const items = await getSavedSearches(SEARCH_PAGE);
-  clear(wrap);
-  const hasFilter = ctx.query || GROUPS.some(([g]) => ctx.filters[g].size);
-  wrap.append(...items.map((item) => el('span', { class: 'saved-chip' },
-    el('button', { type: 'button', class: 'saved-apply', text: item.name, onClick: () => applySearchState(ctx, item.state) }),
-    el('button', {
-      type: 'button', class: 'saved-del', text: '✕', title: 'حذف البحث المحفوظ',
-      onClick: async () => {
-        const ok = await confirmDialog({ title: 'حذف بحث محفوظ', message: `حذف «${item.name}»؟`, confirmText: 'حذف', danger: true });
-        if (!ok) return;
-        await removeSavedSearch(SEARCH_PAGE, item.id);
-        renderSaved(ctx);
-      },
-    }))));
-  if (hasFilter) {
-    wrap.append(el('button', {
-      type: 'button', class: 'btn btn-ghost btn-sm', text: '★ احفظ هذا البحث',
-      onClick: async () => {
-        const name = await promptDialog({ title: 'حفظ البحث', label: 'اسم البحث', placeholder: 'فلل النرجس بيع', confirmText: 'حفظ' });
-        if (!name) return;
-        try {
-          await addSavedSearch(SEARCH_PAGE, name, currentSearchState(ctx));
-          toast('حُفظ البحث', 'success');
-          renderSaved(ctx);
-        } catch (err) { toast(err.message, 'error'); }
-      },
-    }));
-  }
+  await renderSavedViews({
+    wrap: ctx.nodes.saved, page: SEARCH_PAGE, ctx, groups: GROUPS,
+    placeholder: 'فلل النرجس بيع',
+    onApply: () => { renderFilters(ctx); renderList(ctx); },
+  });
 }
 
 function optionsFor(ctx, group) {
@@ -1241,6 +1205,68 @@ async function openForm(ctx, existing, prefill = {}) {
   };
   drawMaint();
 
+  /**
+   * **البيعُ على الخارطة** (المرحلة ٤٩) — والحقولُ تُطوى ما لم يُرفع العلم:
+   * حقلان فارغان دائمًا في استمارةٍ طويلةٍ يُتخطَّيان بالعين.
+   */
+  const offPlanBox = checkbox('بيعٌ على الخارطة (تحت الإنشاء)', { checked: !!draft.offPlan });
+  const deliveryInput = el('input', { class: 'input', type: 'date', value: draft.deliveryAt ? toInputDate(draft.deliveryAt) : '' });
+  const wafiInput = el('input', { class: 'input', type: 'text', value: draft.wafiLicense || '', placeholder: 'رقم رخصة وافي' });
+  const offPlanFields = el('div', { class: 'form-grid', hidden: !draft.offPlan },
+    labeled('تاريخ التسليم المتوقَّع', deliveryInput, { hint: 'يظهر في صفحتك العامة فلا يُباع تحت الإنشاء كأنّه جاهز — ويُنبَّه عليك قبله بشهر.' }),
+    labeled('رخصة وافي', wafiInput, { hint: 'للمشروع لا للوحدة — وهي غيرُ ترخيص الإعلان أعلاه.' }));
+  offPlanBox.querySelector('input').addEventListener('change', (e) => { offPlanFields.hidden = !e.target.checked; });
+
+  /**
+   * **العروضُ المقدَّمة** (المرحلة ٤٩) — ما بين «تفاوض» و«أُبرمت».
+   * وأعلى عرضٍ مرفوضٍ هو أقوى ما تُحاجّ به مالكًا متمسّكًا بسعره: أرقامُ من رفضوه لا رأيُك.
+   */
+  const offers = (draft.offers || []).map((o) => ({ ...o }));
+  const offersWrap = el('div', {});
+  const offersNote = el('p', { class: 'muted small' });
+  const drawOffersNote = () => {
+    const line = ownerTalkingPoint(offerSummary({ ...draft, offers, price: priceInput.value === '' ? null : Number(priceInput.value) }), { formatSAR, countOf });
+    offersNote.textContent = line || 'لا عرضَ مسجَّل. وكلُّ عرضٍ تسجّله هنا يصير ورقةً في يدك حين يقول المالك «سعري مناسب».';
+  };
+  const drawOffers = () => {
+    clear(offersWrap);
+    offers.forEach((o, i) => {
+      const amount = el('input', {
+        class: 'input', type: 'number', min: '0', step: '1000', value: o.amount ?? '', placeholder: 'المبلغ المعروض',
+        'aria-label': 'مبلغ العرض',
+        onInput: (e) => { o.amount = e.target.value === '' ? null : Number(e.target.value); drawOffersNote(); },
+      });
+      const from = el('input', {
+        class: 'input', type: 'text', value: o.from || '', placeholder: 'من قدّمه', 'aria-label': 'مقدّم العرض',
+        onInput: (e) => { o.from = e.target.value; },
+      });
+      const at = el('input', {
+        class: 'input', type: 'date', value: o.at ? toInputDate(o.at) : '', title: 'تاريخ العرض', 'aria-label': 'تاريخ العرض',
+        onInput: (e) => { o.at = e.target.value ? fromInputDate(e.target.value) : null; },
+      });
+      const status = selectEl({
+        options: OFFER_STATUSES.map((x) => ({ value: x.key, label: x.label })),
+        value: o.status || 'open',
+        onChange: (e) => { o.status = e.target.value; drawOffersNote(); },
+      });
+      const note = el('input', {
+        class: 'input', type: 'text', value: o.note || '', placeholder: 'ملاحظة', 'aria-label': 'ملاحظة على العرض',
+        onInput: (e) => { o.note = e.target.value; },
+      });
+      offersWrap.append(el('div', { class: 'plan-step' }, amount, from, at, status, note,
+        el('button', {
+          type: 'button', class: 'icon-btn', text: '✕', title: 'حذف العرض', 'aria-label': 'حذف هذا العرض',
+          onClick: () => { offers.splice(i, 1); drawOffers(); drawOffersNote(); },
+        })));
+    });
+    offersWrap.append(el('button', {
+      type: 'button', class: 'btn btn-ghost btn-sm', text: '+ عرضٌ قُدّم',
+      onClick: () => { offers.push({ amount: null, from: '', at: new Date().toISOString(), status: 'open', note: '' }); drawOffers(); },
+    }));
+  };
+  drawOffers();
+  drawOffersNote();
+
   const mgmtFields = el('div', { class: 'form-grid', hidden: !mgmt },
     labeled('بداية عقد الإدارة', mgmtStart),
     labeled('نهاية عقد الإدارة', mgmtEnd, { hint: 'يُنبّهك «إدارة الأملاك» قبل انتهائه بشهر' }),
@@ -1457,6 +1483,10 @@ async function openForm(ctx, existing, prefill = {}) {
       } : null,
       // الصيانة تُحفظ ولو رُفعت علامةُ الإدارة: بلاغٌ حصل لا يُمحى بتغيير خانة.
       maintenance: maint,
+      offers,
+      offPlan: offPlanBox.querySelector('input').checked,
+      deliveryAt: fromInputDate(deliveryInput.value),
+      wafiLicense: wafiInput.value,
       agreementNumber: agreementNumberInput.value.trim(),
       agreementScopes: [...scopesBox.querySelectorAll('input:checked')].map((i) => i.value),
       adLicense: adNumberInput.value.trim() ? {
@@ -1598,6 +1628,14 @@ async function openForm(ctx, existing, prefill = {}) {
       el('h3', { text: 'إدارة الأملاك' }),
       el('p', { class: 'muted small', text: 'الوساطة تنتهي بالصفقة، والإدارة تبدأ بعدها: إيجارٌ يُحصَّل، وعقدٌ يُجدَّد، وأجرٌ يُستحقّ شهرًا بعد شهر.' }),
       mgmtBox, mgmtFields),
+    el('div', { class: 'form-section' },
+      el('h3', { text: 'على الخارطة' }),
+      el('p', { class: 'muted small', text: 'الوحدةُ تحت الإنشاء عقارٌ بخصائصَ مختلفة: تسليمٌ مُتعهَّدٌ به ورخصةُ مشروع. وكانت تُدخَل كأنّها قائمة.' }),
+      el('div', { class: 'field' }, offPlanBox), offPlanFields),
+    el('div', { class: 'form-section' },
+      el('h3', { text: 'العروض المقدَّمة' }),
+      el('p', { class: 'muted small', text: 'ما بين «مهتمّ» و«أُبرمت» هو عملُك كلُّه: عرضٌ بمبلغ، وردٌّ من المالك، ومهلةٌ تنتهي. وكان يُكتب في الملاحظات فلا يُعدّ ولا يُقارَن.' }),
+      offersWrap, offersNote),
     typeBox,
     customBox,
     isEdit ? evidenceSection(ctx, existing) : null,
@@ -1647,7 +1685,14 @@ function evidenceSection(ctx, property) {
     property, showings: ctx.showings || [], matches: ctx.matches || [],
   });
   const s = ev.showings;
-  if (!s.booked && !ev.opinions && !ev.priceDrops) return null;
+  /**
+   * **والعروضُ المقدَّمة شهادةُ سوقٍ كذلك** (المرحلة ٤٩).
+   *
+   * كانت اللوحةُ تُخفى ما لم تكن ثمّة معاينةٌ أو رأيٌ أو تخفيض. وعقارٌ رُفض عليه عرضان
+   * بمليونين وثلاثمئة **عنده شهادةٌ أقوى من كلّ ذلك** — وكانت تُخبَّأ لأن أحدًا لم يعاينه.
+   */
+  const offersEarly = offerSummary(property);
+  if (!s.booked && !ev.opinions && !ev.priceDrops && !offersEarly.total) return null;
 
   const reasonLabel = (key) => labelFor(ENUMS.matchRejectReasons, key) || key;
   const reasonList = (rows, title, note) => (rows.length
@@ -1690,10 +1735,29 @@ function evidenceSection(ctx, property) {
           el('span', { class: 'num', text: `(−${formatNumber(Math.round(d.cut * 100))}٪)` }))))))
     : null;
 
+  /**
+   * **العروضُ المقدَّمة** (المرحلة ٤٩) — تُقرأ هنا لا في الاستمارة وحدها.
+   * هذه اللوحةُ بُنيت أصلًا للمحادثة مع المالك، وأعلى عرضٍ رُفض أقوى ما فيها:
+   * «تسعةٌ قالوا السعر مرتفع» شهادةُ رأي، و«رُفض عرضٌ بمليونين وثلاثمئة» رقمٌ لا يُردّ.
+   */
+  const offers = offersEarly;
+  const offersGroup = offers.total
+    ? el('div', { class: 'evidence-group' },
+      el('h4', { class: 'evidence-title' }, 'العروض المقدَّمة',
+        el('span', { class: 'muted small', text: ' — أرقامٌ تُقال للمالك، لا رأي' })),
+      el('p', { class: 'evidence-verdict', text: ownerTalkingPoint(offers, { formatSAR, countOf }) }),
+      el('ul', { class: 'simple-list' }, offers.rows.slice(0, 6).map((o) => el('li', {},
+        el('span', { class: 'num', text: formatSAR(o.amount) }), ' · ',
+        el('span', { text: offerStatus(o.status).label }),
+        o.from ? el('span', { class: 'muted small', text: ` · ${o.from}` }) : null,
+        o.at ? el('span', { class: 'muted small', text: ` · ${formatDate(o.at)}` }) : null))))
+    : null;
+
   return el('div', { class: 'form-section evidence-box' },
     el('h3', { class: 'form-section-title', text: 'ماذا قال السوق عن هذا العقار؟' }),
     facts,
     verdict,
+    offersGroup,
     reasonList(ev.seenReasons, 'رأوه ثم لم يعجبهم', 'حكمٌ على العقار'),
     reasonList(ev.unseenReasons, 'رفضوه قبل أن يروه', 'حكمٌ على إعلانك: السعر المكتوب والصور والوصف'),
     journey);

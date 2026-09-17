@@ -513,6 +513,15 @@ input[type="tel"].input, input[type="email"].input, input[type="url"].input {
    ينقضها بـ٣٢ بكسلًا على خمسةٍ وعشرين زرًّا في صفحة المهامّ: الأسهمُ والتعديلُ والحذف على
    كلّ بطاقة، وهي أكثرُ ما يُنقر فيها. مرّت لأنّ مسطرة الفحص كانت عند ٣٠ (المرحلة ٤٣). */
 .task-card-actions .btn { padding: var(--dhad-space-1) var(--dhad-space-2); }
+/**
+ * **الإضافة السريعة** (المرحلة ٤٩) — صفُّ إدخالٍ فوق القائمة: حقلان و«أضِف».
+ * ويلتفّ على الجوّال بدل أن يخرج عن الشاشة، وحقولُه تتقاسم العرضَ بالتساوي.
+ */
+.quick-add { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+.quick-add .input { flex: 1 1 160px; min-width: 0; }
+.quick-add .muted { flex: 0 0 auto; }
+@media (max-width: 560px) { .quick-add .muted { flex-basis: 100%; } }
+
 .task-quick-add { display: flex; gap: 6px; }
 .task-quick-add .input { min-height: 36px; padding: var(--dhad-space-1) var(--dhad-space-2); }
 
@@ -1130,3 +1139,11 @@ body.modal-open .voice-dock { display: none; }
   .sync-error { animation: sync-pulse 2.4s ease-in-out infinite; }
 }
 @keyframes sync-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+
+/**
+ * **قائمةُ قواعد التنبيه** (المرحلة ٤٩) — مربّعُ اختيارٍ وسطرُ شرحٍ بجانبه،
+ * ويلتفّ الشرحُ تحت المربّع على الجوّال بدل أن يُضغط إلى عمودٍ لا يُقرأ.
+ */
+.rule-list { display: flex; flex-direction: column; gap: 8px; margin-block: 8px; }
+.rule-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.rule-row > .muted { flex: 1 1 260px; min-width: 0; }

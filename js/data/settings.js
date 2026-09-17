@@ -5,6 +5,7 @@ import { repo, newId, setCurrentUser } from './repository.js';
 import { BUILTIN_PROPERTY_TYPES, BUILTIN_PROPERTY_STATUSES, BUILTIN_CLIENT_TAGS, DEFAULT_COMPLETENESS } from './schema.js';
 import { DEFAULT_CITY, BUILTIN_CITIES, builtinDistricts, builtinZones } from './saudi-cities.js';
 import { DEFAULT_TEMPLATES } from '../util/templates.js';
+import { DEFAULT_ALERT_RULES } from '../util/alert-rules.js';
 import { countOf } from '../util/format.js';
 
 export const SETTINGS_KEYS = {
@@ -28,6 +29,7 @@ export const SETTINGS_KEYS = {
   savedSearches: 'savedSearches', // بحوث محفوظة لكل صفحة (المرحلة ١٧)
   plans: 'plans', // خطط المتابعة المتسلسلة (المرحلة ٢٣)
   playbooks: 'playbooks', // نقاط تقولها في كل نوع مكالمة (المرحلة ٢٨)
+  campaigns: 'campaigns', // حملات تسويقيّة: [{ key, label, channel, startAt, endAt, budget }] (المرحلة ٤٩)
 };
 
 const EMPTY_LISTS = () => ({ propertyTypes: [], propertyStatuses: [], clientTags: [], cities: [], districts: {}, sources: [] });
@@ -321,10 +323,23 @@ const DEFAULT_FOLLOW_UP = {
   staleContactDays: 14, notify: false, afterShowingDays: 3,
   // «ينتظرون ردّك» (المرحلة ٢٣): عميل جديد بلا تواصل مسجَّل بعد هذه الدقائق. صفر = معطَّل.
   replyWithinMinutes: 60,
+  /**
+   * **قواعدُ التنبيه** (المرحلة ٤٩): `{ [ruleKey]: boolean }` — ما يوقظك صار يُشغَّل
+   * ويُطفَأ. والمفتاحُ الغائبُ يأخذ افتراضيَّ القاعدة (`ALERT_RULES`)، فقاعدةٌ تُضاف
+   * لاحقًا لا تبقى مطفأةً صامتةً عند من ضبط إعداداته قبلها.
+   */
+  alertRules: { ...DEFAULT_ALERT_RULES },
 };
 
 export async function getFollowUpSettings() {
-  return repo.settings.get(SETTINGS_KEYS.followUp, DEFAULT_FOLLOW_UP);
+  const stored = await repo.settings.get(SETTINGS_KEYS.followUp, null);
+  // **المحفوظُ قبل المرحلة ٤٩ لا `alertRules` فيه** — فتُدمج الافتراضيّاتُ تحته لا فوقه:
+  // ما اختاره المستخدم يبقى، وما لم يختره يأخذ افتراضيّه.
+  return {
+    ...DEFAULT_FOLLOW_UP,
+    ...(stored || {}),
+    alertRules: { ...DEFAULT_ALERT_RULES, ...(stored?.alertRules || {}) },
+  };
 }
 export async function setFollowUpSettings(patch) {
   const current = await getFollowUpSettings();
@@ -872,5 +887,35 @@ export async function setPlaybooks(books) {
     points: (Array.isArray(b.points) ? b.points : []).map((p) => norm(p)).filter(Boolean),
   })).filter((b) => b.points.length);
   await repo.settings.set(SETTINGS_KEYS.playbooks, clean);
+  return clean;
+}
+
+
+/* ===== الحملات التسويقيّة (المرحلة ٤٩) ===== */
+
+/**
+ * الحملاتُ إعدادٌ لا مخزن: أربعةُ حقولٍ تُكتب مرّةً وتُقرأ شهرًا، ومخزنٌ لها يستلزم
+ * رفعَ `DB_VERSION` وهجرةً وشاشةَ إدارةٍ ثالثة — بلا مقابل.
+ */
+export async function getCampaigns() {
+  const stored = await repo.settings.get(SETTINGS_KEYS.campaigns, []);
+  return Array.isArray(stored) ? stored : [];
+}
+
+export async function setCampaigns(list) {
+  const clean = (list || [])
+    .map((c) => ({
+      key: norm(c.key) || shortKey('cmp'),
+      label: norm(c.label),
+      channel: norm(c.channel),
+      startAt: c.startAt || null,
+      endAt: c.endAt || null,
+      // ميزانيةٌ غير مكتوبةٍ تبقى `null` لا صفرًا: حملةٌ بلا ميزانيةٍ مسجَّلة ليست
+      // مجّانيّة — هي مجهولةُ الكلفة، ولا تُحسب لها «كلفةُ طلبٍ» كاذبة.
+      budget: c.budget === '' || c.budget == null ? null : Math.max(0, Number(c.budget) || 0),
+    }))
+    // حملةٌ بلا اسمٍ لا تُعرَض ولا تُختار — فلا تُحفظ.
+    .filter((c) => c.label);
+  await repo.settings.set(SETTINGS_KEYS.campaigns, clean);
   return clean;
 }

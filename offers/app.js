@@ -30,6 +30,15 @@ const df = new Intl.DateTimeFormat('ar-SA-u-ca-gregory-nu-latn', { year: 'numeri
 const money = (n) => (n == null ? t.priceOnRequest : `${nf.format(n)} ${lang === 'en' ? 'SAR' : 'ريال'}`);
 const area = (n) => (n == null ? null : `${nf.format(n)} ${lang === 'en' ? 'm²' : 'م²'}`);
 /** كم شهرًا مضى على إدراج العرض — و`null` إن لم يُعرف تاريخُه أو كان في المستقبل. */
+/** تاريخٌ يُقرأ بلغة الصفحة — والمجهولُ يبقى كما جاء لا يُخترع له شكل. */
+const fmtDate = (iso, lang) => {
+  const at = new Date(iso || '');
+  if (Number.isNaN(at.getTime())) return String(iso || '');
+  try {
+    return at.toLocaleDateString(lang === 'en' ? 'en-GB' : 'ar-SA-u-ca-gregory', { year: 'numeric', month: 'long' });
+  } catch (_) { return at.toISOString().slice(0, 10); }
+};
+
 const monthsSince = (iso) => {
   const at = new Date(iso || '').getTime();
   if (!Number.isFinite(at) || at > Date.now()) return null;
@@ -89,6 +98,11 @@ function card(listing) {
           .map(([k, v]) => factLabel(k, v, t, nf))
           .filter(Boolean)
           .map((text) => el('span', { class: 'tag', text })),
+        // **على الخارطة يُقال قبل كلّ شيء** (المرحلة ٤٩): من اشترى ظانًّا أنّه قائمٌ يرجع عليك.
+        listing.offPlan ? el('span', { class: 'tag tag-warn', text: t.offPlan }) : null,
+        listing.offPlan && listing.deliveryAt
+          ? el('span', { class: 'tag', text: t.delivery(fmtDate(listing.deliveryAt, lang)) })
+          : null,
         listing.ref ? el('span', { class: 'tag', text: `${t.ref} ${listing.ref}` }) : null),
       // «مُدرَجٌ منذ» لهذا العرض وحده — لا تاريخُ اللقطة الذي يستوي عنده الجديدُ والقديم.
       listedLabel(monthsSince(listing.listedAt), t)

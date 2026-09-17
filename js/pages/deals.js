@@ -16,8 +16,9 @@ import { getLists, typeLabel, getCompany, suggestInvoiceNumber, consumeInvoiceNu
 import {
   el, clear, labeled, selectEl, checkbox, badge, openModal, confirmDialog, toast, emptyState, debounce,
 } from '../util/dom.js';
-import { formatDate, formatSAR, formatNumber, countWord, toInputDate, fromInputDate } from '../util/format.js';
+import { formatDate, formatSAR, formatNumber, countWord, daysWord, toInputDate, fromInputDate } from '../util/format.js';
 import { commissionState } from '../util/receivables.js';
+import { FINANCE_STAGES, financeLine, isOpenStage } from '../util/financing.js';
 import { printReceipt } from '../util/property-print.js';
 
 const clientName = (c) => (c ? (c.name || c.phone || 'عميل') : '');
@@ -98,7 +99,7 @@ function build(ctx) {
   }
 
   ctx.container.append(el('div', { class: 'table-wrap' }, el('table', { class: 'table' },
-    el('thead', {}, el('tr', {}, ['التاريخ', 'العميل', 'العقار', 'السعر النهائي', 'العمولة', 'حالة العمولة', ''].map((t) => el('th', { text: t })))),
+    el('thead', {}, el('tr', {}, ['التاريخ', 'العميل', 'العقار', 'السعر النهائي', 'العمولة', 'حالة العمولة', 'التمويل', ''].map((t) => el('th', { text: t })))),
     el('tbody', {}, rows.map((d) => dealRow(ctx, d))))));
 }
 
@@ -133,8 +134,22 @@ function dealRow(ctx, d) {
         : (st.paid > 0
           ? badge(`قُبض ${formatSAR(st.paid)} · بقي ${formatSAR(st.remaining)}`, 'badge-warn')
           : badge('لم تُقبض', 'badge-warn')))),
+    // **عمودُ التمويل يبقى عمودًا حتى لمن لا يستعمله**: فراغُه يقول «لم يُسجَّل»، وحذفُه
+    // يقول «لا وجود له» — والأوّل صادقٌ والثاني كذب.
+    el('td', {}, financeCell(d)),
     el('td', {},
       el('button', { type: 'button', class: 'btn btn-sm', text: 'تعديل', onClick: () => openForm(ctx, d) })));
+}
+
+/** رقاقةُ التمويل: مفتوحةٌ ساكتةٌ تُنبَّه، ومرفوضةٌ تُحمَّر، ونقدًا تُخضَّر. */
+function financeCell(d) {
+  const line = financeLine(d, { daysWord });
+  if (!line) return el('span', { class: 'muted small', text: '—' });
+  if (d.financeStage === 'rejected') return badge(line, 'badge-danger');
+  if (d.financeStage === 'cash' || d.financeStage === 'disbursed') return badge(line, 'badge-ok');
+  const stale = isOpenStage(d.financeStage) && (d.financeAt == null
+    || Date.now() - new Date(d.financeAt).getTime() > 7 * 86400000);
+  return badge(line, stale ? 'badge-warn' : 'badge-outline');
 }
 
 /** سندُ قبضٍ لقسط عمولة — ببيانات المكتب وترخيصه (المرحلة ٤٦). */
@@ -215,6 +230,39 @@ function openForm(ctx, deal) {
   propertySelect.addEventListener('change', suggestStatus);
   leaseEndInput.addEventListener('input', suggestStatus);
   suggestStatus();
+
+  /**
+   * **التمويل** (المرحلة ٤٩) — «وين وصل تمويله؟» سؤالٌ يوميٌّ لم يكن له مكان.
+   *
+   * وتاريخُ آخر حركةٍ **يُملأ وحدَه** عند تغيير المرحلة (في المستودع)، ويبقى قابلًا
+   * للتحرير هنا: من يُدخل صفقةً واقفةً منذ شهرٍ يكتب تاريخَها الحقيقيّ، ولو خُتم اليومُ
+   * قسرًا لأسكت تنبيهَ «وقف عند البنك» عن أحقِّ صفقةٍ به.
+   */
+  const financeSelect = selectEl({
+    options: [{ value: '', label: 'لم يُقل عنه شيء' }, ...FINANCE_STAGES.map((f) => ({ value: f.key, label: f.label }))],
+    value: d.financeStage || '',
+  });
+  const bankInput = el('input', { class: 'input', type: 'text', value: d.financeBank || '', placeholder: 'الراجحي، الأهلي…' });
+  const financeAtInput = el('input', { class: 'input', type: 'date', value: d.financeAt ? toInputDate(d.financeAt) : '' });
+  const financeNoteInput = el('input', { class: 'input', type: 'text', value: d.financeNote || '', placeholder: 'ينتظر التقييم، طُلب منه كشف حساب…' });
+  const financeFields = el('div', { class: 'form-grid' },
+    labeled('البنك', bankInput),
+    labeled('آخر حركة', financeAtInput, { hint: 'يُملأ وحدَه عند تغيير المرحلة — وتكتبه بيدك لصفقةٍ واقفةٍ من قبل.' }),
+    labeled('ملاحظة التمويل', financeNoteInput, { full: true }));
+  const financeHint = el('p', { class: 'muted small' });
+  const drawFinance = () => {
+    // «نقدًا» لا بنكَ له ولا موعدَ حركة — فتُخفى حقولٌ لا معنى لها بدل أن تُعرض فارغة.
+    const cash = financeSelect.value === 'cash';
+    financeFields.hidden = !financeSelect.value || cash;
+    clear(financeHint);
+    if (isOpenStage(financeSelect.value)) {
+      financeHint.append(el('span', { text: 'ما دامت مفتوحةً وسكت البنكُ أسبوعًا، تظهر الصفقةُ في «يومي» تسألك عنها.' }));
+    } else if (cash) {
+      financeHint.append(el('span', { text: 'نقدًا: لا بنكَ ينتظر، ولا تنبيهَ يأتيك عنها.' }));
+    }
+  };
+  financeSelect.addEventListener('change', drawFinance);
+  drawFinance();
 
   /* أقساط العمولة (المرحلة ٤٥) — نصفٌ عند التوقيع ونصفٌ عند الإفراغ */
   const instalments = JSON.parse(JSON.stringify(d.commissionPayments || []));
@@ -326,6 +374,11 @@ function openForm(ctx, deal) {
         leaseEndAt: fromInputDate(leaseEndInput.value),
         partnerName: partnerName.value.trim(),
         partnerShare: partnerShare.value === '' ? null : Number(partnerShare.value),
+        financeStage: financeSelect.value,
+        financeBank: financeSelect.value && financeSelect.value !== 'cash' ? bankInput.value : '',
+        financeNote: financeSelect.value && financeSelect.value !== 'cash' ? financeNoteInput.value : '',
+        // تاريخٌ كتبه المستخدم يُحترم؛ وفارغًا يتركه المستودعُ يختمه عند تغيّر المرحلة.
+        ...(financeAtInput.value ? { financeAt: fromInputDate(financeAtInput.value) } : {}),
         notes: notesInput.value,
       };
       // حالةُ العقار تُطبَّق في المسارين (جديدًا وتعديلًا): صفقةٌ قديمة تُدخلها اليوم
@@ -410,6 +463,11 @@ function openForm(ctx, deal) {
         labeled('الوسيط الشريك', partnerName, { hint: 'اختياري' }),
         labeled('نصيب الشريك (ريال)', partnerShare),
         labeled('ملاحظات', notesInput, { full: true })),
+      el('div', { class: 'panel-block' },
+        el('h3', { text: 'التمويل' }),
+        el('p', { class: 'muted small', text: 'الصفقةُ لا تموت عند السعر — تموت عند البنك. وأكثرُ المشترين هنا يشترون بتمويل، فإن عرفتَ أين وقف عرفتَ ما تفعل.' }),
+        el('div', { class: 'form-grid' }, labeled('حالة التمويل', financeSelect)),
+        financeFields, financeHint),
       el('div', { class: 'panel-block' },
         el('h3', { text: 'أقساط العمولة' }),
         el('p', { class: 'muted small', text: 'نصفٌ عند التوقيع ونصفٌ عند الإفراغ هو الغالب — وبلا أقساط كانت الصفقة تُسجَّل مقبوضةً بالكامل أو غيرَ مقبوضة، وكلاهما غيرُ صحيح. وكلُّ قسطٍ غير مقبوض يظهر في «مستحقات لم تُقبض» بموعده هو.' }),

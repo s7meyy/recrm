@@ -63,6 +63,72 @@ export function startSteps({
   ];
 }
 
+/**
+ * **يومُ الموظّف الأوّل** (المرحلة ٤٩).
+ *
+ * `startSteps` أعلاه تقيس **بدايةَ المكتب**: أكتبتَ اسمَه؟ أضفتَ عقارًا؟ نشرتَ؟ وهي
+ * نافعةٌ ليومك الأوّل أنت. **ولم يكن شيءٌ ليوم الموظّف الأوّل**: يُفتح له الجهازُ فيرى
+ * نظامًا كاملًا بعشرين صفحة، ولا يعرف من أين يبدأ ولا ما المطلوبُ منه. وأنت تشرح له
+ * بلسانك، ثم تشرح للذي بعده.
+ *
+ * **وهذه تُقرأ ممّا أُسند إليه هو** لا من حال المكتب: «عندك ٣ عقاراتٍ مسندة · عميلان
+ * لم تتواصل معهما · هدفُك هذا الشهر صفقتان».
+ *
+ * **ولا تُعرض لمن لا فريقَ له** — الواجبُ على من يستدعيها: مكتبٌ من شخصٍ واحدٍ لا
+ * موظّفَ فيه يُوجَّه.
+ *
+ * @returns {[{ key, title, hint, href, cta, done, count }]}
+ */
+export function memberSteps({
+  meId = '', properties = [], clients = [], requests = [], deals = [], goal = null,
+  lastContactOf = () => null, now = Date.now(),
+} = {}) {
+  const mine = (rows) => rows.filter((r) => r.assignedTo === meId);
+  const myProperties = mine(properties);
+  const myClients = mine(clients);
+  const myRequests = mine(requests);
+  const myDeals = mine(deals);
+
+  // «لم يتواصل معه» هنا: **بلا أيّ تواصلٍ مسجَّل** لا «تأخّر عن الحدّ» — الموظّفُ
+  // الجديد لم يمضِ عليه حدٌّ أصلًا، والسؤالُ الأوّلُ: أبدأتَ أم لم تبدأ؟
+  const untouched = myClients.filter((c) => !lastContactOf(c));
+
+  const month = new Date(now).toISOString().slice(0, 7);
+  const monthDeals = myDeals.filter((d) => String(d.date || '').slice(0, 7) === month).length;
+  const target = Number(goal?.dealsPerMonth) || 0;
+
+  return [
+    {
+      key: 'myProperties',
+      title: myProperties.length ? `عقاراتُك المسندة: ${myProperties.length}` : 'لا عقارَ مسندٌ إليك بعد',
+      hint: 'ما أُسند إليك من المخزون — تعرفه وتعرضه وتتابع مالكيه.',
+      href: '#/properties', cta: 'العقارات',
+      done: myProperties.length > 0, count: myProperties.length,
+    },
+    {
+      key: 'myClients',
+      title: untouched.length ? `${untouched.length} من عملائك لم تتواصل معهم بعد` : 'تواصلتَ مع كلّ من أُسند إليك',
+      hint: 'أوّلُ مكالمةٍ هي الفرقُ بين اسمٍ في جدولٍ وعميلٍ يعرفك.',
+      href: '#/clients', cta: 'العملاء',
+      done: myClients.length > 0 && untouched.length === 0, count: untouched.length,
+    },
+    {
+      key: 'myRequests',
+      title: myRequests.length ? `طلباتُك النشطة: ${myRequests.filter((r) => r.status === 'active').length}` : 'لا طلبَ مسندٌ إليك',
+      hint: 'الطلبُ يُطابَق بالمخزون فتخرج لك قائمةُ مرشَّحين مرتّبة.',
+      href: '#/requests', cta: 'الطلبات',
+      done: myRequests.some((r) => r.status === 'active'), count: myRequests.length,
+    },
+    {
+      key: 'myGoal',
+      title: target ? `هدفُك هذا الشهر: ${target} — أنجزتَ ${monthDeals}` : 'لا هدفَ مُسجَّلٌ لك هذا الشهر',
+      hint: target ? 'يُقاس بالصفقات المسندة إليك وحدها.' : 'يضبطه مديرُ المكتب في الإعدادات.',
+      href: '#/today', cta: 'يومي',
+      done: target > 0 && monthDeals >= target, count: monthDeals,
+    },
+  ];
+}
+
 /** ما أُنجز من الخطوات وما بقي — وأوّلُ ما ينتظرك. */
 export function startProgress(steps = []) {
   const done = steps.filter((s) => s.done).length;

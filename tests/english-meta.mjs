@@ -33,6 +33,13 @@ await page.evaluate(async (token) => {
           purposeLabels: ['إيجار'], purposes: ['rent'],
           city: 'الرياض', district: 'الملقا', area: 800, price: null, images: [],
         },
+        // على الخارطة (المرحلة ٤٩): إفصاحٌ يجب أن يُرى في صفحة العرض بلغتيها.
+        {
+          ref: '3', title: 'شقة — قرطبة', typeLabel: 'شقة', type: 'apartment',
+          purposeLabels: ['بيع'], purposes: ['sale'],
+          city: 'الرياض', district: 'قرطبة', area: 160, price: 900000, images: [],
+          offPlan: true, deliveryAt: '2027-06-01T00:00:00Z',
+        },
       ],
     }),
   });
@@ -96,6 +103,23 @@ await page.goto(BASE + '/offers/l/1');
 await page.waitForTimeout(900);
 const offerAr = await page.locator('body').innerText();
 ok('وبلا وسم اللغة تبقى عربية', offerAr.includes('واتساب') && offerAr.includes('فلة'));
+/* على الخارطة: يُقال قبل السعر، وبلغتي الصفحة — ومن اشترى ظانًّا أنّه قائمٌ يرجع عليك. */
+await page.goto(BASE + '/offers/l/3');
+await page.waitForTimeout(900);
+const offPlanAr = await page.locator('body').innerText();
+ok('«على الخارطة» تُقال في صفحة العرض', offPlanAr.includes('على الخارطة'),
+  offPlanAr.split('\n').find((l) => l.includes('خارطة')) || '');
+// **والسنةُ بأرقامٍ عربيّة** في الصفحة العربيّة: `ar-SA` تُخرج «٢٠٢٧» لا «2027».
+ok('ومعها تاريخُ التسليم المتعهَّد به', /التسليم المتوقَّع/.test(offPlanAr) && /[٢2]٠?0?[٢2][٧7]/.test(offPlanAr),
+  offPlanAr.split('\n').find((l) => l.includes('التسليم')) || '');
+await page.goto(BASE + '/offers/l/3?lang=en');
+await page.waitForTimeout(900);
+const offPlanEn = await page.locator('body').innerText();
+ok('وبالإنجليزية كذلك', offPlanEn.includes('Off-plan') && offPlanEn.includes('Expected handover'),
+  offPlanEn.split('\n').find((l) => l.includes('Off-plan')) || '');
+ok('**والعقارُ القائمُ لا يُوسَم بها** — وسمٌ في غير موضعه كذبٌ كغيابه في موضعه',
+  !(await (await fetch(BASE + '/offers/l/1')).text()).includes('على الخارطة'));
+
 await page.goto(BASE + '/offers/l/99?lang=en');
 await page.waitForTimeout(900);
 ok('وعرضٌ محذوف يقول ذلك بالإنجليزية', (await page.locator('body').innerText()).includes('no longer available'));

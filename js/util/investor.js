@@ -157,6 +157,59 @@ export function investorPortfolio({ ownerId, properties = [], deals = [], now = 
   };
 }
 
+/**
+ * **التركُّز: أين تقع المخاطرة؟** (المرحلة ٤٩)
+ *
+ * المحفظةُ كانت تقيس العائدَ وحدَه — وكلُّها أسئلةُ ربح، ولا سؤالَ واحدًا عن الخسارة.
+ * ومستثمرٌ عائدُه ٨٪ من ستّة عقاراتٍ **كلُّها في حيٍّ واحد** ليس كمستثمرٍ عائدُه ٧٪
+ * موزّعٌ على أربعة أحياء: الأوّلُ أعلى رقمًا وأقربُ إلى الخطر — حيٌّ واحدٌ يهبط فتهبط
+ * المحفظةُ كلُّها. وكذلك **مستأجرٌ واحدٌ يدفع نصفَ الدخل**.
+ *
+ * **ولا حكمَ ولا نصيحة**: يُقال الرقمُ ويسكت. «٦٧٪ من دخلك من حيٍّ واحد» تقول نفسَها،
+ * وقد يكون ذلك قرارَ المستثمر عن علمٍ لا غفلة.
+ *
+ * والقياسُ **بالدخل الواقع لا بالقيمة**: القيمةُ تقديرٌ في أكثر الصفوف، والدخلُ مقبوضٌ
+ * مُثبَت. وبلا دخلٍ واقعٍ تُقاس بالقيمة ويُقال بأيّهما قِيست، فلا يُخلط مقياسان صامتًا.
+ *
+ * @returns {{ basis, districts, tenants, topDistrict, topTenant }}
+ */
+export function concentration(rows = [], { nameOf = () => '' } = {}) {
+  const income = rows.reduce((a, r) => a + (r.actual || 0), 0);
+  const basis = income > 0 ? 'income' : 'value';
+  const weightOf = (r) => (basis === 'income' ? (r.actual || 0) : (r.value || 0));
+  const total = rows.reduce((a, r) => a + weightOf(r), 0);
+  if (!total) return { basis, districts: [], tenants: [], topDistrict: null, topTenant: null };
+
+  const group = (keyOf, labelOf) => {
+    const map = new Map();
+    for (const r of rows) {
+      const key = keyOf(r);
+      if (!key) continue; // المجهولُ لا يُجمع في سلّةٍ واحدة تُوهم بتركّزٍ ليس فيه
+      const cur = map.get(key) || { key, label: labelOf(r), amount: 0, count: 0 };
+      cur.amount += weightOf(r);
+      cur.count += 1;
+      map.set(key, cur);
+    }
+    return [...map.values()]
+      .map((g) => ({ ...g, pct: Math.round((g.amount / total) * 1000) / 10 }))
+      .sort((a, b) => b.amount - a.amount);
+  };
+
+  const districts = group((r) => (r.property?.district || '').trim(), (r) => r.property.district.trim());
+  // المستأجرُ هو عميلُ الصفقة: من يدفع الإيجار فعلًا، لا مالكُ العقار.
+  // والاسمُ يُجلب من خارجٍ (`nameOf`): الصفقةُ تحمل `clientId` ولا تحمل اسمًا،
+  // وهذه الوحدةُ خالصةٌ لا تقرأ المستودع.
+  const tenants = group((r) => r.deal?.clientId || '', (r) => nameOf(r.deal.clientId) || 'مستأجرٌ بلا اسم');
+
+  return {
+    basis,
+    districts,
+    tenants,
+    topDistrict: districts[0] || null,
+    topTenant: tenants[0] || null,
+  };
+}
+
 /** نسبةٌ مئويّةٌ بمنزلةٍ واحدة — أو `null` كما هي، فلا تُطبع «٠٪» على مجهول. */
 export const yieldPct = (n) => (n == null || !Number.isFinite(n) ? null : Math.round(n * 10) / 10);
 

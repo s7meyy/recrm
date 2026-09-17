@@ -425,6 +425,13 @@ function toPublicListing(ctx, property, index) {
     facts: publicFacts(property),
     // «مُدرَجٌ منذ» لكلّ عرضٍ على حدة — لا تاريخُ اللقطة الذي يستوي عنده الجديدُ والقديم.
     listedAt: property.createdAt || null,
+    /**
+     * **على الخارطة** (المرحلة ٤٩): يخرج العلمُ وتاريخُ التسليم **فلا يُباع تحت الإنشاء
+     * كأنّه جاهز**. وهذا إفصاحٌ في صالح المشتري وفي صالحك: من اشترى ظانًّا أنّه قائمٌ
+     * يرجع عليك، ومن عرف فاشترى لا يرجع.
+     */
+    offPlan: !!property.offPlan,
+    deliveryAt: property.offPlan ? (property.deliveryAt || null) : null,
     images: (property.images || []).filter((id) => !ctx.videoIds.has(id)),
     mapUrl: property.location ? mapsLink(property.location) : null,
     contactPhone: ctx.publish.contactPhone || ctx.company.phone || '',
