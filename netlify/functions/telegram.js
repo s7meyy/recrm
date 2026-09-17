@@ -47,21 +47,40 @@ function safeEqual(a, b) {
   return diff === 0;
 }
 
+/** آخرُ خطإٍ في الإرسال — يُقرأ في السرد فيُعرف سببُ الصمت. */
+const REPLY_ERR = 'tg/_reply-error';
+
 /**
  * يردّ على المحادثة نفسِها — **وهو الطريقُ الوحيدُ لتعرف معرّفك**.
- * وفشلُه لا يُفشل الاستقبال: الوارِدُ أثمنُ من إشعارٍ به.
+ *
+ * وفشلُه لا يُفشل الاستقبال: الوارِدُ أثمنُ من إشعارٍ به. **لكنّه يُسجَّل ولا يُبتلع**
+ * (المرحلة ٥١): كتبتُ أوّلَ مرّةٍ `catch { return false }` فصار الردُّ يفشل ولا يعلم
+ * أحد — **وصمتٌ لا يُعرف سببُه أسوأُ من خطإٍ يُقال**. فيُحفظ السببُ ليظهر في السرد.
  */
-async function reply(chatId, text) {
+async function reply(store, chatId, text) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
-  if (!token || !chatId) return false;
+  const note = async (why) => {
+    try { await store.setJSON(REPLY_ERR, { at: new Date().toISOString(), why }); } catch { /* لا يُفشل شيئًا */ }
+    return false;
+  };
+  if (!token) return note('TELEGRAM_BOT_TOKEN غير مضبوط');
+  if (!chatId) return note('بلا معرّف محادثة');
   try {
     const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ chat_id: chatId, text: String(text).slice(0, 3500) }),
     });
-    return res.ok;
-  } catch { return false; }
+    if (res.ok) {
+      // ونجاحٌ بعد فشلٍ يمحو الشكوى، فلا تبقى تُتَّهم وقد صلح الحال.
+      try { await store.delete(REPLY_ERR); } catch { /* لا يضرّ */ }
+      return true;
+    }
+    const body = await res.text();
+    return note(`تيليجرام ردّ ${res.status}: ${body.slice(0, 300)}`);
+  } catch (e) {
+    return note(`تعذّر الاتصال بتيليجرام: ${String(e?.message || e).slice(0, 200)}`);
+  }
 }
 
 /**
@@ -118,18 +137,18 @@ export default async (request) => {
 
     const allowed = process.env.TELEGRAM_CHAT_ID;
     if (!allowed) {
-      await reply(up.chatId, `مرحبًا. معرّفُ محادثتك هو:\n${up.chatId}\n\n`
+      await reply(store, up.chatId, `مرحبًا. معرّفُ محادثتك هو:\n${up.chatId}\n\n`
         + 'ضعه في متغيّر البيئة TELEGRAM_CHAT_ID على Netlify، ثم أعد إرسال رسالتك — '
         + 'ولا يُحفظ شيءٌ قبل ذلك.');
       return json({ ok: true, needsChatId: true });
     }
     if (String(allowed).trim() !== up.chatId) {
-      await reply(up.chatId, 'هذا البوت خاصٌّ بمكتبٍ بعينه ولا يستقبل من غيره.');
+      await reply(store, up.chatId, 'هذا البوت خاصٌّ بمكتبٍ بعينه ولا يستقبل من غيره.');
       return json({ ok: true, rejected: true });
     }
 
     if (!up.text) {
-      await reply(up.chatId, up.mediaKind
+      await reply(store, up.chatId, up.mediaKind
         ? `وصلتني ${up.mediaKind} بلا نصّ — لا أقرأ الصور ولا الصوت. `
           + 'انسخ نصّ الرسالة وأرسله، أو اكتب وصفًا معها.'
         : 'وصلت رسالةٌ فارغة.');
@@ -158,7 +177,7 @@ export default async (request) => {
     }
 
     const label = { request: 'طلب', offer: 'عرض', unsure: 'غير مؤكَّد' }[verdict.kind];
-    await reply(up.chatId, already
+    await reply(store, up.chatId, already
       ? 'وصلت من قبل — لم تُضَف مرّتين.'
       : `وصلت ✅ وقُرئت «${label}». افتح صفحة «الوارد» لتعتمدها.`);
     return json({ ok: true, stored: !already, kind: verdict.kind });
@@ -178,6 +197,8 @@ export default async (request) => {
     // «لا رسائل» و«البوت غير مربوط» — وبينهما فرقُ عملٍ كامل.
     return json({
       messages: rows,
+      // **وسببُ الصمت يُقال**: بوتٌ لا يردّ يجعلك تظنّ أنّ شيئًا لم يصل، وقد وصل.
+      lastReplyError: (await store.get(REPLY_ERR, { type: 'json' })) || null,
       linked: !!(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_SECRET && process.env.TELEGRAM_CHAT_ID),
       missing: ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_SECRET', 'TELEGRAM_CHAT_ID'].filter((k) => !process.env[k]),
     });
