@@ -66,8 +66,19 @@ export function extractRating(line) {
 const AR_MONTHS = 'يناير|فبراير|مارس|أبريل|ابريل|مايو|يونيو|يوليو|أغسطس|اغسطس|سبتمبر|أكتوبر|اكتوبر|نوفمبر|ديسمبر'
   + '|كانون\\s*الثاني|شباط|آذار|اذار|نيسان|أيار|ايار|حزيران|تموز|آب|اب|أيلول|ايلول|تشرين\\s*الأول|تشرين\\s*الثاني|كانون\\s*الأول';
 
+/* وحداتُ الزمن العربية بصيغها: المفرد والمثنّى والجمع.
+   وكان النمط `(?:قبل|منذ)\s+[^\n،.]{1,20}` يبتلع عشرين حرفًا من أي شيء،
+   فيقرأ «قبل شهر — القهوة ممتازة» تاريخًا كلَّه ويقتطعه من كلام صاحبه.
+   وهو محجوبٌ في المسار الدقيق باشتراط أن يكون السطر تاريخًا وحده، فلم
+   يظهر — حتى جاء محلّلُ الفقرات فأظهره. */
+const AR_UNITS = 'ثانية|ثانيتين|ثوان|ثوانٍ|دقيقة|دقيقه|دقيقتين|دقائق'
+  + '|ساعة|ساعه|ساعتين|ساعات|يوم|يومين|أيام|ايام'
+  + '|أسبوع|اسبوع|أسبوعين|اسبوعين|أسابيع|اسابيع'
+  + '|شهر|شهرين|أشهر|اشهر|شهور|سنة|سنه|سنتين|سنوات|عام|عامين|أعوام|اعوام';
+
 const DATE_PATTERNS = [
-  /(?:قبل|منذ)\s+[^\n،.]{1,20}/,                          // قبل شهرين
+  // «قبل شهرين» · «قبل 3 أيام» · «منذ أسبوع» — ولا شيء بعد الوحدة.
+  new RegExp(`(?:قبل|منذ)\\s+(?:\\d{1,3}\\s+)?(?:${AR_UNITS})(?![\\u0600-\\u06FF])`),
   new RegExp(`\\d{1,2}\\s+(?:${AR_MONTHS})\\s+\\d{4}`),         // ١٥ سبتمبر ٢٠٢٦
   new RegExp(`(?:${AR_MONTHS})\\s+\\d{4}`),                      // سبتمبر ٢٠٢٦
   /\b(?:a|an|\d+)\s+(?:minute|hour|day|week|month|year)s?\s+ago\b/i,
@@ -241,6 +252,71 @@ function parseLoose(raw) {
   return out;
 }
 
+/**
+ * الصيغة 4 (احتياطية): فقراتٌ يفصلها سطرٌ فارغ.
+ *
+ * المحلّل الدقيق يُرسي التعليق على **سطرٍ هو تاريخٌ وحده** أو سطر تقييم، وهي
+ * الحال الغالبة في لصق قوقل. وثلاثُ صيغٍ واقعية تسقط منه كلها إلى الصفر:
+ *
+ *   «أحمد الشمري قبل شهر» ← الاسم والتاريخ في سطرٍ واحد
+ *   «القهوة ممتازة» ثم «قبل شهر» ← التاريخ بعد النص
+ *   «قبل شهر — القهوة ممتازة» ← التاريخ وصدرُ النص في سطر
+ *
+ * ولصقٌ يُخرج صفرًا يعني ألّا منتج أصلًا. فإن لم يجد الدقيقُ شيئًا جُرِّبت
+ * الفقرات: كل كتلةٍ بين سطرين فارغين تعليقٌ واحد، يُنتزع تاريخُها من أي
+ * سطرٍ فيها، وتقييمُها إن وُجد، والباقي نصُّها.
+ *
+ * **ولا تُشغَّل إلا عند الصفر**: هي أقلُّ دقّةً من الدقيق (قد تجمع تعليقين
+ * لم يفصلهما فراغ)، فلا تُزاحمه حيث ينجح.
+ */
+function parseBlocks(raw) {
+  const blocks = String(raw).split(/\n\s*\n+/).map((b) => b.trim()).filter(Boolean);
+  if (blocks.length < 2) return [];
+  const out = [];
+
+  for (const block of blocks) {
+    const lines = block.split('\n').map((l) => l.replace(/‏|‎/g, '').trim()).filter(Boolean);
+    if (!lines.length) continue;
+
+    const r = emptyReview();
+    const rest = [];
+    for (const line of lines) {
+      if (isNoise(line)) continue;
+
+      if (OWNER_REPLY.test(line)) {
+        r.ownerReply = line.replace(OWNER_REPLY, '').replace(LEADING_DATE, '').trim();
+        continue;
+      }
+
+      // تاريخٌ في السطر: يُنتزع، وما بقي من السطر نصٌّ أو اسم.
+      const d = !r.date ? extractDate(line) : null;
+      if (d) {
+        r.date = d;
+        const left = normalizeDigits(line).replace(d, '').replace(/^[\s|·•\-—,،]+|[\s|·•\-—,،]+$/g, '').trim();
+        if (left) rest.push(left);
+        continue;
+      }
+
+      const rating = extractRating(line);
+      if (r.rating === null && rating !== null
+          && line.replace(STAR_CHARS, '').replace(/[\d\s\/.,]/g, '').length < 40) {
+        r.rating = rating;
+        continue;
+      }
+      rest.push(line);
+    }
+
+    /* أولُ سطرٍ قصيرٍ بلا فعلٍ اسمُ الكاتب غالبًا — وإن لم يكن فبقاؤه في
+       النصّ أهونُ من حذف كلامٍ قاله صاحبه. */
+    if (rest.length > 1 && rest[0].length <= 40 && !/[.!؟]/.test(rest[0])) {
+      r.author = rest.shift();
+    }
+    r.text = rest.join('\n').trim();
+    if (r.text || r.rating !== null) out.push(r);
+  }
+  return out;
+}
+
 /** الصيغة 3: JSON — مصفوفة تعليقات أو كائن فيه reviews. */
 function parseJson(raw) {
   let data;
@@ -279,7 +355,13 @@ export function parseReviews(raw) {
 
   const loose = parseLoose(text);
   const usable = loose.filter((r) => (r.text || '').length > 1 || r.rating !== null);
-  return { reviews: tag(usable, 'paste'), format: 'loose', dropped: loose.length - usable.length };
+  if (usable.length) {
+    return { reviews: tag(usable, 'paste'), format: 'loose', dropped: loose.length - usable.length };
+  }
+
+  // ولا يُترَك اللصقُ يخرج صفرًا ما دامت فيه فقراتٌ تُقرأ.
+  const blocks = parseBlocks(text).filter((r) => (r.text || '').length > 1 || r.rating !== null);
+  return { reviews: tag(blocks, 'paste'), format: blocks.length ? 'blocks' : 'loose', dropped: 0 };
 }
 
 /** استخلاص بيانات الهوية من كتلة رأس صفحة قوقل مابز إن لُصقت. */
