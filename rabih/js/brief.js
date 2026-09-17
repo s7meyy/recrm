@@ -57,18 +57,44 @@ export function brief(place, job = {}) {
 
   const ci = worst ? wilson(worst.count, s.total, pop) : null;
 
+  /* **وضعُ «أنت بخير» — وكان غائبًا.**
+     التقرير كلُّه مبنيٌّ على أن ثَمَّ عطبًا يُصلَح، فإن لم يجد رفع الضجيج إلى
+     عنوان. قِيس على مقهًى بـ4.8 و520 تقييمًا: جعل شكوى مواقفَ **واحدة**، من
+     رجلٍ أعطاه أربع نجوم، «أكبرَ شكوى» و«ابدأ بهذا» وأسند إليها 750 ريالًا.
+     وصاحبُه يعرف أن المواقف ليست مشكلته، فيحكم أن التحليل سطحيّ ولا يعود.
+     فما لم تبلغ الشكوى ثلاثًا، ولم يتجاوز نصيبُها هامشَها، فلا «أكبر شكوى». */
+  const solid = Boolean(worst && worst.count >= 3 && ci && ci.low * 100 > 0 && worst.share > ci.margin);
+  const tiny = s.total < 5;
+
   // الفعل الأول: أوّل توصيةٍ في الخطة إن وُجدت، وإلا فأولى الأولويات.
   const firstTask = (job.plan || []).find((t) => t.status !== 'done' && t.status !== 'dropped');
-  const action = firstTask ? firstTask.text : (worst ? `عالج «${worst.name}» أولًا — ${worst.why}` : '');
+  const action = (() => {
+    if (firstTask) return firstTask.text;
+    if (tiny) return 'اجمع تعليقاتٍ أكثر قبل أي قرار — اطلب من عملائك الراضين أن يكتبوا، فعشرةُ تعليقاتٍ تُغيّر كلَّ رقمٍ في هذه الصفحة.';
+    if (solid) return `عالج «${worst.name}» أولًا — ${worst.why}`;
+    if (worst) {
+      return `لا شكوى بارزة في عيّنتك — وأكثر ما وقع «${worst.name}» ${worst.count === 1 ? 'مرةً واحدة' : `${worst.count} مرات`}، `
+        + 'وهو أقلُّ من أن يُبنى عليه إصلاح. فاحفظ ما ينجح، وزِد عدد من يكتب لك.';
+    }
+    return 'لا شكوى في عيّنتك. فاحفظ ما ينجح، وزِد عدد من يكتب لك — فالعدد يحمي متوسطك من تعليقٍ واحدٍ سيّئ.';
+  })();
 
   const imp = impact(place, {
     ticket: job.assume?.ticket, monthly: job.assume?.monthly,
     lossRate: (Number(job.assume?.loss) || 25) / 100,
   });
-  const money = imp && imp.ticket && imp.monthly && worst
+  // ولا يُسنَد مبلغٌ إلى شكوى لا يحملها العدد.
+  const money = imp && imp.ticket && imp.monthly && worst && solid
     ? (imp.rows.find((r) => r.id === worst.id)?.riyals ?? null) : null;
 
-  return { stats: s, worst, best, action, money, trend: trendOf(place), ci, pop };
+  return {
+    stats: s, worst, best, action, money, trend: trendOf(place), ci, pop,
+    solid,
+    tiny,
+    // الإجمالي على الشاكين المتمايزين — وهو الرقم الذي يُقرأ به الباقي.
+    totalRiyals: imp && imp.ticket && imp.monthly && solid ? imp.totalRiyals : null,
+    yearly: imp && imp.ticket && imp.monthly && solid ? imp.yearly : null,
+  };
 }
 
 /**
@@ -109,6 +135,14 @@ function sparkline(place) {
   </div>`;
 }
 
+/** تمييزٌ عربيّ سليم: «شكوى» و«شكويان» و«3 شكاوى» و«12 شكوى». */
+function countWord(n, one, two, few, many) {
+  if (n === 1) return one;
+  if (n === 2) return two;
+  if (n >= 3 && n <= 10) return `${n} ${few}`;
+  return `${n} ${many}`;
+}
+
 /** حلقةُ نصيب السلبي — الرقم وحده لا يُرى، والشكل يُرى. */
 function negRing(s) {
   if (!s.rated) return '';
@@ -134,6 +168,23 @@ export function briefBlock(place, job = {}) {
   const target = avg ? Math.min(4.9, Math.round((avg + 0.4) * 10) / 10) : null;
   const toTarget = (avg && s.googleCount && target > avg) ? needed(avg, s.googleCount, target, 5) : null;
 
+  /* التقرير كان يقول ما يخسره ولا يقول ما يكسبه. و«تخسر 48,600 سنويًّا»
+     تُثقِل الصدر، و«الشكاوى إن زالت يرتفع متوسطك كذا» تُحرّك اليد.
+     والحسابُ ظاهر: لو أن شاكي عيّنتك كتبوا خمسًا بدل ما كتبوا. */
+  const gain = (() => {
+    if (!s.rated || !s.negative || !avg) return null;
+    const sum = s.rated * (s.sampleAverage ?? avg);
+    const negSum = place.reviews.filter((r) => r.rating >= 1 && r.rating <= 2)
+      .reduce((a, r) => a + Number(r.rating), 0);
+    const lifted = (sum - negSum + s.negative * 5) / s.rated;
+    const diff = Number((lifted - (s.sampleAverage ?? avg)).toFixed(2));
+    if (diff < 0.05) return null;
+    return {
+      stars: diff,
+      how: `لو أن ${countWord(s.negative, 'الشاكي الواحد', 'الشاكيَين', 'الشاكين', 'شاكيًا')} في عيّنتك خرجوا راضين`,
+    };
+  })();
+
   return `<section class="brief">
     <h2 class="no-count">في سطور</h2>
 
@@ -152,11 +203,20 @@ export function briefBlock(place, job = {}) {
       </div>
     </div>
 
+    ${b.tiny ? `<div class="msg-tie"><b>عيّنتك ${num(s.total)} تعليقات — أصغرُ من أن يُبنى عليها حكم.</b>
+      كلُّ رقمٍ في هذه الصفحة يتغيّر بتعليقٍ واحدٍ جديد. فاقرأها استئناسًا لا قرارًا،
+      واجمع تعليقاتٍ أكثر ثم أعِد القراءة.</div>` : ''}
+
     <div class="brief-cards">
-      <div class="bcard bad">
-        <b>أكبر شكوى</b>
-        <span class="big">${b.worst ? esc(b.worst.name) : '—'}</span>
-        <span class="fine">${b.worst ? `${b.worst.count} شكوى${b.ci ? ` — ${b.ci.p}% من العيّنة (±${b.ci.margin} نقطة)` : ''}` : 'لا شكوى بارزة'}</span>
+      <div class="bcard ${b.solid ? 'bad' : 'flat'}">
+        <b>${b.solid ? 'أكبر شكوى' : 'أكثر ما وقع'}</b>
+        <span class="big">${b.solid ? esc(b.worst.name) : (b.worst ? esc(b.worst.name) : 'لا شكوى')}</span>
+        <span class="fine">${(() => {
+          if (!b.worst) return 'لا شكوى في عيّنتك';
+          const n = `${countWord(b.worst.count, 'شكوى واحدة', 'شكويان', 'شكاوى', 'شكوى')}`;
+          if (b.solid) return `${n}${b.ci ? ` — ${b.ci.p}% من العيّنة (±${b.ci.margin} نقطة)` : ''}`;
+          return `${n} فقط — ولا تكفي لحكم${b.ci ? ` (الهامش ±${b.ci.margin} يبتلع الفرق)` : ''}`;
+        })()}</span>
       </div>
       <div class="bcard good">
         <b>أكبر قوة</b>
@@ -165,10 +225,15 @@ export function briefBlock(place, job = {}) {
           ? `${b.best.posStated || b.best.pos} ثناءً في العيّنة${b.best.posStated ? '' : ' (مستنبَطًا من النجوم)'}`
           : 'لا ثناء متكرّر'}</span>
       </div>
-      ${b.money ? `<div class="bcard money">
-        <b>على فرضك</b>
-        <span class="big">${num(b.money)} ريال</span>
-        <span class="fine">شهريًّا — كلفة أكبر شكوى</span>
+      ${b.totalRiyals ? `<div class="bcard money">
+        <b>على فرضك — ما تخسره اليوم</b>
+        <span class="big">${num(b.totalRiyals)} ريال/شهر</span>
+        <span class="fine">${num(b.yearly)} ريال في السنة · على الشاكين في عيّنتك، لا بجمع المواضيع</span>
+      </div>` : ''}
+      ${gain ? `<div class="bcard gain">
+        <b>وما تكسبه إن عالجت</b>
+        <span class="big">+${gain.stars} نجمة</span>
+        <span class="fine">${esc(gain.how)}</span>
       </div>` : ''}
       ${toTarget ? `<div class="bcard goal">
         <b>لبلوغ ${target}</b>
@@ -177,12 +242,14 @@ export function briefBlock(place, job = {}) {
       </div>` : ''}
     </div>
 
-    ${b.action ? `<div class="brief-action">
+    ${b.action ? `<div class="brief-action${b.solid ? ' urgent' : ''}">
       <b>ابدأ بهذا</b>
       <p>${esc(b.action)}</p>
+      ${!b.solid && !b.tiny ? '<p class="fine">وليس هذا مجاملة: العدد لا يحمل ترتيبًا، وقولُ غير ذلك اختلاقُ عطبٍ ليس عندك.</p>' : ''}
     </div>` : ''}
 
-    <p class="brief-note">الأرقام أعلاه محسوبةٌ من تعليقات عملائك، لا من تقديرٍ ولا مقارنةٍ بسواك.
-    وما وراء هذه الصفحة تفصيلُها ودليلُها.</p>
+    <p class="brief-note"><b>وكلُّ رقمٍ هنا تستطيع مراجعته بنفسك</b>: بجانب كل حكمٍ في هذا التقرير
+    معرّفُ التعليق الذي بُني عليه (R001، R002…)، ونصُّه منقولٌ بحروفه — فارجع إليه في قوقل وتحقّق.
+    والأرقام محسوبةٌ من تعليقات عملائك، لا من تقديرٍ ولا مقارنةٍ بسواك.</p>
   </section>`;
 }
