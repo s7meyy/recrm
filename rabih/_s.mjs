@@ -1,9 +1,0 @@
-import { chromium } from 'playwright-core';
-import { writeFileSync } from 'node:fs';
-const S='/tmp/claude-0/-home-user-recrm/97884244-959e-5ac4-8483-994a54dcc586/scratchpad';
-const b=await chromium.launch({executablePath:process.env.CHROME_PATH,args:['--no-sandbox']});
-const p=await b.newPage({viewport:{width:880,height:1100}});
-await p.goto('file://'+S+'/'+(process.env.F||'report.html')); await p.waitForTimeout(350);
-const el=p.locator(process.env.SEL||'.brief').first();
-if (await el.count()) await el.screenshot({path:S+'/'+(process.env.O||'x')+'.png'}); else console.log('missing');
-await b.close();

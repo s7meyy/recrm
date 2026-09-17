@@ -148,6 +148,39 @@ function tocOf(items) {
   }</ol></nav>`;
 }
 
+/**
+ * وسمُ العيّنة المجانية — وما لا تراه فيها.
+ *
+ * الراية `teaser` كانت معرَّفةً في القوالب منذ كُتبت **ولا يستعملها أحد**:
+ * فتخرج العيّنة بغلافٍ وترويسةٍ وخاتمةٍ كالتقرير المدفوع سواءً بسواء، ولا
+ * سطر يقول ما ينقصها. فمن يستلمها لا يعلم أن وراءها شيئًا، ولا يجد سببًا
+ * ليطلب الكامل.
+ *
+ * والصادقُ المقنع أن تبقى بقيمتها الحقيقية — لا تُفرَّغ لتُغري — ويُقال
+ * بدقّةٍ ما لا تراه فيها. فإخفاءُ النقص ليس تسويقًا، وتجويعُ العيّنة ليس
+ * صدقًا. وبينهما أن تُعطي ما تُعطي، وتُسمّي ما تمنع.
+ */
+function teaserBlock(show) {
+  const missing = [
+    [!show.actions, 'خطة العمل', 'من ينفّذ كل إصلاح، وأول فعلٍ يُفعَل اليوم، ومؤشّرٌ يُقاس به — وكلفتُه ومدّته.'],
+    [!show.voice, 'صوت العميل بنصّه', 'اقتباسات عملائك حرفًا بحرف مصنَّفةً بالموضوع، بمعرّفاتها لتُراجَع.'],
+    [!show.impact && !show.calc, 'الأثر المالي', 'كم تكلّفك كل شكوى شهريًّا بأرقامك أنت، وما يلزم لرفع تقييمك ربعَ نجمة.'],
+    [!show.checklist, 'قائمة المتابعة', 'صفحةٌ تُطبَع وتُعلَّق، فيها أول فعلٍ لكل أولوية ومربّعٌ يُؤشَّر عليه.'],
+    [!show.drafts, 'مسوّدات الردود', 'ردٌّ مكتوبٌ لكل شكوى بلا ردّ، تُراجعه وتنشره.'],
+    [!show.selfCompare, 'المقارنة بتقريرك السابق', 'ما تحسّن وما تراجع منذ آخر مرة — مقيسًا لا مُدَّعى.'],
+  ].filter(([gone]) => gone);
+
+  return `<section class="teaser-note">
+    <p class="teaser-tag">عيّنة</p>
+    <h2 class="no-count">هذه عيّنة — وما فيها صحيحٌ كامل</h2>
+    <p>كلُّ رقمٍ واقتباسٍ في هذه الصفحات محسوبٌ من تعليقات عملائك كما هو في التقرير الكامل،
+    ولم يُنقَص منه شيء ولم يُهوَّن. وإنما أُخرجت منه أقسامٌ بعينها، وهذه أسماؤها:</p>
+    ${missing.length ? `<ul>${missing.map(([, name, what]) =>
+      `<li><b>${esc(name)}</b> — ${esc(what)}</li>`).join('')}</ul>` : ''}
+    <p class="fine">فإن كان ما قرأتَه هنا يصف محلَّك، فالباقي يقول لك ماذا تفعل به.</p>
+  </section>`;
+}
+
 /** فهرس محتويات من عناوين h2. */
 function tocFrom(html) {
   const items = [];
@@ -428,6 +461,10 @@ code{background:#f3f5f8;padding:0 1mm;border-radius:3px;font-size:10pt}
 .brief-action{margin:4mm 0 0;padding:4mm;border-radius:8px;background:#f3f6fa;font-size:11pt;line-height:1.8}
 .brief-note{margin:2mm 0 0;font-size:9pt;color:var(--muted)}
 /* الملحق: كيف بُني التقرير — يُؤخَّر ولا يُحذف، فالصدق يقتضي بقاءه. */
+.divider{display:flex;align-items:center;gap:4mm;margin:12mm 0 8mm;break-before:auto;break-inside:avoid}
+.divider::before,.divider::after{content:"";flex:1;border-top:1px solid var(--line)}
+.divider span{flex:0 1 auto;font-size:9.5pt;color:var(--muted);text-align:center;line-height:1.8}
+@media print{ .divider{break-before:page;margin-top:0} }
 .appendix{margin-top:12mm;padding-top:5mm;border-top:2px solid var(--line)}
 .appendix-head{font-size:12pt;font-weight:700;color:var(--navy);margin:0 0 5mm}
 /* خطة العمل — بطاقةٌ لكل أولوية، لا تنكسر بين صفحتين. */
@@ -438,6 +475,14 @@ code{background:#f3f5f8;padding:0 1mm;border-radius:3px;font-size:10pt}
 .act-rank{flex:0 0 auto;width:8mm;height:8mm;border-radius:50%;background:var(--navy);color:#fff;
 .act-rank{background:var(--tc,var(--navy))}
 .act-rank.none{background:none;color:var(--gold);font-size:14pt}
+.teaser-note{margin:0 0 8mm;padding:5mm 6mm;border:1px solid #e0cfa0;border-radius:10px;
+  background:#fdfaf2;break-inside:avoid;position:relative}
+.teaser-tag{position:absolute;inset-inline-end:5mm;top:-3mm;margin:0;padding:1mm 4mm;border-radius:999px;
+  background:var(--gold);color:#fff;font-size:8.5pt;font-weight:700;letter-spacing:.04em}
+.teaser-note h2{font-size:13pt;border:0;padding:0;margin:0 0 3mm;color:#7a5f14}
+.teaser-note p{margin:0 0 3mm;font-size:10.5pt;line-height:1.9}
+.teaser-note ul{margin:0 0 3mm;padding-inline-start:5mm;font-size:10pt;line-height:1.95}
+.teaser-note li b{color:var(--navy)}
 .notrandom{margin:4mm 0;padding:4mm 5mm;border:1px solid #e0cfa0;border-radius:8px;background:#fdfaf2;break-inside:avoid}
 .notrandom>b{display:block;font-size:10.5pt;color:#7a5f14;margin-bottom:2mm}
 .notrandom p{margin:0 0 2mm;font-size:10pt;line-height:1.9}
@@ -447,7 +492,7 @@ code{background:#f3f5f8;padding:0 1mm;border-radius:3px;font-size:10pt}
 /* ما ينجح، وما ينتظر ردًّا. */
 .keep{break-inside:avoid}
 .next{break-inside:avoid}
-.next-grid{display:grid;grid-template-columns:1fr 1fr;gap:4mm;margin-bottom:4mm}
+.next-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(60mm,1fr));gap:4mm;margin-bottom:4mm}
 .next-grid>div{border:1px solid var(--line);border-radius:8px;padding:4mm 5mm;background:#fbfcfd}
 .next-grid b{display:block;color:var(--navy);margin-bottom:2mm;font-size:10.5pt}
 .next-grid p,.next-grid li{font-size:10pt;line-height:1.9;margin:0}
@@ -700,7 +745,7 @@ export function buildReportHtml({ place: rawPlace, ctx = {}, markdown = '', phot
   const opt = { toc: true, stars: true, topics: true, photos: true, recency: true, entities: true, replies: true, confidence: true,
     priority: false, calc: true, voice: true, impact: true, sources: true, brief: true, coverage: true,
     actions: true, checklist: true, commit: true, drafts: true, selfCompare: true, card: true,
-    keep: true, unanswered: true, next: true,
+    keep: true, unanswered: true, next: true, teaser: false,
     cooccur: true, timing: true, promises: true, effect: true, bias: true, ...(sector?.show || {}), ...show };
   const s = stats(place);
   const body = tocFrom(mdToHtml(markdown));
@@ -768,6 +813,10 @@ export function buildReportHtml({ place: rawPlace, ctx = {}, markdown = '', phot
     opt.selfCompare ? (job?.prevJob ? selfCompareBlock(job.prevJob, job) : trendWithinBlock(place)) : '',
     opt.effect && job?.prevJob ? effectBlock(job.prevJob, job) : '',
     opt.promises ? promisesBlock(place) : '',
+    /* **فاصلٌ بين ما يُعمَل به وما يُرجَع إليه.**
+       ثمانيةَ عشرَ قسمًا متساويةً في الوزن البصري، فلا يعرف القارئ أين ينتهي
+       ما يلزمه ويبدأ ما يُراجعه عند الحاجة — فيقرأ الكلَّ أو لا يقرأ شيئًا. */
+    `<div class="divider"><span>ما سبق هو ما تعمل به. وما يلي تفصيلُه ودليلُه — يُرجَع إليه عند الحاجة.</span></div>`,
     opt.topics ? topicsBlock(place, sector?.lead || []) : '',
     opt.coverage ? coverageBlock(place, job || {}) : '',
     opt.cooccur ? cooccurBlock(place) : '',
@@ -812,6 +861,7 @@ export function buildReportHtml({ place: rawPlace, ctx = {}, markdown = '', phot
 ${cover}
 <main class="body">
 ${opt.brief ? briefBlock(place, job) : ''}
+${opt.teaser ? teaserBlock(opt) : ''}
 ${toc}
 ${sections}
 </main>

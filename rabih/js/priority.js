@@ -17,6 +17,14 @@ import { topicStats } from './lexicon.js';
 import { relativeDays } from './anomaly.js';
 import { wilson, significant } from './interval.js';
 
+/** تمييزٌ عربيّ سليم: «شكوى واحدة» و«شكويان» و«6 شكاوى» و«12 شكوى». */
+function countWord(n) {
+  if (n === 1) return 'شكوى واحدة';
+  if (n === 2) return 'شكويان';
+  if (n >= 3 && n <= 10) return `${n} شكاوى`;
+  return `${n} شكوى`;
+}
+
 /** حدّةٌ من التقييم: النجمة الواحدة ضعف الأربع في الأثر. */
 function severityOf(rating) {
   if (rating === null || rating === undefined) return 0.6;   // بلا تقييم: وسط، ولا يُخمَّن
@@ -83,7 +91,7 @@ export function priorities(place, { limit = 8 } = {}) {
        فيُذكر الهامش معها حيثما ذُكرت، لا في قسمٍ منفصل يُقرأ بعدها أو لا يُقرأ. */
     r.ci = wilson(r.count, sampleSize, pop);
     const share = r.ci ? `${r.share}% من العيّنة ±${r.ci.margin}` : `${r.share}% من العيّنة`;
-    const bits = [`${r.count} شكوى (${share})`];
+    const bits = [`${countWord(r.count)} (${share})`];
     if (r.worst !== null) bits.push(`أدناها ${r.worst} من 5`);
     if (r.recentCount) bits.push(`${r.recentCount} منها في آخر 90 يومًا`);
     r.why = bits.join('، ') + '.';

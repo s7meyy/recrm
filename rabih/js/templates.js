@@ -43,6 +43,8 @@ export const TEMPLATES = {
       topics: true, cooccur: true, timing: true, recency: true, entities: true,
       replies: true, sources: true, stars: true, calc: true, impact: true,
       bias: true, photos: true,
+      teaser: false,
+      next: true,
     },
   },
   owner: {
@@ -55,6 +57,8 @@ export const TEMPLATES = {
       topics: true, cooccur: false, timing: true, recency: true, entities: true,
       replies: true, sources: false, stars: true, calc: true, impact: true,
       bias: false, photos: false,
+      teaser: false,
+      next: true,
     },
   },
   exec: {
@@ -67,6 +71,8 @@ export const TEMPLATES = {
       topics: true, cooccur: false, timing: false, recency: true, entities: true,
       replies: true, sources: false, stars: true, calc: false, impact: true,
       bias: false, photos: false,
+      teaser: false,
+      next: true,
     },
   },
   brief: {
@@ -79,6 +85,8 @@ export const TEMPLATES = {
       topics: false, cooccur: false, timing: false, recency: false, entities: false,
       replies: false, sources: false, stars: true, calc: false, impact: false,
       bias: false, photos: false,
+      teaser: false,
+      next: true,
     },
   },
   teaser: {
@@ -91,6 +99,12 @@ export const TEMPLATES = {
       topics: true, cooccur: false, timing: false, recency: true, entities: true,
       replies: true, sources: false, stars: true, calc: false, impact: false,
       bias: false, photos: false,
+      /* الراية داخل `show` كي تبلغ بانيَ التقرير: كانت خارجه فلا يراها أحد،
+         فتخرج العيّنةُ بلا وسمٍ يقول إنها عيّنة. */
+      teaser: true,
+      /* و«ما بعد هذا التقرير» خطابٌ لعميلٍ اشترى: «المراجعة القادمة بعد 30
+         يومًا» لا تُقال لمن لم يطلب بعد. */
+      next: false,
     },
     teaser: true,
   },

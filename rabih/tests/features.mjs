@@ -36,7 +36,7 @@ const pr = priorities(p1);
 pr.length ? ok(`رُتِّبت ${pr.length} أولويات`) : bad('لا أولويات');
 pr[0]?.id === 'wait' ? ok('الانتظار أولًا — أكثر وأحدث وأقسى') : bad('الترتيب', pr[0]?.id);
 pr[0].weight > (pr[pr.length - 1]?.weight ?? 0) ? ok('والوزن يتناقص') : bad('الأوزان');
-/شكوى/.test(pr[0].why) && /90 يومًا/.test(pr[0].why) ? ok('والسبب مكتوب بالأرقام: ' + pr[0].why.slice(0, 48)) : bad('نصّ السبب', pr[0].why);
+/شكاوى|شكوى/.test(pr[0].why) && /90 يومًا/.test(pr[0].why) ? ok('والسبب مكتوب بالأرقام: ' + pr[0].why.slice(0, 48)) : bad('نصّ السبب', pr[0].why);
 pr.every((r) => r.ids.length) ? ok('ولكل بندٍ شواهده') : bad('بلا شواهد');
 
 // القديم لا يتصدّر الحديث عند تساوي العدد

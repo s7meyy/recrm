@@ -4,6 +4,7 @@ import { stats } from './schema.js';
 import { topComplaints } from './lexicon.js';
 import { recentVsOlder } from './recency.js';
 import { progress } from './plan.js';
+import { brief } from './brief.js';
 
 /** يصنّف حال المنشأة ليُختار القالب المناسب. */
 export function situation(job) {
@@ -45,9 +46,16 @@ export function build(job, channel = 'whatsapp', link = '') {
     declining: `تقرير ${name} جاهز، وفيه إشارة مهمة تخصّ الأشهر الأخيرة.`,
   }[sit];
 
+  /* الرسالة أوّلُ ما يقرؤه، وكانت تصف ولا تُغري: «التقييم 4.2 · المحلَّلة 2
+     · أبرز ما تكرر: الانتظار». بلا مبلغٍ، وبلا فعلٍ واحدٍ يبدأ به، وبلا ما
+     يميّز هذا التقرير عن غيره. والإغراءُ هنا ليس مبالغة: هي أرقامُه هو. */
+  const b = brief(job.place, job);
   const body = [];
   body.push(`التقييم: ${avg ?? '—'} من 5${s.googleCount ? ` (${s.googleCount} تقييمًا)` : ''}`);
   body.push(`التعليقات المُحلَّلة: ${s.total}`);
+  if (b?.totalRiyals) {
+    body.push(`تقدير ما تكلّفك الشكاوى: ${b.totalRiyals.toLocaleString('ar-SA-u-nu-latn')} ريال شهريًّا — على فرضك أنت.`);
+  }
 
   if (sit === 'declining' && r.diff !== null) {
     body.push(`متوسط آخر ${r.window} يومًا ${r.recent.avg} مقابل ${r.older.avg} قبلها — وهذا ما يستدعي النظر أولًا.`);
@@ -70,11 +78,17 @@ export function build(job, channel = 'whatsapp', link = '') {
     ? `التقرير على هذا الرابط: ${link}\nيُفتَح في المتصفّح بلا تنزيل، ويصلح للطباعة وحفظه PDF.`
     : 'التقرير الكامل مرفق بصيغة PDF.';
 
+  /* وفعلٌ واحدٌ يبدأ به: التقرير كلُّه يُطوى، والسطرُ الذي فيه فعلٌ يُنفَّذ. */
+  const first = b?.action ? `ابدأ بهذا: ${b.action}` : '';
+  // وما يميّزه: أن كل رقمٍ فيه مسنودٌ إلى تعليقٍ بعينه يُراجَع.
+  const proof = 'وكلُّ رقمٍ في التقرير بجانبه معرّفُ التعليق الذي بُني عليه، فتراجعه بنفسك في قوقل.';
+
   if (channel === 'short') {
-    return [head, body[0], deliver].join('\n');
+    return [head, body[0], first, deliver].filter(Boolean).join('\n');
   }
 
-  const lines = [head, '', ...body.map((b) => `• ${b}`), '', tail, '', deliver];
+  const lines = [head, '', ...body.map((x) => `• ${x}`), '',
+    ...(first ? [first, ''] : []), tail, '', proof, '', deliver];
   if (channel === 'email') {
     lines.push('', 'وفي خدمتك لأي استفسار أو توضيح.');
   }

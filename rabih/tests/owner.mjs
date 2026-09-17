@@ -459,5 +459,40 @@ console.log('٣٧) الحجّةُ في الصدر لا في الثلث');
 briefBlock(p1, jb).includes('تستطيع مراجعته بنفسك')
   ? ok('«كلُّ رقمٍ تستطيع مراجعته» في الخلاصة — وكان أول معرّف يظهر عند 30%') : bad('حجّةٌ مدفونة');
 
+console.log('٣٨) العيّنة تقول إنها عيّنة، وتُسمّي ما تمنع');
+/* الراية `teaser` كانت معرَّفةً في القوالب ولا يستعملها أحد — بحثتُ فلم أجد
+   لها استعمالًا واحدًا. فتخرج العيّنة كالتقرير المدفوع سواءً بسواء. */
+const tz = buildReportHtml({ place: p1, markdown: '## تحليل\nنصّ.', job: jb, ctx: {}, show: TEMPLATES.teaser.show });
+tz.includes('هذه عيّنة') ? ok('العيّنة موسومةٌ بأنها عيّنة') : bad('عيّنة بلا وسم');
+tz.includes('ولم يُنقَص منه شيء ولم يُهوَّن')
+  ? ok('ويُصرَّح بأن ما فيها صحيحٌ كامل — لا تُجوَّع لتُغري') : bad('بلا تصريح');
+tz.includes('خطة العمل') && tz.includes('مسوّدات الردود')
+  ? ok('وتُسمّي بدقّةٍ ما لا يراه فيها') : bad('نقصٌ مكتوم');
+!tz.includes('ما بعد هذا التقرير')
+  ? ok('ولا تُخاطبه بـ«المراجعة القادمة» وهو لم يطلب بعد') : bad('خطابُ عميلٍ لم يشترِ');
+const tf = buildReportHtml({ place: p1, markdown: '## تحليل\nنصّ.', job: jb, ctx: {}, show: TEMPLATES.owner.show });
+!tf.includes('هذه عيّنة') ? ok('والتقرير الكامل ليس عيّنة') : bad('وسمٌ في غير موضعه');
+
+console.log('٣٩) رسالةُ التسليم تحمل رقمًا وفعلًا وحجّة');
+const pm = build([...Array(6)].map(() => mk(1, 'الانتظار طويل جدا'))
+  .concat([...Array(6)].map(() => mk(5, 'ممتاز'))), { average: 3.9, count: 310, distribution: null });
+const msg = buildMessage({ place: pm, plan: [], assume: { ticket: 30, monthly: 900, loss: 25 } }, 'whatsapp');
+/تكلّفك الشكاوى: [\d,]+ ريال/.test(msg) ? ok('فيها المبلغ — وكانت تصف بلا رقم') : bad('بلا مبلغ');
+msg.includes('ابدأ بهذا') ? ok('وفعلٌ واحد يبدأ به') : bad('بلا فعل');
+msg.includes('معرّفُ التعليق') ? ok('وما يميّزها: كلُّ رقمٍ مسنودٌ يُراجَع') : bad('بلا حجّة');
+
+console.log('٤٠) فاصلٌ بين ما يُعمَل به وما يُرجَع إليه');
+const rep3 = buildReportHtml({ place: p1, markdown: '## تحليل\nنصّ.', job: jb, ctx: {} });
+rep3.includes('ما سبق هو ما تعمل به')
+  ? ok('يُفصَل ما يُعمَل به عن تفصيله') : bad('بلا فاصل');
+rep3.includes('وكيف تعرف أنّ هذا نفع؟') && rep3.includes('اقترانٌ لا برهان')
+  ? ok('ويُقال كيف يُقاس النفع — بلا ادّعاء برهان') : bad('بلا التزام مقيس');
+
+console.log('٤١) تمييزُ عدد الشكاوى');
+const w = (n) => priorities(build([...Array(n)].map(() => mk(1, 'الانتظار طويل جدا'))
+  .concat([...Array(14)].map(() => mk(5, 'ممتاز')))))[0].why;
+w(1).startsWith('شكوى واحدة') && w(2).startsWith('شكويان') && w(6).startsWith('6 شكاوى') && w(12).startsWith('12 شكوى')
+  ? ok('«شكوى واحدة» · «شكويان» · «6 شكاوى» · «12 شكوى»') : bad('تمييز مختلّ', [w(1), w(2), w(6), w(12)].map((x) => x.slice(0, 12)).join(' | '));
+
 console.log('\n' + (fails.length ? `فشل ${fails.length}:\n` + fails.map((f) => ' - ' + f).join('\n') : '✅ نجحت كل الاختبارات'));
 process.exit(fails.length ? 1 : 0);
