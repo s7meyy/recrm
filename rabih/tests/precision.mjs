@@ -10,6 +10,7 @@ import { bilingual, bi } from '../js/i18n.js';
 import { grade, fixture } from '../js/eval.js';
 import { reviewsCsv } from '../js/export.js';
 import { emptyPlace, emptyReview, assignReviewIds, stats } from '../js/schema.js';
+import { verify } from '../js/verify.js';
 
 const fails = [];
 const ok = (t) => console.log('  ✓', t);
@@ -92,6 +93,30 @@ const inv = grade('## الخلاصة\nجودة القهوة (R001) والخدم�
 (inv.total === 0 && inv.fatal) ? ok('ومخرجٌ يخترع معرّفًا: صفر مهما حسُن سواه') : bad('الاختراع', JSON.stringify(inv));
 const mis = grade('ورد في (R002): «انتظرت قليلا وكان الموظف لطيفا جدا معي».', fx);
 mis.total === 0 ? ok('ومخرجٌ يُحرّف اقتباسًا: صفر') : bad('التحريف', JSON.stringify(mis));
+
+console.log('٨) النسبة المخترَعة تُمسَك');
+/* رأسُ المدقّق يَعِد بفحص «نسبة» منذ كُتب، والفحصُ لم يُكتَب — فتمرّ
+   «82% من العملاء يشكون من الانتظار» في عيّنةٍ نصفُها يشكو. والنسبةُ أخطرُ
+   ما في التقرير: عليها تُبنى الأولويات والمبالغ. */
+const vp = (() => {
+  const q = emptyPlace();
+  q.identity.name = 'مقهى';
+  q.ratings = { average: 4.2, count: 310, distribution: null };
+  const m = (r, t) => ({ ...emptyReview(), rating: r, text: t, date: 'قبل شهر' });
+  q.reviews = [m(1, 'الانتظار طويل جدا'), m(2, 'انتظرت كثير والخدمة بطيئة'),
+    m(5, 'القهوة ممتازة'), m(4, 'المكان جميل')];
+  assignReviewIds(q);
+  return q;
+})();
+const nIss = (md) => (verify(md, vp).numberIssues || []).length;
+nIss('82% من العملاء يشكون من الانتظار (R001).') > 0
+  ? ok('نسبةٌ لا تُحسَب من العيّنة: تُمسَك') : bad('نسبة مخترعة مرّت');
+nIss('50% من التعليقات تشكو من الانتظار (R001، R002).') === 0
+  ? ok('والنسبة الصحيحة تمرّ') : bad('نسبة صحيحة مُنعت');
+nIss('بفرض أن 25% من الشاكين لا يعودون، تكون الخسارة كذا.') === 0
+  ? ok('وفرضُ المالك ليس من عندنا فلا يُقاس علينا') : bad('فرضُ المالك مُنع');
+nIss('نستهدف نموًّا بنسبة 10% في الربع القادم.') === 0
+  ? ok('ونسبةٌ لا تصف العيّنة لا تُفحَص') : bad('نسبةٌ عامة مُنعت');
 
 console.log('\n' + (fails.length ? `فشل ${fails.length}:\n` + fails.map((f) => ' - ' + f).join('\n') : '✅ نجحت كل الاختبارات'));
 process.exit(fails.length ? 1 : 0);

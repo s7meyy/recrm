@@ -3,8 +3,46 @@
 
 import { stats } from './schema.js';
 import { normalizeDigits } from './parse.js';
+import { topicStats } from './lexicon.js';
 
 const RID = /\bR\d{3}\b/g;
+
+/**
+ * كلُّ نسبةٍ يمكن أن تُحسَب من هذه العيّنة.
+ *
+ * الرأسُ يَعِد بفحص «نسبة» منذ كُتب، والفحصُ لم يُكتَب — فتمرّ «82% من
+ * العملاء يشكون من الانتظار» في عيّنةٍ نصفُها يشكو. والنسبةُ أخطرُ ما في
+ * التقرير: عليها تُبنى الأولويات والمبالغ، وهي أسهلُ ما يخترعه نموذج.
+ *
+ * ولا يُقارَن بقيمةٍ واحدة بل بمجموعة: نصيبُ كل موضوع، ونصيبُ السلبي
+ * والإيجابي والمحايد، ونسبةُ الردّ، والتغطية. فإن لم تطابق النسبةُ المذكورة
+ * واحدةً منها فهي مخترَعة — أو محسوبةٌ على مقامٍ غير مقامنا، وكلاهما يُراجَع.
+ */
+function computablePercents(place, s) {
+  const out = new Set();
+  const add = (v) => { if (Number.isFinite(v)) out.add(Number(v.toFixed(1))); };
+  const total = s.total || 0;
+  if (!total) return out;
+
+  for (const t of topicStats(place)) {
+    add((t.total / total) * 100);
+    add((t.neg / total) * 100);
+    add((t.pos / total) * 100);
+    if (t.total) { add((t.neg / t.total) * 100); add((t.pos / t.total) * 100); }
+  }
+  if (s.rated) {
+    add((s.negative / s.rated) * 100);
+    add((s.positive / s.rated) * 100);
+    add((s.neutral / s.rated) * 100);
+  }
+  add((s.negative / total) * 100);
+  add((s.positive / total) * 100);
+  add((s.withReply / total) * 100);
+  if (s.replyRate !== null) add(s.replyRate);
+  if (s.coverage !== null) add(s.coverage);
+  if (s.textCoverage !== null) add(s.textCoverage);
+  return out;
+}
 
 /** يقطّع النص إلى جُمل مع مواضعها، متجاوزًا العناوين والجداول والأسطر الفارغة. */
 function sentences(text) {
@@ -95,6 +133,7 @@ export function verify(output, place) {
   // الأرقام: كل رقم يدّعي أنه متوسط أو عدد تعليقات أو نسبة، يُقارَن بالمحسوب.
   const numberIssues = [];
   const tolerance = 0.06;
+  const percents = computablePercents(place, s);
   for (const n of numbersIn(text)) {
     const c = n.context;
     if (/متوسط|تقييم عام|من\s*5/.test(c) && n.value >= 1 && n.value <= 5) {
@@ -104,6 +143,21 @@ export function verify(output, place) {
     } else if (/عدد التعليقات|التعليقات المُحلَّ?لة|عيّ?نة/.test(c) && Number.isInteger(n.value) && n.value > 5) {
       if (n.value !== s.total && n.value !== s.googleCount)
         numberIssues.push({ value: n.value, context: c, why: `العيّنة ${s.total}${s.googleCount ? ` وإجمالي قوقل ${s.googleCount}` : ''}` });
+    } else if (n.unit === '%' && n.value > 0 && n.value <= 100) {
+      /* لا تُفحَص إلا نسبةٌ تدّعي وصفَ العملاء أو التعليقات: أمّا فرضُ المالك
+         («25% منهم لا يعود») ونسبُ الأهداف فليست من عندنا فلا تُقاس علينا. */
+      const aboutSample = /عمل|عملاء|زبائن|تعليق|تقييم|عيّ?نة|شكا|يشكو|شكوى|شكاوى|ذكر|أثنى|رد|ردّ/.test(c);
+      const ownAssumption = /فرض|افترا|لا يعود|لا يعودون|هدف|نمو|زياد/.test(c);
+      if (aboutSample && !ownAssumption) {
+        const ok = [...percents].some((v) => Math.abs(v - n.value) <= 1.5);
+        if (!ok) {
+          numberIssues.push({
+            value: n.value,
+            context: c,
+            why: 'لا تطابق أي نسبةٍ تُحسَب من هذه العيّنة',
+          });
+        }
+      }
     }
   }
 
