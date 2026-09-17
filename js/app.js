@@ -17,7 +17,7 @@ import { setHijriMode, formatNumber, countOf } from './util/format.js';
 import { initVoiceBar } from './util/voice-bar.js';
 import { startAutoLock } from './util/auto-lock.js';
 import { initClientMode, applyClientMode, clientModeOn } from './util/client-mode.js';
-import { el, clear, toast, echoDates } from './util/dom.js';
+import { el, clear, toast, echoDates, closeAllModals } from './util/dom.js';
 import { daysWord } from './util/format.js';
 import * as todayPage from './pages/today.js';
 import * as dashboardPage from './pages/dashboard.js';
@@ -34,6 +34,7 @@ import * as calendarPage from './pages/calendar.js';
 import * as invoicesPage from './pages/invoices.js';
 import * as expensesPage from './pages/expenses.js';
 import * as dealsPage from './pages/deals.js';
+import * as marketPage from './pages/market.js';
 import * as trashPage from './pages/trash.js';
 import * as publishPage from './pages/publish.js';
 import * as tasksPage from './pages/tasks.js';
@@ -71,6 +72,7 @@ const ROUTES = {
   invoices: { title: 'الفواتير وعروض الأسعار', render: invoicesPage.render },
   expenses: { title: 'المالية', render: expensesPage.render },
   deals: { title: 'الصفقات', render: dealsPage.render },
+  market: { title: 'السوق', render: marketPage.render },
   trash: { title: 'سلة المحذوفات', render: trashPage.render },
   publish: { title: 'الصفحة العامة للعروض', render: publishPage.render },
   tasks: { title: 'المهام', render: tasksPage.render },
@@ -187,6 +189,11 @@ async function navigate() {
   const live = document.getElementById('route-live');
   if (live) live.textContent = route.title;
   revokeImageUrls();
+  // **ونوافذُ الصفحة السابقة تُغلق معها** (المرحلة ٥٠): تُرسَم في `#modal-root` خارج
+  // `#page`، فكان تفريغُ الصفحة لا يمسّها — وتبقى طافيةً فوق الجديدة تحجبها وتلتقط
+  // ضغطاتِك. وتُغلق **قبل** الرسم لا بعده، فنافذةُ رابطٍ عميق (`#/clients/<id>`) يفتحها
+  // الرسمُ الجديد تبقى كما هي.
+  closeAllModals();
   clear(page);
   const token = ++renderToken;
   try {

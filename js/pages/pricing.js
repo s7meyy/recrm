@@ -10,6 +10,7 @@
 import { repo } from '../data/repository.js';
 import { getLists, typeLabel } from '../data/settings.js';
 import { priceSamples, estimatePrice, purposeKey } from '../util/price-stats.js';
+import { districtStatSmart } from '../util/market.js';
 import { el, clear, labeled, selectEl, checkbox, badge, emptyState, toast } from '../util/dom.js';
 import { formatSAR, formatArea, formatNumber, formatDate, countOf } from '../util/format.js';
 import { monthlyInstallment, rentalYield, leveragedYield, closingCosts, holdVsSell } from '../util/finance.js';
@@ -30,9 +31,11 @@ export async function render(container) {
 }
 
 async function loadData(ctx) {
-  const [properties, externals, deals, lists] = await Promise.all([
+  const [properties, externals, deals, lists, market] = await Promise.all([
     repo.properties.list(), repo.externalListings.list(), repo.deals.list(), getLists(),
+    repo.marketDeals.list(), // صفقات السوق (المرحلة ٥٠)
   ]);
+  ctx.market = market;
   ctx.properties = properties;
   ctx.lists = lists;
   ctx.samples = priceSamples({ properties, externals, deals });
@@ -162,6 +165,10 @@ function draw(ctx) {
       ? el('p', { class: 'warn-text', text: 'العيّنة متفرّقة جدًا (فرق واسع بين الأرخص والأغلى) — النطاق أصدق من الرقم الواحد هنا.' })
       : null,
     askingNote(ctx, result),
+    // **شهادةُ السوق بجانب تقديرك** (المرحلة ٥٠): التقديرُ أعلاه محسوبٌ من **مخزونك**،
+    // وهذا وسيطُ ما **بِيع فعلًا** في الحيّ نفسه. وافتراقُهما خبرٌ لا عطب: أسعارُ العرض
+    // أعلى من أسعار الإفراغ في السوق السعودي، والفرقُ معلومٌ ويُقرأ لا يُخفى.
+    marketNote(ctx, t),
     el('div', { class: 'head-actions', style: { marginTop: '12px' } },
       el('button', {
         type: 'button', class: 'btn btn-ghost btn-sm', text: 'نسخ الملخّص',
@@ -442,6 +449,27 @@ function yieldPanel(defaultPrice) {
     el('p', { class: 'muted small', text: 'حساب استرشادي: لا يشمل تغيّر قيمة العقار ولا الضريبة، ومدّة الاسترداد بالدخل الحالي وحده. والإيجار المقترح افتراض أوّليّ عدّله بما تعرفه عن الحي.' }));
   recalc();
   return panel;
+}
+
+/**
+ * سطرُ السوق تحت التقدير — **ولا يظهر بلا بيانات**: سطرٌ يقول «لا سوق» في صفحةٍ
+ * لم يُستورَد لها شيءٌ بعد ضجيجٌ يتكرّر في كلّ تقدير.
+ */
+function marketNote(ctx, target) {
+  // **والنوعُ يُمرَّر باسمه العربيّ** لا بمفتاحه: بياناتُ البوّابة تسمّيه بنصٍّ من عندها،
+  // ومقارنةُ `villa` بـ«فيلا» تُخرج صفرًا دائمًا فيبدو الحيُّ بلا صفقات وهو مملوء.
+  const stat = districtStatSmart(ctx.market || [], {
+    city: target.city, district: target.district,
+    type: typeLabel(ctx.lists, target.type), purpose: 'sale', months: 12,
+  });
+  if (!stat.median) return null;
+  return el('p', { class: 'muted small' },
+    el('strong', { text: 'وما بِيع فعلًا: ' }),
+    `وسيطُ متر ${stat.district || target.city} ${formatSAR(stat.median)} من ${countOf(stat.n, 'صفقة')} في سنة`,
+    stat.typeIgnored ? ' من أنواع الحيّ كلِّها' : '',
+    stat.enough ? '' : ' — وهي عيّنةٌ صغيرة',
+    '. ',
+    el('a', { href: '#/market', text: 'صفحة السوق' }));
 }
 
 function fact(value, label) {

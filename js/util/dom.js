@@ -146,6 +146,28 @@ export function echoDates(root) {
 
 /* ===== النوافذ المنبثقة ===== */
 
+/**
+ * **النوافذُ المفتوحةُ الآن** (المرحلة ٥٠) — سجلٌّ صغير يُغلقها الموجِّهُ به عند تبديل الصفحة.
+ *
+ * `navigate()` كان يُفرِغ `#page` **ولا يمسّ `#modal-root`** — والنوافذُ تُرسَم فيه خارجَ
+ * الصفحة. فمن فتح نافذةً ثم انتقل إلى صفحةٍ أخرى بقيت النافذةُ طافيةً فوق الجديدة،
+ * تحجبها وتلتقط ضغطاته. كشفتها `whatsapp.mjs` حين صار زرُّ «أضفه عميلًا» ينتقل إلى
+ * مسارٍ صحيح (`#/clients/<id>`) فيفتح استمارةَ العميل — وكان ينتقل إلى `#/client/<id>`
+ * **وهو مسارٌ لا وجود له**، فلا يفتح شيئًا ولا يُرى العطب.
+ */
+const openModals = new Set();
+
+/**
+ * يُغلق كلَّ نافذةٍ مفتوحة — **بإغلاقها لا بمحو عقدها**: `replaceChildren` تمحو العناصر
+ * ولا تُطلق `onClose`، فيبقى وعدُ `confirmDialog` معلّقًا إلى الأبد ينتظر جوابًا لن يأتي.
+ */
+export function closeAllModals() {
+  for (const close of [...openModals]) {
+    try { close(); } catch (_) { /* نافذةٌ أُغلقت بالفعل */ }
+  }
+  openModals.clear();
+}
+
 export function openModal({ title, body, footer = null, size = null, onClose = null }) {
   const root = document.getElementById('modal-root');
   const overlay = el('div', { class: 'modal-overlay' });
@@ -164,6 +186,7 @@ export function openModal({ title, body, footer = null, size = null, onClose = n
   function close() {
     if (closed) return;
     closed = true;
+    openModals.delete(close);
     overlay.remove();
     document.removeEventListener('keydown', onKey);
     if (!root.children.length) document.body.classList.remove('modal-open');
@@ -205,6 +228,7 @@ export function openModal({ title, body, footer = null, size = null, onClose = n
   overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(); });
   document.addEventListener('keydown', onKey);
   root.append(overlay);
+  openModals.add(close);
   document.body.classList.add('modal-open');
   // **أوّلُ ما يُملأ لا أوّلُ ما يُضغط**: التركيزُ يبدأ بأوّل حقلِ إدخال إن وُجد،
   // فمن فتح استمارةً كتب فيها مباشرةً. وبلا حقلٍ يبدأ بالنافذة نفسِها لا بزرّ الإغلاق.

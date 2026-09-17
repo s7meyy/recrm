@@ -26,6 +26,29 @@ const has = (name) => {
  *   `actions`  ما يستطيعه حين يُهيَّأ
  *   `run`      التنفيذ الفعلي — ويُستدعى **بعد** التحقق من التهيئة
  */
+/**
+ * نداءٌ موحَّدٌ لمزوّدَي بيانات السوق (المرحلة ٥٠).
+ *
+ * **وشكلُ المسار افتراضٌ معلَن لا وثيقة**: ما دام لا توثيقَ عامًّا لهما، يُبنى المسارُ
+ * على القاعدة المتّبعة (`/deals` تحت الأساس الذي تكتبه)، **ويُقال ذلك**. فإن اختلف عند
+ * المزوّد كان `*_API_BASE` هو موضعَ التصحيح بلا تعديل كود.
+ *
+ * **ولا يُخترع صفٌّ واحد**: ما يعود من المزوّد يُمرَّر كما هو، وما يفشل يُقال بنصّ خطئه.
+ */
+async function marketFetch(prefix, payload = {}) {
+  const base = process.env[`${prefix}_API_BASE`].replace(/\/+$/, '');
+  const key = process.env[`${prefix}_API_KEY`];
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(payload)) if (v != null && v !== '') qs.set(k, String(v));
+  const res = await fetch(`${base}/deals?${qs}`, {
+    headers: { accept: 'application/json', authorization: `Bearer ${key}` },
+  });
+  const body = await res.text();
+  if (!res.ok) throw new Error(`${prefix} ردّ ${res.status}: ${body.slice(0, 200)}`);
+  const data = safeJson(body);
+  return { ok: true, rows: Array.isArray(data) ? data : (data?.rows || data?.data || []), provider: data };
+}
+
 export const INTEGRATIONS = {
   /* ===== ١. إيجار — تسجيل عقود الإيجار ===== */
   ejar: {
@@ -110,28 +133,69 @@ export const INTEGRATIONS = {
     // أصلًا — راجع netlify/functions/whatsapp.js.
     env: ['WHATSAPP_PHONE_ID', 'WHATSAPP_TOKEN'],
     envOptional: ['WHATSAPP_VERIFY_TOKEN', 'WHATSAPP_APP_SECRET'],
-    actions: ['template.send'],
+    // `text.send` (المرحلة ٥٠): نصٌّ حرٌّ **داخل نافذة الأربع والعشرين ساعة** التي
+    // يفتحها ردُّ العميل. وواتساب نفسُه يرفضه خارجَها، فيُنقَل رفضُه كما هو ولا يُدَّعى علم.
+    actions: ['template.send', 'text.send'],
     async run(action, payload) {
-      if (action !== 'template.send') throw new Error('إجراء غير معروف');
       const id = process.env.WHATSAPP_PHONE_ID;
       const token = process.env.WHATSAPP_TOKEN;
-      const res = await fetch(`https://graph.facebook.com/v21.0/${encodeURIComponent(id)}/messages`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          messaging_product: 'whatsapp',
-          to: payload.to,
+      // الرقمُ يُخزَّن محلّيًّا («05…») وواتساب يريده دوليًّا — والتحويلُ هنا في موضعٍ
+      // واحد، فلا تُكرّره كلُّ صفحةٍ تُرسل.
+      const to = String(payload.to || '').replace(/\D/g, '').replace(/^0/, '966');
+      let message;
+      if (action === 'template.send') {
+        message = {
           type: 'template',
           template: {
             name: payload.template,
             language: { code: payload.language || 'ar' },
-            components: payload.components || undefined,
+            // **المتغيّراتُ تُمرَّر** (المرحلة ٥٠): قالبٌ بلا متغيّراتٍ يرسل النصَّ نفسَه
+            // لمئة عميل — وقالبٌ بها يرسل لكلٍّ اسمَه وعقارَه وسعرَه.
+            components: payload.components?.length ? payload.components : undefined,
           },
-        }),
+        };
+      } else if (action === 'text.send') {
+        message = { type: 'text', text: { body: String(payload.text || '').slice(0, 4000) } };
+      } else throw new Error('إجراء غير معروف');
+
+      const res = await fetch(`https://graph.facebook.com/v21.0/${encodeURIComponent(id)}/messages`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ messaging_product: 'whatsapp', to, ...message }),
       });
       const body = await res.text();
       if (!res.ok) throw new Error(`واتساب ردّ ${res.status}: ${body.slice(0, 200)}`);
       return { ok: true, provider: safeJson(body) };
+    },
+  },
+
+  /* ===== ٤٫٥ مصادر بيانات السوق التجاريّة (المرحلة ٥٠) ===== */
+  //
+  // **سهيل** و**بسيطة** منصّتان سعوديّتان تبيعان تحليلَ البيانات العقاريّة، **ولا واجهةَ
+  // عامّةً مجّانيّةً لأيٍّ منهما** — بحثتُ. فلهما الطرفُ الذي يخصّنا: المحوّل، والحالة،
+  // والمكان الذي يقف فيه المفتاح حين يصل.
+  //
+  // **والمسارُ الذي يعمل اليوم بلا اشتراكٍ غيرُ هذا**: البوّابات المفتوحة (وزارة العدل
+  // والهيئة وكابسارك) تُنزَّل ملفًّا ويُستورَد في صفحة «السوق» — بترخيص البيانات المفتوحة
+  // السعوديّ الذي يُجيز الاستعمال وإعادة النشر بالإسناد.
+  suhail: {
+    key: 'suhail',
+    label: 'سهيل — بيانات السوق (اشتراك)',
+    env: ['SUHAIL_API_BASE', 'SUHAIL_API_KEY'],
+    actions: ['market.deals'],
+    async run(action, payload) {
+      if (action !== 'market.deals') throw new Error('إجراء غير معروف');
+      return marketFetch('SUHAIL', payload);
+    },
+  },
+  paseetah: {
+    key: 'paseetah',
+    label: 'بسيطة — بيانات السوق (اشتراك)',
+    env: ['PASEETAH_API_BASE', 'PASEETAH_API_KEY'],
+    actions: ['market.deals'],
+    async run(action, payload) {
+      if (action !== 'market.deals') throw new Error('إجراء غير معروف');
+      return marketFetch('PASEETAH', payload);
     },
   },
 

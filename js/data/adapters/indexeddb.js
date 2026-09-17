@@ -12,7 +12,9 @@ const DB_NAME = 'motabiq';
 // الإصدار ٦ (المرحلة ٢٦): أضاف مخزن audio (الملاحظات الصوتية)
 // الإصدار ٧ (المرحلة ٢٧): أضاف مخزن showings (المعاينات) — بالمنطق نفسه: الناقص فقط
 // ولا يمسّ مخازن أو بيانات موجودة، فلا حاجة لأي ترحيل بيانات يدوي في أيٍّ منها.
-const DB_VERSION = 9; // ٩: مخزن التفريغ (المرحلة ٤١)
+// الإصدار ١٠ (المرحلة ٥٠): أضاف مخزن marketDeals (صفقات السوق من البوّابات المفتوحة)
+// — بالمنطق نفسه: `upgrade()` يُنشئ الناقص فقط ولا يمسّ مخزنًا ولا بيانات، فلا ترحيل.
+const DB_VERSION = 10; // ١٠: مخزن صفقات السوق (المرحلة ٥٠)
 
 const STORE_DEFS = {
   clients: { keyPath: 'id', indexes: ['phone', 'stage', 'updatedAt'] },
@@ -34,6 +36,8 @@ const STORE_DEFS = {
   trash: { keyPath: 'id', indexes: ['store', 'deletedAt'] },
   audio: { keyPath: 'id', indexes: ['entityId'] },
   showings: { keyPath: 'id', indexes: ['clientId', 'propertyId', 'at', 'status'] },
+  // الفهارسُ هي التي يُسأل بها: «كم متوسّطُ متر قرطبة؟» و«ما صفقاتُ هذا الشهر؟»
+  marketDeals: { keyPath: 'id', indexes: ['city', 'district', 'date', 'type', 'source', 'fingerprint'] },
 };
 
 let dbPromise = null;

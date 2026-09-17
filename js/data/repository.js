@@ -294,6 +294,26 @@ const PREPARE = {
     rec.referralSource = trim(rec.referralSource);
     rec.searchKey = buildSearchKey([rec.city, ...rec.districts, rec.notes, rec.referralSource]);
   },
+  marketDeals(rec) {
+    rec.source = trim(rec.source) || 'manual';
+    rec.city = trim(rec.city);
+    rec.district = trim(rec.district);
+    rec.type = trim(rec.type);
+    rec.purpose = trim(rec.purpose) || 'sale';
+    rec.note = trim(rec.note);
+    rec.area = numField(rec, 'المساحة', rec.area);
+    rec.price = numField(rec, 'قيمة الصفقة', rec.price);
+    // **سعرُ المتر يُحسب هنا لا عند العرض**: به يُفرز ويُوسَّط، وحسابُه في كلّ رسمٍ
+    // على آلافِ الصفوف يُبطئ الصفحة بلا سبب. وقسمةٌ على صفرٍ أو على مجهولٍ = `null`.
+    rec.pricePerM = (rec.area > 0 && rec.price > 0) ? Math.round(rec.price / rec.area) : null;
+    // البصمةُ من الحقول التي تُميّز صفقةً عن أخرى — والتاريخُ باليوم لا بالساعة،
+    // فالبوّابات تُصدِّر اليومَ وحده.
+    rec.fingerprint = [
+      String(rec.date || '').slice(0, 10), rec.city, rec.district, rec.type,
+      rec.area ?? '', rec.price ?? '',
+    ].join('|');
+    rec.searchKey = buildSearchKey([rec.city, rec.district, rec.note]);
+  },
   matches(rec) {
     rec.score = toNumberOrNull(rec.score) ?? 0;
     rec.rejectReason = trim(rec.rejectReason) || null;
@@ -1302,6 +1322,7 @@ export const repo = {
   extractions: makeEntity('extractions'), // الإيرادات (المرحلة ٣٨)
   audio: makeEntity('audio'), // الملاحظات الصوتية (المرحلة ٢٦)
   showings: makeEntity('showings'), // المعاينات (المرحلة ٢٧)
+  marketDeals: makeEntity('marketDeals'), // صفقات السوق (المرحلة ٥٠)
 
   /** وصول خام للمخازن (النسخ الاحتياطي والبيانات التجريبية). */
   raw: {

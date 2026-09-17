@@ -30,6 +30,8 @@ export const SETTINGS_KEYS = {
   plans: 'plans', // خطط المتابعة المتسلسلة (المرحلة ٢٣)
   playbooks: 'playbooks', // نقاط تقولها في كل نوع مكالمة (المرحلة ٢٨)
   campaigns: 'campaigns', // حملات تسويقيّة: [{ key, label, channel, startAt, endAt, budget }] (المرحلة ٤٩)
+  waTemplates: 'waTemplates', // قوالب واتساب المعتمَدة ومواضع متغيّراتها (المرحلة ٥٠)
+  waSends: 'waSends', // سجلّ ما أُرسل: [{ at, kind, template, campaign, to, ok, error }] (المرحلة ٥٠)
 };
 
 const EMPTY_LISTS = () => ({ propertyTypes: [], propertyStatuses: [], clientTags: [], cities: [], districts: {}, sources: [] });
@@ -918,4 +920,71 @@ export async function setCampaigns(list) {
     .filter((c) => c.label);
   await repo.settings.set(SETTINGS_KEYS.campaigns, clean);
   return clean;
+}
+
+
+/* ===== قوالب واتساب المعتمَدة (المرحلة ٥٠) ===== */
+
+/**
+ * القالبُ المعتمَد عند Meta واسمُه الحرفيّ ومواضعُ متغيّراته.
+ *
+ * **يُكتب مرّةً ويُستعمل دائمًا**: كان اسمُ القالب يُكتب بيدك في كلّ حملة، ومن أخطأ حرفًا
+ * ردّت Meta بخطأٍ غامض بعد أن بدأ الإرسال. وأسماءُ المتغيّرات من `TEMPLATE_VARS` نفسِها
+ * التي تستعملها القوالبُ الداخليّة — فمعجمٌ واحدٌ لا اثنان.
+ */
+export async function getWaTemplates() {
+  const stored = await repo.settings.get(SETTINGS_KEYS.waTemplates, []);
+  return Array.isArray(stored) ? stored : [];
+}
+
+export async function setWaTemplates(list) {
+  const clean = (list || [])
+    .map((t) => ({
+      // اسمُ القالب عند Meta: حروفٌ صغيرةٌ وأرقامٌ وشرطاتٌ سفليّة — وما عداها يُنظَّف
+      // هنا لا عند الإرسال، فيرى المستخدم ما سيُرسَل فعلًا.
+      name: norm(t.name).toLowerCase().replace(/[^a-z0-9_]/g, '_').slice(0, 64),
+      language: norm(t.language) || 'ar',
+      vars: (Array.isArray(t.vars) ? t.vars : []).map(norm).filter(Boolean).slice(0, 10),
+      note: norm(t.note).slice(0, 120),
+    }))
+    .filter((t) => t.name);
+  await repo.settings.set(SETTINGS_KEYS.waTemplates, clean);
+  return clean;
+}
+
+/* ===== سجلّ ما أُرسل في واتساب (المرحلة ٥٠) ===== */
+
+/** أطولُ ما يُحتفظ به: مئتا سطر — ما قبلها لا يُفتح، ويُثقل الإعدادات بلا فائدة. */
+const WA_SEND_LIMIT = 200;
+
+export async function getWaSends() {
+  const stored = await repo.settings.get(SETTINGS_KEYS.waSends, []);
+  return Array.isArray(stored) ? stored : [];
+}
+
+/**
+ * **يُضاف ولا يُكتب فوقه**: الحملةُ تُسجَّل سطرًا سطرًا وهي تجري، فلو أُغلقت الصفحةُ
+ * في منتصفها بقي ما تمّ. وكان السجلُّ يعيش في الشاشة وحدها فيضيع بإعادة التحميل —
+ * **ولا يُعرف بعدها من وصلته الرسالةُ ومن لم تصله**.
+ */
+export async function addWaSends(rows) {
+  const list = Array.isArray(rows) ? rows : [rows];
+  if (!list.length) return getWaSends();
+  const current = await getWaSends();
+  const next = [...current, ...list.map((r) => ({
+    at: r.at || new Date().toISOString(),
+    kind: norm(r.kind) || 'template',
+    template: norm(r.template),
+    campaign: norm(r.campaign),
+    to: norm(r.to),
+    name: norm(r.name),
+    ok: !!r.ok,
+    error: norm(r.error).slice(0, 200),
+  }))].slice(-WA_SEND_LIMIT);
+  await repo.settings.set(SETTINGS_KEYS.waSends, next);
+  return next;
+}
+
+export async function clearWaSends() {
+  await repo.settings.set(SETTINGS_KEYS.waSends, []);
 }

@@ -3,7 +3,7 @@
 
 import { FINANCE_STAGES, PAY_METHODS } from '../util/financing.js';
 
-export const STORES = ['clients', 'properties', 'tours', 'requests', 'matches', 'externalListings', 'deals', 'images', 'settings', 'taskLists', 'tasks', 'notes', 'invoices', 'expenses', 'incomes', 'audio', 'showings', 'extractions'];
+export const STORES = ['clients', 'properties', 'tours', 'requests', 'matches', 'externalListings', 'deals', 'images', 'settings', 'taskLists', 'tasks', 'notes', 'invoices', 'expenses', 'incomes', 'audio', 'showings', 'extractions', 'marketDeals'];
 // ملاحظة: `trash` (سلة المحذوفات، المرحلة ٢١) ليست في STORES عمدًا — شبكة أمان محلّية
 // لا بيانات تُصدَّر: إدراجها في النسخة الاحتياطية يضخّمها بما حذفتَه قصدًا.
 
@@ -522,6 +522,29 @@ export const SCHEMAS = {
        * تنبيهَ «وقف عند البنك» كلَّ مرّةٍ تفتح فيها الصفقةَ وتحفظها.
        */
       financeStage: '', financeBank: '', financeAt: null, financeNote: '',
+    }),
+  },
+  /**
+   * **صفقاتُ السوق** (المرحلة ٥٠) — ما بِيع فعلًا، لا ما يُعرض.
+   *
+   * كلُّ ما في النظام قبلها **مخزونُك أنت**: أسعارُ عرضِك، وصفقاتُك، وآراءُ من عاينوا.
+   * و«تقدير السعر» يقيس حيًّا بعقاراتك فيه — فإن لم يكن لك فيه إلا اثنان، قِيس الحيُّ
+   * باثنين. **والسوقُ الحقيقيُّ عند وزارة العدل**: كلُّ صفقةٍ مُفرَغة بمساحتها وسعرها.
+   *
+   * `source` من أين جاءت (`moj` · `rega` · `manual`…) — **ويبقى مع كلّ صفّ**: رقمٌ لا
+   * يُعرف مصدرُه لا يُحاجّ به مالك. و`pricePerM` يُحسب عند الحفظ لا عند العرض، فيُفرز به.
+   */
+  marketDeals: {
+    required: ['city', 'date'],
+    labels: { city: 'المدينة', date: 'تاريخ الصفقة' },
+    defaults: () => ({
+      source: 'manual',
+      date: '', city: '', district: '', type: '', purpose: 'sale',
+      area: null, price: null, pricePerM: null,
+      // **بصمةُ الصفّ**: تُبنى من حقوله فيُكشف التكرار عند إعادة استيراد ملفٍّ متداخل —
+      // والبوّابات تُصدِّر مدًى يشمل ما سبق، فالاستيرادُ مرّتين هو الحالة العاديّة.
+      fingerprint: '',
+      note: '',
     }),
   },
   showings: { // المعاينات (المرحلة ٢٧): الموعد وما قاله العميل بعده

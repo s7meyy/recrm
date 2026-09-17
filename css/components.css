@@ -1147,3 +1147,21 @@ body.modal-open .voice-dock { display: none; }
 .rule-list { display: flex; flex-direction: column; gap: 8px; margin-block: 8px; }
 .rule-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
 .rule-row > .muted { flex: 1 1 260px; min-width: 0; }
+
+/* ===== صفحة واتساب (المرحلة ٥٠) ===== */
+
+/** ردُّك أنت يُميَّز عن الوارد بخلفيّةٍ خافتة — لا بلونٍ وحده: الصفُّ يحمل رقاقةً تقول «منك». */
+.wa-out { background: var(--surface-alt, rgba(0, 0, 0, .02)); }
+.wa-quote {
+  margin: 0 0 var(--dhad-space-2, 8px);
+  padding: var(--dhad-space-2, 8px) var(--dhad-space-3, 12px);
+  border-inline-start: 3px solid var(--line-strong, #ccc);
+  color: var(--muted, #667);
+  white-space: pre-line;
+}
+/** معاينةُ متغيّرات القالب: ما الذي يذهب إلى كل موضعٍ قبل أن يخرج. */
+.wa-preview { margin-block: var(--dhad-space-2, 8px); }
+.wa-vars { display: flex; flex-wrap: wrap; gap: var(--dhad-space-2, 8px); align-items: center; }
+.wa-var { display: inline-flex; align-items: center; gap: 4px; }
+.wa-var .input { min-width: 140px; }
+.wa-templates > summary { cursor: pointer; font-weight: 600; }

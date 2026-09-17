@@ -112,3 +112,35 @@ export function suggestTemplate(templates = [], context = '') {
   }
   return null;
 }
+
+/**
+ * **متغيّراتُ قالب واتساب المعتمَد** (المرحلة ٥٠).
+ *
+ * قوالبُ Meta تستعمل مواضعَ مرقّمة: `{{1}}` و`{{2}}` — لا أسماءَ عربيّةً كقوالبنا
+ * الداخليّة. فالمكتبُ يقول مرّةً واحدة: «الموضعُ الأوّل اسمُ العميل، والثاني الحيّ،
+ * والثالث السعر»، ثم تُملأ لكلّ مُرسَلٍ إليه بقيمه هو.
+ *
+ * **وقالبٌ بلا متغيّراتٍ يرسل النصَّ نفسَه لمئة عميل**، وقالبٌ بها يرسل لكلٍّ اسمَه.
+ *
+ * @param {string[]} varNames أسماءُ المتغيّرات بترتيب مواضعها — من `TEMPLATE_VARS`
+ * @param {object} values قيمُها لهذا المُرسَل إليه — من `templateValues`
+ * @returns {Array} مكوّنات Meta، أو `[]` إن لم يكن للقالب متغيّرات
+ */
+export function templateComponents(varNames = [], values = {}) {
+  const names = (varNames || []).map((v) => String(v || '').trim()).filter(Boolean);
+  if (!names.length) return [];
+  return [{
+    type: 'body',
+    parameters: names.map((name) => ({
+      type: 'text',
+      // **ولا يُمرَّر فراغ**: Meta ترفض متغيّرًا فارغًا وتردّ بخطأٍ غامض، فيُوضع
+      // شَرطةٌ مكانَ ما لم يُملأ — ويُقال ذلك في المعاينة قبل الإرسال لا بعده.
+      text: String(values[name] ?? '').trim() || '—',
+    })),
+  }];
+}
+
+/** أيُّ المتغيّرات لم تُملأ لهذا السجل؟ — تُعرض قبل الإرسال لا بعده. */
+export function missingVars(varNames = [], values = {}) {
+  return (varNames || []).filter((name) => !String(values[name] ?? '').trim());
+}

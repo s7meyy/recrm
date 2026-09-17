@@ -13,10 +13,18 @@
 
 import { getStore } from '@netlify/blobs';
 import { signedIn, unauthorized } from '../lib/auth.js';
+import { matchAuto, cleanRules, outsideWorkHours, MAX_AUTO_PER_DAY } from '../../js/util/wa-auto.js';
 
 const STORE = 'kassab-public';
 const PREFIX = 'wa/';
+/** إعدادُ الردّ التلقائيّ — **في Blobs لا في إعدادات التطبيق**: الوِبهوك يعمل على الخادم
+ *  ولا يرى IndexedDB في متصفّحك، فقاعدةٌ تُكتب هناك لا تصل إليه أبدًا. */
+const AUTO_KEY = 'wa-auto/config';
+/** عدّادُ ما أُرسل آليًّا لكلّ رقمٍ في اليوم — سدٌّ أمام حلقةٍ لا تنتهي. */
+const AUTO_COUNT = 'wa-auto/count/';
 const MAX_KEEP = 500;
+
+const DEFAULT_AUTO = { enabled: false, outsideHoursOnly: false, from: 9, to: 22, rules: [] };
 
 const json = (body, status = 200) => new Response(JSON.stringify(body), {
   status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
@@ -73,6 +81,98 @@ export function extractMessages(payload) {
   return out;
 }
 
+const clampHour = (v, dflt) => {
+  const n = Math.round(Number(v));
+  return Number.isFinite(n) && n >= 0 && n <= 23 ? n : dflt;
+};
+
+/**
+ * يرسل نصًّا حرًّا إلى رقم — **وهو مشروعٌ داخل نافذة الأربع والعشرين ساعة وحدها**.
+ * وواتساب نفسُه هو الذي يرفض خارجَها، فلا نُكرّر حراسته هنا ولا ندّعي علمًا بما عنده:
+ * يُمرَّر الردُّ ويُنقَل جوابُه كما هو.
+ */
+async function sendText(to, text) {
+  const id = process.env.WHATSAPP_PHONE_ID;
+  const token = process.env.WHATSAPP_TOKEN;
+  if (!id || !token) return { ok: false, error: 'WHATSAPP_PHONE_ID و WHATSAPP_TOKEN غير مضبوطين' };
+  const res = await fetch(`https://graph.facebook.com/v21.0/${encodeURIComponent(id)}/messages`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      to: String(to || '').replace(/\D/g, '').replace(/^0/, '966'),
+      type: 'text',
+      text: { body: String(text || '').slice(0, 4000) },
+    }),
+  });
+  const body = await res.text();
+  return res.ok ? { ok: true } : { ok: false, error: `واتساب ردّ ${res.status}: ${body.slice(0, 200)}` };
+}
+
+/** الردُّ اليدويّ من صندوق الوارد — للمالك وحده. */
+async function sendReply(body, store) {
+  const to = String(body?.to || '').replace(/\D/g, '');
+  const text = String(body?.reply || '').trim();
+  if (!to || !text) return json({ error: 'يلزم رقمٌ ونصّ' }, 400);
+  const res = await sendText(to, text);
+  if (!res.ok) return json({ error: res.error }, 502);
+  // **ويُحفظ ما أُرسل**: صندوقٌ يعرض الوارد وحدَه يجعلك تردّ مرّتين وأنت لا تدري.
+  const at = new Date().toISOString();
+  await store.setJSON(`${PREFIX}${at}-out-${Math.random().toString(36).slice(2, 10)}`, {
+    id: `out-${at}`, from: `0${to.replace(/^966/, '')}`, name: '', at,
+    type: 'text', text: text.slice(0, 2000), mediaId: '', outbound: true,
+  });
+  return json({ ok: true });
+}
+
+/**
+ * **الردُّ التلقائيّ.** يقرأ القواعد من Blobs ويُطبّقها على ما وصل للتوّ.
+ *
+ * ولا يردّ على ما أرسلناه نحن، ولا يتجاوز `MAX_AUTO_PER_DAY` لرقمٍ واحد، ولا يعمل
+ * أصلًا ما لم يُفعَّل. **والعدّادُ بيوميّةٍ لا بعمرٍ مفتوح**: يُكتب بمفتاحٍ فيه تاريخُ
+ * اليوم، فينتهي وحدَه غدًا بلا تنظيفٍ ولا مهمّةٍ دوريّة.
+ */
+async function autoReply(store, messages, existingBlobs) {
+  const cfg = (await store.get(AUTO_KEY, { type: 'json' })) || DEFAULT_AUTO;
+  if (!cfg.enabled || !cfg.rules?.length) return 0;
+  const now = Date.now();
+  const outsideHours = outsideWorkHours({ from: cfg.from, to: cfg.to }, now);
+  const day = new Date(now).toISOString().slice(0, 10);
+
+  let sent = 0;
+  for (const m of messages) {
+    if (!m.from || m.outbound) continue;
+    // **أوّلُ رسالةٍ من هذا الرقم**: تُقاس على ما كان محفوظًا **قبل** هذه الدفعة،
+    // لأنّ الرسالةَ الحاليّةَ حُفظت للتوّ فتبدو سابقةً لنفسها.
+    const isFirst = !(await hasEarlier(store, existingBlobs, m.from));
+    const countKey = `${AUTO_COUNT}${day}/${m.from}`;
+    const sentToday = (await store.get(countKey, { type: 'json' }))?.n || 0;
+    const rule = matchAuto(m, cfg.rules, {
+      isFirst, sentToday, outsideHours, outsideHoursOnly: cfg.outsideHoursOnly,
+    });
+    if (!rule) continue;
+    const res = await sendText(m.from, rule.reply);
+    if (!res.ok) continue;
+    sent += 1;
+    await store.setJSON(countKey, { n: Math.min(sentToday + 1, MAX_AUTO_PER_DAY) });
+    const at = new Date().toISOString();
+    await store.setJSON(`${PREFIX}${at}-auto-${Math.random().toString(36).slice(2, 10)}`, {
+      id: `auto-${at}`, from: m.from, name: '', at,
+      type: 'text', text: rule.reply.slice(0, 2000), mediaId: '', outbound: true, auto: true,
+    });
+  }
+  return sent;
+}
+
+/** أثمّة رسالةٌ سابقةٌ من هذا الرقم في المحفوظ قبل هذه الدفعة؟ */
+async function hasEarlier(store, blobs, from) {
+  for (const b of blobs) {
+    const rec = await store.get(b.key, { type: 'json' });
+    if (rec && rec.from === from && !rec.outbound) return true;
+  }
+  return false;
+}
+
 export default async (request) => {
   const url = new URL(request.url);
   const store = getStore({ name: STORE, consistency: 'strong' });
@@ -105,13 +205,17 @@ export default async (request) => {
     try { payload = JSON.parse(bodyText); } catch { return json({ error: 'جسمٌ غير صالح' }, 400); }
 
     const messages = extractMessages(payload);
+    const existing = messages.length ? (await store.list({ prefix: PREFIX })).blobs : [];
     for (const m of messages) {
       if (!m.id) continue;
       // المفتاح بالوقت ثم بمعرّف الرسالة: السرد يأتي مرتَّبًا، والتكرار لا يتضاعف
       // (Meta تعيد إرسال ما لم تؤكّده).
       await store.setJSON(`${PREFIX}${m.at}-${m.id.replace(/[^\w-]/g, '')}`, m);
     }
-    return json({ ok: true, stored: messages.length });
+    // **الردُّ التلقائيّ بعد الحفظ لا قبله**: لو فشل الإرسال بقيت الرسالةُ محفوظةً على
+    // كلّ حال — والوارِدُ أثمنُ من الردّ عليه.
+    const replied = await autoReply(store, messages, existing).catch(() => 0);
+    return json({ ok: true, stored: messages.length, autoReplied: replied });
   }
 
   /* ٣) سرد الوارد — للمالك وحده */
@@ -124,7 +228,26 @@ export default async (request) => {
       if (rec) rows.push({ ...rec, key: blob.key });
     }
     rows.sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
-    return json({ messages: rows });
+    const auto = (await store.get(AUTO_KEY, { type: 'json' })) || DEFAULT_AUTO;
+    // **وحالُ الإرسال تُقال مع الوارد**: صفحةٌ تعرض قواعدَ ردٍّ تلقائيٍّ لا يستطيع
+    // الخادمُ تنفيذها (لا توكن) تَعِد بما لا يقع.
+    return json({ messages: rows, auto, canSend: !!(process.env.WHATSAPP_TOKEN && process.env.WHATSAPP_PHONE_ID) });
+  }
+
+  /* ٤) إعدادُ الردّ التلقائيّ — قراءةً وكتابةً، للمالك وحده */
+  if (request.method === 'PUT') {
+    if (!(await signedIn(request))) return unauthorized();
+    const body = await request.json().catch(() => null);
+    if (body?.reply) return sendReply(body, store);
+    const next = {
+      enabled: !!body?.enabled,
+      outsideHoursOnly: !!body?.outsideHoursOnly,
+      from: clampHour(body?.from, 9),
+      to: clampHour(body?.to, 22),
+      rules: cleanRules(body?.rules),
+    };
+    await store.setJSON(AUTO_KEY, next);
+    return json({ ok: true, auto: next });
   }
 
   if (request.method === 'DELETE') {
