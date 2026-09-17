@@ -891,7 +891,7 @@ export function buildGroupReportHtml({ brand, analysis, markdown = '', font = nu
     }</tbody></table>`;
 
   const list = (title, items, cls) => items.length
-    ? `<section class="${cls}"><h2 class="no-count">${title}</h2><ul>${items.join('')}</ul></section>` : '';
+    ? `<section class="${cls}"><h2>${title}</h2><ul>${items.join('')}</ul></section>` : '';
 
   const shared = list('شكاوى مشتركة — مسؤولية الإدارة المركزية',
     a.shared.map((t) => `<li><b>${esc(t.name)}</b> — في ${t.branches.length} فروع: ${
@@ -899,6 +899,19 @@ export function buildGroupReportHtml({ brand, analysis, markdown = '', font = nu
 
   const unique = list('شكاوى منفردة — مسؤولية إدارة الفرع',
     a.unique.map((t) => `<li><b>${esc(t.name)}</b> — ${esc(t.branches[0].label)} وحده: ${t.branches[0].neg} مرات</li>`), 'group-unique');
+
+  /* تقرير المجموعة كان على الحال التي أُصلحت في التقرير الفردي: فهرسٌ يُبنى
+     من عناوين النموذج وحدها فلا يذكر «ترتيب الفروع» وهو أول أقسامه، وأقسامٌ
+     بلا ترقيم. فيُعامَل بما عومل به — والمصدرُ واحد فلا يختلفان. */
+  const groupRaw = [
+    `<section><h2>ترتيب الفروع</h2>${table}</section>`,
+    shared,
+    unique,
+    body.html,
+  ].filter(Boolean).join('\n');
+  const groupNumbered = numberSections(groupRaw);
+  const groupSections = groupNumbered.html;
+  const groupToc = tocOf(groupNumbered.items);
 
   return `<!doctype html>
 <html dir="rtl" lang="ar">
@@ -926,11 +939,8 @@ export function buildGroupReportHtml({ brand, analysis, markdown = '', font = nu
   </div>
 </header>
 <main class="body">
-${body.toc}
-<section><h2 class="no-count">ترتيب الفروع</h2>${table}</section>
-${shared}
-${unique}
-${body.html}
+${groupToc}
+${groupSections}
 </main>
 <footer class="foot"><span>${esc(brand)} — تقرير مجموعة من رابح</span><span>${esc(date)}</span></footer>
 </div></body></html>`;

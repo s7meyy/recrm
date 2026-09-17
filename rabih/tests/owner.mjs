@@ -9,7 +9,7 @@ import { actions, actionsBlock, checklistBlock, commitBlock, draftsBlock, keepBl
 import { impact } from '../js/impact.js';
 import { topicStats } from '../js/lexicon.js';
 import { selfCompareBlock, trendWithinBlock } from '../js/compare.js';
-import { buildReportHtml } from '../js/report.js';
+import { buildReportHtml, buildGroupReportHtml } from '../js/report.js';
 import { TEMPLATES, DEFAULT_TEMPLATE } from '../js/templates.js';
 import { build as buildMessage } from '../js/messages.js';
 import { topicCoverage, topicSentimentDetail } from '../js/lexicon.js';
@@ -493,6 +493,29 @@ const w = (n) => priorities(build([...Array(n)].map(() => mk(1, 'الانتظا�
   .concat([...Array(14)].map(() => mk(5, 'ممتاز')))))[0].why;
 w(1).startsWith('شكوى واحدة') && w(2).startsWith('شكويان') && w(6).startsWith('6 شكاوى') && w(12).startsWith('12 شكوى')
   ? ok('«شكوى واحدة» · «شكويان» · «6 شكاوى» · «12 شكوى»') : bad('تمييز مختلّ', [w(1), w(2), w(6), w(12)].map((x) => x.slice(0, 12)).join(' | '));
+
+console.log('٤٢) تقرير المجموعة كالتقرير الفردي');
+/* كان على الحال التي أُصلحت في الفردي: فهرسٌ يُبنى من عناوين النموذج وحدها
+   فلا يذكر «ترتيب الفروع» وهو أول أقسامه، وأقسامٌ بلا ترقيم. */
+const gh = buildGroupReportHtml({
+  brand: 'مقهى الدرب',
+  markdown: '## تحليل المجموعة\nنصّ.\n\n## الفروع المتعثّرة\nنصّ.',
+  analysis: {
+    totals: { branches: 3, reviews: 42 },
+    ranking: [{ rank: 1, label: 'الملقا', district: 'الملقا', googleAverage: 4.5, googleCount: 120, negativeShare: 8, replyRate: 40, trend: 'ثابت' }],
+    branches: [], gap: { diff: 0.4 },
+    shared: [{ name: 'الانتظار', branches: [{ label: 'الملقا', neg: 5 }, { label: 'العليا', neg: 4 }], totalNeg: 9 }],
+    unique: [{ name: 'المواقف', branches: [{ label: 'الملقا', neg: 4 }], totalNeg: 4 }],
+  },
+});
+const gNums = [...gh.matchAll(/<span class="secno">(\d+)<\/span>/g)].map((m) => Number(m[1]));
+gNums.length >= 4 && gNums.every((n, i) => n === i + 1)
+  ? ok(`أقسامُ المجموعة مرقَّمةٌ متصلة (1…${gNums.length})`) : bad('ترقيم المجموعة', gNums.join());
+const gToc = (gh.match(/<li><span class="tn">/g) || []).length;
+gToc === gNums.length
+  ? ok('وفهرسُها يفهرس أقسامها لا عناوين النموذج وحدها') : bad('فهرس المجموعة', `${gToc}/${gNums.length}`);
+gh.includes('ترتيب الفروع') && /<span class="tn">1<\/span><a[^>]*>ترتيب الفروع/.test(gh.replace(/\s+/g, ' '))
+  ? ok('و«ترتيب الفروع» أول بنوده — وكان غائبًا عن فهرس نفسه') : bad('أول قسمٍ غائب');
 
 console.log('\n' + (fails.length ? `فشل ${fails.length}:\n` + fails.map((f) => ' - ' + f).join('\n') : '✅ نجحت كل الاختبارات'));
 process.exit(fails.length ? 1 : 0);
