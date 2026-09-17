@@ -194,5 +194,64 @@ console.log('٩) ترتيب الخطوات');
   srv.close();
 }
 
+console.log('١٠) عطبُ الشبكة يُعاد لا يُرمى');
+/* كان `fetch` وقراءةُ البثّ بلا حارس، فانقطاعُ الإنترنت يخرج استثناءً من
+   callModel ثم من runStep إلى الواجهة: لا رسالةَ للمستخدم، **ولا يعمل
+   البديلُ من النماذج أصلًا** — وهو موجودٌ لهذا بعينه. */
+{
+  const { callModel, runStep } = await import('../js/runner.js');
+  const { emptyPlace, emptyReview, assignReviewIds } = await import('../js/schema.js');
+  const saved = globalThis.fetch;
+  const enc = (t) => new TextEncoder().encode(t);
+
+  globalThis.fetch = async () => { throw new TypeError('Failed to fetch'); };
+  const down = await callModel('m', 'p').catch((e) => ({ threw: e.message }));
+  down.ok === false && down.network ? ok('شبكةٌ ساقطة: يُعاد عطبٌ موصوف') : bad('شبكة ساقطة', JSON.stringify(down));
+
+  globalThis.fetch = async () => ({ ok: true, headers: { get: () => 'm' },
+    body: { getReader() { let n = 0; return { read() {
+      n += 1;
+      if (n === 1) return Promise.resolve({ done: false, value: enc('نصف ') });
+      return Promise.reject(new TypeError('network error'));
+    } }; } } });
+  const cut = await callModel('m', 'p').catch((e) => ({ threw: e.message }));
+  cut.ok === false && cut.partial === 'نصف'
+    ? ok('وبثٌّ ينقطع: يُعاد ما وصل موسومًا ناقصًا — ولا يُسلَّم نصفُ تحليل') : bad('بثّ منقطع', JSON.stringify(cut));
+
+  globalThis.fetch = async () => ({ ok: true, headers: { get: () => 'm' }, body: null });
+  const hollow = await callModel('m', 'p').catch((e) => ({ threw: e.message }));
+  hollow.ok === false ? ok('وجسمٌ فارغ: لا ينهار') : bad('جسم فارغ', JSON.stringify(hollow));
+
+  globalThis.fetch = async () => { const e = new Error('aborted'); e.name = 'AbortError'; throw e; };
+  let aborted = false;
+  try { await callModel('m', 'p'); } catch (e) { aborted = e.name === 'AbortError'; }
+  aborted ? ok('والإلغاءُ يمرّ كما هو — لا يُحسَب عطبًا فيُجرَّب له بديل') : bad('الإلغاء ابتُلع');
+
+  const pl = emptyPlace();
+  pl.identity.name = 'مقهى';
+  pl.ratings = { average: 4.2, count: 310, distribution: null };
+  pl.reviews = [
+    { ...emptyReview(), rating: 1, text: 'الانتظار طويل', date: 'قبل شهر' },
+    { ...emptyReview(), rating: 5, text: 'القهوة ممتازة', date: 'قبل شهر' },
+  ];
+  assignReviewIds(pl);
+  let tries = 0;
+  globalThis.fetch = async () => {
+    tries += 1;
+    if (tries === 1) throw new TypeError('Failed to fetch');
+    return { ok: true, headers: { get: () => 'model-b' },
+      body: { getReader() { let d = false; return { read() {
+        if (d) return Promise.resolve({ done: true });
+        d = true;
+        return Promise.resolve({ done: false, value: enc('شكا العميل من الانتظار (R001).') });
+      } }; } } };
+  };
+  const step = await runStep('n1', { place: pl, ctx: {}, out: {}, assume: {} }, {});
+  step.ok && tries === 2
+    ? ok('والبديلُ يعمل: يسقط الأول بالشبكة فينجح الثاني') : bad('البديل لا يعمل', `نداءات ${tries} · ${step.error || ''}`);
+
+  globalThis.fetch = saved;
+}
+
 console.log('\n' + (fails.length ? `فشل ${fails.length}:\n` + fails.map((f) => ' - ' + f).join('\n') : '✅ نجحت كل الاختبارات'));
 process.exit(fails.length ? 1 : 0);

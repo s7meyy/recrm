@@ -17,12 +17,24 @@ import { verify } from './verify.js';
 
 /** نداءٌ واحد لنموذجٍ واحد، يُسلّم النصّ قطعةً قطعةً كما يصل. */
 export async function callModel(model, prompt, { onChunk, signal } = {}) {
-  const res = await fetch('/api/model', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ model, prompt }),
-    signal,
-  });
+  /* **عطبُ الشبكة يُعاد لا يُرمى.**
+     كان `fetch` وقراءةُ البثّ بلا حارس، فانقطاعُ الإنترنت يخرج استثناءً من
+     `callModel` ثم من `runStep` إلى الواجهة: لا رسالةَ للمستخدم، **ولا
+     يعمل البديلُ من النماذج أصلًا** — وهو موجودٌ لهذا بعينه. جُرِّبت ثلاث
+     حالات (شبكة ساقطة، وبثّ ينقطع في منتصفه، وجسمٌ فارغ) فرمت ثلاثتها. */
+  let res;
+  try {
+    res = await fetch('/api/model', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ model, prompt }),
+      signal,
+    });
+  } catch (e) {
+    // الإلغاءُ بطلب المستخدم ليس عطبًا، ولا يُجرَّب له بديل.
+    if (e?.name === 'AbortError') throw e;
+    return { ok: false, status: 0, network: true, error: `تعذّر الوصول إلى الخادم (${e?.message || 'انقطاع'}).` };
+  }
 
   if (!res.ok) {
     let data = {};
@@ -36,15 +48,24 @@ export async function callModel(model, prompt, { onChunk, signal } = {}) {
     };
   }
 
+  if (!res.body) return { ok: false, status: res.status, network: true, error: 'جاء ردٌّ بلا محتوى.' };
+
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let text = '';
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    const piece = decoder.decode(value, { stream: true });
-    text += piece;
-    if (onChunk) onChunk(piece, text);
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const piece = decoder.decode(value, { stream: true });
+      text += piece;
+      if (onChunk) onChunk(piece, text);
+    }
+  } catch (e) {
+    if (e?.name === 'AbortError') throw e;
+    /* انقطاعٌ في منتصف البثّ: ما وصل ناقصٌ بالضرورة، ولا يُسلَّم نصفُ تحليلٍ
+       على أنه تحليل. ويُعاد ما وصل ليُعرَض للمستخدم لا ليُبنى عليه. */
+    return { ok: false, status: 0, network: true, partial: text.trim(), error: `انقطع البثّ قبل تمامه (${e?.message || 'انقطاع'}).` };
   }
   return { ok: true, text: text.trim(), model: res.headers.get('x-rabih-model') || model };
 }
