@@ -8,6 +8,8 @@
 // 2. **لا يُفتَح إلا بمعرِّفٍ سرّي** يولّده متصفحك ولا يُشتقّ من اسمٍ ولا رابط،
 //    فلا يُخمَّن ولا يُعدّ عليه.
 // 3. **ولا يُفعَّل إلا باختيارك**: ما لم تُشغّل المزامنة لا يُرفَع شيء البتّة.
+// 4. **والحقول محصورةٌ بأسمائها**: لا يُقبَل حقلٌ خارج المشفَّر وتوابعه، فلا
+//    يتسلّل نصٌّ صريح بجوار الصندوق المغلق — لا اليوم ولا في إضافةٍ لاحقة.
 
 const json = (body, status = 200) => new Response(JSON.stringify(body), {
   status,
@@ -58,6 +60,24 @@ export default async (request) => {
       try { parsed = JSON.parse(body); } catch { return json({ error: 'الحمولة ليست JSON.' }, 400); }
       if (!parsed || !parsed.cipher || !parsed.iv || !parsed.salt) {
         return json({ error: 'لا تُقبَل حمولة غير مشفَّرة.' }, 400);
+      }
+
+      /* **والحقولُ محصورةٌ بأسمائها.**
+         كان الحارس يشترط وجودَ المشفَّر ولا يمنع ما جاوره، فتمرّ حمولةٌ فيها
+         `cipher` ومعها مئتا كيلوبايت نصًّا صريحًا — وعدُ هذا الملف في رأسه
+         «لا يُخزَّن إلا مشفَّرًا»، فكان الوعدُ أوسعَ من حارسه.
+         والعنوانُ وحده يُستثنى لأنه يُقرأ قبل كلمة السر عمدًا، ومقدارُه محدود. */
+      const ALLOWED = new Set(['v', 'iter', 'salt', 'iv', 'cipher', 'label']);
+      const extra = Object.keys(parsed).filter((k) => !ALLOWED.has(k));
+      if (extra.length) {
+        return json({ error: `حقولٌ غير مسموحة: ${extra.slice(0, 5).join('، ')}.` }, 400);
+      }
+      if (parsed.label !== undefined
+          && (typeof parsed.label !== 'string' || parsed.label.length > 60)) {
+        return json({ error: 'العنوان نصٌّ لا يجاوز ستّين حرفًا.' }, 400);
+      }
+      for (const k of ['salt', 'iv', 'cipher']) {
+        if (typeof parsed[k] !== 'string') return json({ error: `الحقل ${k} ليس نصًّا.` }, 400);
       }
       const updatedAt = new Date().toISOString();
       await store.set(path, body, { metadata: { updatedAt } });

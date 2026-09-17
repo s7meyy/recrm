@@ -85,5 +85,30 @@ res = await call('DELETE', KEY);
 res.status === 200 ? ok('والحذف يعمل') : bad('الحذف', res.status);
 (await (await call('GET', KEY)).json()).found === false ? ok('ولا يبقى بعده شيء') : bad('بقي بعد الحذف');
 
+console.log('ح) الحقولُ محصورةٌ بأسمائها');
+/* رأسُ الملف يَعِد: «لا يُخزَّن إلا مشفَّرًا». وكان الحارس يشترط وجودَ
+   المشفَّر ولا يمنع ما جاوره، فتمرّ حمولةٌ فيها cipher ومعها مئتا كيلوبايت
+   نصًّا صريحًا — فالوعدُ كان أوسعَ من حارسه. */
+const put = (payload) => call('PUT', KEY, JSON.stringify(payload));
+
+{
+  const good = { v: 1, iter: 310000, salt: 's', iv: 'i', cipher: 'c' };
+  const r = await (await put(good)).json();
+  r.ok ? ok('الحمولة المشفَّرة تُقبَل') : bad('رُفضت السليمة', JSON.stringify(r));
+
+  const labelled = await (await put({ ...good, label: 'مكتب الرياض' })).json();
+  labelled.ok ? ok('ومعها عنوانُ صفحة الاستقبال') : bad('رُفض العنوان', JSON.stringify(labelled));
+
+  const smuggled = await (await put({ ...good, junk: 'ن'.repeat(2000) })).json();
+  smuggled.error && /غير مسموحة/.test(smuggled.error)
+    ? ok('ونصٌّ صريح يتسلّل بجوار المشفَّر: مرفوض') : bad('تسلّل نصٌّ صريح', JSON.stringify(smuggled));
+
+  const longLabel = await (await put({ ...good, label: 'x'.repeat(200) })).json();
+  longLabel.error ? ok('وعنوانٌ يجاوز ستّين حرفًا: مرفوض') : bad('عنوانٌ طويل مرّ');
+
+  const wrongType = await (await put({ ...good, cipher: { a: 1 } })).json();
+  wrongType.error ? ok('وحقلٌ ليس نصًّا: مرفوض') : bad('نوعٌ خاطئ مرّ');
+}
+
 console.log('\n' + (fails.length ? `فشل ${fails.length}:\n` + fails.map((f) => ' - ' + f).join('\n') : '✅ نجحت كل الاختبارات'));
 process.exit(fails.length ? 1 : 0);
