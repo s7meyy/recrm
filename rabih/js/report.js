@@ -458,7 +458,11 @@ code{background:#f3f5f8;padding:0 1mm;border-radius:3px;font-size:10pt}
 .bcard.gain{border-inline-start:3px solid #1e8449}
 .bcard.flat{border-inline-start:3px solid var(--line)}
 .brief-action.urgent{background:#fdf6f5;border-inline-start:3px solid #c0392b}
-.brief-action{margin:4mm 0 0;padding:4mm;border-radius:8px;background:#f3f6fa;font-size:11pt;line-height:1.8}
+.brief-action{margin:5mm 0 0;padding:5mm 6mm;border-radius:10px;background:#f3f6fa;
+  font-size:11pt;line-height:1.85;border-inline-start:4px solid var(--navy)}
+.brief-action>b{display:block;font-size:12pt;color:var(--navy);margin-bottom:2mm;letter-spacing:.01em}
+.brief-action>p{margin:0;font-size:12pt;line-height:1.9}
+.brief-action.urgent>b{color:#c0392b}
 .brief-note{margin:2mm 0 0;font-size:9pt;color:var(--muted)}
 /* الملحق: كيف بُني التقرير — يُؤخَّر ولا يُحذف، فالصدق يقتضي بقاءه. */
 .divider{display:flex;align-items:center;gap:4mm;margin:12mm 0 8mm;break-before:auto;break-inside:avoid}
