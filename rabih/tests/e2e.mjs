@@ -912,6 +912,44 @@ try {
      («صوت العميل» و«قائمة المتابعة» نحو ألف بكسل). وحاويةٌ بهذا الطول لا
      تُصان بل تُدفَع، فتترك ما قبلها فارغًا: خمسُ صفحاتٍ من اثنتين وعشرين. */
   /* إمكانيةُ الوصول في التقرير نفسه — لا في التطبيق وحده. */
+  /* **الأرشيفُ تحت حِمل.** يُقاس لا يُفترَض: زُرع أربعُمئة تقريرٍ بعشرة آلاف
+     تعليق، فالجداول مسقوفةٌ بأربعين صفًّا والفتحُ دون نصف ثانية. وحارسُه هنا
+     كي لا يسقط السقفُ صامتًا فيُرسَم آلافُ الصفوف في كل فتحة. */
+  console.log('٨-و) الأرشيف تحت حِمل');
+  const lp = await browser.newPage({ viewport: { width: 1200, height: 900 } });
+  await lp.goto('http://localhost:8099/', { waitUntil: 'networkidle' });
+  await lp.waitForTimeout(700);
+  await lp.click('#offer-close').catch(() => {});
+  const seedMs = await lp.evaluate(async () => {
+    const { saveJob } = await import('/js/store.js');
+    const { emptyPlace, emptyReview, assignReviewIds } = await import('/js/schema.js');
+    const t = performance.now();
+    for (let i = 0; i < 400; i += 1) {
+      const pl = emptyPlace();
+      pl.identity.name = 'منشأة ' + i;
+      pl.ratings = { average: 3.5 + (i % 15) / 10, count: 100 + i, distribution: null };
+      pl.reviews = [...Array(25)].map((_, k) => ({ ...emptyReview(),
+        rating: 1 + (k % 5), text: 'تعليق ' + k + ' عن الانتظار والخدمة والقهوة', date: 'قبل شهر' }));
+      assignReviewIds(pl);
+      // eslint-disable-next-line no-await-in-loop
+      await saveJob({ id: 'load-' + i, createdAt: new Date(Date.now() - i * 86400000).toISOString(),
+        place: pl, ctx: { cityName: 'الرياض', categoryName: 'مقهى', districtName: 'حي ' + (i % 20) },
+        out: {}, plan: [], assume: {}, stamps: {}, excluded: [] });
+    }
+    return Math.round(performance.now() - t);
+  });
+  const openT = Date.now();
+  await lp.click('[data-go="archive"]');
+  await lp.waitForFunction(() => {
+    const v = document.querySelector('#view-archive');
+    return v && !v.hidden && v.querySelectorAll('tr,li,.chip').length > 5;
+  }, null, { timeout: 30000 }).catch(() => {});
+  const openMs = Date.now() - openT;
+  const rows = await lp.evaluate(() => document.querySelectorAll('#view-archive tr').length);
+  openMs < 4000 ? ok(`400 تقريرٍ (10,000 تعليق): يُزرَع في ${seedMs}ms ويُفتَح في ${openMs}ms`) : bad('أرشيفٌ بطيء', openMs + 'ms');
+  rows > 0 && rows < 300 ? ok(`والجداول مسقوفة (${rows} صفًّا) — فلا تُرسَم أربعُمئة`) : bad('سقفُ الصفوف سقط', rows);
+  await lp.close();
+
   console.log('٩-أ) التقرير لقارئ الشاشة');
   const ap = await browser.newPage();
   await ap.setContent(rep);
