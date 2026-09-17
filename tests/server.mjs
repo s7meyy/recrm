@@ -37,6 +37,7 @@ const integrationsFn = (await import(`${ROOT}/netlify/functions/integrations.js`
 const meFn = (await import(`${ROOT}/netlify/functions/me.js`)).default;
 const fetchMediaFn = (await import(`${ROOT}/netlify/functions/fetch-media.js`)).default;
 const whatsappFn = (await import(`${ROOT}/netlify/functions/whatsapp.js`)).default;
+const telegramFn = (await import(`${ROOT}/netlify/functions/telegram.js`)).default;
 const gateFn = (await import(`${ROOT}/netlify/edge-functions/gate.js`)).default;
 const { config: gateConfig } = await import(`${ROOT}/netlify/edge-functions/gate.js`);
 
@@ -71,6 +72,7 @@ const server = http.createServer(async (req, res) => {
     else if (url.pathname === '/api/me') response = await meFn(request);
     else if (url.pathname === '/api/fetch-media') response = await fetchMediaFn(request);
     else if (url.pathname === '/api/whatsapp') response = await whatsappFn(request);
+    else if (url.pathname === '/api/telegram') response = await telegramFn(request);
     else if (url.pathname === '/api/publish') response = await publishFn(request);
     else if (url.pathname === '/api/listings') response = await listingsFn(request);
     else if (url.pathname === '/api/media') response = await mediaFn(request);
