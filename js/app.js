@@ -34,6 +34,7 @@ import * as calendarPage from './pages/calendar.js';
 import * as invoicesPage from './pages/invoices.js';
 import * as expensesPage from './pages/expenses.js';
 import * as dealsPage from './pages/deals.js';
+import * as inboxPage from './pages/inbox.js';
 import * as marketPage from './pages/market.js';
 import * as trashPage from './pages/trash.js';
 import * as publishPage from './pages/publish.js';
@@ -72,6 +73,7 @@ const ROUTES = {
   invoices: { title: 'الفواتير وعروض الأسعار', render: invoicesPage.render },
   expenses: { title: 'المالية', render: expensesPage.render },
   deals: { title: 'الصفقات', render: dealsPage.render },
+  inbox: { title: 'الوارد', render: inboxPage.render },
   market: { title: 'السوق', render: marketPage.render },
   trash: { title: 'سلة المحذوفات', render: trashPage.render },
   publish: { title: 'الصفحة العامة للعروض', render: publishPage.render },

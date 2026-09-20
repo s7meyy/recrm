@@ -14,6 +14,8 @@ process.env.PUBLISH_TOKEN = 'test-publish-token';
 process.env.META_VERIFY_TOKEN = 'test-verify-token';
 process.env.META_APP_SECRET = 'test-app-secret';
 process.env.WHATSAPP_VERIFY_TOKEN = 'wa-verify-token';
+// تيليجرام (المرحلة ٥١): سرُّ الوِبهوك وحده — والمحادثةُ تربط نفسَها بأوّل رسالة.
+process.env.TELEGRAM_SECRET = 'test-tg-secret';
 process.env.WHATSAPP_APP_SECRET = 'wa-app-secret';
 process.env.APP_PASSWORD = process.env.TEST_OPEN ? '' : 'secret-pass';
 process.env.APP_SECRET = 'topsecret';

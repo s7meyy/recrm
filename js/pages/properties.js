@@ -86,6 +86,17 @@ export async function render(container) {
     await openForm(ctx, null);
     return;
   }
+  /* **قادمٌ من «الوارد»** (المرحلة ٥١): رسالةٌ حوّلتَها في تيليجرام فُرزت عرضًا، فتُفتح
+     هنا نافذةُ اللصق **ونصُّها فيها** — بالمسار نفسِه الذي يفتحه زرّ «لصق عرض عميل»،
+     فلا محلّلَ ثانٍ يُصان ولا شاشةَ اعتمادٍ موازية. والاعتمادُ ضغطتُك كما كان. */
+  if (/[?&]new=paste/.test(location.hash || '')) {
+    history.replaceState(null, '', '#/properties');
+    let seed = '';
+    try { seed = sessionStorage.getItem('kassab:quick-offer') || ''; } catch (_) { seed = ''; }
+    try { sessionStorage.removeItem('kassab:quick-offer'); } catch (_) { /* تصفح خاص */ }
+    await openOfferPasteForm(ctx, seed);
+    return;
+  }
   const focusId = routePropertyId();
   if (focusId) {
     const target = ctx.properties.find((p) => p.id === focusId);
@@ -918,9 +929,10 @@ async function openShareMenu(ctx, p) {
  *
  * والقراءة **اقتراحٌ لا حكم**: كل حقل يبقى قابلًا للتعديل، ولا يُحفظ شيء إلا بضغطك.
  */
-async function openOfferPasteForm(ctx) {
+async function openOfferPasteForm(ctx, seed = '') {
   const textarea = el('textarea', {
     class: 'input', rows: 6,
+    value: seed,
     placeholder: 'الصق رسالة المالك هنا…\nمثال: السلام عليكم، انا سعد التميمي، عندي فلة في النرجس للبيع، المساحة ٤٥٠ متر والسعر مليونين ونص، جوالي ٠٥٥١٢٣٤٥٦٧',
   });
   // تُقرأ فور اللصق (المرحلة ٤٢) — كما في «لصق رسالة عميل»، والزرّ باقٍ لمن عدّل بيده.
@@ -1037,6 +1049,10 @@ async function openOfferPasteForm(ctx) {
     ],
   });
   setTimeout(() => textarea.focus(), 0);
+  // **والمبذورُ يُقرأ فور فتحه**: نصٌّ وُضع في الصندوق ولم يُقرأ يجعلك تظنّ المحلّل عاجزًا.
+  // ويُنادى بعد بناء الأزرار لأنّ القارئ يلمسها — ونداؤه قبلها يرمي.
+  if (seed.trim()) readIt();
+
 }
 
 /**

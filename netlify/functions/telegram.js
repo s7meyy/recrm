@@ -51,6 +51,13 @@ function safeEqual(a, b) {
 const REPLY_ERR = 'tg/_reply-error';
 /** صاحبُ البوت — يُربط بأوّل رسالة، ويُفصل من صفحة «الوارد». */
 const OWNER_KEY = 'tg/_owner';
+/**
+ * **ومفاتيحُ النظام تُقصى من السرد والحذف** — وهذا عطبٌ كشفه الاختبار قبل أن يصيبك:
+ * `_owner` و`_reply-error` تحت البادئة نفسِها، فكانت تُسرد بطاقاتٍ فارغةً في صندوقك،
+ * **وحذفُ إحداها يحذف الربطَ نفسَه** فيصير البوتُ حرًّا لأوّل غريب. فصارت تُعرف
+ * بشرطةٍ سفليّةٍ بعد البادئة، وتُصان من الطرفين.
+ */
+const isSystemKey = (k) => String(k).startsWith(`${PREFIX}_`);
 
 /**
  * يردّ على المحادثة نفسِها — **وهو الطريقُ الوحيدُ لتعرف معرّفك**.
@@ -172,7 +179,7 @@ export default async (request) => {
     const fp = fingerprintText(up.text);
     const verdict = sortIncoming(up.text);
     const key = `${PREFIX}${up.at}-${fp}`;
-    const already = (await store.list({ prefix: PREFIX })).blobs.some((b) => b.key.endsWith(`-${fp}`));
+    const already = (await store.list({ prefix: PREFIX })).blobs.some((b) => !isSystemKey(b.key) && b.key.endsWith(`-${fp}`));
 
     if (!already) {
       await store.setJSON(key, {
@@ -201,7 +208,7 @@ export default async (request) => {
     if (!(await signedIn(request))) return unauthorized();
     const { blobs } = await store.list({ prefix: PREFIX });
     const rows = [];
-    for (const blob of blobs.slice(-MAX_KEEP)) {
+    for (const blob of blobs.filter((x) => !isSystemKey(x.key)).slice(-MAX_KEEP)) {
       const rec = await store.get(blob.key, { type: 'json' });
       if (rec) rows.push({ ...rec, key: blob.key });
     }
@@ -226,7 +233,7 @@ export default async (request) => {
     // **فصلُ الربط**: يُعيد البوتَ حرًّا فيرتبط بأوّل من يراسله بعدها.
     if (body?.unbind) { await store.delete(OWNER_KEY); return json({ ok: true, unbound: true }); }
     const k = String(body?.key || '');
-    if (k.startsWith(PREFIX) && /^[\w\-.:/]+$/.test(k)) await store.delete(k);
+    if (k.startsWith(PREFIX) && !isSystemKey(k) && /^[\w\-.:/]+$/.test(k)) await store.delete(k);
     return json({ ok: true });
   }
 

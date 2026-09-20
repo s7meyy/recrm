@@ -57,6 +57,7 @@ const SUITES = [
   ['financing-unit.mjs', null],      // المرحلة ٤٩
   ['campaign-alerts-unit.mjs', null],
   ['market-wa-unit.mjs', null],      // المرحلة ٥٠
+  ['lead-sort-unit.mjs', null],      // المرحلة ٥١
   ['offer-paste-unit.mjs', null],
   ['rega-unit.mjs', null],
   ['task-intake-unit.mjs', null],
@@ -97,7 +98,8 @@ const SUITES = [
   ['management.mjs', OPEN],
   ['five-eyes.mjs', OPEN],
   ['finance-flow.mjs', OPEN],        // المرحلة ٤٩
-  ['market-page.mjs', OPEN],         // المرحلة ٥٠
+  ['market-page.mjs', OPEN],
+  ['inbox-page.mjs', OPEN],          // المرحلة ٥١
   ['offer-paste.mjs', OPEN],
   ['tasks-table.mjs', OPEN],
   ['extract.mjs', OPEN],

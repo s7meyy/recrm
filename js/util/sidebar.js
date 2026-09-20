@@ -17,6 +17,7 @@ export const SIDEBAR_PAGES = [
   { key: 'matches', label: 'المطابقات', icon: '🔗' , group: 'work' },
   { key: 'external', label: 'العروض الخارجية', icon: '🌐' , group: 'work' },
   { key: 'pricing', label: 'تقدير السعر', icon: '⚖️' , group: 'work' },
+  { key: 'inbox', label: 'الوارد', icon: '📥', group: 'work' },
   { key: 'market', label: 'السوق', icon: '📈' , group: 'work' },
   { key: 'management', label: 'إدارة الأملاك', icon: '🔑' , group: 'duty' },
   { key: 'rega', label: 'العقود والتراخيص', icon: '📜' , group: 'duty' },
