@@ -39,19 +39,25 @@ const walk = (dir) => {
   }
 };
 walk(new URL('../js', import.meta.url).pathname.replace(/\/$/, ''));
+/* **والصفحةُ العامّة تُفحص أيضًا** (المرحلة ٥٢): كان الحارسُ يفحص `js/` وحدها،
+   **فالصفحةُ الوحيدة التي يقرؤها الغريبُ هي الوحيدة بلا حارس** — وخرج فيها
+   «6 غرفة» و«2 أدوار» و«1 شوارع» إلى عملاء المكتب. */
+walk(new URL('../offers', import.meta.url).pathname.replace(/\/$/, ''));
 const NUM = /\$\{(?:formatNumber\([^}]*?\)|[A-Za-z_$][\w$.[\]]*(?:\.length)?)\}\s+([؀-ۿ]{2,14})/g;
 const SAFE = new Set(['ريال', 'من', 'هـ', 'م', '٪', 'بـ', 'في', 'و', 'أو', 'إلى', 'متر', 'بياناتك', 'غير', 'جاهزة', 'انتهت', 'بنحو', 'جديد', 'أخرى', 'بلا', 'آخر', 'منها', 'بانتظار', 'مختار', 'مسمّى']);
 const NOUN_SURFACE = new Set(Object.keys(NOUNS).flatMap((k) => k.split(' ')));
 const bad = [];
 for (const f of files) {
-  if (f.endsWith('util/format.js')) continue;
+  // ملفّا المعجم نفسُهما يحملان الصيغَ الأربع، فلا يُتَّهمان بما هما علاجُه.
+  if (f.endsWith('util/format.js') || f.endsWith('offers/i18n.js')) continue;
   const lines = readFileSync(f, 'utf8').split('\n');
   lines.forEach((line, i) => {
-    if (line.includes('countOf') || line.includes('countWord')) return;
+    // `countAr` معجمُ الصفحة العامّة — سطرٌ يستعمله عالَجَ جمعَه فلا يُتَّهم.
+    if (line.includes('countOf') || line.includes('countWord') || line.includes('countAr')) return;
     for (const m of line.matchAll(NUM)) {
       const w = m[1].replace(/[،.]$/, '');
       if (SAFE.has(w) || !NOUN_SURFACE.has(w)) continue;
-      bad.push(`${f.split('/js/')[1]}:${i + 1} «${w}»`);
+      bad.push(`${f.split(/\/(?:js|offers)\//)[1]}:${i + 1} «${w}»`);
     }
   });
 }

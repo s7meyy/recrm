@@ -1,3 +1,4 @@
+import { countAr } from './i18n.js';
 // صفحة حجز الموعد (المرحلة ٢٩).
 //
 // **لا تحسب الصفحة وقتًا ولا تتحقّق من شيء:** الخادم يعطيها الأوقات، وهي تعرضها،
@@ -51,9 +52,12 @@ function draw(data) {
     statusEl.textContent = 'لا أوقات متاحة حاليًا. حاول لاحقًا أو تواصل مع المكتب.';
     return;
   }
+  /* **ومدّةُ الموعد تُجمع** (المرحلة ٥٢): «٣٠ دقيقة» صوابٌ و«٣ دقيقة» لحن،
+     وأمسكه الحارسُ حين امتدّ إلى `offers/`. وبالمعجم نفسِه لا بترقيعٍ محليّ. */
+  const minWord = countAr(data.slotMinutes, ['دقيقة واحدة', 'دقيقتان', 'دقائق', 'دقيقة'], data.slotMinutes);
   statusEl.textContent = data.place
-    ? `مدّة الموعد ${data.slotMinutes} دقيقة · المكان: ${data.place}`
-    : `مدّة الموعد ${data.slotMinutes} دقيقة`;
+    ? `مدّة الموعد ${minWord} · المكان: ${data.place}`
+    : `مدّة الموعد ${minWord}`;
 
   // تجميع بالأيام: العميل يفكّر بيومٍ أولًا ثم بساعة.
   const byDay = new Map();

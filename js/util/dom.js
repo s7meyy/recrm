@@ -339,6 +339,31 @@ export function toast(message, kind = 'info', ms = 3500) {
 
 
 /**
+ * **الجلسةُ المنتهية: صيغةٌ واحدةٌ وزرٌّ يفعلها** (المرحلة ٥٢).
+ *
+ * كانت تُقال بثلاث صيغ في صفحةٍ واحدة — «انتهت جلستك — حدّث الصفحة وسجّل الدخول»
+ * مرّتين، و«يلزم تسجيل الدخول» مرّة — **فيظنّها القارئ ثلاثَ مشكلات**. وكلُّها
+ * علاجُها واحد: تحديثُ الصفحة. فصار نصًّا واحدًا يحمل زرَّه.
+ */
+export const SESSION_GONE = 'انتهت جلستك. حدّث الصفحة وسجّل الدخول، ثم أعد المحاولة.';
+
+/** أهذا خطأُ جلسةٍ منتهية؟ — يُعرف من نصّه أيًّا كانت صيغتُه القديمة. */
+export function isSessionGone(err) {
+  const t = String(err?.message || err || '');
+  return t.includes('انتهت جلستك') || t.includes('يلزم تسجيل الدخول') || t.includes('401');
+}
+
+/** سطرُ الجلسة المنتهية بزرّ التحديث — يُستعمل حيث كان النصُّ وحده. */
+export function sessionGoneNote() {
+  return el('p', { class: 'muted small' },
+    `${SESSION_GONE} `,
+    el('button', {
+      type: 'button', class: 'btn btn-ghost btn-sm', text: 'حدّث الآن',
+      onClick: () => location.reload(),
+    }));
+}
+
+/**
  * رقاقة «الكل» في رأس صفّ فلاتر (المرحلة ٣٨).
  *
  * ضغطةٌ تحدّد كل خيارات المجموعة، وأخرى تمحو التحديد كلّه. وفائدتها ليست تغيير النتيجة
@@ -353,6 +378,9 @@ export function toast(message, kind = 'info', ms = 3500) {
 export function allChip(set, values, onChange) {
   const total = values.length;
   const allOn = total > 0 && values.every((v) => set.has(v));
+  /* **وبلا رقم** (المرحلة ٥٢): كلُّ رقاقةٍ في الصفّ تحمل عددَ سجلّاتها («فلة ٥» =
+     خمسُ فلل)، إلا هذه فكانت تحمل عددَ **الخيارات**. والعينُ لا تفرّق، فتقرأ
+     «الكل ١٠» في صفحةٍ عنوانُها «(١٥)» فتحتار. ووظيفتُها ضغطةٌ تحدّد وتمحو، لا عدّ. */
   return el('button', {
     type: 'button',
     class: `chip chip-all${allOn ? ' active' : ''}`,
@@ -362,5 +390,5 @@ export function allChip(set, values, onChange) {
       else for (const v of values) set.add(v);
       onChange();
     },
-  }, allOn ? 'امحُ الكل' : 'الكل', el('span', { class: 'chip-count', text: String(total) }));
+  }, allOn ? 'امحُ الكل' : 'الكل');
 }

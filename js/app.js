@@ -296,10 +296,20 @@ async function exportNow() {
   }
 }
 
+/** مفتاحُ تأجيل شريط النسخة — يومٌ واحدٌ في تخزين هذا الجهاز. */
+const BANNER_SNOOZE = 'kassab:backup-snoozed';
+
 async function refreshBanner() {
   const banner = document.getElementById('backup-banner');
   if (!banner) return;
   if (bannerDismissed) { banner.hidden = true; return; }
+  // ويُقرأ التأجيلُ المحفوظ: يومٌ واحد، ثم يعود الحارسُ يذكّر.
+  try {
+    if (localStorage.getItem(BANNER_SNOOZE) === new Date().toISOString().slice(0, 10)) {
+      banner.hidden = true;
+      return;
+    }
+  } catch (_) { /* تصفح خاص: يُعرض الشريط، وهو الأسلم */ }
   let status;
   try {
     status = await backupStatus();
@@ -314,7 +324,16 @@ async function refreshBanner() {
     el('span', {}, `${since} بياناتك محفوظة في هذا المتصفح فقط — صدّر نسخة يوميًا.`),
     el('div', { class: 'banner-actions' },
       el('button', { type: 'button', class: 'btn btn-primary btn-sm', text: 'تصدير الآن', onClick: exportNow }),
-      el('button', { type: 'button', class: 'btn btn-ghost btn-sm', text: 'لاحقًا', onClick: () => { bannerDismissed = true; banner.hidden = true; } }))));
+      el('button', {
+        type: 'button', class: 'btn btn-ghost btn-sm', text: 'لاحقًا',
+        /* **و«لاحقًا» تعني اليومَ كلَّه** (المرحلة ٥٢): كانت تُخفيه في الذاكرة وحدها،
+           فيعود مع كلّ تحديثٍ للصفحة — تذكيرٌ يتكرّر يُتجاهَل، ثم يُتجاهَل حين يلزم. */
+        onClick: () => {
+          bannerDismissed = true;
+          banner.hidden = true;
+          try { localStorage.setItem(BANNER_SNOOZE, new Date().toISOString().slice(0, 10)); } catch (_) { /* تصفح خاص */ }
+        },
+      }))));
   banner.hidden = false;
 }
 

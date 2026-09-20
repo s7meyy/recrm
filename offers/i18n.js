@@ -17,6 +17,23 @@ const PURPOSES = {
   sale: 'For Sale', rent: 'For Rent', investment: 'Investment',
 };
 
+/**
+ * **جمعُ العربيّة على قاعدتها** — نسخةٌ صغيرةٌ محليّة (المرحلة ٥٢).
+ *
+ * والصفحةُ العامّة مستقلّةٌ عن `js/` عمدًا: تُخدَم لغريبٍ لا يحمّل وحداتِ التطبيق.
+ * فتُكتب هنا في ستّة أسطرٍ بدل استيراد وحدةٍ كاملة.
+ *
+ * `withNum` تُلحق العددَ حين يلزم: العربيّةُ تُفرد الواحدَ والاثنين بصيغتهما بلا عدد
+ * («غرفة» لا «١ غرفة»)، وتُظهره فيما فوق.
+ */
+export function countAr(n, [one, two, few, many], shown = null) {
+  const x = Math.abs(Math.round(Number(n) || 0));
+  if (x === 1) return one;
+  if (x === 2) return two;
+  const word = (x % 100 >= 3 && x % 100 <= 10) ? few : many;
+  return shown == null ? word : `${shown} ${word}`;
+}
+
 export const STRINGS = {
   ar: {
     dir: 'rtl', lang: 'ar', other: 'English', title: 'العروض المتاحة',
@@ -29,11 +46,19 @@ export const STRINGS = {
     ref: 'رقم',
     // حقائقُ النوع (المرحلة ٤٨) — تُترجَم هنا لأنّ الصفحة تُعرض بلغتين.
     facts: {
-      rooms: 'غرفة', baths: 'دورة مياه', floor: 'الدور', floorsCount: 'أدوار',
+      // **المعدوداتُ دوالُّ لا نصوص** (المرحلة ٥٢): كان يخرج «6 غرفة» و«2 أدوار»
+      // و«1 شوارع» — لحنٌ يقرؤه الغريبُ في أوّل ما يرى من مكتبك.
+      rooms: (n, shown) => countAr(n, ['غرفة', 'غرفتان', 'غرف', 'غرفة'], shown),
+      baths: (n, shown) => countAr(n, ['دورة مياه', 'دورتا مياه', 'دورات مياه', 'دورة مياه'], shown),
+      floor: 'الدور',
+      floorsCount: (n, shown) => countAr(n, ['دور واحد', 'دوران', 'أدوار', 'دورًا'], shown),
       buildingAge: 'عمر البناء', buildingCondition: 'الحالة',
-      plotDimensions: 'الأطوال', streetWidth: 'عرض الشارع', streetsCount: 'شوارع', facades: 'الواجهات',
+      plotDimensions: 'الأطوال', streetWidth: 'عرض الشارع',
+      streetsCount: (n, shown) => countAr(n, ['شارع واحد', 'شارعان', 'شوارع', 'شارعًا'], shown),
+      facades: 'الواجهات',
     },
-    factUnits: { buildingAge: 'سنة', streetWidth: 'م' },
+    // **والوحدةُ تُجمع أيضًا**: «عمر البناء: 3 سنة» لحنٌ كالأوّل.
+    factUnits: { buildingAge: (n) => countAr(n, ['سنة', 'سنتان', 'سنوات', 'سنة']), streetWidth: 'م' },
     listedNew: 'مُدرَجٌ حديثًا',
     listedMonths: (n) => (n === 1 ? 'مُدرَجٌ منذ شهر' : n === 2 ? 'مُدرَجٌ منذ شهرين' : n <= 10 ? `مُدرَجٌ منذ ${n} أشهر` : `مُدرَجٌ منذ ${n} شهرًا`),
     listedYears: (n) => (n === 1 ? 'مُدرَجٌ منذ سنة' : n === 2 ? 'مُدرَجٌ منذ سنتين' : `مُدرَجٌ منذ ${n} سنوات`),
@@ -51,11 +76,17 @@ export const STRINGS = {
     disclaimer: 'Prices and details are subject to change — please contact us to confirm.',
     ref: 'Ref',
     facts: {
-      rooms: 'rooms', baths: 'baths', floor: 'Floor', floorsCount: 'floors',
+      // والإنجليزيّةُ مفردٌ وجمعٌ لا أكثر — فـ«1 rooms» لحنٌ عندها كذلك.
+      rooms: (n, shown) => `${shown} ${n === 1 ? 'room' : 'rooms'}`,
+      baths: (n, shown) => `${shown} ${n === 1 ? 'bath' : 'baths'}`,
+      floor: 'Floor',
+      floorsCount: (n, shown) => `${shown} ${n === 1 ? 'floor' : 'floors'}`,
       buildingAge: 'Age', buildingCondition: 'Condition',
-      plotDimensions: 'Dimensions', streetWidth: 'Street width', streetsCount: 'streets', facades: 'Facades',
+      plotDimensions: 'Dimensions', streetWidth: 'Street width',
+      streetsCount: (n, shown) => `${shown} ${n === 1 ? 'street' : 'streets'}`,
+      facades: 'Facades',
     },
-    factUnits: { buildingAge: 'yrs', streetWidth: 'm' },
+    factUnits: { buildingAge: (n) => (n === 1 ? 'yr' : 'yrs'), streetWidth: 'm' },
     listedNew: 'Newly listed',
     listedMonths: (n) => `Listed ${n} month${n === 1 ? '' : 's'} ago`,
     listedYears: (n) => `Listed ${n} year${n === 1 ? '' : 's'} ago`,
@@ -111,11 +142,17 @@ export function listingTitle(listing, lang) {
 const COUNTED = new Set(['rooms', 'baths', 'floorsCount', 'streetsCount']);
 
 export function factLabel(key, value, strings, nf) {
-  const name = strings.facts?.[key];
-  if (!name) return null;
-  const unit = strings.factUnits?.[key];
+  const raw = strings.facts?.[key];
+  if (!raw) return null;
+  const num = Number(value);
+  /* **والاسمُ قد يكون دالّةً تعرف عددَها** (المرحلة ٥٢) — فتُجمع على قاعدة العربيّة. */
+  const rawUnit = strings.factUnits?.[key];
+  const unit = typeof rawUnit === 'function' ? rawUnit(num) : rawUnit;
   const shown = typeof value === 'number' ? nf.format(value) : String(value);
-  if (COUNTED.has(key)) return `${shown} ${name}`;
+  /* **والدالّةُ تُنتج العبارةَ كاملةً** — فالعربيّةُ تُفرد «غرفتان» بلا عدد،
+     والإنجليزيّةُ تُقدّم العددَ دائمًا. وكلُّ لغةٍ تملك ترتيبَها ولا تُفرض عليها. */
+  const name = typeof raw === 'function' ? raw(num, shown) : raw;
+  if (COUNTED.has(key)) return typeof raw === 'function' ? name : `${shown} ${name}`;
   return `${name}: ${shown}${unit ? ` ${unit}` : ''}`;
 }
 

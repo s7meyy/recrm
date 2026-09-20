@@ -336,18 +336,22 @@ function renderList(ctx) {
   const { visible, more } = capped(items, ctx.shown || PAGE_SIZE);
 
   const showAssign = activeMembers(ctx.team).length > 1;
-  const cols = ['الأولوية', 'الاسم', 'الجوال', 'الأدوار', 'المرحلة', 'التصنيفات'];
+  /* **وعمودٌ كلُّه شرطاتٌ لا يُعرض** (المرحلة ٥٢): «التصنيفات» كان يأخذ عُشرَ الجدول
+     وهو فارغٌ في العشرة كلِّهم، ويُضيّق على الاسم والجوال في الجوّال. */
+  const showTags = visible.some((c) => (c.tags || []).length);
+  const cols = ['الأولوية', 'الاسم', 'الجوال', 'الأدوار', 'المرحلة'];
+  if (showTags) cols.push('التصنيفات');
   if (showAssign) cols.push('المسند إليه');
   cols.push('آخر تواصل', 'المتابعة القادمة');
   const head = el('tr', {}, cols.map((t) => el('th', { text: t })));
   const body = el('tbody', {}, visible.map((c) => el('tr', { class: `row-priority-${clientPriority(c)}`, onClick: () => openDetail(ctx, c.id) },
     el('td', {}, scoreBadge(ctx, c)),
-    el('td', { class: 'strong' }, c.name || el('span', { class: 'muted', text: 'بلا اسم' }), sourceBadge(c.referralSource),
+    el('td', { class: 'strong nowrap' }, c.name || el('span', { class: 'muted', text: 'بلا اسم' }), sourceBadge(c.referralSource),
       isArchived(c) ? badge('مؤرشف', '') : null),
-    el('td', {}, phoneLink(c.phone)),
+    el('td', { class: 'phone' }, phoneLink(c.phone)),
     el('td', {}, (c.roles || []).map((r) => labelFor(ENUMS.clientRoles, r)).join('، ') || '—'),
     el('td', {}, stageBadge(c.stage)),
-    el('td', {}, (c.tags || []).length ? c.tags.map((t) => badge(t, clientTagClass(t))) : '—'),
+    showTags ? el('td', {}, (c.tags || []).length ? c.tags.map((t) => badge(t, clientTagClass(t))) : '—') : null,
     showAssign ? el('td', { text: c.assignedTo ? memberName(ctx.team, c.assignedTo, { me: ctx.meId }) : '—' }) : null,
     el('td', {}, lastContactNode(c)),
     el('td', {}, followUpNode(c)))));
@@ -362,12 +366,26 @@ function renderList(ctx) {
 }
 
 /** شارة الدرجة مع سببها في التلميح — درجةٌ لا تُشرح لا تُصحَّح. */
+/**
+ * **إشاراتٌ يحملها كلُّ عميلٍ تقريبًا فلا تُرتّب أحدًا** (المرحلة ٥٢).
+ *
+ * «بياناته مكتملة» و«له طلب نشط» صحيحتان، لكنّهما في كلّ سجلٍّ سويّ — ومجموعُهما ٢٥،
+ * **فيظهر عمودُ الأولويّة كلُّه ٢٥** ويوهم بحكمٍ وهو لا يقول شيئًا.
+ */
+const ROUTINE_SIGNALS = new Set(['complete', 'activeRequest']);
+
 function scoreBadge(ctx, client) {
   const result = ctx.scores?.get(client.id);
   if (!result) return el('span', { class: 'muted', text: '—' });
-  const tone = result.score >= 60 ? 'badge-ok' : result.score >= 30 ? 'badge-warn' : 'badge-outline';
   const why = result.reasons.map((r) => `${r.weight > 0 ? '+' : ''}${r.weight} ${r.label}`).join('\n');
-  return badge(String(result.score), tone, { title: why || 'لا إشارات بعد' });
+  /* **وما لا يميّز لا يُلوَّن**: من لم تُميّزه إشارةٌ يظهر شرطةً هادئةً وسببُها في
+     تلميحها — فتقع عينُك على من له إشارةٌ فعلًا، وهو المقصود من العمود. */
+  const distinguishing = result.reasons.some((r) => !ROUTINE_SIGNALS.has(r.key));
+  if (!distinguishing) {
+    return el('span', { class: 'muted', text: '—', title: why ? `${why}\n(لا إشارة تميّزه بعد)` : 'لا إشارات بعد' });
+  }
+  const tone = result.score >= 60 ? 'badge-ok' : result.score >= 30 ? 'badge-warn' : 'badge-outline';
+  return badge(String(result.score), tone, { title: why });
 }
 
 /* ===== تفاصيل العميل وسجل التواصل ===== */

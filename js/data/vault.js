@@ -1,3 +1,4 @@
+import { SESSION_GONE } from '../util/dom.js';
 // النسخة الاحتياطية السحابية المشفَّرة (المرحلة ١٠) — التشفير كله في المتصفح.
 //
 // **الخادم لا يرى بياناتك أبدًا:** تُشتقّ مفتاحية AES-GCM من عبارتك السرّية عبر PBKDF2
@@ -96,7 +97,7 @@ export async function decryptText(envelope, passphrase) {
 async function call(path, options = {}) {
   const res = await fetch(`${ENDPOINT}${path}`, { credentials: 'same-origin', ...options });
   const data = await res.json().catch(() => ({}));
-  if (res.status === 401) throw new Error('انتهت جلستك — حدّث الصفحة وسجّل الدخول ثم أعد المحاولة');
+  if (res.status === 401) throw new Error(SESSION_GONE);
   if (!res.ok) throw new Error(data.error || `تعذر الاتصال بالخزنة (${res.status})`);
   return data;
 }

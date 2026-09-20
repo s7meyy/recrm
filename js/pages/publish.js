@@ -11,7 +11,7 @@
 import { repo } from '../data/repository.js';
 import { ENUMS, labelFor } from '../data/schema.js';
 import { getLists, typeLabel, statusLabel, getCompany, getPublishSettings, setPublishSettings } from '../data/settings.js';
-import { el, clear, labeled, selectEl, checkbox, badge, toast, emptyState, confirmDialog, choiceDialog, debounce, openModal } from '../util/dom.js';
+import { el, clear, labeled, selectEl, checkbox, badge, toast, emptyState, confirmDialog, choiceDialog, debounce, openModal, SESSION_GONE, isSessionGone, sessionGoneNote } from '../util/dom.js';
 import { formatSAR, formatArea, formatDate, formatDateTime, formatNumber, countOf, daysWord } from '../util/format.js';
 import { adBlockers, adDisclosure, expiringSoon } from '../util/rega.js';
 import { publishDrift, publishFingerprint, busyTimes } from '../util/publish-drift.js';
@@ -419,7 +419,9 @@ function toPublicListing(ctx, property, index) {
     district: property.district || '',
     area: property.area ?? null,
     price: ctx.publish.showPrice !== false ? (property.price ?? null) : null,
-    notes: property.notes || '',
+    // **الوصفُ التسويقيُّ وحدَه يخرج** (المرحلة ٥٢) — لا «الملاحظات» التي هي حقلُك
+    // الداخليّ. وكان يخرج فيُقرأ للعميل ما كتبتَه عن مالكه.
+    notes: property.publicDesc || '',
     // حقائقُ النوع (المرحلة ٤٨): الغرفُ ودوراتُ المياه والدورُ وعمرُ البناء — بالمفاتيح
     // لا بالعناوين، فالصفحةُ تُعرض بلغتين. وما لم يُملأ لا يخرج.
     facts: publicFacts(property),
@@ -575,7 +577,7 @@ const LEAD_API = '/api/lead';
 async function leadCall(options = {}) {
   const res = await fetch(LEAD_API, { credentials: 'same-origin', ...options });
   const data = await res.json().catch(() => ({}));
-  if (res.status === 401) throw new Error('انتهت جلستك — حدّث الصفحة وسجّل الدخول ثم أعد المحاولة');
+  if (res.status === 401) throw new Error(SESSION_GONE);
   if (!res.ok) throw new Error(data.error || `تعذر الاتصال (${res.status})`);
   return data;
 }
@@ -589,7 +591,9 @@ async function drawLeads(ctx) {
     ({ leads = [] } = await leadCall());
   } catch (err) {
     clear(body);
-    body.append(el('p', { class: 'muted small', text: `تعذّر جلب الطلبات: ${err.message}` }));
+    body.append(isSessionGone(err)
+      ? sessionGoneNote()
+      : el('p', { class: 'muted small', text: `تعذّر جلب الطلبات: ${err.message}` }));
     return;
   }
   clear(body);
@@ -723,7 +727,7 @@ const CLIENT_LIST_API = '/api/client-list';
 async function clientListCall(options = {}) {
   const res = await fetch(CLIENT_LIST_API, { credentials: 'same-origin', ...options });
   const data = await res.json().catch(() => ({}));
-  if (res.status === 401) throw new Error('انتهت جلستك — حدّث الصفحة وسجّل الدخول ثم أعد المحاولة');
+  if (res.status === 401) throw new Error(SESSION_GONE);
   if (!res.ok) throw new Error(data.error || `تعذر الاتصال (${res.status})`);
   return data;
 }
@@ -739,7 +743,9 @@ async function drawClientLists(ctx) {
     try {
       lists = (await clientListCall()).lists || [];
     } catch (err) {
-      listBox.append(el('p', { class: 'muted small', text: `تعذر قراءة القوائم: ${err.message}` }));
+      listBox.append(isSessionGone(err)
+      ? sessionGoneNote()
+      : el('p', { class: 'muted small', text: `تعذّر جلب القوائم: ${err.message}` }));
       return;
     }
     if (!lists.length) { listBox.append(el('p', { class: 'muted small', text: 'لا قوائم مخصّصة بعد.' })); return; }
@@ -939,7 +945,9 @@ async function drawBookings(ctx) {
     ({ bookings = [] } = await bookCall({ method: 'GET', headers: { accept: 'application/json' } }, '?admin=1'));
   } catch (err) {
     clear(body);
-    body.append(el('p', { class: 'muted small', text: `تعذّر جلب المواعيد: ${err.message}` }));
+    body.append(isSessionGone(err)
+      ? sessionGoneNote()
+      : el('p', { class: 'muted small', text: `تعذّر جلب المواعيد: ${err.message}` }));
     return;
   }
   clear(body);

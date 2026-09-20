@@ -40,7 +40,9 @@ async function loadData(ctx) {
   ctx.lists = lists;
   ctx.samples = priceSamples({ properties, externals, deals });
   ctx.target = ctx.target || {
-    city: lists.cities[0] || 'الرياض', district: '', type: lists.propertyTypes[0]?.key || '', purpose: 'sale', area: '',
+    // **ولا يبدأ بنوعٍ بعينه** (المرحلة ٥٢): كان يفتح على «أرض» — أوّلِ الأنواع —
+    // فمن لم يلحظ قُدّرت له فلّتُه بأسعار الأراضي. والافتراضيُّ الأصدقُ فراغٌ يسأل.
+    city: lists.cities[0] || 'الرياض', district: '', type: '', purpose: 'sale', area: '',
   };
 }
 

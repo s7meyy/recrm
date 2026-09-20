@@ -1359,6 +1359,11 @@ async function openForm(ctx, existing, prefill = {}) {
 
   /* الملاحظات */
   const notesInput = el('textarea', { class: 'input', rows: 3, value: draft.notes || '' });
+  /* **الوصفُ التسويقيُّ** (المرحلة ٥٢): هذا وحدَه ما يخرج إلى الصفحة العامّة. */
+  const publicDescInput = el('textarea', {
+    class: 'input', rows: 3, value: draft.publicDesc || '',
+    placeholder: 'فلة درج داخلي مع شقة، قريبة من مسجد وحديقة…',
+  });
   // المبنى ورقمُ الوحدة (المرحلة ٤٨): نصٌّ حرٌّ يجمع وحداتِ العمارة في سطرٍ واحد.
   const buildingInput = el('input', {
     class: 'input', type: 'text', value: draft.building || '',
@@ -1485,6 +1490,7 @@ async function openForm(ctx, existing, prefill = {}) {
       ownerId: ownerSelect.value && ownerSelect.value !== '__new__' ? ownerSelect.value : null,
       status: statusSelect.value,
       notes: notesInput.value.trim(),
+      publicDesc: publicDescInput.value.trim(),
       deedNumber: deedInput.value.trim(),
       building: buildingInput.value.trim(),
       unitNo: unitInput.value.trim(),
@@ -1658,7 +1664,10 @@ async function openForm(ctx, existing, prefill = {}) {
     isEdit ? historyBox(existing, { lists: ctx.lists }) : null,
     el('div', { class: 'form-section' },
       el('div', { class: 'form-grid one' },
-        labeled('الملاحظات', notesInput),
+        labeled('الملاحظات (داخليّة)', notesInput,
+          { hint: 'لك وحدك — لا تخرج إلى الصفحة العامّة ولا إلى قائمة العميل.' }),
+        labeled('الوصف التسويقيّ', publicDescInput,
+          { hint: '**هذا وحدَه ما يقرؤه العميل** في صفحتك العامّة. واتركه فارغًا فيخرج العرض بحقائقه بلا وصف.' }),
         fieldGroup('الوسائط', el('div', {}, imagesBox, el('span', { class: 'field-hint', text: 'صورٌ ومقاطع. الأولى هي الغلاف الذي يراه العميل — رتّبها بالأسهم أو اضغط ★. الصور تُضغط تلقائيًا، والمقاطع تُحفظ كما هي بلا ضغط (حدّها ٦٠ م.ب).' }))))),
   );
 

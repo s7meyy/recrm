@@ -779,7 +779,9 @@ function tourSection({ tours, properties, clientMap, completeness, dealPropertyI
     el('ul', { class: 'simple-list' }, rows.slice(0, 8).map(({ tour, stats }) => {
       const rate = stats.captured ? Math.round((stats.closed / stats.captured) * 100) : null;
       return el('li', {},
-        el('span', { text: tour.date || 'بلا تاريخ' }),
+        // **وبصيغة الإنسان لا الحاسوب** (المرحلة ٥٢): كان يخرج `2026-09-16T10:00:00.000Z`
+        // — التاريخُ الوحيدُ الخامُّ في النظام كلِّه، و`formatDate` مستوردةٌ في الملفّ نفسِه.
+        el('span', { text: tour.date ? formatDate(tour.date) : 'بلا تاريخ' }),
         el('span', { class: 'row' },
           el('span', { class: 'muted small', text: `${formatNumber(stats.closed)}/${formatNumber(stats.captured)}` }),
           el('span', { class: 'num strong', text: rate == null ? '—' : `${formatNumber(rate)}٪` })));

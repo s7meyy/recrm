@@ -13,7 +13,7 @@
  * واحدٌ يُصان، وشاشةُ اعتمادٍ واحدةٌ تُعرف.
  */
 
-import { el, clear, emptyState, toast, confirmDialog } from '../util/dom.js';
+import { el, clear, emptyState, toast, confirmDialog, SESSION_GONE, sessionGoneNote } from '../util/dom.js';
 import { repo } from '../data/repository.js';
 import { getLists } from '../data/settings.js';
 import { formatDate } from '../util/format.js';
@@ -26,7 +26,7 @@ const API = '/api/telegram';
 /** قراءةٌ تفرّق بين «لم تسجّل الدخول» و«لا شيء بعد» — وبينهما فرقُ عملٍ كامل. */
 async function load() {
   const res = await fetch(API, { credentials: 'same-origin' });
-  if (res.status === 401) return { error: 'انتهت جلستك — حدّث الصفحة وسجّل الدخول ثم أعد المحاولة' };
+  if (res.status === 401) return { error: SESSION_GONE, gone: true };
   if (!res.ok) return { error: `تعذّرت القراءة (${res.status})` };
   return res.json();
 }
@@ -155,7 +155,7 @@ export async function render(container) {
   const refresh = async () => {
     clear(area);
     const data = await load();
-    if (data.error) { area.append(emptyState(data.error)); return; }
+    if (data.error) { area.append(data.gone ? sessionGoneNote() : emptyState(data.error)); return; }
     area.append(statusPanel(data, refresh));
     if (!data.messages.length) {
       area.append(emptyState('لا وارد بعد. حوّل رسالةَ عميلٍ إلى بوتك في تيليجرام، فتظهر هنا مفروزةً في ثانية.'));
