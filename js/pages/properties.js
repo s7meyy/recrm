@@ -63,6 +63,15 @@ const STATUS_STYLE = { agreed: 'badge-ok', refused: 'badge-danger', sold: 'badge
 
 // يقرأ #/properties/<id> (نفس نمط #/matches/<requestId> الموثّق) — يتيح لخريطة العقارات
 // فتح نموذج تعديل عقار بعينه مباشرة بلا تكرار للنموذج (~350 سطرًا) في صفحة منفصلة.
+/**
+ * **النقرةُ تفتح الملفَّ لا الاستمارة** (المرحلة ٥٢).
+ *
+ * كانت تفتح «تعديل العقار» بثمانيةٍ وثلاثين حقلًا وفيها «حذف العقار» — **ومن يريد أن
+ * يرى لا يريد أن يعدّل**. فصارت تفتح ملفَّ القراءة، وفيه زرُّ «تعديل البيانات» يفتح
+ * هذه الاستمارةَ نفسَها بلا تغييرٍ فيها.
+ */
+const openProfile = (id) => { location.hash = `#/property/${encodeURIComponent(id)}`; };
+
 function routePropertyId() {
   const m = /^#\/properties\/([^/?#]+)/.exec(location.hash || '');
   return m ? decodeURIComponent(m[1]) : null;
@@ -659,7 +668,7 @@ function renderGrid(ctx, items) {
       onClick: (e) => { e.stopPropagation(); },
       onChange: (e) => { if (e.target.checked) ctx.selected.add(p.id); else ctx.selected.delete(p.id); renderSelectionBar(ctx); },
     });
-    grid.append(el('article', { class: 'card', onClick: () => openForm(ctx, p) }, pick,
+    grid.append(el('article', { class: 'card', onClick: () => openProfile(p.id) }, pick,
       imgBox,
       el('div', { class: 'card-body' },
         el('div', { class: 'card-top' },
@@ -731,7 +740,7 @@ function renderTable(ctx, items) {
       } : null,
     }, col.label, active ? el('span', { class: 'sort-mark', text: ctx.sort.dir === 'asc' ? '▲' : '▼' }) : null);
   }));
-  const body = el('tbody', {}, sortItems(ctx, items).map((p) => el('tr', { onClick: () => openForm(ctx, p) },
+  const body = el('tbody', {}, sortItems(ctx, items).map((p) => el('tr', { onClick: () => openProfile(p.id) },
     COLUMNS.map((col) => el('td', { class: col.num ? 'num' : null, 'data-sensitive': col.sensitive || null },
       col.render ? col.render(p, ctx) : col.get(p, ctx))))));
   return el('div', { class: 'table-wrap' }, el('table', { class: 'table' }, el('thead', {}, head), body));

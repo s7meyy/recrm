@@ -51,7 +51,10 @@ async function loadForms() {
     }
 
     const forms = snapshot.forms || {};
-    fill(document.getElementById('purpose'), forms.purposes || [{ key: 'sale', label: 'بيع' }, { key: 'rent', label: 'إيجار' }]);
+    /* **ولا غرضَ محدَّدٌ مسبقًا** (المرحلة ٥٢): كانت تفتح على «بيع» فلا يلحظها
+       المستأجر، **فيصلك طلبُ شراءٍ من مستأجر**. والصمتُ هنا أصدقُ من افتراض. */
+    fill(document.getElementById('purpose'), forms.purposes || [{ key: 'sale', label: 'بيع' }, { key: 'rent', label: 'إيجار' }],
+      { placeholder: 'غير محدد' });
     fill(document.getElementById('type'), forms.types || [], { placeholder: 'غير محدد' });
     districtsByCity = forms.districtsByCity || {};
     fill(citySelect, forms.cities || [], { placeholder: 'غير محددة' });

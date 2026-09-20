@@ -35,6 +35,7 @@ import * as invoicesPage from './pages/invoices.js';
 import * as expensesPage from './pages/expenses.js';
 import * as dealsPage from './pages/deals.js';
 import * as inboxPage from './pages/inbox.js';
+import * as propertyPage from './pages/property.js';
 import * as marketPage from './pages/market.js';
 import * as trashPage from './pages/trash.js';
 import * as publishPage from './pages/publish.js';
@@ -80,6 +81,8 @@ const ROUTES = {
   tasks: { title: 'المهام', render: tasksPage.render },
   notes: { title: 'الأفكار والملاحظات', render: notesPage.render },
   client: { title: 'ملف العميل', render: clientPage.render },
+  // **ملفُّ العقار** (المرحلة ٥٢): قراءةٌ محضة — والتعديلُ يبقى في `#/properties/<id>`.
+  property: { title: 'ملف العقار', render: propertyPage.render },
   health: { title: 'صحة البيانات', render: healthPage.render },
   integrations: { title: 'التكاملات', render: integrationsPage.render },
   settings: { title: 'الإعدادات', render: settingsPage.render },

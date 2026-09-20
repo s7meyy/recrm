@@ -47,6 +47,10 @@ const monthsSince = (iso) => {
 
 let all = [];
 const filters = { type: '', purpose: '', district: '' };
+/** ترتيبُ القائمة: `''` كما وصلت · `new` الأحدث · `cheap` الأرخص · `dear` الأغلى. */
+let sortBy = '';
+/** أمفتوحٌ الحجزُ في هذه اللقطة؟ — يُقرأ عند التحميل. */
+let bookingOpen = false;
 
 // اللغة تُختار مرّة وتُحفظ؛ والبيانات لا تُترجَم — الواجهة وحدها (انظر i18n.js).
 let lang = currentLang();
@@ -113,10 +117,45 @@ function card(listing) {
         waLink ? el('a', { class: 'btn btn-primary', href: waLink, target: '_blank', rel: 'noopener', text: t.whatsapp }) : null,
         listing.contactPhone ? el('a', { class: 'btn', href: `tel:${listing.contactPhone}`, text: t.call }) : null,
         listing.mapUrl ? el('a', { class: 'btn', href: listing.mapUrl, target: '_blank', rel: 'noopener', text: t.location }) : null,
-        el('a', { class: 'btn', href: `${single}?lang=${lang}`, text: t.allOffers === 'All listings' ? 'Details' : 'تفاصيل' })),
+        el('a', { class: 'btn', href: `${single}?lang=${lang}`, text: t.allOffers === 'All listings' ? 'Details' : 'تفاصيل' }),
+        /* **طريقٌ إلى الحجز** (المرحلة ٥٢): الحجزُ مبنيٌّ منذ المرحلة ٤٠ ولم يكن إليه
+           رابطٌ واحد، فيعود العميلُ إلى «متى يناسبك؟» التي بُني ليُنهيها. */
+        bookingOpen ? el('a', {
+          class: 'btn', href: `book.html?lang=${lang}&p=${encodeURIComponent(listing.ref || '')}`,
+          text: lang === 'en' ? 'Book a viewing' : 'احجز معاينة',
+        }) : null,
+        /* **والمشاركة** (المرحلة ٥٢): العميلُ لا يقرّر وحده — يُرسل العرضَ لمن يقرّر معه،
+           وكان يفعلها بنسخ الرابط من شريط المتصفّح إن عرف كيف. */
+        shareButton(listing, single)),
       // **سطرُ الإفصاح** (المرحلة ٤٧): النظام يوجب ذكرَ رقم ترخيص الإعلان في كلّ إعلان.
       // ولا يُترجَم: رقمٌ نظاميّ سعوديّ يُقرأ كما صدر بأيّ لغةٍ عُرضت الصفحة.
       listing.disclosure ? el('p', { class: 'card-license', text: listing.disclosure }) : null));
+}
+
+/**
+ * **زرُّ المشاركة** (المرحلة ٥٢).
+ *
+ * ويستعمل مشاركةَ الجهاز الأصليّة حيث وُجدت (وهي في الجوّال عند أكثر الناس)، **ويعود
+ * إلى نسخ الرابط حيث لا تُوجد** — ولا يُترك الزرُّ صامتًا في متصفّحٍ لا يدعمها:
+ * زرٌّ لا يفعل شيئًا أسوأُ من غيابه.
+ */
+function shareButton(listing, single) {
+  const url = new URL(`${single}?lang=${lang}`, location.href).href;
+  const title = `${typeName(listing, lang)} — ${listing.district || listing.city || ''}`.trim();
+  const btn = el('button', {
+    type: 'button', class: 'btn',
+    text: lang === 'en' ? 'Share' : 'شارك',
+  });
+  btn.addEventListener('click', async (ev) => {
+    ev.stopPropagation();
+    try {
+      if (navigator.share) { await navigator.share({ title, url }); return; }
+      await navigator.clipboard.writeText(url);
+      btn.textContent = lang === 'en' ? 'Link copied' : 'نُسخ الرابط';
+      setTimeout(() => { btn.textContent = lang === 'en' ? 'Share' : 'شارك'; }, 1600);
+    } catch (_) { /* أُلغيت المشاركة أو مُنع الحافظة — ولا شيء يُقال */ }
+  });
+  return btn;
 }
 
 function draw() {
@@ -124,6 +163,21 @@ function draw() {
   const items = all.filter((l) => (!filters.type || (l.type || l.typeLabel) === filters.type)
     && (!filters.purpose || (l.purposes || l.purposeLabels || []).includes(filters.purpose))
     && (!filters.district || l.district === filters.district));
+  /* **والترتيبُ بالسعر** (المرحلة ٥٢): «أرخصُ فلّة عندكم؟» أوّلُ سؤالٍ عند كلّ مشترٍ،
+     ولم يكن في الصفحة ترتيبٌ أصلًا. **وبلا سعرٍ يُؤخَّر لا يُحذف**: عرضٌ سعرُه عند
+     الطلب ما زال عرضًا، وإقصاؤه من الترتيب إخفاءٌ له. */
+  const priced = (l) => (l.price == null ? null : Number(l.price));
+  if (sortBy === 'cheap' || sortBy === 'dear') {
+    items.sort((a, b) => {
+      const x = priced(a); const y = priced(b);
+      if (x == null && y == null) return 0;
+      if (x == null) return 1;
+      if (y == null) return -1;
+      return sortBy === 'cheap' ? x - y : y - x;
+    });
+  } else if (sortBy === 'new') {
+    items.sort((a, b) => String(b.listedAt || '').localeCompare(String(a.listedAt || '')));
+  }
   grid.replaceChildren(...items.map(card));
   statusEl.textContent = items.length
     ? `${nf.format(items.length)} ${t.listing}${items.length === all.length ? '' : ` ${t.ofCount} ${nf.format(all.length)}`}`
@@ -154,7 +208,15 @@ function buildFilters() {
     select.addEventListener('change', () => { filters[key] = select.value; draw(); });
     filtersBox.append(select);
   }
-  filtersBox.hidden = !any;
+  /* **والترتيبُ بجانب الفلاتر** — لا يُخفى ولو كانت الفلاترُ كلُّها بخيارٍ واحد. */
+  const sortLabels = lang === 'en'
+    ? [['', 'Sort: default'], ['new', 'Newest'], ['cheap', 'Cheapest'], ['dear', 'Most expensive']]
+    : [['', 'الترتيب: كما وصل'], ['new', 'الأحدث'], ['cheap', 'الأرخص'], ['dear', 'الأغلى']];
+  const sortSel = el('select', { 'aria-label': sortLabels[0][1] },
+    sortLabels.map(([value, label]) => el('option', { value, text: label, selected: sortBy === value ? true : null })));
+  sortSel.addEventListener('change', () => { sortBy = sortSel.value; draw(); });
+  filtersBox.append(sortSel);
+  filtersBox.hidden = false;
 }
 
 async function load() {
@@ -164,6 +226,8 @@ async function load() {
     if (!res.ok) throw new Error('تعذر تحميل العروض');
     const snapshot = await res.json();
     all = snapshot.listings || [];
+    // زرُّ الحجز لا يظهر إلا إن فُتح الحجزُ فعلًا — ووعدٌ بموعدٍ لا يُحجز أسوأُ من لا وعد.
+    bookingOpen = !!snapshot.booking?.enabled;
 
     const office = snapshot.office || {};
     if (office.name) document.getElementById('office-name').textContent = office.name;

@@ -18,6 +18,28 @@ function handover(iso, lang) {
   catch (_) { return at.toISOString().slice(0, 10); }
 }
 
+/**
+ * **حقائقُ النوع وسومًا** (المرحلة ٥٢) — وما لم يُملأ لا يخرج، ولا تُخترع قيمة.
+ * والمفتاحُ الذي لا ترجمةَ له يُسكَت عنه: ترجمةٌ تُخترع أسوأُ من حقيقةٍ تُترك.
+ */
+function factTags(facts, t) {
+  const rows = Object.entries(facts || {})
+    .filter(([, v]) => v != null && v !== '')
+    .map(([k, v]) => (typeof t.facts?.[k] === 'function' ? t.facts[k](v) : null))
+    .filter(Boolean);
+  if (!rows.length) return '';
+  return `<div class="card-meta">${rows.map((x) => `<span class="tag">${esc(x)}</span>`).join('')}</div>`;
+}
+
+/** جمعُ العربيّة — نسخةٌ محليّةٌ كي تبقى الدالّةُ بلا تبعيّات. */
+function plural(n, [one, two, few, many], withNum = true) {
+  const x = Math.abs(Math.round(Number(n) || 0));
+  if (x === 1) return one;
+  if (x === 2) return two;
+  const w = (x % 100 >= 3 && x % 100 <= 10) ? few : many;
+  return withNum ? `${nf.format(x)} ${w}` : w;
+}
+
 // النسخة الإنجليزية (المرحلة ٣٠): الواجهة تُترجَم والبيانات لا — الحي والوصف كما كتبتَهما.
 const T = {
   ar: {
@@ -32,6 +54,21 @@ const T = {
     offPlan: 'على الخارطة — تحت الإنشاء',
     delivery: 'التسليم المتوقَّع',
     hello: (t, r) => `السلام عليكم، مهتم بالعرض رقم ${r}: ${t}`,
+    /* **حقائقُ النوع في صفحة التفاصيل** (المرحلة ٥٢): كانت في البطاقة ولا تصل هنا،
+       فيضغط العميلُ «تفاصيل» ليعرف أكثرَ **فيجد أقلّ**. */
+    facts: {
+      rooms: (n) => plural(n, ['غرفة', 'غرفتان', 'غرف', 'غرفة']),
+      baths: (n) => plural(n, ['دورة مياه', 'دورتا مياه', 'دورات مياه', 'دورة مياه']),
+      floorsCount: (n) => plural(n, ['دور واحد', 'دوران', 'أدوار', 'دورًا']),
+      streetsCount: (n) => plural(n, ['شارع واحد', 'شارعان', 'شوارع', 'شارعًا']),
+      floor: (v) => `الدور: ${v}`,
+      buildingAge: (n) => `عمر البناء: ${nf.format(n)} ${plural(n, ['سنة', 'سنتان', 'سنوات', 'سنة'], false)}`,
+      buildingCondition: (v) => `الحالة: ${v}`,
+      plotDimensions: (v) => `الأطوال: ${v}`,
+      streetWidth: (v) => `عرض الشارع: ${nf.format(v)} م`,
+      facades: (v) => `الواجهات: ${v}`,
+    },
+    book: 'احجز معاينة',
   },
   en: {
     dir: 'ltr', lang: 'en', other: 'العربية', otherLang: 'ar',
@@ -44,6 +81,19 @@ const T = {
     offPlan: 'Off-plan — under construction',
     delivery: 'Expected handover',
     hello: (t, r) => `Hello, I am interested in listing ${r}: ${t}`,
+    facts: {
+      rooms: (n) => `${nf.format(n)} ${n === 1 ? 'room' : 'rooms'}`,
+      baths: (n) => `${nf.format(n)} ${n === 1 ? 'bath' : 'baths'}`,
+      floorsCount: (n) => `${nf.format(n)} ${n === 1 ? 'floor' : 'floors'}`,
+      streetsCount: (n) => `${nf.format(n)} ${n === 1 ? 'street' : 'streets'}`,
+      floor: (v) => `Floor: ${v}`,
+      buildingAge: (n) => `Age: ${nf.format(n)} ${n === 1 ? 'yr' : 'yrs'}`,
+      buildingCondition: (v) => `Condition: ${v}`,
+      plotDimensions: (v) => `Dimensions: ${v}`,
+      streetWidth: (v) => `Street width: ${nf.format(v)} m`,
+      facades: (v) => `Facades: ${v}`,
+    },
+    book: 'Book a viewing',
   },
 };
 
@@ -71,6 +121,10 @@ export default async (request) => {
   }
 
   const office = snapshot.office || {};
+  /* **وطريقٌ إلى الحجز من صفحة العرض** (المرحلة ٥٢): الحجزُ مبنيٌّ منذ المرحلة ٤٠،
+     **ولم يكن إليه من العروض رابطٌ واحد** — فالعميلُ الذي أعجبه عرضٌ يعود إلى
+     «متى يناسبك؟» التي بُني الحجزُ ليُنهيها. ويُعرض إن كان مفتوحًا فقط. */
+  const bookingOpen = !!snapshot.booking?.enabled;
   // النوع والأغراض تُترجَم بمفاتيحها المدمجة وحدها؛ وما أضفتَه أنت يبقى بمسمّاه العربي.
   const typeName = (lang === 'en' && listing.type && TYPES_EN[listing.type])
     ? TYPES_EN[listing.type] : (listing.typeLabel || '');
@@ -125,11 +179,13 @@ ${image ? `<meta property="og:image" content="${esc(image)}">` : ''}
     ${listing.offPlan && listing.deliveryAt ? `<span class="tag">${esc(t.delivery)}: ${esc(handover(listing.deliveryAt, t.lang))}</span>` : ''}
     <span class="tag">${esc(t.ref)} ${esc(listing.ref)}</span>
   </div>
+  ${factTags(listing.facts, t)}
   ${listing.notes ? `<p class="card-notes">${esc(listing.notes)}</p>` : ''}
   <div class="card-actions">
     ${wa ? `<a class="btn btn-primary" href="${esc(wa)}" target="_blank" rel="noopener">${esc(t.whatsapp)}</a>` : ''}
     ${listing.contactPhone ? `<a class="btn" href="tel:${esc(listing.contactPhone)}">${esc(t.call)}</a>` : ''}
     ${listing.mapUrl ? `<a class="btn" href="${esc(listing.mapUrl)}" target="_blank" rel="noopener">${esc(t.location)}</a>` : ''}
+    ${bookingOpen ? `<a class="btn" href="/offers/book.html?lang=${t.lang}&amp;p=${esc(listing.ref)}">${esc(t.book)}</a>` : ''}
     <a class="btn" href="/offers/?lang=${t.lang}">${esc(t.all)}</a>
   </div>
   <!-- الإفصاح النظاميّ (المرحلة ٤٧): رقمُ ترخيص الإعلان يلزم كلَّ إعلان. ولا يُترجَم. -->

@@ -1173,3 +1173,10 @@ body.modal-open .voice-dock { display: none; }
 .wa-var { display: inline-flex; align-items: center; gap: 4px; }
 .wa-var .input { min-width: 140px; }
 .wa-templates > summary { cursor: pointer; font-weight: 600; }
+
+/* شريطُ وسائط ملفّ العقار (المرحلة ٥٢) — صورٌ كبيرةٌ تُمرَّر، لا مربّعٌ فارغ. */
+.media-strip { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+.media-strip img {
+  height: 140px; width: auto; border-radius: var(--radius);
+  object-fit: cover; flex: none; background: var(--surface-2);
+}
