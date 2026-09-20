@@ -18,7 +18,7 @@ import { activeMembers, assignOptions } from '../util/team.js';
 import { loadMatchingContext, candidatesFor, scoreOne, hardReasonLabel, priceFlexFor } from '../data/matching.js';
 import { runPlans } from '../util/plans.js';
 import {
-  el, clear, labeled, selectEl, checkbox, badge, openModal, toast, emptyState, allChip,
+  el, clear, labeled, selectEl, checkbox, badge, openModal, toast, emptyState, allChip, foldOnNarrow,
 } from '../util/dom.js';
 import { formatSAR, formatArea, formatNumber, countWord, toInputDate, fromInputDate, toInputDateTime, fromInputDateTime, countOf } from '../util/format.js';
 import { formatPhone } from '../util/phone.js';
@@ -106,7 +106,7 @@ function rowsFor(ctx, request, rowLimit = 0) {
     if (!listing) continue; // المعروض حُذف (وحذفه يحذف مطابقاته أصلًا)
     const result = scoreOne(request, listing, ctx.match, kind);
     rows.push({
-      listing, kind, score: result.ok ? result.score : 0, tags: result.tags, parts: result.parts,
+      listing, kind, score: result.ok ? result.score : 0, nudges: result.nudges || [], tags: result.tags, parts: result.parts,
       priceUnknown: result.priceUnknown, record: rec,
       stale: !result.ok || result.score < ctx.threshold,
       reason: result.ok ? null : result.reason,
@@ -227,11 +227,16 @@ function scoreNode(score) {
 }
 
 function partsNode(row) {
-  if (!row.parts.length) return el('span', { class: 'muted small', text: 'لا معايير مرجّحة في هذا الطلب' });
+  // المرجّحاتُ الصغيرة تُعرض مع المعايير ومعها ما حُسم — فالترتيبُ الذي تراه له سببٌ مكتوب.
+  const nudges = (row.nudges || []).map((n) => el('span', {
+    class: 'match-part nudge',
+    text: `${n.label}: ${n.detail} (−${n.lost})`,
+  }));
+  if (!row.parts.length && !nudges.length) return el('span', { class: 'muted small', text: 'لا معايير مرجّحة في هذا الطلب' });
   return el('div', { class: 'match-parts' }, row.parts.map((p) => el('span', {
     class: `match-part${p.state === 'unknown' ? ' unknown' : p.ratio >= 1 ? ' full' : ' partial'}`,
     text: `${p.label}: ${p.detail}`,
-  })));
+  })), ...nudges);
 }
 
 function renderList(ctx) {
@@ -288,7 +293,13 @@ function renderList(ctx) {
     if (!rows.length) {
       block.append(el('p', { class: 'muted small', text: 'لا مطابقات بهذه الشروط. جرّب إنزال الشريط أو مراجعة الأحياء وسقف الميزانية.' }));
     } else {
-      block.append(el('div', { class: 'match-list' }, rows.map((row) => matchRow(ctx, request, row))));
+      // على الجوّال تُطوى مطابقاتُ كلّ عميلٍ تحت اسمه وعددها، فتُرى أسماءُ عملائك كلِّهم
+      // في شاشةٍ واحدة ثم تفتح من تريد. وعلى الشاشة الواسعة لا يتغيّر شيء.
+      const list = el('div', { class: 'match-list' }, rows.map((row) => matchRow(ctx, request, row)));
+      const best = rows[0]?.score;
+      block.append(foldOnNarrow(list,
+        `${countOf(rows.length, 'مطابقة')}${best != null ? ` — أعلاها ${best}٪` : ''}`,
+        { open: !!ctx.focusId }));
       if (rows.length >= ROWS_PER_REQUEST) {
         block.append(el('p', { class: 'muted small', text: `أعلى ${countOf(ROWS_PER_REQUEST, 'مرشح')} درجةً. ارفع الشريط أو ضيّق الطلب لترى غيرهم.` }));
       }

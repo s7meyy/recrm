@@ -18,8 +18,15 @@ console.log('\n--- ١. العمولة المتوقَّعة ---');
 await page.evaluate(() => { location.hash = '#/dashboard'; });
 await page.waitForTimeout(2200);
 let dashText = await page.locator('#page').innerText();
-ok('اللوحة ظاهرة', dashText.includes('العمولة المتوقَّعة'));
-ok('وتقول إنها تقدير لا وعد', dashText.includes('تقدير لا وعد'));
+// المرحلة ٥٢: على قاعدةٍ فارغةٍ تُطوى اللوحاتُ الفارغة في سطرٍ **يسمّيها بأسمائها**،
+// فلا تختفي صامتة. والتوقّعُ بلا تاريخٍ لوحةٌ فارغة، فيُفتح الفارغُ ثمّ يُقرأ.
+ok('**اللوحةُ الفارغةُ تُسمّى ولا تختفي صامتة**', dashText.includes('العمولة المتوقَّعة'),
+  dashText.split('\n').find((l) => l.includes('تنتظر بياناتها')) || '—');
+const showEmpty = page.locator('#page button:has-text("أظهر الفارغ")');
+if (await showEmpty.count()) { await showEmpty.click(); await page.waitForTimeout(400); }
+dashText = await page.locator('#page').innerText();
+ok('وتقول إنها تقدير لا وعد', dashText.includes('تقدير لا وعد'),
+  dashText.split('\n').find((l) => l.includes('المتوقَّعة')) || '—');
 
 // نبني تاريخًا كافيًا وأنبوبًا معلومًا، فنقرأ رقمًا محسوبًا لا شعارًا.
 const seeded = await page.evaluate(async () => {

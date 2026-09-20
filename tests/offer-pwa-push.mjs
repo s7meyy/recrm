@@ -32,7 +32,8 @@ await page.evaluate(async () => {
   const { setCompany, setPublishSettings } = await import('/js/data/settings.js');
   const { storeImage } = await import('/js/data/images.js');
   await setCompany({ name: 'مكتب كسّاب العقاري', phone: '0551234567' });
-  const p1 = await repo.properties.create({ city: 'الرياض', district: 'الياسمين', type: 'villa', purposes: ['sale'], area: 420, price: 2700000, notes: 'فلة زاوية' });
+  // المرحلة ٥٢: الملاحظةُ داخليّةٌ لا تُنشر، والوصفُ التسويقيُّ هو ما يخرج.
+  const p1 = await repo.properties.create({ city: 'الرياض', district: 'الياسمين', type: 'villa', purposes: ['sale'], area: 420, price: 2700000, notes: 'المالك يرفض التعاون حاليًا', publicDesc: 'فلة زاوية' });
   const png = 'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAJElEQVR42u3NMQEAAAgDoC251a3gLzSgOXeqAAAAAAAAAAAAvAxJlwGBMRUXtAAAAABJRU5ErkJggg==';
   const bytes = Uint8Array.from(atob(png), c => c.charCodeAt(0));
   const img = await storeImage(new File([bytes], 'a.png', { type: 'image/png' }), { entity: 'property', entityId: p1.id });
@@ -65,6 +66,10 @@ const imgLoaded = await pub.locator('.offer-gallery img').first().evaluate(el =>
 ok('صورة العرض تُحمَّل', imgLoaded);
 const body = await pub.locator('body').innerText();
 ok('السعر والتفاصيل تظهر', body.includes('2,700,000') && body.includes('فلة زاوية'));
+// **وهذا هو العطب الذي أُصلح** (المرحلة ٥٢): كان المنشورُ حقلَ «الملاحظات» نفسَه،
+// فيقرأ من تفاوضه «المالك يرفض التعاون حاليًا» — والصفحةُ تَعِد بخلاف ذلك بالحرف.
+ok('**وملاحظتُك الداخليّة لا تخرج إلى الصفحة العامّة**', !body.includes('يرفض التعاون'),
+  body.split('\n').find((l) => l.includes('يرفض')) || '—');
 const notFound = await pub.goto(BASE + '/offers/l/999');
 ok('رقم غير منشور يعيد 404 برسالة مفهومة', notFound.status() === 404 && (await pub.locator('body').innerText()).includes('لم يعد متاحًا'), String(notFound.status()));
 

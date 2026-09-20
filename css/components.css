@@ -183,8 +183,9 @@ input[type="tel"].input, input[type="email"].input, input[type="url"].input {
 .card-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
 /* بطاقةٌ بلا صورة لا تستحقّ ما تستحقّه ذاتُ الصورة: كان الغلافُ الفارغ ١٩٠ بكسلًا من
    رماديٍّ لا خبرَ فيه، فبمئات العقارات يصير التمريرُ كلُّه في الفراغ. */
-.card-img:has(.card-noimg) { aspect-ratio: 16 / 5; }
-.card-noimg { font-size: 28px; font-weight: 800; color: var(--line-strong); }
+.card-img:has(.card-noimg) { aspect-ratio: auto; min-height: 0; padding: 8px; gap: 10px; }
+.card-noimg { font-size: 22px; line-height: 1; filter: grayscale(0.25); }
+.card-addimg { white-space: nowrap; }
 .card-imgcount {
   position: absolute; bottom: 6px; inset-inline-start: 6px; background: rgba(26,31,28,0.72);
   color: #fff; font-size: var(--dhad-font-size-200); padding: 1px 7px; border-radius: var(--dhad-radius-round);
@@ -338,6 +339,15 @@ input[type="tel"].input, input[type="email"].input, input[type="url"].input {
 .match-part.full { background: var(--ok-soft); color: var(--ok); }
 .match-part.partial { background: var(--warn-soft); color: var(--warn); }
 .match-part.unknown { border: 1px dashed var(--line-strong); background: transparent; }
+/* مرجّحُ ترتيبٍ صغير: يُميَّز عن المعيار لأنّه لا يُسقط شيئًا وإنّما يؤخّره. */
+.match-part.nudge { border: 1px dashed var(--line); background: transparent; color: var(--muted); }
+
+/* الشرحُ المطويّ (المرحلة ٥٢) — سطرٌ يُنقر لا جدارُ نصّ. */
+.disclosure > summary {
+  cursor: pointer; font-size: var(--fs-sm); color: var(--muted);
+  padding: 8px 0; min-height: 44px; display: flex; align-items: center;
+}
+.disclosure[open] > summary { color: var(--text); font-weight: 600; }
 
 .score { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
 .score-num { font-size: var(--fs-lg); font-weight: 700; font-variant-numeric: tabular-nums; }
@@ -377,6 +387,20 @@ input[type="tel"].input, input[type="email"].input, input[type="url"].input {
 
   /* الفلاتر مطويّةٌ حتى تُطلب — والبياناتُ أوّلًا (انظر `foldFilters` في app.js). */
   .filters-toggle { width: 100%; margin-bottom: 8px; }
+
+  /* الطيُّ العامّ على الجوّال (انظر `foldOnNarrow` في util/dom.js). */
+  .fold-toggle { width: 100%; margin-bottom: 8px; justify-content: space-between; }
+  .fold-body:not(.fold-open) { display: none; }
+
+  /* الإعدادات: الأوّلُ مفتوحٌ وما بعده يُطوى خلف عنوانِه (المرحلة ٥٢). */
+  .set-fold:not(.set-open) > .panel-desc, .set-fold:not(.set-open) > .panel-body { display: none; }
+  .set-fold > h2 { margin: 0; }
+  .set-fold-toggle {
+    width: 100%; min-height: 44px; display: flex; align-items: center; justify-content: space-between;
+    gap: 8px; background: none; border: 0; padding: 0; font: inherit; color: inherit; text-align: start; cursor: pointer;
+  }
+  .set-fold-toggle::after { content: '▾'; color: var(--muted); font-size: var(--fs-sm); }
+  .set-fold.set-open .set-fold-toggle::after { content: '▴'; }
   .filters-foldable { margin-bottom: 8px; }
   .filters-foldable:not(.filters-open) { display: none; }
 
@@ -804,6 +828,8 @@ body.client-mode #client-mode-btn { background: var(--accent); color: #fff; }
 .plan-step .input[type="text"] { flex: 1 1 160px; min-width: 140px; }
 /* وصدى التاريخ (المرحلة ٤٢) يبقى في الصفّ ولا يكسره — ولا يُحذف: قراءةُ الهجريّ هي فائدته. */
 .plan-step .date-echo { flex: 0 0 auto; }
+/* قولُ الصندوق الفارغ أخفُّ من صدى التاريخ نفسِه — خبرٌ لا نتيجة. */
+.date-echo.empty-note { opacity: 0.75; font-size: var(--dhad-font-size-200); }
 
 
 /* ===== المرحلة ٣٢ — التقويم والقفل ===== */

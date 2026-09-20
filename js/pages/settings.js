@@ -39,7 +39,7 @@ import { exportBackup, downloadBlob, markExported, readBackupFile, importBackup 
 import { imagesSummary, formatBytes, storageStatus } from '../data/images.js';
 import { audioSummary } from '../data/audio.js';
 import { seedExists, insertSeed, clearSeed } from '../data/seed.js';
-import { el, clear, labeled, selectEl, checkbox, badge, confirmDialog, openModal, toast, appendChildren, debounce } from '../util/dom.js';
+import { el, clear, labeled, selectEl, checkbox, badge, confirmDialog, openModal, toast, appendChildren, debounce, isNarrow } from '../util/dom.js';
 import { clientTagClass } from '../data/schema.js';
 import { formatDate, formatDateTime, relativeDays, setHijriMode, formatNumber, countWord, toInputDate, fromInputDate, countOf } from '../util/format.js';
 import { hijriSupported } from '../util/hijri.js';
@@ -49,6 +49,7 @@ const dataChanged = () => window.dispatchEvent(new CustomEvent('kassab:data-chan
 export async function render(container) {
   clear(container);
   container.append(el('div', { class: 'page-head' }, el('h1', { text: 'الإعدادات' })));
+  panelIndex = 0; // عدّادُ الطيّ على الجوّال: الأوّلُ مفتوحٌ وما بعده مطويّ
   const grid = el('div', { class: 'settings-grid' });
   // **فهرسٌ وبحث قبل الشبكة (المرحلة ٤٣):** الصفحةُ واحدٌ وعشرون لوحًا في نحو خمس عشرة
   // شاشة، وكانت بلا تبويبٍ ولا فهرسٍ ولا بحث — فمن أراد «أوزان المعايير» مرّر بالتخمين.
@@ -107,9 +108,13 @@ function settingsNav(grid) {
     const q = search.value.trim().toLowerCase();
     let shown = 0;
     for (const p of panels()) {
-      const hit = !q || (p.dataset.title || '').toLowerCase().includes(q) || p.innerText.toLowerCase().includes(q);
+      // **`textContent` لا `innerText`**: اللوحُ المطويّ على الجوّال لا يظهر نصُّه في
+      // `innerText` أصلًا، فكان البحثُ يعمى عن كلّ لوحٍ مطويّ — وهي كلُّها إلّا الأوّل.
+      const hit = !q || (p.dataset.title || '').toLowerCase().includes(q) || p.textContent.toLowerCase().includes(q);
       p.hidden = !hit;
       if (hit) shown += 1;
+      // وما وافق البحثَ يُفتح ليُقرأ، فلا يُقال «وجدتُ ثلاثة» ولا يُرى منها شيء.
+      if (q && hit) p.classList.add('set-open');
     }
     for (const c of chips.children) {
       const target = grid.querySelector('#' + CSS.escape(c.dataset.target || ''));
@@ -125,7 +130,7 @@ function settingsNav(grid) {
     for (const p of panels()) {
       chips.append(el('button', {
         type: 'button', class: 'chip', text: p.dataset.title || '', 'data-target': p.id,
-        onClick: () => { p.scrollIntoView({ behavior: 'smooth', block: 'start' }); },
+        onClick: () => { p.classList.add('set-open'); p.scrollIntoView({ behavior: 'smooth', block: 'start' }); },
       }));
     }
   }, 0);
@@ -137,12 +142,40 @@ function settingsNav(grid) {
     chips);
 }
 
+/**
+ * **خمسةٌ وعشرون لوحًا مفتوحةً على شاشة الجوّال** (المرحلة ٥٢): قِيست الصفحةُ فبلغت
+ * سبعًا وعشرين شاشةَ تمرير، وآخرُ لوحٍ فيها — «البيانات التجريبية» — لا يبلغه أحدٌ إلّا
+ * بعزم. فيُفتح الأوّلُ وحدَه، ويُطوى ما بعده خلف عنوانِه، والبحثُ فوق يفتح ما يوافقه.
+ *
+ * وعلى الشاشة الواسعة لا يتغيّر شيء: اللوحاتُ كلُّها مفتوحةٌ كما كانت.
+ */
+let panelIndex = 0;
+
+function foldOnMobile(node, head) {
+  if (!isNarrow()) return;
+  const open = panelIndex++ === 0;
+  node.classList.add('set-fold');
+  if (open) node.classList.add('set-open');
+  const btn = el('button', {
+    type: 'button', class: 'set-fold-toggle', text: head.textContent,
+    'aria-expanded': open ? 'true' : 'false',
+    onClick: () => {
+      const on = node.classList.toggle('set-open');
+      btn.setAttribute('aria-expanded', on ? 'true' : 'false');
+    },
+  });
+  clear(head);
+  head.append(btn);
+}
+
 function panel(title, desc, bodyFn, { ownerOnly = false } = {}) {
-  const body = el('div');
+  const body = el('div', { class: 'panel-body' });
   const attrs = { class: 'panel', id: panelId(title), 'data-title': title };
   if (ownerOnly) attrs['data-owner-only'] = '';
+  const head = el('h2', { text: title });
   const node = el('section', attrs,
-    el('h2', { text: title }), el('p', { class: 'panel-desc', text: desc }), body);
+    head, el('p', { class: 'panel-desc', text: desc }), body);
+  foldOnMobile(node, head);
   const redraw = async () => {
     clear(body);
     try {

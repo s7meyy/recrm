@@ -13,10 +13,10 @@
  * واحدٌ يُصان، وشاشةُ اعتمادٍ واحدةٌ تُعرف.
  */
 
-import { el, clear, emptyState, toast, confirmDialog, SESSION_GONE, sessionGoneNote } from '../util/dom.js';
+import { el, clear, emptyState, toast, confirmDialog, openModal, selectEl, SESSION_GONE, sessionGoneNote } from '../util/dom.js';
 import { repo } from '../data/repository.js';
 import { getLists } from '../data/settings.js';
-import { formatDate } from '../util/format.js';
+import { formatDate, formatNumber } from '../util/format.js';
 import { KIND_LABELS, sortReason } from '../util/lead-sort.js';
 import { parseRequestText, parseOfferText } from '../data/listing-parse.js';
 import { normalizePhone } from '../util/phone.js';
@@ -31,11 +31,49 @@ async function load() {
   return res.json();
 }
 
-async function drop(key) {
+async function drop(key, why = '') {
   await fetch(API, {
     method: 'DELETE', credentials: 'same-origin',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ key }),
+    body: JSON.stringify({ key, why }),
+  });
+}
+
+/**
+ * **ولماذا صرفتَه؟** (المرحلة ٥٢) — الحذفُ الصامت يضيّع أنفعَ ما في الصندوق: أن ترى
+ * بعد شهرٍ أنّ نصفَ ما يصلك دعايةٌ، فتغلق البابَ من أوّله بدل أن تصرفه كلَّ يوم.
+ * **والسببُ اختياريّ**: «احذف بلا سبب» بابٌ قائمٌ لا يُغلَق، فلا يصير السؤالُ ضريبةً.
+ */
+export const DROP_REASONS = [
+  { value: 'spam', label: 'دعايةٌ أو رسالةٌ عامّة' },
+  { value: 'duplicate', label: 'مكرَّرٌ عندي أصلًا' },
+  { value: 'unclear', label: 'غامضٌ لا يُبنى عليه' },
+  { value: 'not_mine', label: 'خارجُ سوقي (مدينةٌ أو نوعٌ لا أعمل فيه)' },
+  { value: 'handled', label: 'تصرّفتُ فيه خارج البرنامج' },
+];
+
+function askWhy(onDone) {
+  const sel = selectEl({ options: DROP_REASONS, placeholder: 'اختر سببًا (اختياريّ)' });
+  const note = el('input', { class: 'input', type: 'text', placeholder: 'أو اكتبه بكلماتك', maxLength: 120 });
+  const modal = openModal({
+    title: 'لماذا تصرفه؟',
+    body: el('div', { class: 'form-grid' },
+      el('div', { class: 'field' }, sel),
+      el('div', { class: 'field' }, note),
+      el('p', { class: 'muted small', text: 'يُحفظ السببُ وحدَه لا نصُّ الرسالة — ليُقرأ نمطُ ما يضيّع وقتَك.' })),
+    footer: [
+      el('button', {
+        type: 'button', class: 'btn btn-primary', text: 'احذفه',
+        onClick: () => {
+          const why = note.value.trim() || (DROP_REASONS.find((r) => r.value === sel.value)?.label || '');
+          modal.close();
+          onDone(why);
+        },
+      }),
+      el('button', { type: 'button', class: 'btn btn-ghost', text: 'احذفه بلا سبب', onClick: () => { modal.close(); onDone(''); } }),
+      el('span', { class: 'spacer' }),
+      el('button', { type: 'button', class: 'btn btn-ghost', text: 'تراجع', onClick: () => modal.close() }),
+    ],
   });
 }
 
@@ -78,6 +116,18 @@ function statusPanel(data, refresh) {
     rows.push(el('p', { class: 'muted small' },
       el('strong', { text: '⚠︎ آخرُ ردٍّ فشل: ' }),
       `${data.lastReplyError.why} (${formatDate(data.lastReplyError.at)})`));
+  }
+  // **ونمطُ ما تصرفه يُقرأ** (المرحلة ٥٢): السطرُ الواحد لا يفيد، والعشرةُ تقول
+  // «نصفُ ما يصلك دعاية» — فتُغلق البابَ من أوّله بدل أن تصرفه كلَّ يوم.
+  const rejects = Array.isArray(data.rejects) ? data.rejects : [];
+  if (rejects.length) {
+    const byWhy = new Map();
+    for (const r of rejects) byWhy.set(r.why, (byWhy.get(r.why) || 0) + 1);
+    const top = [...byWhy.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4);
+    rows.push(el('details', { class: 'panel-block' },
+      el('summary', { text: `ما صرفتَه ولماذا (${formatNumber(rejects.length)})` }),
+      el('ul', { class: 'simple-list' }, top.map(([why, n]) => el('li', {},
+        el('span', { text: why }), el('span', { class: 'num strong', text: formatNumber(n) }))))));
   }
   return el('div', { class: 'panel' },
     el('h2', { text: 'حال القناة' }),
@@ -126,7 +176,7 @@ function card(ctx, msg, refresh) {
     el('button', { type: 'button', class: `btn btn-sm${kind === 'offer' ? ' btn-primary' : ''}`, text: 'اعتمده عرضًا', onClick: asOffer }),
     el('button', {
       type: 'button', class: 'btn btn-ghost btn-sm', text: 'احذفه',
-      onClick: async () => { await drop(msg.key); toast('حُذف'); refresh(); },
+      onClick: () => askWhy(async (why) => { await drop(msg.key, why); toast('حُذف'); refresh(); }),
     }));
 
   const parts = [head, body, why];

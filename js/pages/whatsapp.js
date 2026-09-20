@@ -14,7 +14,7 @@
 
 import { repo } from '../data/repository.js';
 import {
-  el, clear, labeled, selectEl, checkbox, badge, toast, emptyState, confirmDialog, allChip, openModal,
+  el, clear, labeled, selectEl, checkbox, badge, toast, emptyState, confirmDialog, allChip, openModal, disclosure,
 } from '../util/dom.js';
 import { formatDateTime, formatNumber, formatSAR, countWord, countOf, relativeDays } from '../util/format.js';
 import { formatPhone } from '../util/phone.js';
@@ -126,8 +126,8 @@ function statusPanel(ctx) {
         state('الإرسال بالقوالب', missingSend.length === 0, missingSend),
         state('استقبال الرسائل', missingSend.length === 0 && missingRecv.length === 0, [...missingSend, ...missingRecv]))
       : el('p', { class: 'field-hint', text: 'تعذّرت قراءة حالة التكامل — تحتاج جلسة مالك على الموقع المنشور. والخطوات أدناه صحيحة على كل حال.' }),
-    webhookBlock,
-    signatureNote);
+    // الشرحُ يُطلب ولا يُفرض: من ربط مرّةً لا يقرأ خطوات الربط كلَّ يوم.
+    disclosure('كيف أربطه؟ — عنوان الوِبهوك وخطوات Meta', webhookBlock, signatureNote));
 }
 
 function state(label, ready, missing) {
@@ -376,7 +376,9 @@ function autoPanel(ctx) {
       '. وأوّلُ قاعدةٍ تنطبق تفوز، فرتّبها من الأخصّ إلى الأعمّ.'),
     // **القواعدُ تُحفظ على الخادم لا في جهازك**: الوِبهوك يعمل في Netlify ولا يرى
     // بياناتِ متصفّحك — فقاعدةٌ تُكتب في الإعدادات المحلّيّة لا تصل إليه أبدًا.
-    el('p', { class: 'field-hint', text: 'تُحفظ على الخادم لا في هذا الجهاز: الوِبهوك يعمل هناك ولا يرى بيانات متصفّحك. ولذلك تحتاج جلسةَ مالكٍ على الموقع المنشور.' }),
+    disclosure('كيف يعمل الردّ التلقائيّ؟',
+      el('p', { class: 'field-hint', text: 'تُحفظ على الخادم لا في هذا الجهاز: الوِبهوك يعمل هناك ولا يرى بيانات متصفّحك. ولذلك تحتاج جلسةَ مالكٍ على الموقع المنشور.' }),
+      el('p', { class: 'field-hint', text: `ولا يُردّ آليًّا على رقمٍ واحد أكثر من ${countOf(MAX_AUTO_PER_DAY, 'مرّة')} في اليوم — سدٌّ أمام حلقةٍ لا تنتهي.` })),
     !ctx.canSend
       ? el('p', { class: 'field-hint' },
         el('strong', { text: 'ولا يُرسَل شيءٌ الآن: ' }),
@@ -389,7 +391,6 @@ function autoPanel(ctx) {
       labeled('الدوام من (ساعة)', fromInput, { hint: 'بتوقيت الرياض — و«من ٢٢ إلى ٨» مدًى يعبر منتصف الليل.' }),
       labeled('إلى', toInput)),
     wrap,
-    el('p', { class: 'field-hint', text: `ولا يُردّ آليًّا على رقمٍ واحد أكثر من ${countOf(MAX_AUTO_PER_DAY, 'مرّة')} في اليوم — سدٌّ أمام حلقةٍ لا تنتهي.` }),
     el('div', { style: { marginTop: '10px' } },
       el('button', { type: 'button', class: 'btn btn-primary', text: 'حفظ القواعد', onClick: save })));
 }
@@ -468,19 +469,38 @@ function offerPanel(ctx) {
     },
   });
 
+  const editor = templatesEditor(ctx);
+
+  /**
+   * **قائمةٌ فارغةٌ ليست بابًا** (المرحلة ٥٢): من لا قالبَ له كان يرى «اختر القالب»
+   * فارغةً وزرَّ إرسالٍ لا يعمل، والطريقُ إلى الحلّ مطويٌّ في `details` تحتها لا
+   * يُشير إليه شيء. فيُستبدل بها **فعلٌ واحدٌ صريح** يفتح المحرّر ويُنشئ أوّل قالب.
+   */
+  const firstTemplate = el('div', { class: 'panel-block' },
+    el('p', { class: 'muted small', text: 'لا يُراسَل عميلٌ خارج نافذة الأربع والعشرين ساعة إلا بقالبٍ اعتمدته Meta. سجّل قالبَك مرّةً، ثم أرسل منه دائمًا.' }),
+    el('button', {
+      type: 'button', class: 'btn btn-primary', text: 'سجّل قالبَك الأوّل',
+      onClick: () => {
+        editor.open = true;
+        const add = [...editor.querySelectorAll('button')].find((b) => b.textContent.includes('قالب معتمَد'));
+        add?.click();
+        editor.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        editor.querySelector('input')?.focus();
+      },
+    }));
+
   return el('section', { class: 'panel' },
     el('h2', { text: 'أرسل عرضًا لعميل' }),
     el('p', { class: 'panel-desc', text: 'عرضٌ واحدٌ لعميلٍ واحد — أكثرُ ما تفعله في يومك. يُملأ القالبُ ببيانات العميل والعقار، ويُعرض عليك قبل أن يخرج.' }),
     ctx.waTemplates.length
-      ? null
-      : el('p', { class: 'field-hint', text: 'ولا قالبَ معتمَدٌ مسجَّلٌ بعد — سجّله أدناه في «القوالب المعتمَدة» مرّةً واحدة.' }),
-    el('div', { class: 'form-grid' },
-      labeled('العميل', clientSelect),
-      labeled('العقار', propertySelect, { hint: 'اختياريّ — يملأ الحيَّ والسعرَ والمساحة' }),
-      labeled('القالب', tplSelect)),
-    preview,
-    sendBtn,
-    templatesEditor(ctx));
+      ? el('div', { class: 'form-grid' },
+        labeled('العميل', clientSelect),
+        labeled('العقار', propertySelect, { hint: 'اختياريّ — يملأ الحيَّ والسعرَ والمساحة' }),
+        labeled('القالب', tplSelect))
+      : firstTemplate,
+    ctx.waTemplates.length ? preview : null,
+    ctx.waTemplates.length ? sendBtn : null,
+    editor);
 }
 
 /** محرِّرُ القوالب المعتمَدة ومواضع متغيّراتها — يُكتب مرّةً ويُستعمل دائمًا. */
@@ -600,6 +620,9 @@ function campaignPanel(ctx) {
     el('p', { class: 'panel-desc' },
       'واتساب لا يسمح برسالةٍ حرّة يبدؤها المكتب — تُرسل بقالبٍ تعتمده Meta أوّلًا. ',
       'فاختر القالب المعتمَد، ومن تُرسل إليه.'),
+    ctx.waTemplates.length
+      ? null
+      : el('p', { class: 'field-hint', text: 'ولا قالبَ مسجَّلًا بعد — سجّله من «أرسل عرضًا لعميل» أعلاه، ثم عُد إلى الحملة.' }),
     el('div', { class: 'form-grid' },
       labeled('القالب', tplSelect, { hint: 'متغيّراتُه تُملأ لكلّ عميلٍ باسمه هو' }),
       labeled('الحملة', campaignSelect, { hint: 'اختياريّ — يُنسب ما أُرسل إليها فتُقاس كلفتُها' }),

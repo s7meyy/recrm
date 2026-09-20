@@ -14,6 +14,7 @@
 import { repo } from './repository.js';
 import { getMatchingSettings, getZonesFor, expandZones } from './settings.js';
 import { normalizeArabic } from '../util/arabic.js';
+import { daysWord } from '../util/format.js';
 
 /** حالات العقار المستبعدة تلقائيًا من كل مطابقة. */
 export const EXCLUDED_STATUSES = ['rented', 'sold', 'refused'];
@@ -141,6 +142,92 @@ export function matchReadiness(listing) {
   return { ready: missing.length === 0, missing };
 }
 
+/* ===== مرجّحاتُ الترتيب (المرحلة ٥٢) ===== */
+
+/**
+ * **لماذا كانت القائمةُ كلُّها ١٠٠٪؟**
+ *
+ * المعايير المرجّحة كلُّها كانت «نجح/رسب»: السعرُ داخلَ الميزانية نسبتُه ١، والمساحةُ
+ * تساوي المطلوب أو تزيد نسبتُها ١. فعقارٌ بمليونين وآخرُ بثلاثةٍ تحت سقفٍ واحد
+ * **لا يُفرَّق بينهما**، وعميلٌ له خمسُ مطابقات يرى ١٠٠ و١٠٠ و١٠٠ — فبأيّها يبدأ؟
+ *
+ * فأُضيفت مرجّحاتٌ **صغيرةٌ ترتّب ولا تُسقط**: مجموعُها اثنتا عشرة نقطةً على الأكثر،
+ * ولا تهبط بالنسبة تحتَ حدّ العرض أبدًا (`settings.minScore`). فما كان يظهر يبقى ظاهرًا،
+ * وإنما يترتّب. وكلُّ حسمٍ يُذكر سببُه على البطاقة، فتصدّقه أو تتجاوزه بعلم.
+ */
+export const TIEBREAKS = [
+  { key: 'price', label: 'السعر', max: 4 },
+  { key: 'area', label: 'المساحة', max: 3 },
+  { key: 'media', label: 'الصور', max: 3 },
+  { key: 'fresh', label: 'الحداثة', max: 2 },
+];
+
+export const TIEBREAK_MAX = TIEBREAKS.reduce((s, t) => s + t.max, 0);
+
+/** عدد وسائط المعروض — والعرضُ الخارجيّ لقطةُ شاشته صورتُه. */
+function mediaCount(listing, kind) {
+  if (kind === 'external') return listing.screenshotImageId ? 1 : 0;
+  return (Array.isArray(listing.images) ? listing.images.length : 0) + (listing.signboardImageId ? 1 : 0);
+}
+
+/** تاريخُ آخر عهدٍ بالمعروض: نشرُ العرض الخارجيّ، أو آخرُ تعديلٍ للعقار. */
+function lastSeenAt(listing, kind) {
+  const raw = kind === 'external'
+    ? (listing.postedAt || listing.updatedAt || listing.createdAt)
+    : (listing.updatedAt || listing.createdAt);
+  const t = raw ? Date.parse(raw) : NaN;
+  return Number.isFinite(t) ? t : null;
+}
+
+/**
+ * مرجّحاتُ الترتيب لمعروضٍ اجتاز المعايير. تُعيد ما **يُنقص** من النسبة مع سببه،
+ * ولا تُعيد شيئًا لما لا يميّز — فبطاقةٌ بلا حسمٍ بطاقةٌ نظيفة لا بطاقةٌ صامتة.
+ * @returns {Array<{ key, label, lost: number, detail: string }>}
+ */
+export function tiebreakersFor(request, listing, { kind = 'property', now = Date.now() } = {}) {
+  const out = [];
+  const pct = (x) => Math.round(x * 100);
+
+  /* السعرُ وسقفُك — **الأرخصُ بكثيرٍ صنفٌ آخر غالبًا**: من قال «حتى ثلاثة ملايين»
+     يقصد سكنًا بثلاثة، ومعروضٌ بمليونٍ ونصفٍ تحته ليس صفقتَه بل بيتٌ أصغرُ أو أبعد.
+     فيتأخّر قليلًا ولا يُحجب. ومن حدّ أرضيّةً فبيانُه أصدقُ من ظنّنا: ما فوقها كاملٌ. */
+  if (request.budgetMax != null && listing.price != null && listing.price <= request.budgetMax && request.budgetMax > 0) {
+    const floorPrice = request.budgetMin != null ? request.budgetMin : request.budgetMax * 0.7;
+    if (listing.price < floorPrice && floorPrice > 0) {
+      const gap = Math.min(1, (floorPrice - listing.price) / floorPrice);
+      const lost = Math.round(gap * 4);
+      if (lost > 0) out.push({ key: 'price', label: 'السعر', lost, detail: `يقلّ عن المعتاد لميزانيّتك بـ ${pct(gap)}٪` });
+    }
+  }
+
+  /* المساحةُ الزائدة — **الزائدُ كثيرًا ليس أفضل**: من طلب أربعمئة متر لا يريد ثمانمئة
+     بثمنِها وصيانتِها. والزيادةُ اليسيرة لا تُحسب أصلًا. */
+  if (request.area != null && listing.area != null && request.area > 0 && listing.area > request.area) {
+    const over = (listing.area - request.area) / request.area;
+    if (over > 0.25) {
+      const lost = Math.round(Math.min(1, (over - 0.25) / 0.75) * 3);
+      if (lost > 0) out.push({ key: 'area', label: 'المساحة', lost, detail: `يزيد على مساحتك بـ ${pct(over)}٪` });
+    }
+  }
+
+  /* الصور — **ما لا صورةَ له لا يُرسَل**: تبدأ بمن تستطيع أن ترسل عنه شيئًا الآن. */
+  if (mediaCount(listing, kind) === 0) {
+    out.push({ key: 'media', label: 'الصور', lost: 3, detail: 'بلا صورة تُرسلها' });
+  }
+
+  /* الحداثة — العهدُ القديم بالمعروض يعني سعرًا قد تغيّر وحالةً قد تبدّلت. */
+  const seen = lastSeenAt(listing, kind);
+  if (seen != null) {
+    const days = Math.floor((now - seen) / 86400000);
+    if (days > 60) {
+      const lost = Math.round(Math.min(1, (days - 60) / 120) * 2);
+      if (lost > 0) out.push({ key: 'fresh', label: 'الحداثة', lost, detail: `آخرُ عهدٍ به منذ ${daysWord(days)}` });
+    }
+  }
+
+  return out;
+}
+
 /**
  * نسبة مطابقة عقار أو عرض خارجي لطلب.
  * @param {object} request الطلب
@@ -150,7 +237,7 @@ export function matchReadiness(listing) {
  * @returns {{ ok: boolean, reason?: string, score: number, priceUnknown: boolean,
  *            tags: string[], parts: Array<{ key, label, weight, state, ratio, detail }> }}
  */
-export function scoreListing(request, listing, { settings, districts = [], kind = 'property', pre = null }) {
+export function scoreListing(request, listing, { settings, districts = [], kind = 'property', pre = null, now = Date.now() }) {
   const fail = hardFilter(request, listing, settings, kind);
   if (fail) return { ok: false, reason: fail, score: 0, priceUnknown: listing.price == null, tags: [], parts: [] };
 
@@ -248,13 +335,20 @@ export function scoreListing(request, listing, { settings, districts = [], kind 
 
   const known = parts.filter((p) => p.state === 'known');
   const total = known.reduce((s, p) => s + p.weight, 0);
-  const score = total > 0
+  const base = total > 0
     ? round((known.reduce((s, p) => s + p.weight * p.ratio, 0) / total) * 100)
     : 100; // اجتاز الفواصل القاطعة ولا معيار مرجّح صالحًا للحساب
 
   if (total === 0 && parts.length === 0) tags.push('لا معايير مرجّحة في هذا الطلب');
 
-  return { ok: true, score, priceUnknown: listing.price == null, tags, parts };
+  // **المرجّحاتُ ترتّب ولا تُسقط**: ما كان فوق حدّ العرض يبقى فوقه مهما حُسم منه،
+  // فلا يختفي عنك معروضٌ لأنّه بلا صورة. وما كان تحته أصلًا يُترك كما هو.
+  const nudges = tiebreakersFor(request, listing, { kind, now });
+  const lost = nudges.reduce((s, n) => s + n.lost, 0);
+  const floorScore = Number.isFinite(settings?.minScore) ? settings.minScore : 0;
+  const score = base > floorScore ? Math.max(floorScore, round(base - lost)) : base;
+
+  return { ok: true, score, base, nudges, priceUnknown: listing.price == null, tags, parts };
 }
 
 /* ===== التشغيل ===== */
@@ -328,7 +422,7 @@ export function candidatesFor(request, ctx, { minScore = 0, includeExternal = tr
       const result = scoreListing(request, listing, { settings: ctx.settings, districts, kind, pre });
       if (!result.ok || result.score < minScore) continue;
       if (limit && out.length >= limit && result.score <= floor) continue;
-      out.push({ listing, kind, score: result.score, tags: result.tags, parts: result.parts, priceUnknown: result.priceUnknown });
+      out.push({ listing, kind, score: result.score, base: result.base, nudges: result.nudges, tags: result.tags, parts: result.parts, priceUnknown: result.priceUnknown });
       // لا نرتّب في كل إدخال: نقصّ على مِثلَي الحدّ فيبقى القصّ نادرًا والنتيجة مضبوطة.
       if (limit && out.length >= limit * 2) {
         out.sort(byScore);

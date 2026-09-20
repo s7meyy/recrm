@@ -51,6 +51,9 @@ function safeEqual(a, b) {
 const REPLY_ERR = 'tg/_reply-error';
 /** صاحبُ البوت — يُربط بأوّل رسالة، ويُفصل من صفحة «الوارد». */
 const OWNER_KEY = 'tg/_owner';
+/** أسبابُ ما صُرِف من الوارد (المرحلة ٥٢) — سجلٌّ قصيرٌ يُقرأ نمطُه. */
+const REJECTS_KEY = 'tg/_rejects';
+const MAX_REJECTS = 50;
 /**
  * **ومفاتيحُ النظام تُقصى من السرد والحذف** — وهذا عطبٌ كشفه الاختبار قبل أن يصيبك:
  * `_owner` و`_reply-error` تحت البادئة نفسِها، فكانت تُسرد بطاقاتٍ فارغةً في صندوقك،
@@ -223,6 +226,8 @@ export default async (request) => {
       // **والربطُ لا يحتاج متغيّرَ المعرّف**: يكفي الرمزُ والسرّ، والمحادثةُ تُربط بنفسها.
       linked: !!(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_SECRET),
       missing: ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_SECRET'].filter((k) => !process.env[k]),
+      // أسبابُ ما صُرِف — ليُقرأ نمطُها لا سطرُها الواحد.
+      rejects: ((await store.get(REJECTS_KEY, { type: 'json' }))?.rows) || [],
     });
   }
 
@@ -233,7 +238,22 @@ export default async (request) => {
     // **فصلُ الربط**: يُعيد البوتَ حرًّا فيرتبط بأوّل من يراسله بعدها.
     if (body?.unbind) { await store.delete(OWNER_KEY); return json({ ok: true, unbound: true }); }
     const k = String(body?.key || '');
-    if (k.startsWith(PREFIX) && !isSystemKey(k) && /^[\w\-.:/]+$/.test(k)) await store.delete(k);
+    if (k.startsWith(PREFIX) && !isSystemKey(k) && /^[\w\-.:/]+$/.test(k)) {
+      // **ولماذا صُرِف؟** (المرحلة ٥٢) — الصرفُ الصامت يضيّع أنفعَ ما في الصندوق: أن
+      // تعرف بعد شهرٍ أنّ نصفَ ما يصلك دعايةٌ أو مكرَّر، فتُغلق البابَ من أوّله.
+      // والسببُ اختياريّ: من حذف بلا سببٍ لا يُمنع، وإنّما لا يُحسب له شيء.
+      const why = String(body?.why || '').trim().slice(0, 120);
+      if (why) {
+        const rec = (await store.get(REJECTS_KEY, { type: 'json' })) || { rows: [] };
+        const old = (await store.get(k, { type: 'json' })) || null;
+        rec.rows = [
+          { at: new Date().toISOString(), why, kind: old?.kind || '', head: String(old?.text || '').slice(0, 60) },
+          ...(Array.isArray(rec.rows) ? rec.rows : []),
+        ].slice(0, MAX_REJECTS);
+        await store.setJSON(REJECTS_KEY, rec);
+      }
+      await store.delete(k);
+    }
     return json({ ok: true });
   }
 

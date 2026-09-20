@@ -110,9 +110,20 @@ await page.waitForTimeout(1800);
 const beforeDel = await page.locator('#page button:has-text("احذفه")').count();
 if (beforeDel) {
   await page.locator('#page button:has-text("احذفه")').first().click();
+  await page.waitForTimeout(600);
+  // المرحلة ٥٢: يُسأل عن السبب قبل الصرف — **والسؤالُ لا يمنع**: بابُ «بلا سبب» قائم.
+  ok('**ويُسأل لماذا تصرفه**', await page.locator('.modal:has-text("لماذا تصرفه")').count() > 0,
+    await page.locator('.modal').last().innerText().catch(() => '—'));
+  ok('وبابُ الحذف بلا سببٍ قائمٌ فلا يصير السؤالُ ضريبة',
+    await page.locator('.modal button:has-text("بلا سبب")').count() > 0);
+  await page.selectOption('.modal select', 'spam');
+  await page.locator('.modal button:has-text("احذفه")').first().click();
   await page.waitForTimeout(1800);
   const afterDel = await page.locator('#page button:has-text("احذفه")').count();
   ok('الحذفُ يُزيل الرسالةَ من الصندوق', afterDel === beforeDel - 1, `${beforeDel} → ${afterDel}`);
+  const status = await page.locator('#page').innerText();
+  ok('**والسببُ يُحفظ ويُعدّ** — فيُقرأ نمطُ ما يضيّع وقتَك', /ما صرفتَه ولماذا/.test(status),
+    status.split('\n').slice(0, 10).join(' | '));
 } else {
   ok('الحذفُ يُزيل الرسالةَ من الصندوق', false, 'لا بطاقات');
 }

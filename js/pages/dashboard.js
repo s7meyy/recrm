@@ -15,7 +15,7 @@ import { campaignReport } from '../util/campaigns.js';
 import { showingStats } from '../util/showings.js';
 import { revenueForecast } from '../util/forecast.js';
 import { el, clear, badge } from '../util/dom.js';
-import { formatNumber, formatSAR, daysBetween, relativeDays, countWord, countOf, deltaOf } from '../util/format.js';
+import { formatNumber, formatSAR, formatDate, daysBetween, relativeDays, countWord, countOf, deltaOf } from '../util/format.js';
 import { formatPhone, toInternational } from '../util/phone.js';
 import { discountEffect } from '../util/property-evidence.js';
 import { memberStats, activeMembers } from '../util/team.js';
@@ -331,6 +331,48 @@ function buildLayout(container, data) {
 
   /* المهام (المرحلة ٧) */
   grid.append(panel('المهام', null, ...taskSection(tasks)));
+
+  foldEmptyPanels(grid);
+}
+
+/* ===== اللوحاتُ الفارغة تُطوى (المرحلة ٥٢) ===== */
+
+/** ما يدلّ على أنّ في اللوحة بيانًا فعلًا — فلا تُطوى لوحةٌ فيها خبر أبدًا. */
+const HAS_DATA = 'svg, table, ul, ol, .num, .stage-bar, .funnel-row, .progress';
+
+/** ما تقوله اللوحةُ عن نفسها حين تكون فارغة: شكلٌ فارغٌ، أو سطرٌ يبدأ بـ«لا …». */
+function saysEmpty(node) {
+  if (node.querySelector('.chart-empty')) return true;
+  return [...node.querySelectorAll('.muted.small, .panel-desc')]
+    .some((n) => /^لا\s/.test((n.textContent || '').trim()));
+}
+
+/**
+ * **الداشبورد في أوّل شهر**: خمسٌ وعشرون لوحةً، عشرون منها تقول «لا بيانات بعد» —
+ * فتُدفن الخمسُ التي فيها خبرُك الحقيقيُّ بين عشرين لوحةً فارغة، ويظنّ الرائي أنّ
+ * البرنامج فارغٌ لا أنّ عملَه لم يبدأ.
+ *
+ * فتُنزع الفارغاتُ من الشبكة وتُجمع في سطرٍ واحدٍ يسمّيها بأسمائها — **فلا تختفي
+ * صامتةً** — ويُعيدها زرٌّ واحدٌ إلى مكانها متى أردت أن ترى ما ينتظرك.
+ */
+export function foldEmptyPanels(grid) {
+  const panels = [...grid.children].filter((n) => n.classList?.contains('panel'));
+  const empties = panels.filter((n) => !n.querySelector(HAS_DATA) && saysEmpty(n));
+  if (empties.length < 3) return 0; // لوحةٌ أو لوحتان فارغتان لا تستحقّان طيًّا
+
+  const names = empties.map((n) => n.querySelector('h2')?.textContent?.trim()).filter(Boolean);
+  for (const node of empties) node.remove();
+
+  const note = el('div', { class: 'panel dash-folded' },
+    el('h2', { text: `${countOf(empties.length, 'لوحة')} تنتظر بياناتها` }),
+    el('p', { class: 'panel-desc', text: names.join(' · ') }),
+    el('button', {
+      type: 'button', class: 'btn btn-sm',
+      text: 'أظهر الفارغ',
+      onClick: () => { note.remove(); for (const node of empties) grid.append(node); },
+    }));
+  grid.append(note);
+  return empties.length;
 }
 
 /**
@@ -780,7 +822,7 @@ function tourSection({ tours, properties, clientMap, completeness, dealPropertyI
       const rate = stats.captured ? Math.round((stats.closed / stats.captured) * 100) : null;
       return el('li', {},
         // **وبصيغة الإنسان لا الحاسوب** (المرحلة ٥٢): كان يخرج `2026-09-16T10:00:00.000Z`
-        // — التاريخُ الوحيدُ الخامُّ في النظام كلِّه، و`formatDate` مستوردةٌ في الملفّ نفسِه.
+        // — التاريخُ الوحيدُ الخامُّ في النظام كلِّه.
         el('span', { text: tour.date ? formatDate(tour.date) : 'بلا تاريخ' }),
         el('span', { class: 'row' },
           el('span', { class: 'muted small', text: `${formatNumber(stats.closed)}/${formatNumber(stats.captured)}` }),

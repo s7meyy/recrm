@@ -135,7 +135,13 @@ export function echoDates(root) {
     const out = el('div', { class: 'muted small date-echo' });
     const draw = () => {
       // `formatDateTime` تحتاج زمنًا كاملًا، و`datetime-local` تعطي «…T10:00» بلا منطقة.
-      out.textContent = input.value ? (withTime ? formatDateTime(new Date(input.value).toISOString()) : formatDate(input.value)) : '';
+      // **والفارغُ يُقال سببُه** (المرحلة ٥٢): من رأى `mm/dd/yyyy` في واجهةٍ عربيّةٍ ظنّه
+      // عطبًا في البرنامج، وهو ترتيبُ جهازه هو ولا يملك الموقعُ تبديلَه. فيُقال صراحةً
+      // مرّةً واحدةً تحت الحقل، ويزول القولُ فور أن يُكتب التاريخُ بالعربيّة مكانه.
+      out.textContent = input.value
+        ? (withTime ? formatDateTime(new Date(input.value).toISOString()) : formatDate(input.value))
+        : 'ترتيبُ الصندوق بحسب لغة جهازك — وما تختاره يُكتب هنا بالعربيّة والهجريّ.';
+      out.classList.toggle('empty-note', !input.value);
     };
     draw();
     input.addEventListener('change', draw);
@@ -361,6 +367,51 @@ export function sessionGoneNote() {
       type: 'button', class: 'btn btn-ghost btn-sm', text: 'حدّث الآن',
       onClick: () => location.reload(),
     }));
+}
+
+/**
+ * **شرحٌ يُطلب لا يُفرض** (المرحلة ٥٢). صفحةٌ تشرح نفسَها قبل أن تعمل تُقرأ مرّةً
+ * وتُتخطّى ألفًا، والسطرُ الذي تحتاجه اليوم يضيع بين ثلاثة آلاف حرفٍ قرأتها بالأمس.
+ * فيبقى ظاهرًا ما يلزم العمل، ويُطوى الشرحُ خلف سطرٍ واحدٍ يُفتح بنقرة.
+ */
+export function disclosure(summaryText, ...nodes) {
+  return el('details', { class: 'panel-block disclosure' },
+    el('summary', { text: summaryText }),
+    ...nodes.filter(Boolean));
+}
+
+/** شاشةُ الجوّال — الحدُّ نفسُه المستعمل في `css` وفي طيّ الفلاتر. */
+export const isNarrow = () => window.matchMedia('(max-width: 640px)').matches;
+
+/**
+ * **يطوي كتلةً خلف زرٍّ على الجوّال وحده** (المرحلة ٥٢).
+ *
+ * صفحةُ المطابقات على الجوّال كانت تسرد مطابقات كلّ عميلٍ مفتوحةً تحت اسمه، فعميلٌ
+ * له خمسُ مطابقاتٍ يأكل ثلاثَ شاشات — ومن له عشرةُ عملاء لا يبلغ آخرَهم أبدًا.
+ * فيُطوى السردُ خلف سطرٍ يقول **اسمَ ما طُوي وعدده**، ويُفتح بنقرة.
+ *
+ * وعلى الشاشة الواسعة تُعاد الكتلةُ كما هي بلا زرٍّ ولا غلاف — فلا يتغيّر شيء.
+ *
+ * @param {HTMLElement} box الكتلة المطويّة
+ * @param {string} label نصُّ الزرّ (يُسبق بسهم الحالة)
+ * @param {{ open?: boolean }} options `open` يفتحها ابتداءً ولو على الجوّال
+ */
+export function foldOnNarrow(box, label, { open = false } = {}) {
+  if (!isNarrow()) return box;
+  box.classList.add('fold-body');
+  if (open) box.classList.add('fold-open');
+  const btn = el('button', {
+    type: 'button', class: 'btn btn-sm fold-toggle', 'aria-expanded': open ? 'true' : 'false',
+    onClick: () => {
+      const on = box.classList.toggle('fold-open');
+      btn.setAttribute('aria-expanded', on ? 'true' : 'false');
+      paint(on);
+    },
+  });
+  const paint = (on) => { btn.textContent = `${on ? '▲' : '▼'} ${label}`; };
+  paint(open);
+  const wrap = el('div', { class: 'fold' }, btn, box);
+  return wrap;
 }
 
 /**

@@ -59,7 +59,17 @@ await page.waitForTimeout(2200);
 await page.locator('.seg-btn:has-text("جدول")').first().click().catch(() => {});
 await page.waitForTimeout(900);
 await page.locator('tbody tr').filter({ hasText: 'الشهادة' }).first().click();
-await page.waitForTimeout(1400);
+await page.waitForTimeout(1600);
+/* **النقرةُ صارت تفتح الملفّ لا الاستمارة** (المرحلة ٥٢): من يريد أن يرى لا يريد أن
+   يعدّل. فيُفحص الملفُّ أوّلًا — وفيه شهادةُ السوق ورحلةُ السعر — ثمّ تُفتح الاستمارةُ
+   من زرّها كما يفتحها صاحبُها، فتبقى لوحتُها مفحوصةً كما كانت. */
+const profile = await page.locator('#page').innerText();
+ok('**النقرةُ تفتح ملفَّ العقار لا استمارة التعديل**', /#\/property\//.test(await page.evaluate(() => location.hash)),
+  await page.evaluate(() => location.hash));
+ok('والملفُّ يحمل شهادةَ السوق ورحلةَ السعر', profile.includes('ماذا قال السوق') && profile.includes('رحلة السعر'),
+  profile.split('\n').filter((l) => l.includes('السوق') || l.includes('رحلة')).join(' | '));
+await page.locator('#page a:has-text("تعديل البيانات"), #page button:has-text("تعديل البيانات")').first().click();
+await page.waitForTimeout(1600);
 const form = await page.locator('.modal').last().innerText();
 ok('لوحة شهادة السوق تظهر في نموذج العقار', form.includes('ماذا قال السوق عن هذا العقار؟'),
   form.split('\n').find((l) => l.includes('السوق')) || '');

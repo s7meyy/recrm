@@ -58,7 +58,12 @@ await page.evaluate(() => { location.hash = '#/whatsapp'; });
 await page.waitForTimeout(1600);
 const text = await page.locator('#page').innerText();
 ok('الصفحة تفتح', (await page.locator('#page h1').innerText()).includes('واتساب'));
-ok('وتُري عنوان الوِبهوك لينسخه إلى Meta', text.includes('/api/whatsapp'));
+// المرحلة ٥٢: خطواتُ الربط صارت مطويّةً خلف سطرٍ يُنقر — **والعنوانُ يبقى موجودًا**
+// ولا يُحذف: من يربط أوّلَ مرّةٍ يجده بنقرة، ومن ربط لا يقرؤه كلّ يوم.
+ok('وسطرُ «كيف أربطه؟» ظاهرٌ في الصفحة', text.includes('كيف أربطه'), text.split('\n').slice(0, 8).join(' | '));
+await page.locator('#page summary:has-text("كيف أربطه")').first().click();
+await page.waitForTimeout(400);
+ok('وتُري عنوان الوِبهوك لينسخه إلى Meta', (await page.locator('#page').innerText()).includes('/api/whatsapp'));
 ok('وتشرح قيد واتساب: لا رسالة حرّة يبدؤها المكتب', text.includes('قالب'));
 ok('الرسالة الواردة ظهرت في الوارد', text.includes('أبغى أشوف فلة النرجس'), text.split('\n').find((l) => l.includes('أبغى')) || '—');
 ok('ورقم المرسِل بالصيغة المحلّية', text.includes('0551234567') || text.includes('055 123 4567'), text.split('\n').find((l) => l.includes('055')) || '—');

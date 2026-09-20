@@ -63,6 +63,7 @@ const SUITES = [
   ['task-intake-unit.mjs', null],
   ['deed-parse-unit.mjs', null],
   ['guard-plural-unit.mjs', null],
+  ['match-rank-unit.mjs', null],   // المرحلة ٥٢
   ['app-pages.mjs', OPEN],
   ['mobile-smoke.mjs', OPEN],
   ['design-dhad.mjs', OPEN],

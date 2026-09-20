@@ -625,10 +625,23 @@ function completeness(ctx, p) {
   return result;
 }
 
+/**
+ * **ما ينقص يُسمّى** (المرحلة ٥٢). كانت الرقيقة تقول «ناقص» وحدَها، والجوابُ في
+ * `title` لا يظهر على الجوّال أصلًا — فكان عليك فتحُ كلّ عقارٍ لتعرف ما ينقصه.
+ * وأوّلُ ناقصين يُكتبان على الرقيقة نفسِها، والباقي في التلميح كما كان.
+ */
+const MISSING_SHORT = {
+  city: 'بلا مدينة', district: 'بلا حي', type: 'بلا نوع', purposes: 'بلا غرض',
+  location: 'بلا موقع', ownerPhone: 'بلا مالك', area: 'بلا مساحة', price: 'بلا سعر',
+  images: 'بلا صور',
+};
+
 function completenessBadge(ctx, p) {
   const c = completeness(ctx, p);
   if (c.complete) return badge('مكتمل', 'badge-ok');
-  return el('span', { class: 'badge badge-warn', text: 'ناقص', title: `ينقص: ${c.missingLabels.join('، ')}` });
+  const shorts = c.missing.map((k) => MISSING_SHORT[k]).filter(Boolean);
+  const text = shorts.length ? shorts.slice(0, 2).join(' · ') + (shorts.length > 2 ? ' …' : '') : 'ناقص';
+  return el('span', { class: 'badge badge-warn', text, title: `ينقص: ${c.missingLabels.join('، ')}` });
 }
 
 function statusBadge(ctx, key) {
@@ -651,6 +664,13 @@ function thumbInto(node, p, thumb = true) {
     .then((url) => { if (url) img.src = url; });
 }
 
+/** أيقونةُ النوع — حرفٌ واحدٌ يُرى في لمحةٍ بدل كلمةٍ تُقرأ، وما لا أيقونةَ له يأخذ العامّة. */
+const TYPE_ICONS = {
+  land: '🟩', farm: '🌾', villa: '🏡', floor: '🏠', apartment: '🏢',
+  building: '🏬', shop: '🏪', office: '🏛️', warehouse: '📦', rest_house: '🌴',
+};
+const typeIcon = (key) => TYPE_ICONS[key] || '🏷️';
+
 function renderGrid(ctx, items) {
   const grid = el('div', { class: 'grid' });
   for (const p of items) {
@@ -659,7 +679,14 @@ function renderGrid(ctx, items) {
       thumbInto(imgBox, p);
       if (p.images.length > 1) imgBox.append(el('span', { class: 'card-imgcount', text: `${countOf(p.images.length, 'صورة')}` }));
     } else {
-      imgBox.append(el('span', { class: 'card-noimg', text: typeLabel(ctx.lists, p.type) }));
+      // **الغلافُ الفارغ كان يكرّر كلمةَ النوع بخطٍّ ضخم** — وهي مكتوبةٌ تحتها في البطاقة
+      // نفسِها. فصارت أيقونةً صغيرةً وفعلًا: «أضف صورة» — وهو ما ينقص البطاقةَ فعلًا.
+      imgBox.append(el('span', { class: 'card-noimg', text: typeIcon(p.type), 'aria-hidden': 'true' }));
+      imgBox.append(el('button', {
+        type: 'button', class: 'btn btn-ghost btn-sm card-addimg', text: '＋ أضف صورة',
+        'aria-label': `أضف صورة إلى ${typeLabel(ctx.lists, p.type)}`,
+        onClick: (e) => { e.stopPropagation(); openForm(ctx, p); },
+      }));
     }
     const owner = ownerLabel(ctx, p);
     const pick = el('input', {
