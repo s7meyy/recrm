@@ -177,6 +177,20 @@ const scheduleSave = (() => {
 
 /* ───────────────────────── التنقل ───────────────────────── */
 
+/** اسمُ الملفّ المختار بالعربية — الحقلُ الأصلي مُخفًى، فلولاه لم يدرِ أوقع اختياره أم لا. */
+function bindFilePickers() {
+  for (const inp of document.querySelectorAll('.filepick input[type="file"]')) {
+    inp.addEventListener('change', () => {
+      const out = inp.parentElement.querySelector('.filepick-name');
+      if (!out) return;
+      const n = inp.files?.length || 0;
+      out.textContent = n === 0 ? ''
+        : n === 1 ? inp.files[0].name
+        : n === 2 ? 'ملفّان' : `${n} ملفات`;
+    });
+  }
+}
+
 function show(view) {
   for (const v of VIEWS) {
     const node = $(`#view-${v}`);
@@ -186,6 +200,11 @@ function show(view) {
     b.setAttribute('aria-current', String(b.dataset.go === view || (view === 'data' && b.dataset.go === 'new') || (view === 'pipeline' && b.dataset.go === 'new') || (view === 'report' && b.dataset.go === 'new')));
   });
   renderStepsBar(view);
+  /* **الشاشةُ تُحمَّل متى عُرضت، لا متى سُلك إليها طريقٌ بعينه.**
+     قائمةُ «قالب الإخراج» كانت تُملأ في `loadReportView` وحدها، ومَن بلغ
+     التقريرَ من غير شريط الخطوات — كفاتح التقرير النموذجي — وجدها فارغةً:
+     قِيست فكانت صفرَ خيارات. فالتحميل هنا حارسٌ لكل الطرق. */
+  if (view === 'report' && !$('#r-template')?.options.length) fillTemplates();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -829,12 +848,18 @@ function renderRecency() {
   const max = Math.max(...months.map((m) => m.n), 1);
   const cls = r.verdict === 'انحدار' ? 'down' : (r.verdict === 'تحسّن' ? 'up' : '');
 
+  /* **عناوينُ الأشهر تُخفَّف ولا تُمال.** كانت كلُّها مكتوبةً مائلةً بأربعين
+     درجة فتتراكب حين تكثر الأشهر، فلا يُقرأ منها شيء. فتُكتب مستقيمةً، ويُعرَض
+     منها ما يتّسع له العرض — والأولُ والأخيرُ مثبتان، فالمدى مقروءٌ دائمًا. */
+  const every = months.length > 12 ? 3 : (months.length > 7 ? 2 : 1);
   const chart = months.length >= 3 ? `<div class="months">${
-    months.map((m) => {
+    months.map((m, i) => {
       const h = Math.max(8, Math.round((m.n / max) * 100));
       const tone = m.avg === null ? '' : (m.avg >= 4 ? 'up' : (m.avg <= 2.5 ? 'down' : 'mid'));
+      const showLabel = i === 0 || i === months.length - 1 || i % every === 0;
       return `<div class="month" title="${m.label}: ${m.n} تعليقًا، متوسط ${m.avg ?? '—'}">
-        <span class="mv">${m.avg ?? '—'}</span><span class="bar ${tone}" style="height:${h}%"></span><span class="ml">${m.label}</span></div>`;
+        <span class="mv">${m.avg ?? '—'}</span><span class="bar ${tone}" style="height:${h}%"></span>
+        <span class="ml">${showLabel ? m.label : ''}</span></div>`;
     }).join('')}</div>` : '';
 
   const ages = topicAges(job.place).filter((t) => t.state === 'ناشئة' || t.state === 'متفاقمة');
@@ -1884,6 +1909,33 @@ async function renderClients(preloaded = null) {
 async function renderCompare() {
   compareJobs = await allJobs();
 
+  /* **الأرشيفُ الفارغ يُستقبَل بجوابٍ واحد لا بثلاثة نفي.**
+     كانت الشاشةُ تعرض ثلاث بطاقاتٍ كلُّها «لا يوجد»: لا منشأة لها تقريران،
+     ولا علامة، والأرشيف فارغ — فيخرج الزائرُ وقد قيل له ثلاثَ مرات إنه لا
+     شيء عنده، ولم يُقَل له مرةً ما هذه الشاشة ولا كيف تمتلئ. */
+  const emptyBox = $('#cmp-empty');
+  const hasAny = compareJobs.length > 0;
+  if (emptyBox) {
+    emptyBox.hidden = hasAny;
+    emptyBox.innerHTML = hasAny ? '' : `<div class="card intro-empty">
+      <h2>المقارنة — تُظهر ما تغيَّر، ولا تعمل من تقريرٍ واحد</h2>
+      <p>هنا تُقارَن منشأةٌ بنفسها بين تقريرين، أو تُقارَن بمنافسٍ في مدينتك وتصنيفك،
+        أو تُجمَع فروعُ علامةٍ واحدة. وكلُّها تحتاج تقارير في أرشيفك أولًا.</p>
+      <ul>
+        <li><b>ما تغيَّر عندك:</b> أنشئ تقريرًا اليوم، ثم آخرَ للرابط نفسه بعد شهرٍ أو شهرين.</li>
+        <li><b>مقارنةٌ بمنافس:</b> أنشئ تقريرًا لمنشأةٍ أخرى في المدينة والتصنيف نفسيهما.</li>
+        <li><b>فروعُ علامة:</b> اكتب اسم العلامة نفسه في حقل «العلامة / المالك» عند كل فرع.</li>
+      </ul>
+      <div class="row"><button type="button" class="btn gold" data-go="new">ابدأ تقريرك الأول</button></div>
+    </div>`;
+    emptyBox.querySelector('[data-go]')?.addEventListener('click', () => show('new'));
+  }
+  for (const id of ['cmp-timeline-card', 'cmp-bench-card', 'cmp-group-card']) {
+    const c = $('#' + id);
+    if (c) c.hidden = !hasAny;
+  }
+  if (!hasAny) return;
+
   const places = comparablePlaces(compareJobs);
   const sel = $('#cmp-place');
   sel.innerHTML = places.length
@@ -2903,11 +2955,32 @@ async function renderArchive(filter = '') {
   const jobs = await allJobs();
   renderPortfolio(jobs);
   renderClients(jobs);
+
+  /* **أرشيفٌ فارغ لا يُستقبَل بأربع بطاقاتٍ فارغة وتحذيرِ ضياع.**
+     كان الزائرُ الجديد يرى «نظرة المحفظة» و«دفتر العملاء» خاويين، وتحتهما
+     تحذيرٌ بأن تقاريره قد تُمحى — ولا تقريرَ عنده أصلًا. فتُطوى الثلاثة حتى
+     يوجد ما يُحمى، ويبقى جوابٌ واحدٌ يقول ما هذه الشاشة وكيف تمتلئ. */
+  const bare = jobs.length === 0 && !filter.trim();
+  for (const id of ['portfolio-card', 'clients-card', 'safety-card']) {
+    const c = $('#' + id);
+    if (c) c.hidden = bare;
+  }
   const q = filter.trim();
   const list = q ? jobs.filter((j) => (j.place?.identity?.name || '').includes(q)) : jobs;
 
   if (!list.length) {
-    host.innerHTML = `<div class="empty">${q ? 'لا نتائج للبحث.' : 'لا تقارير بعد. ابدأ من «تقرير جديد».'}</div>`;
+    host.innerHTML = q ? '<div class="empty">لا نتائج للبحث.</div>' : `<div class="intro-empty">
+      <h2>أرشيفك — وهو ما يجعل التقريرَ الثاني أثمنَ من الأول</h2>
+      <p>كلُّ تقريرٍ تُنشئه يُحفَظ هنا في متصفّحك وحده، مرتَّبًا بالمنطقة والمدينة والتصنيف والحيّ.
+        ومتى اجتمع لك تقريران للمنشأة نفسها صار بيدك ما لا يُشترى: <b>ما تغيَّر فعلًا بعد أن عملتَ بالتوصيات</b>.</p>
+      <ul>
+        <li>تقريران لمنشأةٍ واحدة ← شاشةُ المقارنة تقيس أثر ما فعلتَه.</li>
+        <li>منشأتان في مدينةٍ وتصنيفٍ واحد ← مقارنةٌ بمنافس.</li>
+        <li>وحين يمتلئ الأرشيف تظهر هنا نظرةُ المحفظة ودفترُ العملاء وأدواتُ حمايته.</li>
+      </ul>
+      <div class="row"><button type="button" class="btn gold" id="ar-start">ابدأ تقريرك الأول</button></div>
+    </div>`;
+    host.querySelector('#ar-start')?.addEventListener('click', () => show('new'));
     return;
   }
 
@@ -3310,19 +3383,6 @@ async function jumpQueue(id) {
   stepOpen.clear();
   loadDataView(); renderPipeline(); loadReportView();
   try { localStorage.setItem(LAST_JOB, job.id); } catch { /* تجاهل */ }
-  /* اسمُ الملفّ المختار يُكتب بالعربية بجانب الزرّ، وإلا بقي المستخدم
-     لا يدري أوقع اختياره أم لا بعد أن أُخفي الحقل الأصلي. */
-  for (const inp of document.querySelectorAll('.filepick input[type="file"]')) {
-    inp.addEventListener('change', () => {
-      const out = inp.parentElement.querySelector('.filepick-name');
-      if (!out) return;
-      const n = inp.files?.length || 0;
-      out.textContent = n === 0 ? ''
-        : n === 1 ? inp.files[0].name
-        : n === 2 ? 'ملفّان' : `${n} ملفات`;
-    });
-  }
-
   renderQueue();
   show(job.reportMd ? 'report' : (job.place.reviews.length ? 'pipeline' : 'data'));
   toast(job.place.identity.name || 'تقرير');
@@ -3473,6 +3533,8 @@ async function boot() {
   async function loadDemo() {
     const { fixture, CTX } = await import('./eval.js');
     const demo = fixture();
+    /* الاسمُ يحمل بيانَه معه: كي لا يُظنَّ منشأةً حقيقيةً في الأرشيف بعد أيام. */
+    demo.identity = { ...(demo.identity || {}), name: 'مقهى المعيار (نموذج تجريبي)' };
     job.place = demo;
     job.ctx = { ...CTX, groupId: 'food' };
     job.mapsUrl = '';
@@ -3513,8 +3575,12 @@ async function boot() {
     renderContext(); renderAnomaly(); renderIntegrity(); renderSources(); renderBias();
     renderConfidenceHint(); renderPriority(); renderStars(); renderImpactPreview();
     renderReport();
+    /* **ويُحفَظ في الأرشيف.** كان الأرشيفُ يبقى فارغًا بعد الجولة، فلا يرى
+       الوافدُ شاشةَ أرشيفٍ عاملةً قطّ. واسمُه مُعلِنٌ بنفسه أنه تجريبي، فلا
+       يختلط بمنشأةٍ حقيقية، ويُحذَف كأي تقرير. */
+    scheduleSave();
     show('report');
-    toast('تقريرٌ نموذجيّ ببياناتٍ تجريبية — لتَرى الشكل قبل أن تُدخل بياناتك.');
+    toast('تقريرٌ نموذجيّ ببياناتٍ تجريبية — محفوظٌ في أرشيفك لتَرى الشاشات عاملة.');
   }
 
   /** دعوةٌ لا مقاطعة: شريطٌ أعلى الشاشة لا يحجب حقلًا ولا يوقف عملًا. */
@@ -3532,6 +3598,7 @@ async function boot() {
     bar.querySelector('#offer-close').addEventListener('click', close);
   }
 
+  bindFilePickers();
   renderQueue();
 
   /* **الجولة تُعرَض ولا تُفرَض.**

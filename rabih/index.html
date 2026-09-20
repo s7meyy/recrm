@@ -42,7 +42,7 @@
 
       <div class="field">
         <label for="f-url">رابط قوقل مابز</label>
-        <input id="f-url" type="url" inputmode="url" placeholder="https://maps.app.goo.gl/… أو https://www.google.com/maps/place/…">
+        <input id="f-url" type="url" inputmode="url" placeholder="ألصق رابط منشأتك من خرائط قوقل">
         <div class="note" id="url-note">يُقبل الرابط الكامل والمختصر. من التطبيق: مشاركة ← نسخ الرابط.</div>
       </div>
 
@@ -106,7 +106,7 @@
       </div>
       <div id="new-msg" role="status" aria-live="polite"></div>
       <div class="row end">
-        <button type="button" class="btn ghost" id="btn-bulk">إنشاء دفعة…</button>
+        <button type="button" class="btn ghost sm" id="btn-bulk" title="للوكالات: عدة منشآت دفعةً واحدة">إنشاء دفعة (للوكالات)…</button>
         <button type="button" class="btn gold" id="btn-start">ابدأ →</button>
       </div>
     </div>
@@ -184,12 +184,17 @@
         <div class="field">
           <label for="d-qna">الأسئلة والأجوبة من صفحة قوقل</label>
           <textarea id="d-qna" placeholder="سؤال&#10;جوابه&#10;&#10;سؤال بلا جواب"></textarea>
-          <div class="note">سطر للسؤال وما بعده جوابه، وسطر فارغ بين كل سؤالين. السؤال بلا جواب مؤشّر بنفسه.</div>
+          <div class="note"><b>اختياري.</b> من قسم «الأسئلة والأجوبة» في صفحة منشأتك على قوقل:
+            سطرٌ للسؤال، والسطرُ الذي يليه جوابُه، ثم سطرٌ فارغ قبل السؤال التالي.
+            واتركْ ما تحت السؤال فارغًا إن كان بلا جواب — فالسؤال المعلَّق دليلٌ بنفسه على ما يجهله عملاؤك.</div>
         </div>
         <div class="field">
           <label for="d-peak">أوقات الذروة</label>
           <textarea id="d-peak" placeholder="الخميس: 8ص=20, 6م=80, 7م=95&#10;الجمعة: 4م=30, 9م=100"></textarea>
-          <div class="note">اسم اليوم ثم الساعة=نسبة الازدحام. تربط شكوى الانتظار بساعتها فتصير التوصية محدَّدة.</div>
+          <div class="note"><b>اختياري.</b> انسخها من قسم «الأوقات الشائعة» في صفحة منشأتك على قوقل.
+            اكتب اسم اليوم، ثم نقطتين، ثم كلَّ ساعةٍ ونسبةَ ازدحامها من مئة — هكذا:
+            <code dir="ltr">الخميس: 8ص=20, 6م=80</code>، ومعناها أن الخميس هادئٌ صباحًا ومزدحمٌ مساءً.
+            وفائدتُها أن شكوى الانتظار تُربَط بساعتها، فتصير التوصية «زِد موظفًا من 6 إلى 9 مساءً» لا «حسِّن السرعة».</div>
         </div>
       </div>
       <div id="context-box"></div>
@@ -229,14 +234,21 @@
       <div id="parse-msg" role="status" aria-live="polite"></div>
       <div id="ci-hint"></div>
       <div class="stat-grid" id="parse-stats" hidden></div>
-      <div id="recency-box"></div>
-      <div id="bias-box"></div>
-      <div id="sources-box"></div>
-      <div id="topics-box"></div>
-      <div id="priority-box"></div>
-      <div id="stars-box"></div>
-      <div id="entities-box"></div>
-      <div id="replies-box"></div>
+      <!-- **لا يُقرأ التحليلُ مرتين.** كانت هذه الثماني مبسوطةً هنا فتبلغ
+           شاشةُ البيانات نحو 4700 بكسل، وتعرض ما سيعرضه التقريرُ نفسه —
+           فيقرأ المالكُ كلَّ شيءٍ مرتين ويبهت أثرُ تقريره حين يصل إليه.
+           فطُويت في بابٍ واحد يُفتَح عند الحاجة، ومكانُها الأصليّ التقرير. -->
+      <details class="peek">
+        <summary>معاينةٌ سريعة لما استُخرج من هذه التعليقات <span class="fine">— وتفصيلُها كلُّه في التقرير</span></summary>
+        <div id="recency-box"></div>
+        <div id="bias-box"></div>
+        <div id="sources-box"></div>
+        <div id="topics-box"></div>
+        <div id="priority-box"></div>
+        <div id="stars-box"></div>
+        <div id="entities-box"></div>
+        <div id="replies-box"></div>
+      </details>
     </div>
 
     <div class="card">
@@ -478,7 +490,8 @@
 
   <!-- المقارنة -->
   <section class="view" id="view-compare" hidden>
-    <div class="card">
+    <div id="cmp-empty" hidden></div>
+    <div class="card" id="cmp-timeline-card">
       <h2>المقارنة الزمنية</h2>
       <p class="hint">ماذا تغيّر في منشأة بين تقريرين. تحتاج تقريرين فأكثر للمنشأة نفسها.</p>
       <div class="grid c3">
@@ -489,7 +502,7 @@
       <div id="timeline-box"></div>
     </div>
 
-    <div class="card">
+    <div class="card" id="cmp-group-card">
       <h2>تقرير المجموعة</h2>
       <p class="hint">فروع مالك واحد تحت علامة واحدة. يجيب عن: أي فرع الأضعف؟ وأي شكوى مشتركة بين الفروع (مشكلة نظام)؟ وأيّها انفردت بفرع (مشكلة إدارته)؟</p>
       <div class="field">
@@ -508,12 +521,12 @@
       </div>
     </div>
 
-    <div class="card">
+    <div class="card" id="cmp-bench-card">
       <h2>منافسٌ بالاسم</h2>
       <p class="hint">ألصق رابط منافسك من خرائط قوقل فيُجلَب ويُقارَن بك محورًا بمحور. يحتاج مفتاح مزوّد.</p>
       <div class="row">
         <input id="rival-url" aria-label="رابط المنافس في خرائط قوقل" placeholder="https://maps.app.goo.gl/…" style="flex:1;min-width:220px">
-        <button type="button" class="btn sm" id="btn-rival-fetch">اجلب وقارن</button>
+        <button type="button" class="btn ghost sm" id="btn-rival-fetch">اجلب وقارن <span class="needs-key">يحتاج مفتاحًا</span></button>
       </div>
       <div id="rival-msg" role="status" aria-live="polite"></div>
       <div id="rival-box"></div>
@@ -565,8 +578,23 @@
 
   <!-- الإعدادات -->
   <section class="view" id="view-settings" hidden>
+    <!-- صفحةٌ واحدةٌ طويلة تخلط الهُويةَ والقفلَ والمزامنةَ والمعيارَ والقاموس،
+         فيهبط فيها الباحثُ عن إعدادٍ واحد بلا دليل. فيُوضَع لها دليلٌ يقفز. -->
+    <nav class="set-nav" aria-label="أقسام الإعدادات">
+      <a href="#set-1">هوية المكتب</a>
+      <a href="#set-2">القفل والتشفير</a>
+      <a href="#set-3">المزامنة السحابية</a>
+      <a href="#set-4">الرصد الدوري والإنذار المبكر</a>
+      <a href="#set-5">معيار الرسائل</a>
+      <a href="#set-6">الخصوصية</a>
+      <a href="#set-7">التحقّق من تقرير مُسلَّم</a>
+      <a href="#set-8">إشارات عبر الأرشيف</a>
+      <a href="#set-9">محرّر القاموس</a>
+      <a href="#set-10">أداء النماذج</a>
+      <a href="#set-11">اختصارات لوحة المفاتيح</a>
+    </nav>
     <div class="card">
-      <h2>هوية المكتب</h2>
+      <h2 id="set-1" class="set-h">هوية المكتب</h2>
       <p class="hint">التقارير تُباع باسمك، فتحمل هويتك لا هوية الأداة. كل شيء محفوظ في متصفحك.</p>
       <div class="grid c2">
         <div class="field"><label for="id-office">اسم المكتب أو المُعِدّ</label><input id="id-office" placeholder="مثال: مكتب بصيرة للاستشارات"></div>
@@ -591,7 +619,7 @@
     </div>
 
     <div class="card">
-      <h2>القفل والتشفير</h2>
+      <h2 id="set-2" class="set-h">القفل والتشفير</h2>
       <p class="hint">كلمة السر لا تُحفَظ — يُحفَظ منها مُتحقِّق مشتقّ. ونسيانها يعني ضياع أي ملف صدّرته مشفَّرًا.</p>
       <div id="lock-state"></div>
       <div class="grid c2">
@@ -609,7 +637,7 @@
     </div>
 
     <div class="card">
-      <h2>المزامنة السحابية (مطفأة ابتداءً)</h2>
+      <h2 id="set-3" class="set-h">المزامنة السحابية (مطفأة ابتداءً)</h2>
       <p class="hint">أرشيفك اليوم في متصفحٍ واحد: مسحُ بياناته يمحو عملك. وهذه نسخةٌ <b>مشفَّرة بكلمتك</b> تُفتَح على أي جهاز.
       <b>والثمن مُعلَن:</b> البيانات تغادر جهازك مشفَّرةً بمفتاحٍ لا يصل الخادم — يحمل الصندوق ولا يملك مفتاحه.</p>
       <div class="grid c2">
@@ -624,7 +652,7 @@
       </div>
       <div id="cloud-msg" role="status" aria-live="polite"></div>
 
-      <h2>الرصد الدوري والإنذار المبكر</h2>
+      <h2 id="set-4" class="set-h">الرصد الدوري والإنذار المبكر</h2>
       <p class="hint">بمفتاح المزوّد تُجلَب تعليقات المنشآت المرصودة يوميًّا، ويُنبَّه عند تدهور. و<b>المرفوع أرقامٌ لا نصوص</b>: المتوسط والعدد ونسبة السلبي.</p>
       <div class="row">
         <button type="button" class="btn sm" id="btn-watch-sync">رفع قائمة الرصد من أرشيفك</button>
@@ -635,7 +663,7 @@
       <div id="watch-msg" role="status" aria-live="polite"></div>
       <div id="watch-box"></div>
 
-      <h2>معيار الرسائل</h2>
+      <h2 id="set-5" class="set-h">معيار الرسائل</h2>
       <p class="hint">حالةٌ ثابتة تمرّ في الخط، وتُقاس إجابات النماذج بمدقّق السند نفسه. <b>فأيّ تعديلٍ في الرسائل يُكشَف أثره بالرقم لا بالظنّ.</b> يحتاج مفتاح OpenRouter.</p>
       <div class="row">
         <button type="button" class="btn sm" id="btn-eval-run">شغّل المعيار</button>
@@ -645,12 +673,12 @@
       <div id="eval-msg" role="status" aria-live="polite"></div>
       <div id="eval-box"></div>
 
-      <h2>الخصوصية</h2>
+      <h2 id="set-6" class="set-h">الخصوصية</h2>
       <p class="hint">تعليقات قوقل منشورةٌ علنًا، لكن جمعها في ملفٍّ وتسليمه لطرفٍ ثالث معالجةٌ لبياناتٍ شخصية يحكمها نظام حماية البيانات الشخصية.</p>
       <label class="check"><input type="checkbox" id="privacy-on"> <b>وضع الخصوصية</b> — تُستبدَل أسماء الكتّاب بأسماء مستعارة في كل ما يخرج منك (تقريرًا أو Excel أو CSV أو رابطًا)</label>
       <p class="fine">ولا يُمسّ نصّ تعليقٍ ولا تقييمه، ولا يتغيّر أرشيفك — والمعرّفات تبقى فيظلّ التحقّق ممكنًا.</p>
 
-      <h2>التحقّق من تقرير مُسلَّم</h2>
+      <h2 id="set-7" class="set-h">التحقّق من تقرير مُسلَّم</h2>
       <p class="hint">كل تقرير يُنزَّل أو يُنشَر يحمل بصمةً لمحتواه. ألصق الملف هنا لتعرف: أهو كما صدر أم غُيِّر فيه بعد التسليم؟</p>
       <div class="row">
         <label class="filepick"><span class="filepick-btn">اختر ملف التقرير…</span>
@@ -660,12 +688,12 @@
       </div>
       <div id="verify-msg" role="status" aria-live="polite"></div>
 
-      <h2>إشارات عبر الأرشيف</h2>
+      <h2 id="set-8" class="set-h">إشارات عبر الأرشيف</h2>
       <p class="hint">ما لا يُرى من منشأةٍ واحدة: كاتبٌ يمدح منشأةً ويذمّ منافستها، أو نصٌّ يتكرّر حرفيًّا في منشأتين. <b>إشارات لا اتهامات.</b></p>
       <div class="row"><button type="button" class="btn ghost sm" id="btn-network-scan">افحص الأرشيف كلّه</button></div>
       <div id="network-box"></div>
 
-      <h2>محرّر القاموس</h2>
+      <h2 id="set-9" class="set-h">محرّر القاموس</h2>
       <p class="hint">القاموس أوّليّ بطبعه، ولهجاتنا أوسع من أي قائمة تُكتَب مرة. أضف إليه ممّا يفوته في تعليقاتك الحقيقية، فيتحسّن كلما استعملته.</p>
       <div id="lex-uncovered"></div>
       <div class="grid c3">
@@ -681,14 +709,14 @@
     </div>
 
     <div class="card">
-      <h2>أداء النماذج</h2>
+      <h2 id="set-10" class="set-h">أداء النماذج</h2>
       <p class="hint">درجة مدقّق السند تُحفَظ مع اسم النموذج الذي اخترته في كل خطوة. بعد عشرين تقريرًا تعرف بالبيانات أيّها يستحق الثقة.</p>
       <div id="models-box"></div>
       <div class="row"><button type="button" class="btn ghost sm" id="btn-models-clear">تصفير السجل</button></div>
     </div>
 
     <div class="card">
-      <h2>اختصارات لوحة المفاتيح</h2>
+      <h2 id="set-11" class="set-h">اختصارات لوحة المفاتيح</h2>
       <div class="table-wrap"><table class="mini">
         <tbody>
           <tr><td><kbd>Ctrl</kbd>+<kbd>Enter</kbd></td><td>نسخ رسالة الخطوة الحالية في خط التحليل</td></tr>

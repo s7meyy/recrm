@@ -288,8 +288,11 @@ try {
   /2 تعليقًا/.test(rawInfo) ? ok('لصقٌ بلا نجوم يُعطي تعليقين: ' + rawInfo.trim()) : bad('اللصق الواقعي', rawInfo);
   const rawMsg = await page.textContent('#parse-msg');
   rawMsg.includes('لا تقييم في أيٍّ منها') ? ok('غياب التقييم يُعلَن ولا يُخمَّن') : bad('إعلان غياب التقييم', rawMsg.replace(/\s+/g, ' ').slice(0, 120));
+  /* `innerText` لا يقرأ ما في بابٍ مطويّ، ولوحةُ المعاينة صارت مطويّةً عمدًا
+     كي لا يُقرأ التحليل مرتين. والمقصود هنا أن الموضوع **استُخرج**، لا أنه
+     مبسوطٌ أمام العين — فيُقرأ بـ`textContent`. */
   const clean = await page.evaluate(() => {
-    const t = document.querySelector('#topics-box')?.innerText || '';
+    const t = document.querySelector('#topics-box')?.textContent || '';
     return { topics: t.length, park: /مواقف/.test(t) };
   });
   clean.park ? ok('المواضيع تُستخرج من نصوص بلا تقييم (المواقف رُصدت)') : bad('مواضيع بلا تقييم', JSON.stringify(clean));
@@ -876,6 +879,14 @@ try {
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   overflow <= 1 ? ok('لا فيض أفقي') : bad('فيض أفقي', overflow + 'px');
 
+  /* **أهدافُ اللمس.** قِيست فكان اثنا عشر هدفًا دون أربعين بكسلًا — وأربعون
+     هو الحدّ الذي دونه يُخطئ الإبهام. والقياسُ بـ`checkVisibility` لا
+     بـ`offsetParent`، وإلا عُدَّ ما في بابٍ مطويّ ظاهرًا. */
+  const taps = await page.evaluate(() => [...document.querySelectorAll('button,a,select,input,.filepick-btn')]
+    .filter((e) => e.checkVisibility({ contentVisibilityAuto: true }))
+    .filter((e) => { const r = e.getBoundingClientRect(); return r.height > 0 && r.height < 40; }).length);
+  taps === 0 ? ok('ولا هدفَ لمسٍ دون 40 بكسلًا — وكانت اثني عشر') : bad('أهداف لمسٍ صغيرة', taps);
+
   /* والتقرير نفسه يُفتَح على الهاتف أكثر مما يُطبَع: يصل بواتساب فيُقرأ على
      الفور. وكان يفيض عرضًا (جداولُ من خمسة أعمدة داخل هوامش A4) ويُقرأ بخطٍّ
      دون اثني عشر بكسلًا. فيُقاس على الجهاز لا يُفترَض. */
@@ -915,6 +926,37 @@ try {
   /* **الأرشيفُ تحت حِمل.** يُقاس لا يُفترَض: زُرع أربعُمئة تقريرٍ بعشرة آلاف
      تعليق، فالجداول مسقوفةٌ بأربعين صفًّا والفتحُ دون نصف ثانية. وحارسُه هنا
      كي لا يسقط السقفُ صامتًا فيُرسَم آلافُ الصفوف في كل فتحة. */
+  /* **التقريرُ النموذجيّ: ما يراه الوافدُ قبل أن يُدخل شيئًا.**
+     ثلاثةُ أعطابٍ قِيست فيه: قائمةُ القالب فارغة (صفرُ خيارات) لأن التحميل
+     كان معلّقًا بطريقٍ واحد، وخطُّ التحليل مقفلٌ «لم تُبلَغ بعد»، والتقريرُ
+     يبدأ بعد نحو 1500 بكسل من أدوات صانعه. */
+  console.log('٨-ط) التقرير النموذجيّ يُفتح كاملًا');
+  const dp = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  const dpErr = [];
+  dp.on('pageerror', (e) => dpErr.push(e.message));
+  await dp.goto('http://localhost:8099/', { waitUntil: 'networkidle' });
+  await dp.waitForTimeout(700);
+  await dp.evaluate(() => document.querySelector('#offer-demo')?.click());
+  await dp.waitForTimeout(3500);
+  const demo = await dp.evaluate(() => {
+    const sel = document.querySelector('#r-template');
+    const frame = document.querySelector('#r-frame');
+    return {
+      tplOpts: sel?.options.length || 0,
+      tplShown: sel?.selectedOptions[0]?.textContent || '',
+      frameTop: Math.round(frame.getBoundingClientRect().top + window.scrollY),
+      locked: [...document.querySelectorAll('#steps-bar-4 .pill')].filter((x) => x.classList.contains('locked')).length,
+      reportLen: (frame.contentDocument?.body?.innerText || '').length,
+    };
+  });
+  demo.tplOpts >= 4 && demo.tplShown
+    ? ok(`قائمةُ القالب مملوءةٌ (${demo.tplOpts}) وافتراضيُّها ظاهر: ${demo.tplShown}`) : bad('قائمة القالب فارغة', demo.tplOpts);
+  demo.locked === 0 ? ok('ولا خطوةَ مقفلةٌ في وجه من فتح النموذجيّ') : bad('خطوةٌ مقفلة', demo.locked);
+  demo.frameTop < 600 ? ok(`والتقريرُ أعلى شاشته (${demo.frameTop}px) — وكان دون 1500`) : bad('التقرير مدفون', demo.frameTop + 'px');
+  demo.reportLen > 3000 ? ok(`ويُبنى كاملًا (${demo.reportLen} حرفًا)`) : bad('تقريرٌ ناقص', demo.reportLen);
+  dpErr.length === 0 ? ok('بلا خطأٍ في الصفحة') : bad('خطأ', dpErr[0]);
+  await dp.close();
+
   console.log('٨-و) الأرشيف تحت حِمل');
   const lp = await browser.newPage({ viewport: { width: 1200, height: 900 } });
   await lp.goto('http://localhost:8099/', { waitUntil: 'networkidle' });
