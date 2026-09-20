@@ -37,7 +37,7 @@ import { fetchAllReviews, mergeReviews } from './reviews.js';
 import { runStep, pendingSteps, callModel } from './runner.js';
 import { dataStamp, staleSteps } from './stamp.js';
 import { checkSource, exclusionNote } from './integrity.js';
-import { priorities } from './priority.js';
+import { priorities, priorityNotes, rankOf, loneTag } from './priority.js';
 import { PLATFORMS, platformName, compareSources } from './sources.js';
 import { ledger, setClient } from './clients.js';
 import { scanNetwork } from './network.js';
@@ -967,12 +967,15 @@ function renderPriority() {
   if (!rows.length) { box.innerHTML = ''; return; }
   const max = rows[0].weight || 1;
   box.innerHTML = `<h3 class="mini-h">أولويات الإصلاح — بماذا يبدأ صاحب المحل</h3>
+    ${priorityNotes(rows)}
     <div class="table-wrap"><table class="mini"><thead><tr><th>#</th><th>الموضوع</th><th>الوزن</th><th>لماذا</th></tr></thead><tbody>${
-      rows.map((r, i) => `<tr><td>${i + 1}</td><td><b>${esc(r.name)}</b></td>
+      rows.map((r, i) => `<tr${r.lone ? ' class="lone-row"' : ''}><td>${rankOf(rows, i)}</td>
+        <td><b>${esc(r.name)}</b> ${loneTag(r)}</td>
         <td><span class="w-track"><span class="w-fill" style="width:${Math.round((r.weight / max) * 100)}%"></span></span></td>
         <td class="fine">${esc(r.why)}</td></tr>`).join('')
     }</tbody></table></div>
-    <p class="fine">الوزن = تكرار الشكوى × حدّة تقييمها × حداثتها. محسوبٌ من بياناتك بلا نموذج.</p>`;
+    <p class="fine">الوزن = تكرار الشكوى × حدّة تقييمها × حداثتها. محسوبٌ من بياناتك بلا نموذج.
+      وهذه المعاينة تعرض ما يعرضه التقرير بحروفه — فلا يقول أحدهما ما ينفيه الآخر.</p>`;
 }
 
 /** حاسبة النجوم — الجواب الحسابي على «كيف أرفع تقييمي؟». */
@@ -986,13 +989,17 @@ function renderStars() {
     return;
   }
   const four = l.rows.slice(0, 4).some((r) => r.fours !== null);
+  /* عمودٌ كلُّه شَرَطات يُقرأ عطبًا لا امتناعًا. فإن لم يُدخِل المالك معدّله
+     الشهري حُذف العمود أصلًا، وقيل له في سطرٍ واحد ما يفتحه. */
+  const paced = l.rows.slice(0, 4).some((r) => r.months !== null);
   const rows = l.rows.slice(0, 4).map((r) => `<tr><td><b>${r.target}</b></td>
     <td>${r.fives === null ? '—' : r.fives}</td>
     ${four ? `<td>${r.fours === null ? '—' : r.fours}</td>` : ''}
-    <td>${r.months === null ? '—' : r.months + ' شهرًا'}</td></tr>`).join('');
+    ${paced ? `<td>${r.months === null ? '—' : r.months + ' شهرًا'}</td>` : ''}</tr>`).join('');
   box.innerHTML = `<h3 class="mini-h">ما الذي يلزم لرفع التقييم</h3>
-    <div class="table-wrap"><table class="mini"><thead><tr><th>الهدف</th><th>بخمس نجوم</th>${four ? '<th>أو بأربع</th>' : ''}<th>بمعدّلك</th></tr></thead><tbody>${rows}</tbody></table></div>
-    <p class="fine">تقييمٌ واحد بنجمة يُنزل متوسطك ${Math.abs(l.drop.one).toFixed(3)} — والمحافظة أرخص من التعويض.</p>`;
+    <div class="table-wrap"><table class="mini"><thead><tr><th>الهدف</th><th>بخمس نجوم</th>${four ? '<th>أو بأربع</th>' : ''}${paced ? '<th>بمعدّلك</th>' : ''}</tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="fine">تقييمٌ واحد بنجمة يُنزل متوسطك ${Math.abs(l.drop.one).toFixed(3)} — والمحافظة أرخص من التعويض.${
+      paced ? '' : ' وأدخِل عدد تقييماتك الشهري أعلاه ليُحسَب لك الزمن اللازم لكل هدف.'}</p>`;
 }
 
 /** معاينة الأثر المالي بأرقام المالك — وتتغيّر أمامه كلما غيّرها. */
@@ -3303,6 +3310,19 @@ async function jumpQueue(id) {
   stepOpen.clear();
   loadDataView(); renderPipeline(); loadReportView();
   try { localStorage.setItem(LAST_JOB, job.id); } catch { /* تجاهل */ }
+  /* اسمُ الملفّ المختار يُكتب بالعربية بجانب الزرّ، وإلا بقي المستخدم
+     لا يدري أوقع اختياره أم لا بعد أن أُخفي الحقل الأصلي. */
+  for (const inp of document.querySelectorAll('.filepick input[type="file"]')) {
+    inp.addEventListener('change', () => {
+      const out = inp.parentElement.querySelector('.filepick-name');
+      if (!out) return;
+      const n = inp.files?.length || 0;
+      out.textContent = n === 0 ? ''
+        : n === 1 ? inp.files[0].name
+        : n === 2 ? 'ملفّان' : `${n} ملفات`;
+    });
+  }
+
   renderQueue();
   show(job.reportMd ? 'report' : (job.place.reviews.length ? 'pipeline' : 'data'));
   toast(job.place.identity.name || 'تقرير');
@@ -3458,6 +3478,24 @@ async function boot() {
     job.mapsUrl = '';
     job.assume = { ticket: 30, monthly: 900, loss: 25 };
     job.rawPaste = demo.reviews.map((r) => `${r.rating} | ${r.author || 'عميل'} | ${r.date}\n${r.text}`).join('\n---\n');
+
+    /* **وخطُّ التحليل يُفتَح لا يُقفَل.**
+       كانت الجولة تُوصِل الوافد إلى الخطوة الثالثة فيجدها «لم تُبلَغ بعد»،
+       لأن مخرجات النماذج خالية. فأهمُّ ما يُقنعه — أن يرى التحليل وقد جرى
+       على مراحله — هو بالضبط ما كان يُحجَب عنه. فتُملأ الثماني بمخرجاتٍ
+       تجريبية مصرَّحٌ بها في متنها، ولا يُدَّعى أن نموذجًا شُغِّل. */
+    const demoNote = '⟪مخرَجٌ تجريبيّ — لم يُشغَّل نموذج، وهذا نصٌّ مكتوبٌ سلفًا ليُرى شكلُ الخطوة⟫';
+    const demoTopics = 'الانتظار: R002، R007 · القهوة: R001، R005 · الأجواء: R008 · النظافة: R004';
+    job.out = {
+      n1: `${demoNote}\n\nوُحِّدت 8 تعليقات. المواضيع المرصودة:\n${demoTopics}`,
+      n2: `${demoNote}\n\nوُحِّدت 8 تعليقات. اتّفق مع الأول في المواضيع، وخالفه في تصنيف R004 (نظافة لا خدمة).`,
+      n3: `${demoNote}\n\nوُحِّدت 8 تعليقات. رصد في R007 موضوعين: انتظار وسعر.`,
+      nm: `${demoNote}\n\nالمعتمَد ما اتّفق عليه اثنان فأكثر. الخلاف في R004 حُسم للنظافة (2 من 3)، وأُثبت الموضوع الثاني في R007.\n${demoTopics}`,
+      a1: `${demoNote}\n\nأبرز ما يتكرّر: الانتظار في الذروة (R002، R007). وأبرز المحمود: القهوة (R001، R005).`,
+      a2: `${demoNote}\n\nالانتظار أكثر الشكاوى، ويقع مساءً. والنظافة ذكرٌ مفرد (R004) لا يُبنى عليه حكم.`,
+      a3: `${demoNote}\n\nالقهوة والأجواء هما ما يُحافَظ عليه. والسعر ذُكر مرة واحدة ولا يُرتَّب.`,
+      am: '',
+    };
     $('#r-md').value = [
       '## الخلاصة التنفيذية',
       'هذا **تقريرٌ نموذجيّ ببياناتٍ تجريبية** — أُعِدّ ليُرى شكلُ التقرير لا ليوصف محلٌّ حقيقي.',
@@ -3470,6 +3508,7 @@ async function boot() {
       '1. قياس زمن التحضير في ساعة الذروة ثلاثة أيام، وتدوين متوسطه.',
       '2. الردّ على الشكاوى التي بلا ردّ — R002 و R004.',
     ].join('\n');
+    job.out.am = $('#r-md').value;
     renderParseStats(); renderRecency(); renderTopics(); renderEntities(); renderReplies();
     renderContext(); renderAnomaly(); renderIntegrity(); renderSources(); renderBias();
     renderConfidenceHint(); renderPriority(); renderStars(); renderImpactPreview();
@@ -3482,9 +3521,9 @@ async function boot() {
   function showTourOffer() {
     const bar = document.createElement('div');
     bar.className = 'tour-offer';
-    bar.innerHTML = `<span>أول مرة هنا؟ ألصق رابط منشأتك واضغط «ابدأ» — وهذا كل ما يلزم للبداية.</span>
-      <button type="button" class="btn sm" id="offer-tour">أرِني جولة</button>
-      <button type="button" class="btn ghost sm" id="offer-demo">افتح تقريرًا نموذجيًّا</button>
+    bar.innerHTML = `<span><b>أول مرة هنا؟</b> انظر تقريرًا كاملًا قبل أن تُدخل شيئًا — ثم ألصق رابط منشأتك واضغط «ابدأ».</span>
+      <button type="button" class="btn sm" id="offer-demo">أرِني تقريرًا كاملًا</button>
+      <button type="button" class="btn ghost sm" id="offer-tour">بل طُف بي في الشاشات</button>
       <button type="button" class="btn ghost sm" id="offer-close" aria-label="إخفاء">إخفاء</button>`;
     document.body.prepend(bar);
     const close = () => { tour.markDone(); bar.remove(); };

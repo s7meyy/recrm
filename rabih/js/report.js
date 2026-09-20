@@ -578,6 +578,10 @@ code{background:#f3f5f8;padding:0 1mm;border-radius:3px;font-size:10pt}
 .topic-row .topic-verdict{font-size:9pt;color:var(--muted);text-align:start;white-space:nowrap}
 .topic-row.faint{opacity:.62}
 .legend .leg-note{color:var(--muted);font-size:8.5pt}
+.ownernotes .ownernote-q{margin:2mm 0 0;padding:3mm 4mm;border-inline-start:3px solid #7a8798;background:#f4f6f8;border-radius:6px;font-size:10.5pt;line-height:1.9;white-space:pre-line}
+.lone-tag{font-size:8pt;color:#8a6d1f;background:#faf3e0;border:1px solid #ead9ab;border-radius:999px;padding:0 2mm;white-space:nowrap}
+.lone-row{color:#5c6470}
+.lone-row .w-fill{opacity:.45}
 .msg-tie{margin:0 0 3mm;padding:3mm 4mm;border-inline-start:3px solid var(--gold);background:#faf7ef;border-radius:6px;font-size:10pt;line-height:1.85}
 .ticon{font-style:normal;display:inline-block;width:5mm;color:var(--gold);font-size:11pt;text-align:center}
 /* بطاقةُ النشر — ثناءُ العميل بنصّه. */
@@ -736,6 +740,27 @@ figcaption{font-size:9pt;color:var(--muted);margin-top:1mm;text-align:center}
  * @returns {string} HTML كامل مكتفٍ بذاته
  */
 /**
+ * ما أضافه المالك بنفسه — يُفصَل عن كلام العملاء ولا يُخلَط به.
+ *
+ * خانةُ «ملاحظاتك أنت» تدخل النموذج موصوفةً بأنها بياناتٌ موثوقة، فيبني عليها.
+ * وإن لم يُقَل ذلك في التقرير عاد كلامُ المالك عن نفسه إليه بلبوس الحقيقة
+ * المستخرَجة من تعليقات الناس — وهذا أخطر من خطأ في رقم، لأنه يجعل الدعوى
+ * شهادةً. فيُنصّ عليه بحروفه، ويُقال إنه لم يُراجَع ولم يُؤخَذ من تعليق.
+ */
+function ownerNotesBlock(place) {
+  const txt = String(place?.notes || '').trim();
+  if (!txt) return '';
+  const esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return `<section class="ownernotes">
+    <h2>ما أضفتَه أنت — لا من التعليقات</h2>
+    <p class="note">هذا نصُّ ما كتبتَه في خانة ملاحظات المالك، وقد دخل التحليل ليأخذه بالحسبان.
+      وهو <b>قولُك عن منشأتك، لا استنتاجٌ من تعليقات عملائك</b>، ولم يُراجَع ولم يُسنَد إلى تعليق.
+      فما بُني عليه في هذا التقرير يصحّ بصحّته.</p>
+    <blockquote class="ownernote-q">${esc(txt).replace(/\n+/g, '<br>')}</blockquote>
+  </section>`;
+}
+
+/**
  * صفحة المنهجية وحدود المسؤولية — تحمي مُعِدّ التقرير وتُتمّ صدقه.
  *
  * التقرير يصف **ما كُتب في قوقل** لا حقيقة المنشأة: من كتب راضٍ أو غاضب،
@@ -770,7 +795,7 @@ export function buildReportHtml({ place: rawPlace, ctx = {}, markdown = '', phot
   const opt = { toc: true, stars: true, topics: true, photos: true, recency: true, entities: true, replies: true, confidence: true,
     priority: false, calc: true, voice: true, impact: true, sources: true, brief: true, coverage: true,
     actions: true, checklist: true, commit: true, drafts: true, selfCompare: true, card: true,
-    keep: true, unanswered: true, next: true, teaser: false,
+    keep: true, unanswered: true, next: true, teaser: false, ownerNotes: true,
     cooccur: true, timing: true, promises: true, effect: true, bias: true, ...(sector?.show || {}), ...show };
   const s = stats(place);
   const body = tocFrom(mdToHtml(markdown));
@@ -842,6 +867,7 @@ export function buildReportHtml({ place: rawPlace, ctx = {}, markdown = '', phot
        ثمانيةَ عشرَ قسمًا متساويةً في الوزن البصري، فلا يعرف القارئ أين ينتهي
        ما يلزمه ويبدأ ما يُراجعه عند الحاجة — فيقرأ الكلَّ أو لا يقرأ شيئًا. */
     `<div class="divider"><span>ما سبق هو ما تعمل به. وما يلي تفصيلُه ودليلُه — يُرجَع إليه عند الحاجة.</span></div>`,
+    opt.ownerNotes ? ownerNotesBlock(place) : '',
     opt.topics ? topicsBlock(place, sector?.lead || []) : '',
     opt.coverage ? coverageBlock(place, job || {}) : '',
     opt.cooccur ? cooccurBlock(place) : '',

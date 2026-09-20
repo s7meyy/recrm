@@ -37,8 +37,8 @@
     <div class="steps" id="steps-bar"></div>
 
     <div class="card">
-      <h2>١. المنشأة وموقعها</h2>
-      <p class="hint">ألصق رابط المنشأة من خرائط قوقل، ثم حدّد المدينة والتصنيف والحي — هذه الثلاثة تُبنى عليها شجرة الأرشيف ومحاور التحليل.</p>
+      <h2>1. المنشأة وموقعها</h2>
+      <p class="hint">ألصق رابط المنشأة من خرائط قوقل واضغط «ابدأ» — هذا كافٍ. والمدينة والتصنيف والحيّ تُحسِّن شجرة الأرشيف ومحاور التحليل، وتُملأ الآن أو لاحقًا.</p>
 
       <div class="field">
         <label for="f-url">رابط قوقل مابز</label>
@@ -129,10 +129,10 @@
     </details>
 
     <div class="card">
-      <h2>٢. بطاقة المنشأة</h2>
+      <h2>2. بطاقة المنشأة</h2>
       <p class="hint">املأ ما تراه في أعلى صفحة المنشأة. المتوسط وعدد التقييمات مهمّان لقياس نسبة العيّنة.</p>
       <div class="row" id="reviews-row">
-        <button type="button" class="btn gold sm" id="btn-fetch-reviews">جلب كل التعليقات تلقائيًّا</button>
+        <button type="button" class="btn ghost sm" id="btn-fetch-reviews">جلب كل التعليقات تلقائيًّا <span class="needs-key">يحتاج مفتاحًا</span></button>
         <label class="inline-field" for="rv-limit">حدّ أقصى
           <input id="rv-limit" type="number" min="0" max="2000" step="50" placeholder="0 = الكل"></label>
         <span class="fine">من مزوّد وسيط يعمل على الخادم. يحتاج مفتاحًا (<code>OUTSCRAPER_KEY</code> أو <code>APIFY_TOKEN</code>) في بيئة Netlify، وله تكلفة بحسب عدد التعليقات.</span>
@@ -140,7 +140,7 @@
       <div id="reviews-msg" role="status" aria-live="polite"></div>
 
       <div class="row" id="places-row">
-        <button type="button" class="btn sm" id="btn-places">جلب البطاقة من قوقل</button>
+        <button type="button" class="btn ghost sm" id="btn-places">جلب البطاقة من قوقل <span class="needs-key">يحتاج مفتاحًا</span></button>
         <span class="fine">يملأ الاسم والعنوان والهاتف والتقييم والصور — و<b>٥ مراجعات كحدٍّ أقصى</b>، وهو حدُّ قوقل الرسمي. التعليقات الباقية تُلصَق أدناه.</span>
       </div>
       <div id="places-msg" role="status" aria-live="polite"></div>
@@ -209,7 +209,7 @@
     </div>
 
     <div class="card">
-      <h2>٣. التعليقات</h2>
+      <h2>3. التعليقات</h2>
       <p class="hint">ألصق هنا. يُقبل أيضًا JSON من أي مزوّد بيانات.</p>
       <div class="field">
         <textarea id="d-reviews" class="tall" aria-label="مربع لصق التعليقات" placeholder="ألصق التعليقات هنا…"></textarea>
@@ -240,24 +240,26 @@
     </div>
 
     <div class="card">
-      <h2>٤. أمانة النقل</h2>
+      <h2>4. أمانة النقل</h2>
       <p class="hint">شرطُ هذه الأداة: <b>لا يُعدَّل تعليق ولا تقييم، ولو كان ذمًّا.</b> وهذا فحصٌ يُثبته لا وعدٌ به: يُقارَن نصّ كل تعليق بمصدرك حرفًا بحرف.</p>
       <div id="integrity-box" role="status" aria-live="polite"></div>
     </div>
 
     <div class="card">
-      <h2>٥. فحص سلامة العيّنة</h2>
+      <h2>5. فحص سلامة العيّنة</h2>
       <p class="hint">إشارات على تعليقات قد تكون مفتعلة أو ناقصة. لا يُحذف شيء تلقائيًّا — القرار قرارك.</p>
       <div id="anomaly-box"></div>
     </div>
 
     <div class="card">
-      <h2>٦. صور المنشأة (اختياري)</h2>
+      <h2>6. صور المنشأة (اختياري)</h2>
       <p class="hint">تُضمَّن داخل ملف التقرير نفسه فيبقى يعمل بلا إنترنت. الأفضل 3 إلى 6 صور.</p>
       <p class="hint"><b>وأولاها تتصدّر الغلاف</b> — وجهُ المحل أقربُ إلى صاحبه من أي شعار،
       وغلافٌ بصورته يُقرأ تقريرًا عنه لا نموذجًا عامًّا. فابدأ بأحسن صورةٍ عندك للواجهة أو الصالة.</p>
       <div class="field">
-        <input id="d-photos" type="file" accept="image/*" multiple aria-label="اختيار صور المنشأة">
+        <label class="filepick"><span class="filepick-btn">اختر صورًا…</span>
+          <input id="d-photos" type="file" accept="image/*" multiple aria-label="اختيار صور المنشأة" hidden>
+          <span class="filepick-name" data-empty="لم يُختَر ملف"></span></label>
       </div>
       <div class="chips" id="photo-chips"></div>
     </div>
@@ -273,7 +275,7 @@
     <div class="steps" id="steps-bar-3"></div>
 
     <div class="card">
-      <h2>٦. خط التحليل — ثماني خطوات</h2>
+      <h2>7. خط التحليل — ثماني خطوات</h2>
       <p class="hint" id="pipeline-hint">
         في كل خطوة: انسخ الرسالة، افتح النموذج المقترح، ألصقها، ثم أعد إجابته إلى المربع. تُحفظ كل خطوة تلقائيًا فيمكنك التوقف والعودة.
       </p>
@@ -307,8 +309,27 @@
   <section class="view" id="view-report" hidden>
     <div class="steps" id="steps-bar-4"></div>
 
+    <!-- **المنتَجُ أولًا، وأدواتُ صانعه بعده.**
+         كان التقرير — وهو الشيء الذي جاء المالك لأجله — يبدأ بعد نحو ألفٍ
+         وخمسمئة بكسل من محرّرٍ وقالبٍ وخطٍّ وخطّةٍ ومسوّدات. فصار أعلى شاشته،
+         ومعه زرُّ تسليمه، وما عداه تحته. -->
+    <div class="card report-first">
+      <h2 class="rf-head">التقرير — كما يراه عميلك</h2>
+      <div class="preview"><iframe id="r-frame" title="معاينة التقرير"></iframe></div>
+      <div class="deliver">
+        <b class="deliver-head">سلِّم لعميلك</b>
+        <div class="row">
+          <button type="button" class="btn gold" id="btn-print">طباعة / حفظ PDF</button>
+          <button type="button" class="btn" id="btn-onepage">صفحة «في سطور» — تُرسَل في محادثة</button>
+          <button type="button" class="btn" id="btn-card-png">بطاقة الثناء صورةً</button>
+          <button type="button" class="btn" id="btn-preview-owner">كيف يراه عميلك على جوّاله</button>
+        </div>
+      </div>
+    </div>
+
+
     <div class="card">
-      <h2>٧. التقرير النهائي</h2>
+      <h2>8. نصّ التقرير وإخراجه</h2>
       <div id="stale-report"></div>
       <p class="hint">التقرير يُبنى من مخرج الخطوة الثامنة. يمكنك تحريره قبل الإخراج.</p>
       <div class="field">
@@ -339,19 +360,10 @@
         </div>
         <div class="field">
           <label for="r-font">خط عربي مضمَّن (اختياري)</label>
-          <input id="r-font" type="file" accept=".ttf,.otf,.woff,.woff2,font/*">
+          <label class="filepick"><span class="filepick-btn">اختر ملف خط…</span>
+            <input id="r-font" type="file" accept=".ttf,.otf,.woff,.woff2,font/*" hidden>
+            <span class="filepick-name" data-empty="لم يُختَر ملف"></span></label>
           <div class="note" id="font-note">بدونه يُستعمل خط الجهاز. تضمينه يزيد حجم الملف نحو ٣٠٠ كيلوبايت ويثبّت الشكل عند كل مستقبِل.</div>
-        </div>
-      </div>
-      <!-- لحظةُ التسليم هي التي تُقرِّر تجربة المالك كلَّها، وكانت أزرارُها
-           الأربعة ضائعةً بين اثنين وثلاثين زرًّا. فتُقدَّم وتُسمّى. -->
-      <div class="deliver">
-        <b class="deliver-head">سلِّم لعميلك</b>
-        <div class="row">
-          <button type="button" class="btn gold" id="btn-print">طباعة / حفظ PDF</button>
-          <button type="button" class="btn" id="btn-onepage">صفحة «في سطور» — تُرسَل في محادثة</button>
-          <button type="button" class="btn" id="btn-card-png">بطاقة الثناء صورةً</button>
-          <button type="button" class="btn" id="btn-preview-owner">كيف يراه عميلك على جوّاله</button>
         </div>
       </div>
       <details class="more-tools">
@@ -369,7 +381,7 @@
     </div>
 
     <div class="card">
-      <h2>٨. خطة العمل</h2>
+      <h2>9. خطة العمل</h2>
       <p class="hint">تُستخرج من قسم التوصيات في التقرير، وتصير مهامًّ لها حالة ومهلة. ما يُنجَز منها يُقاس في التقرير القادم.</p>
       <div class="row">
         <button type="button" class="btn ghost sm" id="btn-extract-plan">استخراج التوصيات</button>
@@ -384,7 +396,7 @@
     </div>
 
     <details class="card" id="replies-card">
-      <summary style="cursor:pointer;font-weight:700;color:var(--navy);font-size:17px">٩. مسوّدات ردود على الشكاوى (اختياري)</summary>
+      <summary style="cursor:pointer;font-weight:700;color:var(--navy);font-size:17px">10. مسوّدات ردود على الشكاوى (اختياري)</summary>
       <p class="hint">أقوى ما بيد المالك وأرخصه: الردّ على الناقد. تُقترَح هنا مسوّدات <b>يراجعها هو وينشرها بنفسه</b> — وهي اقتراح لا بيانات، ولا تدخل التقرير.</p>
       <div class="row">
         <button type="button" class="btn sm" id="btn-replies-prompt">نسخ رسالة المسوّدات</button>
@@ -404,7 +416,7 @@
     </details>
 
     <details class="card" id="design-card">
-      <summary style="cursor:pointer;font-weight:700;color:var(--navy);font-size:17px">١٠. إخراج مصمَّم من نموذج (اختياري)</summary>
+      <summary style="cursor:pointer;font-weight:700;color:var(--navy);font-size:17px">11. إخراج مصمَّم من نموذج (اختياري)</summary>
       <p class="hint">التقرير أعلاه يُبنى برمجيًّا ولا يحتاج نموذجًا. وهذا بابٌ لمن أراد تصميمًا من نموذج: انسخ الرسالة، ألصق ما يردّه، واعرضه أو نزّله.</p>
       <div class="msg warn">
         <b>لا يمرّ على المدقّقين.</b>
@@ -429,7 +441,7 @@
     </details>
 
     <div class="card">
-      <h2>١١. رابط خاص للعميل (بديلٌ عن الملف)</h2>
+      <h2>12. رابط خاص للعميل (بديلٌ عن الملف)</h2>
       <p class="hint">يُرفَع التقرير <b>مشفَّرًا بكلمةٍ تختارها</b>، ويفتحه عميلك في جوّاله. ولا يقرؤه الخادم ولا نحن، ومن وجد الرابط بلا الكلمة لم ينل شيئًا.</p>
       <div class="grid c2">
         <div class="field"><label for="sh-pass">كلمة سر التقرير</label><input id="sh-pass" placeholder="ستّة أحرف فأكثر"></div>
@@ -442,8 +454,9 @@
       </div>
       <div id="share-msg" role="status" aria-live="polite"></div>
 
-      <h2>١٢. الإرسال</h2>
-      <p class="hint">احفظ الـPDF أولًا ثم أرفقه في القناة التي تختارها؛ النص التمهيدي يُجهَّز لك.</p>
+      <h2>13. تجهيز رسالة التسليم</h2>
+      <p class="hint"><b>لا يُرسِل رابح عنك.</b> هو يفتح المحادثة أو البريد بنصٍّ جاهز،
+        و<b>الملفّ ترفقه أنت</b> — فاحفظ الـPDF أولًا، ثم اضغط القناة، ثم أرفقه وأرسل بنفسك.</p>
       <div class="grid c2">
         <div class="field"><label for="s-phone">رقم الجوال (واتساب)</label><input id="s-phone" inputmode="tel" placeholder="9665xxxxxxxx"></div>
         <div class="field"><label for="s-email">البريد الإلكتروني</label><input id="s-email" type="email" placeholder="owner@example.com"></div>
@@ -461,7 +474,6 @@
       </div>
     </div>
 
-    <div class="preview"><iframe id="r-frame" title="معاينة التقرير"></iframe></div>
   </section>
 
   <!-- المقارنة -->
@@ -566,7 +578,9 @@
         <div class="field"><label for="id-website">الموقع</label><input id="id-website" placeholder="example.com"></div>
       </div>
       <div class="grid c3">
-        <div class="field"><label for="id-logo">الشعار</label><input id="id-logo" type="file" accept="image/*"><div class="note" id="logo-note"></div></div>
+        <div class="field"><label for="id-logo">الشعار</label><label class="filepick"><span class="filepick-btn">اختر شعارًا…</span>
+          <input id="id-logo" type="file" accept="image/*" hidden>
+          <span class="filepick-name" data-empty="لم يُختَر ملف"></span></label><div class="note" id="logo-note"></div></div>
         <div class="field"><label for="id-primary">اللون الأساسي</label><input id="id-primary" type="color" value="#16324f"></div>
         <div class="field"><label for="id-accent">لون التمييز</label><input id="id-accent" type="color" value="#9a7b26"></div>
       </div>
@@ -639,7 +653,9 @@
       <h2>التحقّق من تقرير مُسلَّم</h2>
       <p class="hint">كل تقرير يُنزَّل أو يُنشَر يحمل بصمةً لمحتواه. ألصق الملف هنا لتعرف: أهو كما صدر أم غُيِّر فيه بعد التسليم؟</p>
       <div class="row">
-        <input type="file" id="verify-file" accept=".html,text/html" aria-label="ملف التقرير للتحقّق من بصمته">
+        <label class="filepick"><span class="filepick-btn">اختر ملف التقرير…</span>
+          <input type="file" id="verify-file" accept=".html,text/html" aria-label="ملف التقرير للتحقّق من بصمته" hidden>
+          <span class="filepick-name" data-empty="لم يُختَر ملف"></span></label>
         <button type="button" class="btn sm" id="btn-verify-file">تحقّق</button>
       </div>
       <div id="verify-msg" role="status" aria-live="polite"></div>
