@@ -877,7 +877,12 @@ export function buildReportHtml({ place: rawPlace, ctx = {}, markdown = '', phot
     opt.replies ? repliesReportBlock(place) : '',
     opt.sources ? sourcesBlock(place) : '',
     opt.calc ? starsBlock(place, { perMonth: job?.assume?.perMonth || 0 }) : '',
-    opt.impact ? impactBlock(place, { ...(job?.assume || {}), lossRate: (Number(job?.assume?.loss) || 25) / 100 }) : '',
+    /* **الأثرُ الماليّ لا يُدرَج بالسكوت.** هو مبنيٌّ على فرضِ المالك — متوسطُ
+       فاتورته وعددُ عملائه وكم من الشاكين لا يعود — وهذه ثلاثةُ ظنونٍ يضربها
+       بعضُها في بعض. والرقمُ الخارجُ منها يُقرأ عند مَن يُسلَّم إليه التقرير
+       قياسًا من التعليقات لا فرضًا، فيُبنى عليه قرارُ إنفاق. فلا يظهر إلا
+       بقرارٍ صريحٍ من صاحبه: `assume.show`. */
+    opt.impact && job?.assume?.show ? impactBlock(place, { ...(job?.assume || {}), lossRate: (Number(job?.assume?.loss) || 25) / 100 }) : '',
     opt.photos ? photosBlock(photos) : '',
     opt.checklist ? checklistBlock(place, job || {}) : '',
     opt.next ? nextBlock(place, job || {}) : '',

@@ -102,7 +102,9 @@ const ents = extract(pe).products.map((x) => x.name);
 !ents.includes('صباحا') && !ents.includes('مساء') ? ok('وظرفُ الزمان ليس صنفًا') : bad('ضجيج الكيانات', ents.join('، '));
 
 console.log('٦) خطة العمل — الفعل ومن يفعله');
-const jb = { assume: { ticket: 30, monthly: 900, loss: 25 } };
+/* المالُ لا يُدرَج إلا بإذنٍ صريح (٤٤). وهذه الفِخاخُ تقيس صحّةَ الرقم متى
+   ظهر، لا شرطَ ظهوره — فتمنحه إذنَه صراحةً كما يفعل المالك بيده. */
+const jb = { assume: { ticket: 30, monthly: 900, loss: 25, show: true } };
 const act = actions(p1, jb);
 act.rows.length ? ok(`${act.rows.length} خطوات مرتَّبة`) : bad('بلا خطوات');
 act.rows[0].owner && act.rows[0].first && act.rows[0].metric
@@ -483,7 +485,7 @@ const tf = buildReportHtml({ place: p1, markdown: '## تحليل\nنصّ.', job:
 console.log('٣٩) رسالةُ التسليم تحمل رقمًا وفعلًا وحجّة');
 const pm = build([...Array(6)].map(() => mk(1, 'الانتظار طويل جدا'))
   .concat([...Array(6)].map(() => mk(5, 'ممتاز'))), { average: 3.9, count: 310, distribution: null });
-const msg = buildMessage({ place: pm, plan: [], assume: { ticket: 30, monthly: 900, loss: 25 } }, 'whatsapp');
+const msg = buildMessage({ place: pm, plan: [], assume: { ticket: 30, monthly: 900, loss: 25, show: true } }, 'whatsapp');
 /تكلّفك الشكاوى: [\d,]+ ريال/.test(msg) ? ok('فيها المبلغ — وكانت تصف بلا رقم') : bad('بلا مبلغ');
 msg.includes('ابدأ بهذا') ? ok('وفعلٌ واحد يبدأ به') : bad('بلا فعل');
 msg.includes('معرّفُ التعليق') ? ok('وما يميّزها: كلُّ رقمٍ مسنودٌ يُراجَع') : bad('بلا حجّة');
@@ -540,6 +542,26 @@ withNotes.includes('قولُك عن منشأتك، لا استنتاجٌ من ت
   ? ok('ويُقال صراحةً إنه ليس من التعليقات ولم يُراجَع') : bad('بلا تمييز');
 !buildReportHtml({ place: p1, markdown: '## تحليل\nنصّ.', job: {}, ctx: {} }).includes('ما أضفتَه أنت')
   ? ok('وبلا ملاحظاتٍ لا يظهر قسمٌ فارغ') : bad('قسمٌ بلا محتوى');
+
+console.log('٤٤) المالُ لا يدخل التقرير إلا بإذنٍ صريح');
+/* الأثرُ الماليّ مبنيٌّ على ثلاثة ظنونٍ للمالك يضرب بعضُها في بعض، ويُقرأ عند
+   مَن يُسلَّم إليه التقرير قياسًا لا فرضًا. فالأصلُ ألّا يظهر. والحارسُ يمسك
+   المنافذَ الأربعة: قسمُه، والخلاصة، وبطاقاتُ الفعل، ورسالةُ التسليم. */
+const moneyJob = { assume: { ticket: 30, monthly: 900, loss: 25 } };
+const mdOnly = '## تحليل\nنصّ.';
+const offHtml = buildReportHtml({ place: p1, markdown: mdOnly, job: moneyJob, ctx: {} });
+!/ريال/.test(offHtml)
+  ? ok('مطفأً: لا ريالَ في التقرير كلِّه') : bad('مالٌ بلا إذن');
+const offBrief = brief(p1, moneyJob);
+offBrief.totalRiyals === null && offBrief.money === null
+  ? ok('ولا في الخلاصة — فلا يُمنَع من قسمه ويُسرَّب في أول صفحة') : bad('مالٌ في الخلاصة', offBrief.totalRiyals);
+actions(p1, moneyJob).hasMoney === false
+  ? ok('ولا في بطاقات الفعل') : bad('مالٌ في البطاقات');
+const onJob = { assume: { ticket: 30, monthly: 900, loss: 25, show: true } };
+/ريال/.test(buildReportHtml({ place: p1, markdown: mdOnly, job: onJob, ctx: {} }))
+  ? ok('ومشغَّلًا يظهر — فالخيارُ يفتح ولا يُعطّل') : bad('الخيار لا يفتح');
+brief(p1, onJob).totalRiyals !== null
+  ? ok('ويعود إلى الخلاصة معه') : bad('الخلاصة لا تتبع الخيار');
 
 console.log('\n' + (fails.length ? `فشل ${fails.length}:\n` + fails.map((f) => ' - ' + f).join('\n') : '✅ نجحت كل الاختبارات'));
 process.exit(fails.length ? 1 : 0);

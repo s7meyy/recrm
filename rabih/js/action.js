@@ -174,7 +174,9 @@ export function actions(place, job = {}) {
     lossRate: (Number(job.assume?.loss) || 25) / 100,
   };
   const imp = impact(place, assume);
-  const hasMoney = Boolean(imp && imp.ticket && imp.monthly);
+  /* وبطاقاتُ الفعل تتبع قرارَ الإدراج نفسه: مبلغٌ في بطاقةِ فعلٍ أقوى أثرًا
+     من مبلغٍ في قسمٍ مستقلّ، فلا يُمنَع من موضعه ويُترك في موضعٍ أوقع. */
+  const hasMoney = Boolean(job.assume?.show && imp && imp.ticket && imp.monthly);
   const byId = new Map((imp?.rows || []).map((r) => [r.id, r]));
 
   /* **وقتُ الشكوى يدخل بطاقتَها.**
@@ -226,7 +228,7 @@ export function actions(place, job = {}) {
     rankable,
     // مجموعُ البطاقات ومجموعُ الشاكين المتمايزين — والفرقُ بينهما قدرُ التقاطع.
     sumOfCards: ranked.reduce((n, r) => n + (r.money || 0), 0),
-    totalRiyals: imp?.totalRiyals ?? 0,
+    totalRiyals: hasMoney ? (imp?.totalRiyals ?? 0) : 0,
     assume: { ticket: imp?.ticket || 0, monthly: imp?.monthly || 0, lossRate: imp?.lossRate ?? 0.25 },
     rows: ranked,
     singles: rankable ? singles.map((r) => shape(r, null)) : [],

@@ -84,7 +84,10 @@ export function brief(place, job = {}) {
     lossRate: (Number(job.assume?.loss) || 25) / 100,
   });
   // ولا يُسنَد مبلغٌ إلى شكوى لا يحملها العدد.
-  const money = imp && imp.ticket && imp.monthly && worst && solid
+  /* والمالُ في الخلاصة تبعٌ لقرار الإدراج نفسه: لا يُمنَع من قسمه ويُسرَّب
+     في أول صفحةٍ يقرؤها المالك. */
+  const showMoney = !!job.assume?.show;
+  const money = showMoney && imp && imp.ticket && imp.monthly && worst && solid
     ? (imp.rows.find((r) => r.id === worst.id)?.riyals ?? null) : null;
 
   return {
@@ -92,7 +95,7 @@ export function brief(place, job = {}) {
     solid,
     tiny,
     // الإجمالي على الشاكين المتمايزين — وهو الرقم الذي يُقرأ به الباقي.
-    totalRiyals: imp && imp.ticket && imp.monthly && solid ? imp.totalRiyals : null,
+    totalRiyals: showMoney && imp && imp.ticket && imp.monthly && solid ? imp.totalRiyals : null,
     yearly: imp && imp.ticket && imp.monthly && solid ? imp.yearly : null,
   };
 }

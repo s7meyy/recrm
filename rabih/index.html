@@ -209,6 +209,15 @@
         </div>
         <div class="field"><label for="as-permonth">كم تقييمًا جديدًا تتلقّى شهريًّا؟ (لحساب المدة)</label><input id="as-permonth" type="number" min="0" step="1" placeholder="8"></div>
         <div id="impact-preview"></div>
+        <!-- **الأصلُ ألّا يظهر المال في التقرير.** الفرضُ فرضُ المالك، والرقمُ
+             المبنيُّ عليه يُقرأ حكمًا قاطعًا عند مَن يُسلَّم إليه التقرير. فلا
+             يُدرَج إلا بقرارٍ صريحٍ منه، ويُقال له ما الذي يُدرَج. -->
+        <label class="optin" for="as-show">
+          <input type="checkbox" id="as-show">
+          <span><b>أدرِج الأثر المالي في التقرير</b>
+            <span class="fine">مطفأٌ ابتداءً. ما دام مطفأً تبقى هذه الأرقام معاينةً لك وحدك ولا تخرج في التقرير
+              ولا في الخلاصة ولا في رسالة التسليم. وحين تُشغّله يظهر مقرونًا بأنه <b>فرضُك أنت</b> لا قياسٌ من التعليقات.</span></span>
+        </label>
       </details>
       <div class="field"><label for="d-notes">ملاحظاتك أنت (تُعامَل كبيانات موثوقة)</label><textarea id="d-notes" placeholder="أي معلومة تعرفها عن المنشأة وتريد أن يأخذها التحليل بالحسبان."></textarea></div>
     </div>

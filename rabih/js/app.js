@@ -536,6 +536,8 @@ function loadDataView() {
     const el2 = $(id);
     if (el2) el2.value = job.assume?.[key] ?? '';
   }
+  /* إدراجُ المال قرارٌ صريح، والأصلُ إطفاؤه — فلا يُقرأ فرضُ المالك حكمًا. */
+  if ($('#as-show')) $('#as-show').checked = !!job.assume?.show;
   renderSources();
   renderBias();
   renderConfidenceHint();
@@ -565,6 +567,16 @@ function bindDataView() {
     renderParseStats();
     message('#parse-msg', 'ok', '');
     scheduleSave();
+  });
+
+  $('#as-show')?.addEventListener('change', (e) => {
+    job.assume = job.assume || {};
+    job.assume.show = e.target.checked;
+    scheduleSave();
+    renderImpactPreview();
+    renderReport();
+    renderShareMessage();
+    toast(e.target.checked ? 'سيظهر الأثر المالي في التقرير — مقرونًا بأنه فرضُك' : 'لن يظهر الأثر المالي في التقرير');
   });
 
   // أرقام المالك للأثر المالي: تُحفَظ وتُعاد حسابها أمامه فورًا.
@@ -1037,7 +1049,10 @@ function renderImpactPreview() {
   const num = (n) => Number(n).toLocaleString('ar-SA-u-nu-latn');
   box.innerHTML = `<div class="msg ok"><b>على فرضك: نحو ${num(r.totalRiyals)} ريال شهريًّا</b>
     <p class="fine">${r.rows.slice(0, 3).map((x) => `${esc(x.name)}: ${num(x.riyals)}`).join(' · ')}</p>
-    <p class="fine">هذا يقيس حجم المشكلة على فرضك، ولا يزعم أنه إيرادٌ ضائع مقيس.</p></div>`;
+    <p class="fine">هذا يقيس حجم المشكلة على فرضك، ولا يزعم أنه إيرادٌ ضائع مقيس.</p>
+    <p class="fine">${a.show
+      ? '<b>وهو مُدرَجٌ في التقرير</b> — مقرونًا بأنه فرضُك لا قياسٌ من التعليقات.'
+      : '<b>ولا يظهر في التقرير.</b> هذه معاينةٌ لك وحدك، فشغّل الخيار أسفلَه إن أردت إدراجه.'}</p></div>`;
 }
 
 /** انحياز العيّنة — لا يُدَّعى تمثيلٌ ولا انحياز بلا توزيعٍ معلن. */
