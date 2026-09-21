@@ -33,10 +33,10 @@ function wrap(ctx, text, maxWidth) {
  * يرسم بطاقةً مربّعة ويُرجعها Blob بصيغة PNG.
  *
  * @param {{text:string, author?:string, date?:string, rating?:number, id?:string}} review
- * @param {{placeName?:string, size?:number}} opts
+ * @param {{placeName?:string, size?:number, mark?:boolean}} opts
  * @returns {Promise<Blob|null>} وnull إن لم يسع النصُّ البطاقةَ بحال.
  */
-export async function drawCard(review, { placeName = '', size = 1080 } = {}) {
+export async function drawCard(review, { placeName = '', size = 1080, mark = true } = {}) {
   const text = String(review?.text || '').trim();
   if (!text) return null;
 
@@ -104,6 +104,23 @@ export async function drawCard(review, { placeName = '', size = 1080 } = {}) {
     ctx.fillStyle = NAVY;
     ctx.font = `700 ${Math.round(size * 0.034)}px ${family}`;
     ctx.fillText(placeName, size / 2, bottomY + size * 0.105);
+  }
+
+  /* **وسمٌ صغير في ذيل البطاقة.** البطاقةُ تُنشَر في حساب المحلّ ويراها من لم
+     يسمع برابح قطّ، فهي أوسعُ ما يخرج من التقرير انتشارًا. ويبقى صغيرًا في
+     الذيل فلا ينازع شهادةَ العميل، ويسقط كلَّه متى أخفى صاحبُ المكتب رابح. */
+  if (mark) {
+    try {
+      const { LOGO } = await import('./logo.js');
+      const img = new Image();
+      img.src = LOGO;
+      await img.decode();
+      const h = Math.round(size * 0.042);
+      const w = Math.round(h * (img.width / img.height));
+      ctx.globalAlpha = 0.6;
+      ctx.drawImage(img, Math.round((size - w) / 2), Math.round(size - pad * 0.72 - h), w, h);
+      ctx.globalAlpha = 1;
+    } catch { /* الشعارُ زينةٌ لا شرط: بطاقةٌ بلا وسمٍ خيرٌ من بطاقةٍ لا تُرسَم */ }
   }
 
   return new Promise((resolve) => cv.toBlob(resolve, 'image/png'));

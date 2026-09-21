@@ -13,6 +13,7 @@ import { priorityBlock } from './priority.js';
 import { starsBlock } from './stars.js';
 import { voiceBlock, cardBlock } from './voice.js';
 import { impactBlock } from './impact.js';
+import { LOGO } from './logo.js';
 import { sourcesBlock } from './sources.js';
 import { cooccurBlock } from './cooccur.js';
 import { biasBlock } from './bias.js';
@@ -383,7 +384,8 @@ const CSS = `
 body{margin:0;font-family:"Segoe UI",Tahoma,"Arabic Typesetting",sans-serif;color:var(--ink);background:#eef1f5;line-height:1.85}
 .page{background:var(--bg);max-width:210mm;margin:0 auto;padding:18mm 15mm}
 .cover{text-align:center;padding:16mm 15mm 12mm;border-bottom:3px double var(--gold)}
-.brand{font-size:13pt;letter-spacing:.3em;color:var(--gold);font-weight:700}
+.brand{font-size:13pt;letter-spacing:.3em;color:var(--navy);font-weight:700;margin:0 0 2mm}
+.brand img{height:26mm;width:auto;display:block;margin:0 auto}
 .cover h1{font-size:26pt;margin:6mm 0 3mm;color:var(--navy);line-height:1.4}
 .cover .sub{font-size:13pt;color:var(--muted);margin:0 0 7mm}
 .cover-photo{margin:0 auto 8mm;max-width:150mm}
@@ -834,7 +836,8 @@ export function buildReportHtml({ place: rawPlace, ctx = {}, markdown = '', phot
 
   const cover = `<header class="cover">
     ${coverHeader(identity)}
-    ${identity?.showRabih === false ? '' : '<div class="brand">رابــح</div>'}
+    ${identity?.showRabih === false ? ''
+      : `<div class="brand"><img src="${LOGO}" alt="رابــح — نُحلّل تقييماتك، ونطوّر أعمالك" width="335" height="240"></div>`}
     <h1>تقرير تحليلي عن<br>${name}</h1>
     <p class="sub">مبنيّ على تقييمات وتعليقات العملاء المنشورة في خرائط قوقل</p>
     ${coverPhoto ? `<div class="cover-photo"><img src="${esc(coverPhoto.url)}" alt=""></div>` : ''}
@@ -978,7 +981,8 @@ export function buildGroupReportHtml({ brand, analysis, markdown = '', font = nu
 <body><div class="page">
 <header class="cover">
   ${coverHeader(identity)}
-  ${identity?.showRabih === false ? '' : '<div class="brand">رابــح</div>'}
+  ${identity?.showRabih === false ? ''
+    : `<div class="brand"><img src="${LOGO}" alt="رابــح — نُحلّل تقييماتك، ونطوّر أعمالك" width="335" height="240"></div>`}
   <h1>تقرير مجموعة<br>${esc(brand)}</h1>
   <p class="sub">قراءة موحّدة لفروع المجموعة من تقييمات العملاء في خرائط قوقل</p>
   <div class="cover-grid">

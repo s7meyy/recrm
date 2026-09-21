@@ -73,7 +73,8 @@ function loginPage({ error = false, target = '/' } = {}) {
     font-family:"Segoe UI",Tahoma,"Noto Naskh Arabic",sans-serif;color:#16191f}
   form{background:#fff;border-radius:16px;padding:30px 26px;width:100%;max-width:370px;
     box-shadow:0 18px 50px rgba(0,0,0,.35);text-align:center}
-  .logo{font-size:30px;font-weight:800;letter-spacing:.18em;color:var(--gold)}
+  .logo{font-size:24px;font-weight:800;letter-spacing:.14em;color:var(--navy)}
+  .mark{height:52px;width:auto;display:block;margin:0 auto 10px}
   .sub{font-size:13px;color:var(--muted);margin:6px 0 20px;line-height:1.7}
   input{width:100%;font:inherit;padding:12px;border:1px solid var(--line);border-radius:10px;text-align:center}
   input:focus{outline:2px solid var(--gold);outline-offset:1px}
@@ -86,6 +87,7 @@ function loginPage({ error = false, target = '/' } = {}) {
 </head>
 <body>
 <form method="POST" action="/__login">
+  <img class="mark" src="/assets/rabeh-logo.png" alt="رابــح — نُحلّل تقييماتك، ونطوّر أعمالك">
   <div class="logo">رابــح</div>
   <p class="sub">تقارير المنشآت من خرائط قوقل</p>
   <input type="password" name="password" placeholder="كلمة السر" autocomplete="current-password" autofocus>
@@ -117,6 +119,10 @@ export default async (request, context) => {
       || (url.pathname === '/api/store' && request.method === 'GET')) {
     return context.next();
   }
+
+  /* وشعارُ صفحةِ الدخول نفسِها: البوابةُ تعترض كل مسار، فلو حُجب لظهرت صفحتُها
+     بصورةٍ مكسورة — تحجب عن نفسها. وهو ملفٌّ واحدٌ لا يحمل شيئًا من بياناتك. */
+  if (url.pathname === '/assets/rabeh-logo.png') return context.next();
 
   if (url.pathname === '/__logout') {
     return new Response(null, {

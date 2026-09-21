@@ -2917,7 +2917,7 @@ function bindReportView() {
     const { drawCard, bestQuote } = await import('./card.js');
     const q = bestQuote(job.place);
     if (!q) { toast('لا ثناءَ بخمس نجومٍ ونصٍّ كافٍ في عيّنتك — ولا تُختلَق بطاقة.'); return; }
-    const blob = await drawCard(q, { placeName: job.place?.identity?.name || '' });
+    const blob = await drawCard(q, { placeName: job.place?.identity?.name || '', mark: identity.load()?.showRabih !== false });
     if (!blob) { toast('النصّ أطول من أن يُعرَض في بطاقةٍ بلا بتر — ولا يُبتَر كلامُ عميلك.'); return; }
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -3342,7 +3342,7 @@ async function gate() {
   document.body.insertAdjacentHTML('afterbegin', `
     <div id="gate" style="position:fixed;inset:0;background:var(--navy);z-index:99;display:grid;place-items:center;padding:20px">
       <form id="gate-form" style="background:#fff;border-radius:14px;padding:26px;max-width:340px;width:100%;text-align:center">
-        <div style="font-size:26px;font-weight:800;letter-spacing:.16em;color:var(--gold)">رابــح</div>
+        <img src="assets/rabeh-logo.png" alt="رابــح — نُحلّل تقييماتك، ونطوّر أعمالك" style="height:46px;width:auto;display:block;margin:0 auto 8px">
         <p style="color:var(--muted);font-size:13.5px">الأرشيف مقفل. اكتب كلمة السر.</p>
         <input id="gate-pass" type="password" autocomplete="current-password" placeholder="كلمة السر" style="text-align:center">
         <div id="gate-msg" style="color:var(--err);font-size:13px;min-height:20px"></div>

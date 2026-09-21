@@ -563,5 +563,18 @@ const onJob = { assume: { ticket: 30, monthly: 900, loss: 25, show: true } };
 brief(p1, onJob).totalRiyals !== null
   ? ok('ويعود إلى الخلاصة معه') : bad('الخلاصة لا تتبع الخيار');
 
+console.log('٤٥) الشعارُ مضمَّنٌ في الملفّ لا مُشارٌ إليه');
+/* التقريرُ يُرسَل في محادثةٍ ويُفتَح بعد شهورٍ وربّما بلا شبكة. فشعارٌ يُجلَب من
+   عنوانٍ خارجيّ يظهر مربّعًا مكسورًا عند مستقبِله — وهو أولُ ما تقع عليه عينُه. */
+const brandHtml = buildReportHtml({ place: p1, markdown: '## تحليل\nنصّ.', job: {}, ctx: {} });
+/<div class="brand"><img src="data:image\/png;base64,[A-Za-z0-9+/=]{2000,}"/.test(brandHtml)
+  ? ok('شعارُ الغلاف بيانٌ مضمَّن، لا رابطٌ يُجلَب') : bad('شعارٌ برابط أو مفقود');
+!/<img[^>]+src="(?!data:)[^"]*(logo|assets)/i.test(brandHtml)
+  ? ok('ولا رابطَ شعارٍ خارجيّ في التقرير كلِّه') : bad('رابطٌ خارجيّ للشعار');
+/alt="رابــح[^"]*"/.test(brandHtml)
+  ? ok('وله بديلٌ نصّيّ يُقرأ إن سقطت الصورة') : bad('صورةٌ بلا بديل');
+!buildReportHtml({ place: p1, markdown: '## تحليل\nنصّ.', job: {}, ctx: {}, identity: { showRabih: false } }).includes('<div class="brand">')
+  ? ok('ويسقط كلُّه متى أخفى صاحبُ المكتب رابح') : bad('شعارٌ لا يُخفى');
+
 console.log('\n' + (fails.length ? `فشل ${fails.length}:\n` + fails.map((f) => ' - ' + f).join('\n') : '✅ نجحت كل الاختبارات'));
 process.exit(fails.length ? 1 : 0);

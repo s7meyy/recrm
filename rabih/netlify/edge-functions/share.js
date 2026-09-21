@@ -22,7 +22,8 @@ const PAGE = (id) => `<!doctype html>
     font-family:"Segoe UI",Tahoma,"Noto Naskh Arabic",sans-serif;color:#16191f}
   .gate{background:#fff;border-radius:16px;padding:30px 26px;width:100%;max-width:370px;
     box-shadow:0 18px 50px rgba(0,0,0,.35);text-align:center}
-  .logo{font-size:26px;font-weight:800;letter-spacing:.16em;color:var(--gold)}
+  .logo{font-size:22px;font-weight:800;letter-spacing:.12em;color:var(--navy);margin-top:4px}
+  .mark{height:46px;width:auto;display:block;margin:0 auto 10px}
   .sub{font-size:13px;color:var(--muted);margin:6px 0 18px;line-height:1.7}
   input{width:100%;font:inherit;padding:12px;border:1px solid var(--line);border-radius:10px;text-align:center}
   button{width:100%;margin-top:12px;font:inherit;font-weight:600;padding:12px;border:0;
@@ -34,6 +35,7 @@ const PAGE = (id) => `<!doctype html>
 </head>
 <body>
 <form class="gate" id="gate">
+  <img class="mark" src="/assets/rabeh-logo.png" alt="رابــح — نُحلّل تقييماتك، ونطوّر أعمالك">
   <div class="logo" id="label">تقرير</div>
   <p class="sub">تقريرٌ عن تعليقات عملائك، مشفَّرٌ بكلمةٍ اختارها مُعِدّه.
   اكتب الكلمة التي وصلتك — يُفكّ التقرير <b>في جهازك أنت</b>، ولا يمرّ نصُّه بخادمنا مفكوكًا.</p>
