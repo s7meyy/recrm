@@ -170,7 +170,12 @@ async function closeProspect(ctx, row) {
           },
         }),
         el('span', { class: 'spacer' }),
-        el('button', { type: 'button', class: 'btn btn-ghost', text: 'تراجع', onClick: () => { modal.close(); resolve(false); } }),
+        // **والتراجعُ يُعيد الرسم**: المربّعُ صار مؤشَّرًا بضغطتك قبل السؤال، فلو تراجعتَ
+        // بقيت البطاقةُ تبدو مغلقةً وهي مفتوحة — **وشاشةٌ تكذب أسوأُ من شاشةٍ تتأخّر**.
+        el('button', {
+          type: 'button', class: 'btn btn-ghost', text: 'تراجع',
+          onClick: async () => { modal.close(); await refresh(ctx); resolve(false); },
+        }),
       ],
     });
   });

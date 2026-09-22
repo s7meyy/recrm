@@ -102,6 +102,15 @@ await page.locator('#page .task-card').first().locator('input[type=checkbox]').c
 await page.waitForTimeout(700);
 ok('والشاشةُ تسأل قبل الإغلاق', await page.locator('.modal:has-text("إغلاق")').count() > 0,
   await page.locator('.modal').last().innerText().catch(() => '—'));
+// **والتراجعُ يُعيد الرسم**: المربّعُ أُشِّر قبل السؤال، فلو بقي مؤشَّرًا بعد التراجع
+// كانت البطاقةُ تبدو مغلقةً وهي مفتوحة.
+await page.locator('.modal button:has-text("تراجع")').click();
+await page.waitForTimeout(1400);
+ok('**والتراجعُ لا يترك البطاقةَ تبدو مغلقةً وهي مفتوحة**',
+  await page.locator('#page .task-card').first().locator('input[type=checkbox]').isChecked() === false);
+await page.locator('#page .task-card').first().locator('input[type=checkbox]').check();
+await page.waitForTimeout(700);
+
 await page.selectOption('.modal select', 'lost');
 await page.locator('.modal input.input').fill('تأخّرت');
 await page.locator('.modal button:has-text("أغلقها")').click();
@@ -137,6 +146,20 @@ ok('ولا عقارَ دخل مخزونك بلا حفظك', await page.evaluate(
 await page.keyboard.press('Escape');
 await page.waitForTimeout(600);
 
+/* ===== ٧ب. المحذوفةُ تُسمّى بالعربيّة في السلّة ===== */
+console.log('\n--- ٧ب. السلّة ---');
+await page.evaluate(async () => {
+  const { repo } = await import('/js/data/repository.js');
+  const row = (await repo.prospects.list()).find((r) => r.title === 'عمارة السليمانية');
+  await repo.prospects.remove(row.id);
+});
+await page.evaluate(() => { location.hash = '#/trash'; });
+await page.waitForTimeout(1600);
+const trash = await page.locator('#page').innerText();
+ok('**سجلٌّ محذوفٌ يُسمّى بالعربيّة** لا باسم المخزن',
+  trash.includes('فرصة عقاريّة — عمارة السليمانية'),
+  trash.split('\n').slice(0, 5).join(' | '));
+
 /* ===== ٨. البحثُ العامّ يصل الفرص ===== */
 console.log('\n--- ٨. البحث ---');
 await page.evaluate(async () => {
@@ -144,10 +167,10 @@ await page.evaluate(async () => {
   openGlobalSearch();
 });
 await page.waitForTimeout(500);
-await page.locator('.modal input.search').fill('السليمانية');
+await page.locator('.modal input.search').fill('الملقا');
 await page.waitForTimeout(900);
 const found = await page.locator('.modal .search-results').innerText();
-ok('**بابٌ جديدٌ لا يُفتح بلا بحثٍ يصله**', found.includes('الفرص العقاريّة') && found.includes('عمارة السليمانية'),
+ok('**بابٌ جديدٌ لا يُفتح بلا بحثٍ يصله**', found.includes('الفرص العقاريّة') && found.includes('أرض ورثة في الملقا'),
   found.split('\n').slice(0, 6).join(' | '));
 await page.keyboard.press('Escape');
 await page.waitForTimeout(500);

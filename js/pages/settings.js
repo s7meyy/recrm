@@ -844,10 +844,17 @@ async function plansBody(redraw) {
 
 /* ===== سلة المحذوفات (المرحلة ٢١) ===== */
 
+/**
+ * **ولكلّ مخزنٍ اسمٌ عربيّ هنا** — فالسطرُ يُقرأ «مهمة — اتصل على سعد»، لا `tasks`.
+ * وكانت تنقص سبعةً من المخازن التي تُحذف سجلّاتُها فعلًا، فيظهر اسمُ المخزن بالإنجليزيّة
+ * في شاشةٍ عربيّة. وأُكملت مع فرصِ المرحلة ٥٣.
+ */
 const TRASH_LABELS = {
   clients: 'عميل', properties: 'عقار', requests: 'طلب', deals: 'صفقة', invoices: 'مستند',
   expenses: 'مصروف', tasks: 'مهمة', notes: 'ملاحظة', taskLists: 'قائمة مهام',
   externalListings: 'عرض خارجي', tours: 'جولة',
+  incomes: 'إيراد', showings: 'معاينة', matches: 'مطابقة', extractions: 'مستند مفرَّغ',
+  marketDeals: 'صفقة سوق', prospects: 'فرصة عقاريّة', prospectLists: 'قائمة فرص',
 };
 
 function trashTitle(entry) {
