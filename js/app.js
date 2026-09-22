@@ -40,6 +40,7 @@ import * as marketPage from './pages/market.js';
 import * as trashPage from './pages/trash.js';
 import * as publishPage from './pages/publish.js';
 import * as tasksPage from './pages/tasks.js';
+import * as prospectsPage from './pages/prospects.js';
 import * as notesPage from './pages/notes.js';
 import * as clientPage from './pages/client.js';
 import * as healthPage from './pages/health.js';
@@ -79,6 +80,8 @@ const ROUTES = {
   trash: { title: 'سلة المحذوفات', render: trashPage.render },
   publish: { title: 'الصفحة العامة للعروض', render: publishPage.render },
   tasks: { title: 'المهام', render: tasksPage.render },
+  // **الفرص العقاريّة** (المرحلة ٥٣) — غيرُ `opportunities` التي تحسب أحياءً يطلبها عملاؤك.
+  prospects: { title: 'الفرص العقاريّة', render: prospectsPage.render },
   notes: { title: 'الأفكار والملاحظات', render: notesPage.render },
   client: { title: 'ملف العميل', render: clientPage.render },
   // **ملفُّ العقار** (المرحلة ٥٢): قراءةٌ محضة — والتعديلُ يبقى في `#/properties/<id>`.

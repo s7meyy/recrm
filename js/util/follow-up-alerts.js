@@ -61,12 +61,20 @@ async function checkClientsOnce() {
 
 async function checkTasksOnce() {
   if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+  const ripe = (rows) => rows.filter((t) => !t.done && t.dueAt && !t.reminded && new Date(t.dueAt).getTime() <= Date.now());
   const tasks = await repo.tasks.list();
-  const due = tasks.filter((t) => !t.done && t.dueAt && !t.reminded && new Date(t.dueAt).getTime() <= Date.now());
-  for (const t of due) {
+  for (const t of ripe(tasks)) {
     const n = new Notification('تذكير بمهمة', { body: t.title, tag: `kassab-task-${t.id}` });
     n.onclick = goTo(`#/tasks/${t.id}`);
     await repo.tasks.update(t.id, { reminded: true });
+  }
+  // **وموعدُ متابعة الفرصة يوقظ كما يوقظ موعدُ المهمّة** (المرحلة ٥٣) — بالمانع نفسِه
+  // في سجلّها (`reminded`)، فلا يُبنى مانعُ تكرارٍ ثالث.
+  const prospects = await repo.prospects.list();
+  for (const pr of ripe(prospects)) {
+    const n = new Notification('متابعةُ فرصة', { body: pr.title, tag: `kassab-prospect-${pr.id}` });
+    n.onclick = goTo(`#/prospects/${pr.id}`);
+    await repo.prospects.update(pr.id, { reminded: true });
   }
 }
 

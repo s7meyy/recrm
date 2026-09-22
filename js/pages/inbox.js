@@ -1,23 +1,28 @@
 /**
- * **الوارد** — ما حوّلتَه من واتساب، مفروزًا وينتظر اعتمادك (المرحلة ٥١).
+ * **الوارد** — ما حوّلتَه من واتساب، مفروزًا وينتظر اعتمادك (المرحلة ٥١، ووُسِّع في ٥٣).
  *
  * تصلك الطلباتُ والعروضُ في واتساب، وإدخالُها بيدك هو العملُ الذي يُؤجَّل إلى المساء
  * **ثم يُنسى**. فصارت لك قناةٌ في تيليجرام: تحوّل الرسالةَ كما هي، فيقرؤها خادمُك
- * ويفرزها طلبًا أو عرضًا، وتجدها هنا.
+ * ويفرزها، وتجدها هنا.
  *
  * **ولا يُحفظ شيءٌ في قاعدتك بلا ضغطتك** — وهي قاعدةُ النظام منذ المرحلة ٤. وما تراه
  * هنا محفوظٌ في الخادم لا في مخزونك: **بريدٌ ينتظر الفتح، لا سجلٌّ دخل**.
  *
- * **والاعتمادُ يمرّ بالمسارين القائمين** لا بثالثٍ يُخترع: الطلبُ يفتح استمارةَ الطلبات
- * معبّأةً كما يفعل «لصق رسالة عميل»، والعرضُ يفتح نافذةَ اللصق في العقارات. فمحلّلٌ
- * واحدٌ يُصان، وشاشةُ اعتمادٍ واحدةٌ تُعرف.
+ * **والاعتمادُ يمرّ بالمسارات القائمة** لا بمسارٍ يُخترع لكلّ صنف (المرحلة ٥٣):
+ *   طلبٌ        → استمارةُ الطلبات معبّأةً (`kassab:quick-request`)
+ *   عرضٌ        → نافذةُ اللصق في العقارات (`kassab:quick-offer`)
+ *   فرصةٌ       → صندوقُ الإضافة في «الفرص العقاريّة» (`kassab:quick-prospect`)
+ *   مهمّةٌ      → صندوقُ الدفعة في «المهام» (`kassab:quick-task`)
+ *   مقترَحٌ/فكرةٌ → صندوقُ الالتقاط في «الأفكار والملاحظات» موسومًا (`kassab:quick-note`)
+ *
+ * فمحلّلٌ واحدٌ يُصان، وشاشاتُ اعتمادٍ تعرفها، **ولا شاشةَ اعتمادٍ ثانيةٌ تُبنى هنا**.
  */
 
 import { el, clear, emptyState, toast, confirmDialog, openModal, selectEl, SESSION_GONE, sessionGoneNote } from '../util/dom.js';
 import { repo } from '../data/repository.js';
 import { getLists } from '../data/settings.js';
 import { formatDate, formatNumber } from '../util/format.js';
-import { KIND_LABELS, sortReason } from '../util/lead-sort.js';
+import { KINDS, KIND_LABELS, KIND_ACC, sortReason } from '../util/lead-sort.js';
 import { parseRequestText, parseOfferText } from '../data/listing-parse.js';
 import { normalizePhone } from '../util/phone.js';
 
@@ -136,6 +141,11 @@ function statusPanel(data, refresh) {
 
 /* ===== بطاقةُ رسالة ===== */
 
+/** لونُ وسمِ الصنف — والملتبسُ وحده أصفرُ، **فاللونُ يقول درجةَ اليقين لا الصنف فقط**. */
+const BADGE = {
+  request: 'ok', offer: 'accent', prospect: 'accent', task: 'ok', suggestion: 'outline', idea: 'outline', unsure: 'warn',
+};
+
 function card(ctx, msg, refresh) {
   const kind = msg.kind || 'unsure';
   const known = msg.phone
@@ -143,7 +153,7 @@ function card(ctx, msg, refresh) {
     : null;
 
   const head = el('div', { class: 'row', style: { justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' } },
-    el('span', { class: `badge badge-${kind === 'request' ? 'ok' : kind === 'offer' ? 'accent' : 'warn'}`, text: KIND_LABELS[kind] }),
+    el('span', { class: `badge badge-${BADGE[kind] || 'warn'}`, text: KIND_LABELS[kind] || KIND_LABELS.unsure }),
     el('span', { class: 'muted small', text: `${msg.senderName || 'بلا اسم'} · ${formatDate(msg.at)}` }));
 
   const body = el('p', { class: 'wa-quote', text: msg.text });
@@ -171,9 +181,31 @@ function card(ctx, msg, refresh) {
     location.hash = '#/properties?new=paste';
   };
 
-  const actions = el('div', { class: 'row', style: { gap: '6px', flexWrap: 'wrap', marginTop: '10px' } },
-    el('button', { type: 'button', class: `btn btn-sm${kind === 'request' ? ' btn-primary' : ''}`, text: 'اعتمده طلبًا', onClick: asRequest }),
-    el('button', { type: 'button', class: `btn btn-sm${kind === 'offer' ? ' btn-primary' : ''}`, text: 'اعتمده عرضًا', onClick: asOffer }),
+  /** بذرةٌ نصّيّةٌ في صفحةٍ قائمة — والحفظُ هناك بيدك لا هنا. */
+  const seedTo = (key, value, hash) => {
+    try { sessionStorage.setItem(key, value); } catch (_) { /* تصفح خاص */ }
+    drop(msg.key);
+    location.hash = hash;
+  };
+  const asProspect = () => seedTo('kassab:quick-prospect', msg.text, '#/prospects');
+  const asTask = () => seedTo('kassab:quick-task', msg.text, '#/tasks');
+  const asNote = (tag) => seedTo('kassab:quick-note', JSON.stringify({ text: msg.text, tags: [tag] }), '#/notes');
+
+  /**
+   * **ستّةُ أبوابٍ كلُّها مفتوحة** (المرحلة ٥٣) — والفرزُ يرفع أحدَها لا يقفل الخمسة.
+   * فالبابُ المُقترَح أوّلًا وبلونٍ بارز، **والبقيّةُ في متناول اليد** بضغطةٍ واحدة:
+   * من رأى الحكمَ خطأً لا يُضطرّ إلى حذفٍ وإعادةِ تحويل.
+   */
+  const RUN = {
+    request: asRequest, offer: asOffer, prospect: asProspect, task: asTask,
+    suggestion: () => asNote('مقترَح'), idea: () => asNote('فكرة'),
+  };
+  const ordered = [...KINDS].sort((a, b) => (b.key === kind ? 1 : 0) - (a.key === kind ? 1 : 0));
+  const actions = el('div', { class: 'row inbox-actions', style: { gap: '6px', flexWrap: 'wrap', marginTop: '10px' } },
+    ...ordered.map((k) => el('button', {
+      type: 'button', class: `btn btn-sm${k.key === kind ? ' btn-primary' : ''}`,
+      text: `اعتمده ${KIND_ACC[k.key]}`, 'data-kind': k.key, onClick: RUN[k.key],
+    })),
     el('button', {
       type: 'button', class: 'btn btn-ghost btn-sm', text: 'احذفه',
       onClick: () => askWhy(async (why) => { await drop(msg.key, why); toast('حُذف'); refresh(); }),
@@ -222,7 +254,10 @@ export async function render(container) {
     el('div', { class: 'notice' },
       el('strong', { text: 'ما وصل، لا ما دخل. ' }),
       'هذه رسائلُ حوّلتَها، قرأها الخادمُ وفرزها بقواعدَ لا بذكاء — ',
-      'ولا يدخل شيءٌ قاعدتَك حتى تضغط «اعتمده». والفرزُ اقتراحٌ: اعتمد الرسالةَ على غير ما فُرزت متى شئت.'),
+      'ولا يدخل شيءٌ قاعدتَك حتى تضغط «اعتمده». والفرزُ اقتراحٌ: اعتمد الرسالةَ على غير ما فُرزت متى شئت. ',
+      el('strong', { text: 'وستّةُ أبوابٍ لا بابان: ' }),
+      'طلبٌ وعرضٌ يدخلان مخزونك، وفرصةٌ عقاريّةٌ تُتابَع في صفحتها، ومهمّةٌ تدخل قوائمك، ',
+      'ومقترَحٌ وفكرةٌ يُقيَّدان في «الأفكار والملاحظات» موسومين.'),
     area,
   );
   await refresh();

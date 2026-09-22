@@ -37,6 +37,16 @@ export async function render(container) {
   ctx.view = ['single', 'table'].includes(savedView) ? savedView : 'board';
   await loadData(ctx);
   buildLayout(ctx);
+  // **بذرةٌ من «الوارد»** (المرحلة ٥٣): مهمّةٌ حوّلتَها إلى بوتك تُملأ في صندوق الدفعة
+  // — **ولا تُحفظ بنفسها**، بل تمرّ بالمراجعة والاعتماد كأيّ سطرٍ تكتبه بيدك.
+  let taskSeed = '';
+  try { taskSeed = sessionStorage.getItem('kassab:quick-task') || ''; } catch (_) { taskSeed = ''; }
+  try { sessionStorage.removeItem('kassab:quick-task'); } catch (_) { /* تصفح خاص */ }
+  if (taskSeed) {
+    const area = container.querySelector('.bulk-area');
+    if (area) { area.value = taskSeed; area.focus(); }
+    toast('نصُّ الرسالة في صندوق الدفعة — اضغط «وزّعها» ثمّ راجع', 'info', 5000);
+  }
   const focusId = routeTaskId();
   if (focusId) {
     const target = ctx.tasks.find((t) => t.id === focusId);

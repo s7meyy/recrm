@@ -16,9 +16,10 @@ function routeNoteId() {
 }
 
 export async function render(container) {
-  const ctx = { container, notes: [], clients: [], properties: [], requests: [], taskLists: [], showArchived: false, query: '' };
+  const ctx = { container, notes: [], clients: [], properties: [], requests: [], taskLists: [], showArchived: false, query: '', pendingTags: [] };
   await loadData(ctx);
   buildLayout(ctx);
+  seedFromInbox(ctx);
   const focusId = routeNoteId();
   if (focusId) {
     const target = ctx.notes.find((n) => n.id === focusId);
@@ -122,13 +123,36 @@ function noteCard(ctx, note) {
   return card;
 }
 
+/**
+ * **بذرةٌ من «الوارد»** (المرحلة ٥٣) — فكرةٌ أو مقترَحٌ حوّلتَه إلى بوتك.
+ *
+ * **ولا تُحفظ بنفسها**: تُملأ في صندوق الالتقاط وتنتظر ضغطتك، كما يفعل الطلبُ والعرض
+ * منذ المرحلة ٥١. وقاعدةُ النظام منذ المرحلة ٤ أنّ **لا شيءَ يدخل قاعدتَك بلا ضغطتك**.
+ * والوسمُ يأتي معها فيُفرَّق المقترَحُ من الفكرة في صفحةٍ واحدة بلا مخزنٍ ثالث.
+ */
+function seedFromInbox(ctx) {
+  let raw = '';
+  try { raw = sessionStorage.getItem('kassab:quick-note') || ''; } catch (_) { raw = ''; }
+  try { sessionStorage.removeItem('kassab:quick-note'); } catch (_) { /* تصفح خاص */ }
+  if (!raw) return;
+  let seed = null;
+  try { seed = JSON.parse(raw); } catch (_) { seed = { text: raw, tags: [] }; }
+  if (!seed?.text) return;
+  ctx.pendingTags = Array.isArray(seed.tags) ? seed.tags : [];
+  const input = ctx.container.querySelector('.note-quick-input');
+  if (input) { input.value = seed.text; input.focus(); }
+  toast('نصُّ الرسالة في صندوق الالتقاط — راجعه ثمّ احفظه', 'info', 5000);
+}
+
 function quickCapture(ctx) {
   const input = el('textarea', { class: 'input note-quick-input', rows: 2, placeholder: 'اكتب فكرة أو ملاحظة سريعة… (Ctrl+Enter للحفظ)' });
   const save = async () => {
     const text = input.value.trim();
     if (!text) return;
     input.value = '';
-    await repo.notes.create({ text });
+    const tags = ctx.pendingTags || [];
+    ctx.pendingTags = [];
+    await repo.notes.create({ text, tags });
     await refresh(ctx);
   };
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); save(); } });

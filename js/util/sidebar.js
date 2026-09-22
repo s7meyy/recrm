@@ -27,6 +27,7 @@ export const SIDEBAR_PAGES = [
   { key: 'deals', label: 'الصفقات', icon: '🤝' , group: 'money' },
   { key: 'expenses', label: 'المالية', icon: '💸' , group: 'money' },
   { key: 'publish', label: 'الصفحة العامة للعروض', icon: '🌍' , group: 'duty' },
+  { key: 'prospects', label: 'الفرص العقاريّة', icon: '💎' , group: 'work' },
   { key: 'tasks', label: 'المهام', icon: '✅' , group: 'work' },
   { key: 'calendar', label: 'التقويم', icon: '📆' , group: 'work' },
   { key: 'notes', label: 'الأفكار والملاحظات', icon: '💡' , group: 'tools' },

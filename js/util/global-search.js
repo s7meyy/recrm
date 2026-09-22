@@ -76,6 +76,13 @@ function taskRow(t) {
   return resultRow(t.title, t.dueAt ? `مستحقة ${formatDateTime(t.dueAt)}` : null, t.done ? 'منجزة' : null,
     () => { location.hash = `#/tasks/${t.id}`; closeModal(); });
 }
+/** الفرصةُ العقاريّة (المرحلة ٥٣) — **وبابُها الجديدُ لا يُفتح بلا بحثٍ يصله**. */
+function prospectRow(pr) {
+  const where = [pr.district, pr.city].filter(Boolean).join('، ');
+  return resultRow(pr.title, [where, pr.price == null ? '' : formatSAR(pr.price)].filter(Boolean).join(' · ') || null,
+    pr.done ? labelFor(ENUMS.prospectOutcomes, pr.outcome) : null,
+    () => { location.hash = `#/prospects/${pr.id}`; closeModal(); });
+}
 function noteRow(n) {
   const preview = n.text.length > 60 ? `${n.text.slice(0, 57)}…` : n.text;
   return resultRow(preview, null, n.pinned ? 'مثبَّتة' : null,
@@ -149,7 +156,7 @@ async function runSearch(resultsEl, query) {
   if (q.length < MIN_QUERY_LEN) { renderEmpty(resultsEl, 'اكتب حرفين على الأقل للبحث.'); return; }
   const ctx = await ensureCache();
   const { lists, clientsById } = ctx;
-  const [clients, properties, requests, tasks, notes, invoices, externals, deals, showings, expenses, incomes] = await Promise.all([
+  const [clients, properties, requests, tasks, notes, invoices, externals, deals, showings, expenses, incomes, prospects] = await Promise.all([
     repo.clients.search(q), repo.properties.search(q), repo.requests.search(q), repo.tasks.search(q), repo.notes.search(q),
     repo.invoices.search(q),
     // العروض الخارجية مفتاحُها غنيّ (المنصّة والنصّ الملصوق وجوّال المعلن)، فتكفيها `search`.
@@ -157,6 +164,7 @@ async function runSearch(resultsEl, query) {
     // والأربعةُ الباقية تُقرأ كاملةً وتُطابَق بمرتبطاتها — وهي أقلُّ المخازن عددًا،
     // وكلُّها في الذاكرة أصلًا لبقيّة الصفحات.
     repo.deals.list(), repo.showings.list(), repo.expenses.list(), repo.incomes.list(),
+    repo.prospects.search(q),
   ]);
   if (!resultsEl.isConnected) return; // أُغلقت النافذة أثناء البحث
   clear(resultsEl);
@@ -174,6 +182,7 @@ async function runSearch(resultsEl, query) {
     group('العروض الخارجية', externals.slice(0, MAX_PER_GROUP).map((x) => externalRow(x, lists))),
     group('المعاينات', showingHits.slice(0, MAX_PER_GROUP).map((sh) => showingRow(sh, ctx))),
     group('المالية', moneyHits.slice(0, MAX_PER_GROUP).map((m) => moneyRow(m, m._kind)), true),
+    group('الفرص العقاريّة', prospects.slice(0, MAX_PER_GROUP).map(prospectRow)),
     group('المهام', tasks.slice(0, MAX_PER_GROUP).map(taskRow)),
     group('الأفكار', notes.filter((n) => !n.archived).slice(0, MAX_PER_GROUP).map(noteRow)),
     group('الفواتير وعروض الأسعار', invoices.slice(0, MAX_PER_GROUP).map(invoiceRow), true),
@@ -184,7 +193,7 @@ async function runSearch(resultsEl, query) {
 
 export function openGlobalSearch() {
   cache = null; // البيانات قد تغيّرت منذ آخر فتح
-  const input = el('input', { class: 'input search', type: 'search', placeholder: 'ابحث عن عميل أو عقار أو طلب أو صفقة أو معاينة أو مصروف أو مهمة أو فاتورة…' });
+  const input = el('input', { class: 'input search', type: 'search', placeholder: 'ابحث عن عميل أو عقار أو طلب أو فرصة أو صفقة أو معاينة أو مصروف أو مهمة أو فاتورة…' });
   const results = el('div', { class: 'search-results' });
   const body = el('div', { class: 'search-modal-body' }, input, results);
   renderEmpty(results, 'اكتب حرفين على الأقل للبحث.');

@@ -435,6 +435,30 @@ const PREPARE = {
     rec.priority = inEnum(ENUMS.taskPriorities, rec.priority) ? rec.priority : 'normal';
     rec.searchKey = buildSearchKey([rec.title, rec.notes]);
   },
+  prospectLists(rec) {
+    rec.pinned = !!rec.pinned;
+    rec.title = trim(rec.title);
+    rec.order = toNumberOrNull(rec.order) ?? 0;
+    rec.searchKey = buildSearchKey([rec.title]);
+  },
+  prospects(rec) {
+    rec.title = trim(rec.title);
+    rec.order = toNumberOrNull(rec.order) ?? 0;
+    rec.done = !!rec.done;
+    rec.city = trim(rec.city);
+    rec.district = trim(rec.district);
+    rec.source = trim(rec.source);
+    rec.contactName = trim(rec.contactName);
+    rec.contactPhone = normalizePhone(rec.contactPhone);
+    rec.price = toNumberOrNull(rec.price);
+    rec.area = toNumberOrNull(rec.area);
+    rec.assignedTo = rec.assignedTo || null;
+    rec.priority = inEnum(ENUMS.taskPriorities, rec.priority) ? rec.priority : 'normal';
+    rec.outcome = inEnum(ENUMS.prospectOutcomes, rec.outcome) ? rec.outcome : null;
+    rec.outcomeReason = trim(rec.outcomeReason);
+    // **والفرصةُ تُبحث كما يُبحث العقار**: يسألك أحدٌ عن «أرض الورثة» بعد شهرين.
+    rec.searchKey = buildSearchKey([rec.title, rec.notes, rec.city, rec.district, rec.source, rec.contactName, rec.contactPhone]);
+  },
   notes(rec) {
     rec.text = trim(rec.text);
     rec.tags = [...new Set((rec.tags || []).map(trim).filter(Boolean))];
@@ -556,6 +580,14 @@ const VALIDATE = {
     if (rec.linkType && !inEnum(ENUMS.linkTypes, rec.linkType)) errors.push('نوع الربط غير معروف');
     if (rec.linkType && !rec.linkId) errors.push('يلزم تحديد السجل المرتبط');
   },
+  prospects(rec, errors) {
+    if (rec.linkType && !inEnum(ENUMS.linkTypes, rec.linkType)) errors.push('نوع الربط غير معروف');
+    if (rec.linkType && !rec.linkId) errors.push('يلزم تحديد السجل المرتبط');
+    if (rec.price != null && rec.price < 0) errors.push('السعر لا يكون سالبًا');
+    if (rec.area != null && rec.area <= 0) errors.push('المساحة لا تكون صفرًا ولا سالبة');
+    // **ولا تُغلق فرصةٌ بلا مآل**: إغلاقٌ صامتٌ يجعل السجلّ لا يُقرأ منه شيء.
+    if (rec.done && !rec.outcome) errors.push('قل ماذا صارت إليه الفرصة قبل إغلاقها');
+  },
   notes(rec, errors) {
     if (rec.linkType && !inEnum(ENUMS.linkTypes, rec.linkType)) errors.push('نوع الربط غير معروف');
     if (rec.linkType && !rec.linkId) errors.push('يلزم تحديد السجل المرتبط');
@@ -639,6 +671,10 @@ const CASCADE = {
     const tasks = await adapter.getByIndex('tasks', 'listId', id);
     if (tasks.length) await adapter.deleteMany('tasks', tasks.map((t) => t.id));
   },
+  async prospectLists(id) {
+    const rows = await adapter.getByIndex('prospects', 'listId', id);
+    if (rows.length) await adapter.deleteMany('prospects', rows.map((r) => r.id));
+  },
 };
 
 /* ===== سجلّ «ماذا تغيّر ومتى» (المرحلة ٣٥) ===== */
@@ -654,6 +690,8 @@ const TRACKED = {
   properties: ['price', 'status', 'captureStatus', 'area', 'ownerName', 'agreementSignedAt', 'assignedTo', 'deliveryAt'],
   clients: ['stage', 'phone', 'phone2', 'doNotContact', 'referralSource', 'assignedTo'],
   requests: ['status', 'budgetMax', 'budgetMin', 'area', 'rooms', 'closeReason', 'assignedTo', 'payMethod'],
+  // الفرصةُ تنتقل بين المراحل، و«متى انتقلت ومن نقلها» سؤالُ مديرٍ لا فضول (المرحلة ٥٣).
+  prospects: ['listId', 'price', 'outcome', 'assignedTo', 'done'],
   // الإسنادُ يُتتبَّع كما تُتتبَّع الحالة (المرحلة ٤٨): «من نُقلت إليه ومتى» سؤالُ مديرٍ لا فضول.
   //
   // **وكانا مفتاحين اثنين باسم `deals` في كائنٍ واحد** (المرحلة ٤٩): الثاني يمحو الأوّل
@@ -1323,6 +1361,8 @@ export const repo = {
   audio: makeEntity('audio'), // الملاحظات الصوتية (المرحلة ٢٦)
   showings: makeEntity('showings'), // المعاينات (المرحلة ٢٧)
   marketDeals: makeEntity('marketDeals'), // صفقات السوق (المرحلة ٥٠)
+  prospectLists: makeEntity('prospectLists'), // الفرص العقاريّة (المرحلة ٥٣)
+  prospects: makeEntity('prospects'),
 
   /** وصول خام للمخازن (النسخ الاحتياطي والبيانات التجريبية). */
   raw: {

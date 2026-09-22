@@ -10,9 +10,10 @@ ok('**وكلُّ صفحةٍ في مجموعة** — فلا يسقط بابٌ خ�
   SIDEBAR_PAGES.every((p) => p.group), SIDEBAR_PAGES.filter((p) => !p.group).map((p) => p.key).join('،'));
 ok('ولا مجموعةَ خارج الأربع',
   SIDEBAR_PAGES.every((p) => SIDEBAR_GROUPS.some((g) => g.key === p.group)));
-// **والعددُ يُرفع بالإضافة وحدَها**: صار ثمانيًا وعشرين بصفحة السوق (المرحلة ٥٠).
+// **والعددُ يُرفع بالإضافة وحدَها**: صار ثمانيًا وعشرين بصفحة السوق (المرحلة ٥٠)،
+// وتسعًا وعشرين بالوارد (٥١)، وثلاثين بـ«الفرص العقاريّة» (٥٣).
 // وحرسُه أن ينقص أو يقفز بلا مرحلةٍ تذكره — لا أن يثبت أبدًا.
-ok('ولا صفحةَ حُذفت: تسعٌ وعشرون بعد الوارد', DEFAULT_PAGE_KEYS.length === 29, String(DEFAULT_PAGE_KEYS.length));
+ok('ولا صفحةَ حُذفت: ثلاثون بعد الفرص العقاريّة', DEFAULT_PAGE_KEYS.length === 30, String(DEFAULT_PAGE_KEYS.length));
 ok('ولا مفتاحَ مكرَّر', new Set(DEFAULT_PAGE_KEYS).size === DEFAULT_PAGE_KEYS.length);
 ok('و«يومي» في العمل، و«المالية» في المال', groupOf('today') === 'work' && groupOf('expenses') === 'money');
 ok('و«العقود والتراخيص» في الالتزام', groupOf('rega') === 'duty' && groupOf('management') === 'duty');

@@ -1,5 +1,8 @@
 // المرحلة ٥١: فارزُ الوارد — طلبٌ أم عرضٌ أم ملتبس؟ (دوالُّ خالصة، بلا متصفّح ولا خادم)
-import { sortIncoming, sortReason, fingerprintText, KIND_LABELS, MIN_EDGE, WANT_SIGNS, OFFER_SIGNS } from '../js/util/lead-sort.js';
+import {
+  sortIncoming, sortReason, fingerprintText, KIND_LABELS, KIND_ACC, KINDS, MIN_EDGE,
+  WANT_SIGNS, OFFER_SIGNS, PROSPECT_SIGNS, TASK_SIGNS, SUGGEST_SIGNS, IDEA_SIGNS,
+} from '../js/util/lead-sort.js';
 import { extractUpdate } from '../netlify/functions/telegram.js';
 
 let pass = 0; let fail = 0;
@@ -54,6 +57,54 @@ console.log('\n--- ٥. حدودُ الكلمات تفهم العربيّة ---')
 ok('**الشواهدُ تُصيب أصلًا** — وهو ما أخفقَ أوّل مرّة', sortIncoming('ابحث عن فلة').want > 0);
 ok('ولا تُصيب داخلَ كلمةٍ أطول', sortIncoming('المطلوبات المحاسبية').want === 0, String(sortIncoming('المطلوبات المحاسبية').want));
 ok('والشواهدُ كلُّها مبنيّةٌ لا نصوص', [...WANT_SIGNS, ...OFFER_SIGNS].every((s) => s.re instanceof RegExp && s.w > 0 && s.why));
+
+console.log('\n--- ٥ب. الأصنافُ الأربعة الجديدة (المرحلة ٥٣) ---');
+const newKinds = [
+  ['prospect', 'مزاد على أرض ورثة في الملقا الخميس'],
+  ['prospect', 'أبو سعد ينوي البيع لفلته قبل الإعلان'],
+  ['prospect', 'فرصة استثمارية: مشروع شراكة بعائد جيّد'],
+  ['task', 'ذكرني أتصل على سعد بكرة الساعة ٤'],
+  ['task', 'لا تنسى تجهز عقد الوساطة اليوم'],
+  ['suggestion', 'أقترح تضيفون حقل للتمويل في الطلب'],
+  ['suggestion', 'يا ليت البرنامج يرسل الفاتورة تلقائيًّا'],
+  ['idea', 'فكرة: تقرير شهري نرسله للملاك'],
+  ['idea', 'خطرت لي خاطرة نجمع فيها أرقام الملاك'],
+];
+for (const [want, text] of newKinds) {
+  const got = sortIncoming(text);
+  ok(`«${text.slice(0, 28)}…» ← ${KIND_LABELS[want]}`, got.kind === want,
+    `${got.kind} · ${JSON.stringify(got.scores)}`);
+}
+ok('**ولكلّ صنفٍ درجةٌ في `scores`** فيُرى على أيّ شيءٍ تردّدَ الفارز',
+  KINDS.every((k) => typeof sortIncoming('للبيع أرض').scores[k.key] === 'number'));
+ok('والأصنافُ ستّةٌ لا حكمان', KINDS.length === 6, String(KINDS.length));
+ok('ولكلّ صنفٍ شواهدُ مبنيّة',
+  [...PROSPECT_SIGNS, ...TASK_SIGNS, ...SUGGEST_SIGNS, ...IDEA_SIGNS].every((x) => x.re instanceof RegExp && x.w > 0 && x.why));
+
+/**
+ * **حارسٌ يمنع الشاهدَ الميّت**: النصُّ يُطبَّع قبل المطابقة (ى←ي، ة←ه، أ←ا، ؤ←و، ئ←ي)،
+ * فشاهدٌ مكتوبٌ بحرفٍ غيرِ مطبَّعٍ **لا يطابق شيئًا أبدًا وهو ساكتٌ لا يشتكي**. وقد وُجد
+ * منها خمسةٌ يوم المرحلة ٥٣: ثلاثةٌ جديدة واثنتان قديمتان بلا بديلٍ حيّ.
+ */
+const deadSigns = KINDS.flatMap((k) => k.signs
+  .filter((x) => /[أإآٱىةؤئ]/.test(x.re.source))
+  .map((x) => `${k.key}/${x.why}`));
+ok('**ولا شاهدَ ميّتًا**: كلُّ الشواهد مكتوبةٌ مطبَّعةً كما يُطبَّع النصّ',
+  deadSigns.length === 0, deadSigns.join(' · '));
+
+console.log('\n--- ٥ج. العربيّةُ في الحجّة: «فكرةً» لا «فكرةًا» ---');
+// **العطبُ الذي كاد يقع**: الصيغةُ كانت `${label}ًا` فتخرج «فكرةًا» و«مهمّةًا».
+ok('الصيغةُ المنصوبةُ مكتوبةٌ لكلّ صنف', KINDS.every((k) => k.acc && !k.acc.endsWith('ةًا')));
+ok('والحجّةُ تستعملها', sortReason(sortIncoming('فكرة: تقرير شهري نرسله للملاك')).startsWith('حُكم فكرةً'),
+  sortReason(sortIncoming('فكرة: تقرير شهري نرسله للملاك')));
+ok('ولا يبقى صنفٌ بلا صيغةٍ منصوبة', Object.keys(KIND_ACC).length === KINDS.length);
+
+console.log('\n--- ٥د. والصنفُ الجديد لا يسرق القديم ---');
+ok('«للبيع أرض … الصك … واجهة» يبقى عرضًا', sortIncoming('للبيع أرض في النرجس ٦٠٠م الصك إلكتروني واجهة شمالية').kind === 'offer');
+ok('و«فرصة: فلة … زاوية … رقم الترخيص» يبقى عرضًا لا فرصة',
+  sortIncoming('فرصة: فلة الملقا ٤٠٠م زاوية شارعين رقم الترخيص ١٢٣').kind === 'offer',
+  sortIncoming('فرصة: فلة الملقا ٤٠٠م زاوية شارعين رقم الترخيص ١٢٣').kind);
+ok('و«ابحث عن فلة … ميزانيتي» يبقى طلبًا', sortIncoming('ابحث عن فلة في حطين ميزانيتي ٣ مليون').kind === 'request');
 
 console.log('\n--- ٦. البصمةُ تمنع التضاعف ---');
 ok('النصُّ نفسُه بصمةٌ واحدة', fingerprintText('ابحث عن فلة') === fingerprintText('ابحث عن فلة'));

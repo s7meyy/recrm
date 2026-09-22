@@ -26,9 +26,14 @@ async function publicKey() {
   return key;
 }
 
-/** مواعيد التذكير فقط — بلا أي محتوى (دالة خالصة على قائمة المهام). */
-export function remindersFrom(tasks) {
-  return tasks
+/**
+ * مواعيد التذكير فقط — بلا أي محتوى (دالة خالصة على أيّ صفوفٍ لها `done` و`dueAt`).
+ *
+ * **وتقبل المهامّ والفرصَ معًا** (المرحلة ٥٣): حقلُ موعدٍ في بطاقةٍ لا يوقظ أحدًا
+ * **وعدٌ كاذب** — فإمّا أن يُرفع مع المهامّ، وإمّا ألّا يُسمّى «تذكيرًا».
+ */
+export function remindersFrom(rows) {
+  return rows
     .filter((t) => !t.done && t.dueAt)
     .map((t) => ({ id: t.id, dueAt: t.dueAt }));
 }
@@ -70,11 +75,11 @@ export async function syncReminders(subscription = null) {
   const sub = subscription || await currentSubscription();
   if (!sub) return false;
   try {
-    const tasks = await repo.tasks.list();
+    const [tasks, prospects] = await Promise.all([repo.tasks.list(), repo.prospects.list()]);
     const res = await fetch(ENDPOINT, {
       method: 'POST', credentials: 'same-origin',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ subscription: sub.toJSON ? sub.toJSON() : sub, reminders: remindersFrom(tasks) }),
+      body: JSON.stringify({ subscription: sub.toJSON ? sub.toJSON() : sub, reminders: remindersFrom([...tasks, ...prospects]) }),
     });
     return res.ok;
   } catch (_) {

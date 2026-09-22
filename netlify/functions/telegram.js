@@ -25,7 +25,7 @@
 
 import { getStore } from '@netlify/blobs';
 import { signedIn, unauthorized } from '../lib/auth.js';
-import { sortIncoming, fingerprintText } from '../../js/util/lead-sort.js';
+import { sortIncoming, fingerprintText, KIND_LABELS } from '../../js/util/lead-sort.js';
 
 const STORE = 'kassab-public';
 const PREFIX = 'tg/';
@@ -161,7 +161,8 @@ export default async (request) => {
     if (!bound) {
       await store.setJSON(OWNER_KEY, { chatId: up.chatId, at: new Date().toISOString(), name: up.fromName });
       await reply(store, up.chatId, 'تمّ الربط ✅\n\nصار هذا البوتُ لمكتبك، ولا يستقبل من غيرك. '
-        + 'حوّل إليه رسائل عملائك وسأفرزها طلبًا أو عرضًا، وتعتمدها أنت من صفحة «الوارد».\n\n'
+        + 'حوّل إليه ما يصلك وسأفرزه: طلبًا أو عرضًا أو فرصةً عقاريّةً أو مهمّةً أو مقترَحًا أو فكرةً، '
+        + 'وتعتمده أنت من صفحة «الوارد».\n\n'
         + 'وإن لم تكن أنت من ربطه فافصله من صفحة «الوارد» في التطبيق.');
       return json({ ok: true, bound: up.chatId });
     }
@@ -199,7 +200,9 @@ export default async (request) => {
       });
     }
 
-    const label = { request: 'طلب', offer: 'عرض', unsure: 'غير مؤكَّد' }[verdict.kind];
+    // **والعناوينُ من الفارز نفسِه** لا من نسخةٍ ثانيةٍ هنا: كانت مكتوبةً حرفيًّا فبقيت
+    // حكمين بعد أن صارت ستّة، فكان البوتُ يردّ `undefined` على كلّ صنفٍ جديد.
+    const label = KIND_LABELS[verdict.kind] || KIND_LABELS.unsure;
     await reply(store, up.chatId, already
       ? 'وصلت من قبل — لم تُضَف مرّتين.'
       : `وصلت ✅ وقُرئت «${label}». افتح صفحة «الوارد» لتعتمدها.`);

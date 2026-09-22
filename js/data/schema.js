@@ -3,7 +3,7 @@
 
 import { FINANCE_STAGES, PAY_METHODS } from '../util/financing.js';
 
-export const STORES = ['clients', 'properties', 'tours', 'requests', 'matches', 'externalListings', 'deals', 'images', 'settings', 'taskLists', 'tasks', 'notes', 'invoices', 'expenses', 'incomes', 'audio', 'showings', 'extractions', 'marketDeals'];
+export const STORES = ['clients', 'properties', 'tours', 'requests', 'matches', 'externalListings', 'deals', 'images', 'settings', 'taskLists', 'tasks', 'notes', 'invoices', 'expenses', 'incomes', 'audio', 'showings', 'extractions', 'marketDeals', 'prospectLists', 'prospects'];
 // ملاحظة: `trash` (سلة المحذوفات، المرحلة ٢١) ليست في STORES عمدًا — شبكة أمان محلّية
 // لا بيانات تُصدَّر: إدراجها في النسخة الاحتياطية يضخّمها بما حذفتَه قصدًا.
 
@@ -146,6 +146,15 @@ export const ENUMS = {
     { key: 'high', label: 'مرتفعة', rank: 1, cls: 'badge-warn' },
     { key: 'normal', label: 'عادية', rank: 2, cls: 'badge-outline' },
     { key: 'low', label: 'منخفضة', rank: 3, cls: 'badge-outline' },
+  ],
+  /**
+   * **مآلُ الفرصة** (المرحلة ٥٣) — وإغلاقُها بلا مآلٍ يضيّع أنفعَ ما فيها: أن ترى بعد
+   * سنةٍ أنّ أكثرَ ما يفوتك يفوتك **لأنّك تأخّرت**، لا لأنّ السعر لم يناسب.
+   */
+  prospectOutcomes: [
+    { key: 'won', label: 'نضجت وصارت عرضًا' },
+    { key: 'lost', label: 'لم تنجح' },
+    { key: 'cold', label: 'بردت — تُراجَع لاحقًا' },
   ],
   taskRepeats: [ // تكرار المهمة (المرحلة ١١): تُنشأ التالية عند إنجاز الحالية
     { key: 'none', label: 'بلا تكرار' },
@@ -613,6 +622,49 @@ export const SCHEMAS = {
       repeat: 'none', // ENUMS.taskRepeats — إنجاز المهمة المتكررة يُنشئ التالية بموعدها (المرحلة ١١)
       priority: 'normal', // ENUMS.taskPriorities (المرحلة ٤٠)
       linkType: null, linkId: null, // ENUMS.linkTypes — ربط اختياري بعميل/عقار/طلب
+    }),
+  },
+  /**
+   * **قوائمُ الفرص العقاريّة** (المرحلة ٥٣) — مراحلُ لا تصنيفات.
+   *
+   * وهي كقوائم المهامّ عمدًا: القائمةُ عمودٌ، والبطاقةُ تنتقل بين الأعمدة بزرّ لا بسحب
+   * — **والسحبُ لا يعمل باللمس بلا تعقيدٍ لا يستحقّه**.
+   */
+  prospectLists: {
+    required: ['title'],
+    labels: { title: 'اسم القائمة' },
+    defaults: () => ({ title: '', order: 0, pinned: false }),
+  },
+  /**
+   * **الفرصةُ العقاريّة** (المرحلة ٥٣) — **بابٌ لم يُفتح بعد**، لا عرضٌ ولا طلب.
+   *
+   * ولماذا لا تُحفظ عقارًا في مخزونك؟ لأنّ مخزونك **يُطابَق ويُرسَل ويُنشَر**: مزادٌ
+   * لم يُعلَن بعدُ، وورثةٌ يتقاسمون، ومالكٌ ينوي ولم يعرض — لو دخلت هذه مخزونَك صارت
+   * عروضًا وهميّةً تُرسَل لعملائك وتُنشر في صفحتك العامّة. **وأنت مسؤولٌ نظامًا عمّا
+   * تعرض**. فصار لها بابُها: تُتابَع وتُنقل بين المراحل، **فإن نضجت حُوِّلت عرضًا
+   * بضغطة** ودخلت المخزون كما يدخل أيُّ عرض.
+   *
+   * و`sourceKind`/`source` يقولان من أين جاءت — فرقٌ بين فرصةٍ من مالكٍ تعرفه وأخرى
+   * سمعتَها في مجلس، **ورقمٌ لا يُعرف مصدرُه لا يُبنى عليه**.
+   */
+  prospects: {
+    required: ['listId', 'title'],
+    labels: { listId: 'القائمة', title: 'العنوان' },
+    defaults: () => ({
+      listId: null, title: '', notes: '', order: 0,
+      city: '', district: '', type: '', purpose: 'sale',
+      price: null, area: null,
+      contactName: '', contactPhone: '',
+      source: '', // بكلماتك: «مجلس أبو سعد»، «إعلان مزاد»، «تحويل من تيليجرام»
+      assignedTo: null, // الإسناد كما في المهامّ (المرحلة ٤٨)
+      priority: 'normal', // ENUMS.taskPriorities — الأولويّةُ هي هي، فلا تُخترع ثانية
+      dueAt: null, reminded: false, // موعدُ المتابعة — وآليّةُ التذكير نفسُها
+      done: false, doneAt: null,
+      // ماذا صارت إليه: `null` ما دامت حيّة. و«لم تنجح» تُقال بسببها لا صامتة.
+      outcome: null, // ENUMS.prospectOutcomes
+      outcomeReason: '',
+      madePropertyId: null, // إن نضجت وصارت عرضًا في مخزونك
+      linkType: null, linkId: null, // ENUMS.linkTypes
     }),
   },
   notes: { // صفحة الأفكار والملاحظات (المرحلة ٧)

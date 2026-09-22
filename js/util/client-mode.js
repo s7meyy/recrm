@@ -5,7 +5,7 @@
 // يعود بضغطة، والوضع **لا يُحفظ بين الجلسات** (sessionStorage) كي لا تُفاجأ ببيانات مخفية غدًا.
 
 const KEY = 'kassab_client_mode';
-const HIDDEN_ROUTES = ['clients', 'expenses', 'invoices', 'tasks', 'notes', 'publish', 'settings', 'opportunities', 'dashboard'];
+const HIDDEN_ROUTES = ['clients', 'expenses', 'invoices', 'tasks', 'notes', 'publish', 'settings', 'opportunities', 'dashboard', 'prospects'];
 
 export function clientModeOn() {
   try { return sessionStorage.getItem(KEY) === '1'; } catch (_) { return false; }

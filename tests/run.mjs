@@ -64,6 +64,7 @@ const SUITES = [
   ['deed-parse-unit.mjs', null],
   ['guard-plural-unit.mjs', null],
   ['match-rank-unit.mjs', null],   // المرحلة ٥٢
+  ['prospects.mjs', OPEN],         // المرحلة ٥٣
   ['app-pages.mjs', OPEN],
   ['mobile-smoke.mjs', OPEN],
   ['design-dhad.mjs', OPEN],
