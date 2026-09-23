@@ -131,6 +131,38 @@ await m.locator('.sidebar-nav a[data-route="clients"]').click();
 await m.waitForTimeout(800);
 ok('الدرج يُطوى بعد اختيار صفحة على الجوال', (await mgeo()).w === 0);
 
+/* ===== المرحلة ٥٣: القائمةُ صارت أطولَ من الشاشة — فلا يسقط بابٌ تحت الطيّ ===== */
+console.log('\n--- ٣. بابٌ لا يُرى بابٌ غيرُ موجود ---');
+// **العطبُ الذي وقع فعلًا**: ثلاثون بابًا = ١٦٣٣ بكسلًا في شاشةٍ ارتفاعُها ٨٠٠. وكان
+// الشريطُ يُمرَّر، **لكنّ رفًّا من أيقوناتٍ لا يقول إنّه يُمرَّر** — فلم تُوجد «الإعدادات».
+for (const vp of [{ width: 1280, height: 800 }, { width: 1366, height: 768 }]) {
+  const d = await ctx.newPage();
+  await d.setViewportSize(vp);
+  await d.goto(BASE);
+  await d.waitForTimeout(1600);
+  const seen = await d.evaluate(() => {
+    const bar = document.querySelector('.sidebar');
+    const nav = document.querySelector('.sidebar-nav');
+    const a = document.querySelector('.sidebar-nav a[data-route="settings"]');
+    const r = a.getBoundingClientRect();
+    const br = bar.getBoundingClientRect();
+    return {
+      navScrolls: nav.scrollHeight > nav.clientHeight,
+      navIsScroller: getComputedStyle(nav).overflowY === 'auto',
+      visible: r.top >= br.top - 1 && r.bottom <= br.bottom + 1 && r.width > 0 && r.height > 0,
+      pinned: getComputedStyle(a).position === 'sticky',
+    };
+  });
+  ok(`«الإعدادات» تُرى بلا تمريرٍ على ${vp.width}×${vp.height}`, seen.visible, JSON.stringify(seen));
+  ok(`والقائمةُ وحدَها هي المِمرّ على ${vp.width}×${vp.height}`, seen.navIsScroller && seen.navScrolls, JSON.stringify(seen));
+  // **وتُنقر وهي مثبَّتة** — فالتثبيتُ الذي لا يُنقر زينةٌ لا باب.
+  await d.locator('.sidebar-nav a[data-route="settings"]').click({ timeout: 5000 });
+  await d.waitForTimeout(900);
+  ok(`وتُنقر فتفتح على ${vp.width}×${vp.height}`, /#\/settings/.test(await d.evaluate(() => location.hash)),
+    await d.evaluate(() => location.hash));
+  await d.close();
+}
+
 console.log('\nERRORS:', errors.length ? JSON.stringify(errors.slice(0,4)) : 'none');
 ok('لا أخطاء جافاسكربت في الصفحة', errors.length === 0, errors.slice(0, 2).join(' | '));
 await b.close();

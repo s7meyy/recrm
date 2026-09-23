@@ -174,8 +174,13 @@ async function navigate() {
   document.querySelectorAll('.sidebar-nav a').forEach((a) => {
     const on = a.dataset.route === name;
     a.classList.toggle('active', on);
-    if (on) a.setAttribute('aria-current', 'page');
-    else a.removeAttribute('aria-current');
+    if (on) {
+      a.setAttribute('aria-current', 'page');
+      // **والصفحةُ المفتوحةُ تُرى في القائمة** (المرحلة ٥٣): القائمةُ صارت تُمرَّر، فمن
+      // فتح بابًا في أسفلها بالعنوان المباشر لم يرَ أين هو منها. و`nearest` لا تحرّك
+      // شيئًا إن كان ظاهرًا أصلًا — فلا تقفز القائمةُ في كلّ نقلة.
+      a.scrollIntoView({ block: 'nearest' });
+    } else a.removeAttribute('aria-current');
   });
   applyClientMode(clientModeOn()); // الروابط تُعاد بناؤها/تُرتَّب، فيُعاد تطبيق الإخفاء
   // الدرج على الجوال يُطوى بعد اختيار صفحة (وإلا غطّى الصفحة)، أما على الحاسوب فاختيارك يبقى.

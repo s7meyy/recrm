@@ -109,7 +109,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .sidebar {
   position: fixed; top: 0; inset-inline-start: 0; height: 100vh; width: 60px;
   background: var(--surface); border-inline-end: 1px solid var(--line);
-  display: flex; flex-direction: column; overflow-y: auto; overflow-x: hidden;
+  display: flex; flex-direction: column; overflow: hidden;
   z-index: var(--dhad-z-sidebar); transition: width var(--dhad-duration-base) var(--dhad-ease);
   padding-block-end: env(safe-area-inset-bottom, 0px);
 }
@@ -136,7 +136,42 @@ button, input, select, textarea { font: inherit; color: inherit; }
   outline: var(--dhad-focus-width) solid var(--accent); outline-offset: var(--dhad-focus-offset);
 }
 
-.sidebar-nav { display: flex; flex-direction: column; padding: var(--dhad-space-2) 6px; gap: 2px; }
+/**
+ * **القائمةُ وحدَها هي التي تُمرَّر، لا الشريطُ كلُّه** (المرحلة ٥٣).
+ *
+ * كانت `overflow-y: auto` على `.sidebar` نفسِه، فيُمرَّر الرأسُ مع الروابط. ثمّ كبرت
+ * القائمةُ إلى ثلاثين بابًا — **١٦٣٣ بكسلًا في شاشةٍ ارتفاعُها ٨٠٠** — فصار ثلثُها
+ * الأخير تحت الطيّ: «الإعدادات» و«التكاملات» و«صحة البيانات» و«السلّة». وهي تُمرَّر فعلًا،
+ * **لكنّ شريطًا عرضُه ٦٠ بكسلًا من أيقوناتٍ لا يقول لأحدٍ إنّه يُمرَّر** — فمن بحث عن
+ * الإعدادات لم يجدها، وهذا ما وقع.
+ *
+ * فصار الرأسُ ثابتًا والقائمةُ هي المِمرَّ، بشريط تمريرٍ **رفيعٍ ظاهر** يقول إنّ تحته مزيدًا.
+ */
+.sidebar-nav {
+  display: flex; flex-direction: column; gap: 2px;
+  /* بلا حشوٍ سفليٍّ: الرابطُ المثبَّت يلتصق بقاع المِمرّ، فلا يمرّ تحته سطرٌ من رابطٍ آخر. */
+  padding: var(--dhad-space-2) 6px 0;
+  flex: 1 1 auto; min-height: 0;          /* `min-height: 0` وإلّا لم ينكمش عنصرُ الفلكس فلا يُمرَّر */
+  overflow-y: auto; overflow-x: hidden;
+  overscroll-behavior: contain;            /* تمريرُ القائمة لا يجرّ الصفحةَ خلفها */
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+.sidebar-nav::-webkit-scrollbar { width: 6px; }
+.sidebar-nav::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 3px; }
+.sidebar-nav::-webkit-scrollbar-track { background: transparent; }
+
+/**
+ * **و«الإعدادات» لا تغيب أبدًا.** آخرُ بابٍ في القائمة هو أكثرُ ما يُقصد — ومنه ترتيبُ
+ * الصفحات نفسِه، فمن لم يجده لم يجد البابَ الذي يُصلح به القائمة. فيُثبَّت في أسفل
+ * المِمرّ ما دام آخرَها (`:last-child`)، فإن رفعتَه بترتيبك عاد رابطًا كغيره.
+ */
+.sidebar-nav a[data-route="settings"]:last-child {
+  position: sticky; bottom: 0; z-index: 1;
+  background: var(--surface);
+  box-shadow: 0 -1px 0 var(--line), 0 -10px 10px -10px rgba(0, 0, 0, .18);
+}
+.sidebar-nav a[data-route="settings"]:last-child:hover { background: var(--hover); }
 .sidebar-nav a {
   display: flex; align-items: center; gap: var(--dhad-space-3);
   min-height: var(--control); padding: var(--dhad-space-2) var(--dhad-space-2);
