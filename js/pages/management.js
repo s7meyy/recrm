@@ -39,10 +39,13 @@ export async function render(container) {
   container.append(el('div', { class: 'page-head' },
     el('h1', {}, 'إدارة الأملاك ', el('span', { class: 'count', text: `(${formatNumber(rows.length)})` }))));
 
+  // **والإضافةُ من هنا لا من صفحةٍ أخرى** (المرحلة ٥٤): كان عليك أن تفتح «العقارات»
+  // وتبحث عن العقار وتفتح استمارتَه وتؤشّر على خانةٍ فيها. **أربعُ خطواتٍ لعملٍ واحد.**
+  container.append(intakePanel({ properties, lists, rows }));
+
   if (!rows.length) {
     container.append(emptyState(
-      'لا عقار تحت إدارتك بعد. أشِّر على «هذا العقار تحت إدارتنا» في نموذج أي عقار، فيظهر هنا بعقده وأجره ودفعاته.',
-      el('a', { class: 'btn btn-primary', href: '#/properties', text: 'افتح العقارات' })));
+      'لا عقار تحت إدارتك بعد. اختر عقارًا من اللوحة أعلاه وأضِفه، أو أشِّر على «تحت إدارتنا» في نموذجه.'));
     return;
   }
 
@@ -193,6 +196,95 @@ export async function render(container) {
   container.append(el('p', { class: 'muted small' },
     'الدفعات والمستأجر ونهاية الإيجار تُقرأ من الصفقة المرتبطة بالعقار — تُعدَّل من صفحة الصفقات، ',
     'وعقدُ الإدارة وأجرُه يُعدَّلان من نموذج العقار نفسه. ولا شيء هنا يُكتب مرّتين.'));
+}
+
+/**
+ * **أضِف عقارًا إلى الإدارة — من هنا** (المرحلة ٥٤).
+ *
+ * تعرض ما عندك ممّا **ليس** تحت الإدارة، فتختار وتُضيف بعقده وأجره في نافذةٍ واحدة.
+ * **ولا يدخل شيءٌ بلا ضغطتك**، ولا يُخترع أجرٌ لم تُدخله — `feeValue` يبقى فارغًا
+ * فتقول الصفحةُ «الأجر غير مُدخل» ولا تحسب ما لا تعرف.
+ *
+ * وزرُّ «عقار جديد» يفتح استمارةَ العقارات القائمة (`?new=1`) — **فلا استمارةُ عقارٍ ثانية
+ * تُبنى هنا وتُصان**؛ وما أضفتَه هناك يظهر في هذه القائمة حين تعود.
+ */
+function intakePanel({ properties, lists, rows }) {
+  const managedIds = new Set(rows.map((r) => r.property.id));
+  const free = properties.filter((p) => !managedIds.has(p.id) && !p.management && !p.archivedAt);
+  const pick = selectEl({
+    options: free.map((p) => ({ value: p.id, label: placeOf(p, lists) })),
+    placeholder: free.length ? 'اختر عقارًا من مخزونك…' : 'لا عقار خارج الإدارة',
+  });
+  const addBtn = el('button', {
+    type: 'button', class: 'btn btn-primary', text: 'أضِفه إلى الإدارة',
+    disabled: !free.length,
+    onClick: () => {
+      const target = free.find((p) => p.id === pick.value);
+      if (!target) { toast('اختر عقارًا أوّلًا', 'error'); return; }
+      openIntakeForm(target, lists);
+    },
+  });
+  return el('section', { class: 'panel' },
+    el('h2', { text: 'أضِف عقارًا إلى الإدارة' }),
+    el('p', { class: 'panel-desc' },
+      `عندك ${countOf(free.length, 'عقار')} خارجَ الإدارة. `,
+      'اختر واحدًا وأضِفه بعقده وأجره — أو أضِف عقارًا جديدًا إلى مخزونك أوّلًا.'),
+    el('div', { class: 'row', style: { gap: '8px', flexWrap: 'wrap', alignItems: 'center' } },
+      pick, addBtn,
+      el('a', { class: 'btn', href: '#/properties?new=1', text: '+ عقار جديد' }),
+      el('a', { class: 'btn btn-ghost', href: '#/properties', text: 'كلُّ العقارات' })));
+}
+
+function openIntakeForm(property, lists) {
+  const startInput = el('input', { class: 'input', type: 'date', value: new Date().toISOString().slice(0, 10) });
+  const endInput = el('input', { class: 'input', type: 'date' });
+  const feeTypeSel = selectEl({ options: FEE_TYPES.map((f) => ({ value: f.key, label: f.label })), value: 'percent' });
+  const feeInput = el('input', { class: 'input', type: 'number', min: '0', step: '0.5', placeholder: 'اتركه فارغًا إن لم يُتّفق بعد' });
+  const notesInput = el('textarea', { class: 'input', rows: 2 });
+  const errorsBox = el('div', { class: 'form-errors', hidden: true });
+
+  const save = el('button', {
+    type: 'button', class: 'btn btn-primary', text: 'أضِفه',
+    onClick: async () => {
+      save.disabled = true;
+      try {
+        await repo.properties.update(property.id, {
+          management: {
+            startAt: startInput.value || null,
+            endAt: endInput.value || null,
+            feeType: feeTypeSel.value,
+            feeValue: feeInput.value === '' ? null : Number(feeInput.value),
+            notes: notesInput.value.trim(),
+          },
+        });
+        modal.close();
+        toast('أُضيف العقار إلى الإدارة', 'success');
+        // الصفحةُ تُعاد بناؤها من مصدرها — ولا تُحدَّث نسخةٌ في الذاكرة تفترق عن المخزن.
+        const host = document.querySelector('#page');
+        if (host) await render(host);
+      } catch (err) {
+        clear(errorsBox);
+        errorsBox.append(el('ul', {}, (err.errors || [err.message || 'تعذّر الحفظ']).map((e) => el('li', { text: e }))));
+        errorsBox.hidden = false;
+      } finally { save.disabled = false; }
+    },
+  });
+
+  const field = (label, control, hint = '') => el('label', { class: 'field' },
+    el('span', { class: 'field-label', text: label }), control,
+    hint ? el('span', { class: 'muted small', text: hint }) : null);
+
+  const modal = openModal({
+    title: `إدارة «${placeOf(property, lists)}»`,
+    body: el('div', {}, errorsBox, el('div', { class: 'form-grid one' },
+      field('بداية عقد الإدارة', startInput),
+      field('نهايته', endInput, 'يُنبَّه عليك قبلها — واتركه فارغًا إن كان مفتوحًا'),
+      field('نوع الأجر', feeTypeSel),
+      field('قيمته', feeInput, 'نسبةً من الإيجار أو مبلغًا شهريًّا بحسب النوع'),
+      field('ملاحظات', notesInput))),
+    footer: [save, el('span', { class: 'spacer' }),
+      el('button', { type: 'button', class: 'btn btn-ghost', text: 'إلغاء', onClick: () => modal.close() })],
+  });
 }
 
 /* الأعجل أوّلًا: انتهى، فمتأخّر، فينتهي قريبًا، ثم الباقي */

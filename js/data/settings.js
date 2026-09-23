@@ -21,6 +21,9 @@ export const SETTINGS_KEYS = {
   seed: 'seed', // { ids: { clients: [], properties: [], images: [] }, insertedAt } | null
   followUp: 'followUp', // { staleContactDays: 14, notify: false } — المرحلة ٦ (تنبيهات المتابعة)
   sidebarOrder: 'sidebarOrder', // ['dashboard', 'properties', …] ترتيب صفحات القائمة الجانبية (المرحلة ٨)
+  // أقسامُ القائمة (المرحلة ٥٤): [{ id, label, pages: [keys] }] — أقسامٌ تُسمّى وتُضاف
+  // وتُرتَّب بالسحب. وكانت أربعًا ثابتةً في الشيفرة، فصارت بيدك.
+  navSections: 'navSections',
   company: 'company', // بيانات الشركة والشعار وسلسلتا ترقيم المستندات (المرحلة ٨)
   publish: 'publish', // الصفحة العامة: المفتاح والعروض المختارة وآخر نشر (المرحلة ٩)
   vault: 'vault', // النسخة السحابية المشفَّرة: العبارة السرّية والرفع التلقائي (المرحلة ١٠)
@@ -520,6 +523,20 @@ export async function setSidebarOrder(order) {
 
 export async function resetSidebarOrder() {
   await repo.settings.remove(SETTINGS_KEYS.sidebarOrder);
+  await repo.settings.remove(SETTINGS_KEYS.navSections);
+}
+
+/* ===== أقسامُ القائمة الجانبيّة (المرحلة ٥٤) ===== */
+
+/** المحفوظُ كما هو، أو `null` إن لم يُحفظ شيءٌ بعد — والبناءُ الافتراضيُّ في `sidebar.js`. */
+export async function getNavSections() {
+  const stored = await repo.settings.get(SETTINGS_KEYS.navSections, null);
+  return Array.isArray(stored) && stored.length ? stored : null;
+}
+
+export async function setNavSections(sections) {
+  await repo.settings.set(SETTINGS_KEYS.navSections, sections);
+  return sections;
 }
 
 /**

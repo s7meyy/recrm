@@ -3,7 +3,7 @@
 
 import { FINANCE_STAGES, PAY_METHODS } from '../util/financing.js';
 
-export const STORES = ['clients', 'properties', 'tours', 'requests', 'matches', 'externalListings', 'deals', 'images', 'settings', 'taskLists', 'tasks', 'notes', 'invoices', 'expenses', 'incomes', 'audio', 'showings', 'extractions', 'marketDeals', 'prospectLists', 'prospects'];
+export const STORES = ['clients', 'properties', 'tours', 'requests', 'matches', 'externalListings', 'deals', 'images', 'settings', 'taskLists', 'tasks', 'notes', 'invoices', 'expenses', 'incomes', 'audio', 'showings', 'extractions', 'marketDeals', 'prospectLists', 'prospects', 'facilities'];
 // ملاحظة: `trash` (سلة المحذوفات، المرحلة ٢١) ليست في STORES عمدًا — شبكة أمان محلّية
 // لا بيانات تُصدَّر: إدراجها في النسخة الاحتياطية يضخّمها بما حذفتَه قصدًا.
 
@@ -146,6 +146,15 @@ export const ENUMS = {
     { key: 'high', label: 'مرتفعة', rank: 1, cls: 'badge-warn' },
     { key: 'normal', label: 'عادية', rank: 2, cls: 'badge-outline' },
     { key: 'low', label: 'منخفضة', rank: 3, cls: 'badge-outline' },
+  ],
+  /**
+   * **حالُ المرفق** (المرحلة ٥٤) — يعمل، أو تحت الصيانة، أو متوقّف.
+   * وثلاثةٌ تكفي: حالٌ رابعةٌ لا تُغيّر ما تفعله اليوم.
+   */
+  facilityStatuses: [
+    { key: 'active', label: 'يعمل' },
+    { key: 'maintenance', label: 'تحت الصيانة' },
+    { key: 'stopped', label: 'متوقّف' },
   ],
   /**
    * **مآلُ الفرصة** (المرحلة ٥٣) — وإغلاقُها بلا مآلٍ يضيّع أنفعَ ما فيها: أن ترى بعد
@@ -665,6 +674,23 @@ export const SCHEMAS = {
       outcomeReason: '',
       madePropertyId: null, // إن نضجت وصارت عرضًا في مخزونك
       linkType: null, linkId: null, // ENUMS.linkTypes
+    }),
+  },
+  /**
+   * **المرفق** (المرحلة ٥٤) — مصعدٌ ومولّدٌ وخزّانٌ وموقف.
+   *
+   * وهي **أوّلُ صورةٍ للمخزن**، مقصودةٌ قليلةَ الحقول: اسمٌ وحالٌ وعقارٌ يتبعه وملاحظة.
+   * وما يُضاف إليها لاحقًا (عقودُ الصيانة الدوريّة، والمورّد، ودورةُ الفحص) يُضاف حقولًا
+   * افتراضيُّها فارغ **بلا هجرةٍ ولا كسرٍ لما حُفظ** — كما جرى في كلّ مخزنٍ قبله.
+   */
+  facilities: {
+    required: ['name'],
+    labels: { name: 'اسم المرفق' },
+    defaults: () => ({
+      name: '', kind: '', // نوعٌ حرٌّ: «مصعد» · «مولّد» · «خزّان» — ولا تُفرض قائمةٌ لم تُطلب
+      propertyId: null,   // العقارُ الذي يتبعه — و`null` مرفقٌ عامٌّ لا يتبع واحدًا
+      status: 'active',   // ENUMS.facilityStatuses
+      notes: '',
     }),
   },
   notes: { // صفحة الأفكار والملاحظات (المرحلة ٧)

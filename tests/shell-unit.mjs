@@ -11,9 +11,9 @@ ok('**وكلُّ صفحةٍ في مجموعة** — فلا يسقط بابٌ خ�
 ok('ولا مجموعةَ خارج الأربع',
   SIDEBAR_PAGES.every((p) => SIDEBAR_GROUPS.some((g) => g.key === p.group)));
 // **والعددُ يُرفع بالإضافة وحدَها**: صار ثمانيًا وعشرين بصفحة السوق (المرحلة ٥٠)،
-// وتسعًا وعشرين بالوارد (٥١)، وثلاثين بـ«الفرص العقاريّة» (٥٣).
+// وتسعًا وعشرين بالوارد (٥١)، وثلاثين بـ«الفرص العقاريّة» (٥٣)، وواحدًا وثلاثين بـ«إدارة المرافق» (٥٤).
 // وحرسُه أن ينقص أو يقفز بلا مرحلةٍ تذكره — لا أن يثبت أبدًا.
-ok('ولا صفحةَ حُذفت: ثلاثون بعد الفرص العقاريّة', DEFAULT_PAGE_KEYS.length === 30, String(DEFAULT_PAGE_KEYS.length));
+ok('ولا صفحةَ حُذفت: واحدٌ وثلاثون بعد إدارة المرافق', DEFAULT_PAGE_KEYS.length === 31, String(DEFAULT_PAGE_KEYS.length));
 ok('ولا مفتاحَ مكرَّر', new Set(DEFAULT_PAGE_KEYS).size === DEFAULT_PAGE_KEYS.length);
 ok('و«يومي» في العمل، و«المالية» في المال', groupOf('today') === 'work' && groupOf('expenses') === 'money');
 ok('و«العقود والتراخيص» في الالتزام', groupOf('rega') === 'duty' && groupOf('management') === 'duty');
@@ -53,3 +53,42 @@ ok('وكلُّ حالٍ لها نصٌّ يُقرأ إلّا المطفأة',
       error: { sync: true, lastSyncError: 'x' }, never: { sync: true } }[st];
     return syncState(v, NOW).text.length > 10;
   }));
+
+
+/* ===== المرحلة ٥٤: حارسُ الروابط الميّتة ===== */
+console.log('\n--- ٥٤. كلُّ رابطٍ يقع على مسارٍ موجود ---');
+/**
+ * **العطبُ الذي وقع فعلًا**: بطاقةُ «خُذ نسخةً احتياطيّة» في قائمة البدء كانت تشير إلى
+ * `#/tools` — **و«الأدوات» اسمُ مجموعةٍ في القائمة لا اسمُ صفحة**. فكان زرُّ أوّلِ خطوةٍ
+ * يُوصي بها النظامُ مستخدمَه الجديدَ يهبط به على «مسارٌ غير معروف».
+ *
+ * ولا يكشفه فحصُ متصفّحٍ إلّا أن يُنقر ذلك الزرُّ بعينه. فصار يُقرأ من الشيفرة نفسِها.
+ */
+{
+  const { readFileSync, readdirSync, statSync } = await import('node:fs');
+  const root = new URL('../js', import.meta.url).pathname.replace(/\/$/, '');
+  const jsFiles = [];
+  const walk = (d) => {
+    for (const e of readdirSync(d)) {
+      const p = `${d}/${e}`;
+      if (statSync(p).isDirectory()) walk(p);
+      else if (p.endsWith('.js')) jsFiles.push(p);
+    }
+  };
+  walk(root);
+  const app = readFileSync(`${root}/app.js`, 'utf8');
+  const known = new Set([...app.matchAll(/^\s{2}([a-zA-Z-]+):\s*\{\s*title:/gm)].map((m) => m[1]));
+  const dead = [];
+  for (const f of jsFiles) {
+    readFileSync(f, 'utf8').split('\n').forEach((line, i) => {
+      if (/^\s*(\/\/|\*)/.test(line)) return;   // شرحٌ يذكر مسارًا لا يقصده
+      for (const m of line.matchAll(/(?:href:\s*|location\.hash\s*=\s*)['"`]#\/([a-zA-Z-]+)/g)) {
+        if (!known.has(m[1])) dead.push(`${f.split('/js/')[1]}:${i + 1} → #/${m[1]}`);
+      }
+    });
+  }
+  ok('**ولا رابطَ يقع على مسارٍ غير مسجَّل** في المستودع كلّه', dead.length === 0, dead.join(' · '));
+  ok('وكلُّ صفحةٍ في القائمة لها مسار',
+    [...new Set(SIDEBAR_PAGES.map((p) => p.key))].every((k) => known.has(k)),
+    SIDEBAR_PAGES.map((p) => p.key).filter((k) => !known.has(k)).join(','));
+}

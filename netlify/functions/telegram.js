@@ -55,6 +55,29 @@ const OWNER_KEY = 'tg/_owner';
 const REJECTS_KEY = 'tg/_rejects';
 const MAX_REJECTS = 50;
 /**
+ * **سجلُّ ما وصل وما رُدّ** (المرحلة ٥٤) — وسببُه.
+ *
+ * شكا صاحبُ المكتب أنّ رسائلَ أرسلها أمسِ لم يجدها في الصندوق. **ولم يكن في النظام ما
+ * يُجيب**: الرسالةُ تُردّ لسرٍّ خاطئ أو لمحادثةٍ غريبةٍ أو لأنّها بلا نصّ — **ويُردّ كلُّ
+ * ذلك بصمت**، فلا يُعرف أوصلت ورُدّت أم لم تصل أصلًا. وبينهما فرقُ علاجٍ كامل: الأوّل
+ * سرٌّ يُضبط، والثاني وِبهوكٌ لم يُسجَّل عند تيليجرام.
+ *
+ * فصار يُحفَظ آخرُ وقتٍ وصل فيه شيء، وعددُ ما رُدّ بكلّ سبب. **بلا نصوص ولا معرّفات**:
+ * عدّادٌ يقول «وصلك اثنا عشرَ وردَّ الخادمُ تسعةً لسرٍّ خاطئ»، فيُعرف البابُ من أوّل نظرة.
+ */
+const PULSE_KEY = 'tg/_pulse';
+
+async function pulse(store, field) {
+  try {
+    const cur = (await store.get(PULSE_KEY, { type: 'json' })) || { counts: {} };
+    cur.counts = cur.counts || {};
+    cur.counts[field] = (cur.counts[field] || 0) + 1;
+    cur.at = new Date().toISOString();
+    cur[`${field}At`] = cur.at;
+    await store.setJSON(PULSE_KEY, cur);
+  } catch { /* التشخيصُ لا يُفشل الاستقبال */ }
+}
+/**
  * **ومفاتيحُ النظام تُقصى من السرد والحذف** — وهذا عطبٌ كشفه الاختبار قبل أن يصيبك:
  * `_owner` و`_reply-error` تحت البادئة نفسِها، فكانت تُسرد بطاقاتٍ فارغةً في صندوقك،
  * **وحذفُ إحداها يحذف الربطَ نفسَه** فيصير البوتُ حرًّا لأوّل غريب. فصارت تُعرف
@@ -136,10 +159,15 @@ export default async (request) => {
   if (request.method === 'POST') {
     const secret = process.env.TELEGRAM_SECRET;
     if (!secret) {
+      await pulse(store, 'noSecretConfigured');
       return json({ error: 'TELEGRAM_SECRET غير مضبوط — لا تُقبل رسالة بلا تحقّق' }, 503);
     }
     const given = request.headers.get('x-telegram-bot-api-secret-token') || '';
-    if (!safeEqual(given, secret)) return json({ error: 'سرٌّ غير صحيح' }, 403);
+    if (!safeEqual(given, secret)) {
+      await pulse(store, 'badSecret');
+      return json({ error: 'سرٌّ غير صحيح' }, 403);
+    }
+    await pulse(store, 'arrived');
 
     const payload = await request.json().catch(() => null);
     const up = extractUpdate(payload);
@@ -167,6 +195,7 @@ export default async (request) => {
       return json({ ok: true, bound: up.chatId });
     }
     if (bound !== up.chatId) {
+      await pulse(store, 'strangerChat');
       await reply(store, up.chatId, 'هذا البوت خاصٌّ بمكتبٍ بعينه ولا يستقبل من غيره.');
       return json({ ok: true, rejected: true });
     }
@@ -176,6 +205,7 @@ export default async (request) => {
         ? `وصلتني ${up.mediaKind} بلا نصّ — لا أقرأ الصور ولا الصوت. `
           + 'انسخ نصّ الرسالة وأرسله، أو اكتب وصفًا معها.'
         : 'وصلت رسالةٌ فارغة.');
+      await pulse(store, 'noText');
       return json({ ok: true, empty: true });
     }
 
@@ -185,6 +215,7 @@ export default async (request) => {
     const key = `${PREFIX}${up.at}-${fp}`;
     const already = (await store.list({ prefix: PREFIX })).blobs.some((b) => !isSystemKey(b.key) && b.key.endsWith(`-${fp}`));
 
+    await pulse(store, already ? 'duplicate' : 'stored');
     if (!already) {
       await store.setJSON(key, {
         id: fp,
@@ -231,10 +262,43 @@ export default async (request) => {
       missing: ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_SECRET'].filter((k) => !process.env[k]),
       // أسبابُ ما صُرِف — ليُقرأ نمطُها لا سطرُها الواحد.
       rejects: ((await store.get(REJECTS_KEY, { type: 'json' }))?.rows) || [],
+      // **نبضُ القناة** (المرحلة ٥٤): «أوصلت ورُدّت أم لم تصل أصلًا؟» — سؤالٌ لم يكن له جواب.
+      pulse: (await store.get(PULSE_KEY, { type: 'json' })) || null,
     });
   }
 
-  /* ٣) إزالةُ ما اعتُمد أو رُفض — للمالك وحده */
+  /* ٣) **تعديلُ نصّ رسالةٍ قبل اعتمادها** (المرحلة ٥٤) — للمالك وحده.
+     رسالةٌ يصلها خللٌ يسير («٦٠٠ م» كُتبت «٦٠٠م٢»، أو سطرُ دعايةٍ ملصق) كانت تُحذف
+     وتُعاد كتابتُها من الصفر، أو تُعتمد ناقصةً ثمّ تُصحَّح في الاستمارة. فصار النصُّ
+     يُعدَّل في مكانه، **ويُعاد فرزُه بعد التعديل** — فمن حذف «للبيع» لم يبقَ الحكمُ عرضًا.
+     والبصمةُ تُعاد فلا يتكرّر الأصلُ لو أُعيد تحويلُه. */
+  if (request.method === 'PUT') {
+    if (!(await signedIn(request))) return unauthorized();
+    const body = await request.json().catch(() => null);
+    const k = String(body?.key || '');
+    const text = clean(body?.text, 4000);
+    if (!k.startsWith(PREFIX) || isSystemKey(k) || !/^[\w\-.:/]+$/.test(k)) {
+      return json({ error: 'مفتاحٌ غير صالح' }, 400);
+    }
+    if (!text) return json({ error: 'النصّ فارغ — احذف الرسالة إن لم تُرِدها' }, 400);
+    const rec = await store.get(k, { type: 'json' });
+    if (!rec) return json({ error: 'لم تُوجد الرسالة — لعلّها اعتُمدت أو حُذفت' }, 404);
+
+    const verdict = sortIncoming(text);
+    const fp = fingerprintText(text);
+    const next = {
+      ...rec, text, id: fp,
+      kind: verdict.kind, edge: verdict.edge, why: verdict.why,
+      // **ويُقال أنّها عُدِّلت**: نصٌّ غُيِّر ويُعرض كأنّه ما وصل يُضلّل من يراجعه بعدك.
+      editedAt: new Date().toISOString(),
+    };
+    const newKey = `${PREFIX}${rec.at}-${fp}`;
+    await store.setJSON(newKey, next);
+    if (newKey !== k) await store.delete(k);
+    return json({ ok: true, key: newKey, kind: verdict.kind });
+  }
+
+  /* ٤) إزالةُ ما اعتُمد أو رُفض — للمالك وحده */
   if (request.method === 'DELETE') {
     if (!(await signedIn(request))) return unauthorized();
     const body = await request.json().catch(() => null);

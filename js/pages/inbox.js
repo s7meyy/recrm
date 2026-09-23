@@ -36,6 +36,26 @@ async function load() {
   return res.json();
 }
 
+/**
+ * **عدّله ثمّ اعتمده** (المرحلة ٥٤) — البابُ الرابع.
+ *
+ * كانت أمامك ثلاثة: طلبٌ أو عرضٌ أو حذف. **ورسالةٌ تحتاج لمسةً يسيرة** — رقمٌ التصق،
+ * أو سطرُ دعايةٍ ملصق، أو اسمٌ ناقص — لم يكن لها باب: تُحذف وتُكتب من الصفر، أو تُعتمد
+ * ناقصةً وتُصحَّح في الاستمارة. فصارت تُعدَّل في مكانها، **ويُعاد فرزُها بعد التعديل**.
+ */
+async function editText(key, text) {
+  const res = await fetch(API, {
+    method: 'PUT', credentials: 'same-origin',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ key, text }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `تعذّر الحفظ (${res.status})`);
+  }
+  return res.json();
+}
+
 async function drop(key, why = '') {
   await fetch(API, {
     method: 'DELETE', credentials: 'same-origin',
@@ -79,6 +99,45 @@ function askWhy(onDone) {
       el('span', { class: 'spacer' }),
       el('button', { type: 'button', class: 'btn btn-ghost', text: 'تراجع', onClick: () => modal.close() }),
     ],
+  });
+}
+
+function askEdit(msg, onSaved) {
+  const area = el('textarea', { class: 'input', rows: 8, value: msg.text });
+  const errorsBox = el('div', { class: 'form-errors', hidden: true });
+  const save = el('button', {
+    type: 'button', class: 'btn btn-primary', text: 'احفظ التعديل',
+    onClick: async () => {
+      const text = area.value.trim();
+      if (!text) {
+        clear(errorsBox);
+        errorsBox.append(el('p', { text: 'النصُّ فارغ — احذف الرسالة إن لم تُرِدها.' }));
+        errorsBox.hidden = false;
+        return;
+      }
+      save.disabled = true;
+      try {
+        await editText(msg.key, text);
+        modal.close();
+        toast('حُفظ التعديل وأُعيد الفرز', 'success');
+        onSaved();
+      } catch (err) {
+        clear(errorsBox);
+        errorsBox.append(el('p', { text: err.message }));
+        errorsBox.hidden = false;
+      } finally { save.disabled = false; }
+    },
+  });
+  const modal = openModal({
+    title: 'عدّل الرسالة قبل اعتمادها',
+    body: el('div', {}, errorsBox,
+      el('div', { class: 'field' }, area),
+      el('p', { class: 'muted small' },
+        el('strong', { text: 'ويُعاد الفرزُ بعد حفظك. ' }),
+        'فمن حذف «للبيع» لم يبقَ الحكمُ عرضًا. والتعديلُ هنا لا يُدخل شيئًا قاعدتَك — ',
+        'الاعتمادُ وحدَه يفعل.')),
+    footer: [save, el('span', { class: 'spacer' }),
+      el('button', { type: 'button', class: 'btn btn-ghost', text: 'إلغاء', onClick: () => modal.close() })],
   });
 }
 
@@ -134,6 +193,39 @@ function statusPanel(data, refresh) {
       el('ul', { class: 'simple-list' }, top.map(([why, n]) => el('li', {},
         el('span', { text: why }), el('span', { class: 'num strong', text: formatNumber(n) }))))));
   }
+  /**
+   * **نبضُ القناة** (المرحلة ٥٤) — «أرسلتُ أمسِ ولم أجدها».
+   *
+   * وكان الصندوقُ الفارغ لا يُفرّق بين ثلاثٍ: **لم تصل أصلًا** (وِبهوكٌ لم يُسجَّل عند
+   * تيليجرام)، أو **وصلت ورُدّت** (سرٌّ خاطئ أو محادثةٌ غريبة)، أو **وصلت واعتمدتَها
+   * فخرجت**. وبينها فرقُ علاجٍ كامل. فصار العدّادُ يقولها.
+   */
+  const pulse = data.pulse;
+  const counts = pulse?.counts || {};
+  const LINES = [
+    ['arrived', 'وصلت إلى الخادم'],
+    ['stored', 'دخلت الصندوق'],
+    ['duplicate', 'مكرَّرةٌ لم تُضَف مرّتين'],
+    ['badSecret', '⚠︎ رُدَّت: سرُّ الترويسة لا يطابق TELEGRAM_SECRET'],
+    ['strangerChat', 'رُدَّت: من محادثةٍ غير محادثتك'],
+    ['noText', 'رُدَّت: بلا نصّ (صورةٌ أو صوتٌ بلا تعليق)'],
+    ['noSecretConfigured', '⚠︎ رُدَّت: TELEGRAM_SECRET غير مضبوطٍ أصلًا'],
+  ].filter(([k]) => counts[k]);
+
+  if (!pulse || !counts.arrived) {
+    rows.push(el('p', { class: 'muted small' },
+      el('strong', { text: 'ولم يصل الخادمَ شيءٌ بعدُ. ' }),
+      'فإن كنتَ راسلتَ البوت ولم تجد رسالتك هنا، فالغالبُ أنّ الوِبهوك لم يُسجَّل عند تيليجرام — ',
+      'أو أنّ هذا العدّاد بدأ بعد إرسالك. وتسجيلُ الوِبهوك مرّةً واحدة يكفي.'));
+  } else {
+    rows.push(el('details', { class: 'panel-block' },
+      el('summary', { text: `نبضُ القناة — آخرُ وصولٍ ${formatDate(pulse.arrivedAt || pulse.at)}` }),
+      el('ul', { class: 'simple-list' }, LINES.map(([k, label]) => el('li', {},
+        el('span', { text: label }),
+        el('span', { class: 'num strong', text: formatNumber(counts[k]) })))),
+      el('p', { class: 'muted small', text: 'عدّادٌ بلا نصوصٍ ولا معرّفات — يقول أين الخلل لا ما في الرسائل.' })));
+  }
+
   return el('div', { class: 'panel' },
     el('h2', { text: 'حال القناة' }),
     ...rows);
@@ -207,6 +299,10 @@ function card(ctx, msg, refresh) {
       text: `اعتمده ${KIND_ACC[k.key]}`, 'data-kind': k.key, onClick: RUN[k.key],
     })),
     el('button', {
+      type: 'button', class: 'btn btn-ghost btn-sm', text: 'عدّله',
+      onClick: () => askEdit(msg, refresh),
+    }),
+    el('button', {
       type: 'button', class: 'btn btn-ghost btn-sm', text: 'احذفه',
       onClick: () => askWhy(async (why) => { await drop(msg.key, why); toast('حُذف'); refresh(); }),
     }));
@@ -218,6 +314,8 @@ function card(ctx, msg, refresh) {
       el('strong', { text: 'هذا عميلُك: ' }),
       el('a', { href: `#/clients/${known.id}`, text: known.name })));
   }
+  // **والمعدَّلةُ تُقال** — نصٌّ غُيِّر ويُعرض كأنّه ما وصل يُضلّل من يراجعه بعدك.
+  if (msg.editedAt) parts.push(el('p', { class: 'muted small', text: `عُدِّل النصُّ في ${formatDate(msg.editedAt)}` }));
   if (msg.mediaKind) parts.push(el('p', { class: 'muted small', text: `مرفقٌ لم يُقرأ: ${msg.mediaKind}` }));
   parts.push(actions);
   return el('div', { class: 'panel' }, ...parts);
@@ -255,6 +353,8 @@ export async function render(container) {
       el('strong', { text: 'ما وصل، لا ما دخل. ' }),
       'هذه رسائلُ حوّلتَها، قرأها الخادمُ وفرزها بقواعدَ لا بذكاء — ',
       'ولا يدخل شيءٌ قاعدتَك حتى تضغط «اعتمده». والفرزُ اقتراحٌ: اعتمد الرسالةَ على غير ما فُرزت متى شئت. ',
+      el('strong', { text: 'ولا يُحوَّل شيءٌ إلى صفحةٍ إلّا بضغطتك. ' }),
+      'الفرزُ وسمٌ على البطاقة لا نقلٌ إلى مكان، والاعتمادُ يفتح الاستمارةَ معبّأةً وتحفظها أنت. ',
       el('strong', { text: 'وستّةُ أبوابٍ لا بابان: ' }),
       'طلبٌ وعرضٌ يدخلان مخزونك، وفرصةٌ عقاريّةٌ تُتابَع في صفحتها، ومهمّةٌ تدخل قوائمك، ',
       'ومقترَحٌ وفكرةٌ يُقيَّدان في «الأفكار والملاحظات» موسومين.'),

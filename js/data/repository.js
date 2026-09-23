@@ -459,6 +459,13 @@ const PREPARE = {
     // **والفرصةُ تُبحث كما يُبحث العقار**: يسألك أحدٌ عن «أرض الورثة» بعد شهرين.
     rec.searchKey = buildSearchKey([rec.title, rec.notes, rec.city, rec.district, rec.source, rec.contactName, rec.contactPhone]);
   },
+  facilities(rec) {
+    rec.name = trim(rec.name);
+    rec.kind = trim(rec.kind);
+    rec.propertyId = rec.propertyId || null;
+    rec.status = inEnum(ENUMS.facilityStatuses, rec.status) ? rec.status : 'active';
+    rec.searchKey = buildSearchKey([rec.name, rec.kind, rec.notes]);
+  },
   notes(rec) {
     rec.text = trim(rec.text);
     rec.tags = [...new Set((rec.tags || []).map(trim).filter(Boolean))];
@@ -1363,6 +1370,7 @@ export const repo = {
   marketDeals: makeEntity('marketDeals'), // صفقات السوق (المرحلة ٥٠)
   prospectLists: makeEntity('prospectLists'), // الفرص العقاريّة (المرحلة ٥٣)
   prospects: makeEntity('prospects'),
+  facilities: makeEntity('facilities'), // إدارة المرافق (المرحلة ٥٤)
 
   /** وصول خام للمخازن (النسخ الاحتياطي والبيانات التجريبية). */
   raw: {

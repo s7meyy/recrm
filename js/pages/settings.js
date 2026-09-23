@@ -28,7 +28,7 @@ import {
   parseCsv, CSV_IMPORTS, suggestMapping, previewImport, runImport,
 } from '../data/exchange.js';
 import { typeLabel as typeLabelOf, statusLabel as statusLabelOf, getUI, setUI } from '../data/settings.js';
-import { SIDEBAR_PAGES, DEFAULT_PAGE_KEYS, pageLabel, applySidebarOrder } from '../util/sidebar.js';
+import { SIDEBAR_PAGES, DEFAULT_PAGE_KEYS, pageLabel, applySidebarOrder, getSections, saveSections, buildDefaultSections } from '../util/sidebar.js';
 import { applyTheme } from '../util/theme.js';
 import { storeImage, getImageUrl, removeImage } from '../data/images.js';
 import { requestFollowUpPermission } from '../util/follow-up-alerts.js';
@@ -39,7 +39,7 @@ import { exportBackup, downloadBlob, markExported, readBackupFile, importBackup 
 import { imagesSummary, formatBytes, storageStatus } from '../data/images.js';
 import { audioSummary } from '../data/audio.js';
 import { seedExists, insertSeed, clearSeed } from '../data/seed.js';
-import { el, clear, labeled, selectEl, checkbox, badge, confirmDialog, openModal, toast, appendChildren, debounce, isNarrow } from '../util/dom.js';
+import { el, clear, labeled, selectEl, checkbox, badge, confirmDialog, promptDialog, openModal, toast, appendChildren, debounce, isNarrow } from '../util/dom.js';
 import { clientTagClass } from '../data/schema.js';
 import { formatDate, formatDateTime, relativeDays, setHijriMode, formatNumber, countWord, toInputDate, fromInputDate, countOf } from '../util/format.js';
 import { hijriSupported } from '../util/hijri.js';
@@ -854,7 +854,7 @@ const TRASH_LABELS = {
   expenses: 'مصروف', tasks: 'مهمة', notes: 'ملاحظة', taskLists: 'قائمة مهام',
   externalListings: 'عرض خارجي', tours: 'جولة',
   incomes: 'إيراد', showings: 'معاينة', matches: 'مطابقة', extractions: 'مستند مفرَّغ',
-  marketDeals: 'صفقة سوق', prospects: 'فرصة عقاريّة', prospectLists: 'قائمة فرص',
+  marketDeals: 'صفقة سوق', prospects: 'فرصة عقاريّة', prospectLists: 'قائمة فرص', facilities: 'مرفق',
 };
 
 function trashTitle(entry) {
@@ -945,39 +945,202 @@ async function seedBody(redraw) {
 }
 
 
-/* ===== ترتيب صفحات القائمة الجانبية (المرحلة ٨) ===== */
+/* ===== ترتيب صفحات القائمة الجانبية (المرحلة ٨ · وأقسامٌ بيدك في ٥٤) ===== */
 
+/**
+ * **الأقسامُ صارت بيدك** (المرحلة ٥٤).
+ *
+ * كانت أربعةً مكتوبةً في الشيفرة — ومكتبُ كلِّ أحدٍ غيرُ مكتب غيره. فصارت تُسمّى وتُعاد
+ * تسميتُها وتُضاف وتُحذف، وتُرتَّب هي وصفحاتُها **بالسحب والإفلات**.
+ *
+ * **والسهمان باقيان مع السحب لا بدلًا منه**: السحبُ لا يعمل باللمس إلّا بتعقيدٍ لا
+ * يستحقّه، ولا يعمل لمن يتنقّل بالكيبورد أصلًا. **فطريقةٌ واحدةٌ لا تكفي.**
+ * والسهمُ يعبر حدَّ القسم: الصفحةُ في رأس قسمها تصعد إلى ذيل الذي قبله.
+ */
 async function sidebarOrderBody(redraw) {
-  const saved = await getSidebarOrder();
-  const keys = orderedPageKeys(DEFAULT_PAGE_KEYS, saved);
-  const rows = el('div', { class: 'page-order-list' });
+  const sections = await getSections();
 
-  const swap = async (index, dir) => {
-    const target = index + dir;
-    if (target < 0 || target >= keys.length) return;
-    [keys[index], keys[target]] = [keys[target], keys[index]];
-    await setSidebarOrder(keys);
-    await applySidebarOrder(keys);
+  const commit = async () => {
+    await saveSections(sections.map(({ id, label, pages }) => ({ id, label, pages })));
+    await applySidebarOrder();
     await redraw();
   };
 
-  keys.forEach((key, index) => {
+  /** موضعُ صفحةٍ في القائمة المسطَّحة: [فهرسُ القسم، فهرسُها فيه]. */
+  const locate = (key) => {
+    for (let i = 0; i < sections.length; i++) {
+      const j = sections[i].pages.indexOf(key);
+      if (j >= 0) return [i, j];
+    }
+    return [-1, -1];
+  };
+
+  const move = async (key, dir) => {
+    const [i, j] = locate(key);
+    if (i < 0) return;
+    const here = sections[i].pages;
+    if (dir < 0) {
+      if (j > 0) { [here[j - 1], here[j]] = [here[j], here[j - 1]]; }
+      else if (i > 0) { here.splice(j, 1); sections[i - 1].pages.push(key); }
+      else return;
+    } else if (j < here.length - 1) {
+      [here[j + 1], here[j]] = [here[j], here[j + 1]];
+    } else if (i < sections.length - 1) {
+      here.splice(j, 1); sections[i + 1].pages.unshift(key);
+    } else return;
+    await commit();
+  };
+
+  /** نقلُ صفحةٍ إلى موضعٍ بعينه — مسارُ السحب والإفلات. */
+  const placePage = async (key, secIdx, at) => {
+    const [i, j] = locate(key);
+    if (i < 0) return;
+    sections[i].pages.splice(j, 1);
+    let idx = at;
+    if (i === secIdx && j < at) idx -= 1;
+    const target = sections[secIdx];
+    if (!target) return;
+    target.pages.splice(Math.max(0, Math.min(idx, target.pages.length)), 0, key);
+    await commit();
+  };
+
+  const moveSection = async (from, to) => {
+    if (to < 0 || to >= sections.length || from === to) return;
+    const [sec] = sections.splice(from, 1);
+    sections.splice(to, 0, sec);
+    await commit();
+  };
+
+  /* ===== السحبُ والإفلات ===== */
+  let dragging = null;   // { kind: 'page'|'section', key|index }
+
+  const pageRow = (key, secIdx, idx, flatFirst, flatLast) => {
     const page = SIDEBAR_PAGES.find((p) => p.key === key);
-    rows.append(el('div', { class: 'page-order-row' },
-      el('span', { class: 'sidebar-icon', text: page?.icon || '•' }),
-      el('span', { class: 'page-order-name', text: pageLabel(key) }),
-      el('button', { type: 'button', class: 'btn btn-ghost btn-sm', title: 'أعلى', text: '↑', disabled: index === 0, onClick: () => swap(index, -1) }),
-      el('button', { type: 'button', class: 'btn btn-ghost btn-sm', title: 'أسفل', text: '↓', disabled: index === keys.length - 1, onClick: () => swap(index, 1) })));
+    const row = el('div', {
+      class: 'page-order-row', draggable: 'true', 'data-page': key,
+      title: 'اسحبه إلى قسمٍ آخر، أو استعمل السهمين',
+    },
+    el('span', { class: 'drag-grip', 'aria-hidden': 'true', text: '⠿' }),
+    el('span', { class: 'sidebar-icon', text: page?.icon || '•' }),
+    el('span', { class: 'page-order-name', text: pageLabel(key) }),
+    el('button', { type: 'button', class: 'btn btn-ghost btn-sm', title: 'أعلى', text: '↑', disabled: flatFirst, onClick: () => move(key, -1) }),
+    el('button', { type: 'button', class: 'btn btn-ghost btn-sm', title: 'أسفل', text: '↓', disabled: flatLast, onClick: () => move(key, 1) }));
+
+    row.addEventListener('dragstart', (e) => {
+      dragging = { kind: 'page', key };
+      row.classList.add('dragging');
+      try { e.dataTransfer.setData('text/plain', key); e.dataTransfer.effectAllowed = 'move'; } catch (_) { /* متصفّحٌ ضنين */ }
+    });
+    row.addEventListener('dragend', () => { dragging = null; row.classList.remove('dragging'); document.querySelectorAll('.drop-over').forEach((n) => n.classList.remove('drop-over')); });
+    row.addEventListener('dragover', (e) => {
+      if (dragging?.kind !== 'page') return;
+      e.preventDefault();
+      row.classList.add('drop-over');
+    });
+    row.addEventListener('dragleave', () => row.classList.remove('drop-over'));
+    row.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      row.classList.remove('drop-over');
+      if (dragging?.kind === 'page' && dragging.key !== key) await placePage(dragging.key, secIdx, idx);
+      dragging = null;
+    });
+    return row;
+  };
+
+  const box = el('div', { class: 'section-editor' });
+  let flat = 0;
+  const total = sections.reduce((n, sec) => n + sec.pages.length, 0);
+
+  sections.forEach((sec, secIdx) => {
+    const nameInput = el('input', {
+      class: 'input section-name', type: 'text', value: sec.label,
+      'aria-label': `اسم القسم ${sec.label}`,
+    });
+    nameInput.addEventListener('change', async () => {
+      const next = nameInput.value.trim();
+      if (!next) { nameInput.value = sec.label; toast('للقسم اسمٌ لا يُترك فارغًا', 'error'); return; }
+      sec.label = next;
+      await commit();
+    });
+
+    const head = el('div', { class: 'section-head', draggable: 'true' },
+      el('span', { class: 'drag-grip', 'aria-hidden': 'true', text: '⠿' }),
+      nameInput,
+      el('span', { class: 'muted small', text: countOf(sec.pages.length, 'صفحة') }),
+      el('button', { type: 'button', class: 'btn btn-ghost btn-sm', title: 'ارفع القسم', text: '↑', disabled: secIdx === 0, onClick: () => moveSection(secIdx, secIdx - 1) }),
+      el('button', { type: 'button', class: 'btn btn-ghost btn-sm', title: 'أنزل القسم', text: '↓', disabled: secIdx === sections.length - 1, onClick: () => moveSection(secIdx, secIdx + 1) }),
+      el('button', {
+        type: 'button', class: 'icon-btn', title: 'احذف القسم', text: '🗑️',
+        disabled: sections.length <= 1,
+        onClick: async () => {
+          // **ولا تسقط صفحةٌ مع قسمها**: تنتقل إلى القسم الذي قبله (أو الذي بعده).
+          const host = sections[secIdx - 1] || sections[secIdx + 1];
+          if (!host) { toast('لا يُحذف القسمُ الوحيد', 'error'); return; }
+          const yes = await confirmDialog({
+            title: `حذف قسم «${sec.label}»`,
+            message: `تنتقل ${countOf(sec.pages.length, 'صفحة')} منه إلى «${host.label}». ولا تُحذف صفحةٌ ولا يتغيّر مسار.`,
+            confirmText: 'احذف القسم', danger: true,
+          });
+          if (!yes) return;
+          host.pages.push(...sec.pages);
+          sections.splice(secIdx, 1);
+          await commit();
+        },
+      }));
+
+    head.addEventListener('dragstart', (e) => {
+      dragging = { kind: 'section', index: secIdx };
+      try { e.dataTransfer.setData('text/plain', sec.id); e.dataTransfer.effectAllowed = 'move'; } catch (_) { /* متصفّحٌ ضنين */ }
+    });
+    head.addEventListener('dragend', () => { dragging = null; });
+
+    const body = el('div', { class: 'section-pages' });
+    sec.pages.forEach((key, idx) => {
+      const row = pageRow(key, secIdx, idx, flat === 0, flat === total - 1);
+      flat += 1;
+      body.append(row);
+    });
+    if (!sec.pages.length) body.append(el('p', { class: 'muted small', text: 'قسمٌ فارغ — اسحب إليه صفحةً.' }));
+
+    const wrap = el('section', { class: 'section-box', 'data-section': sec.id }, head, body);
+    // الإفلاتُ على القسم نفسِه: صفحةٌ تُلحَق بذيله، أو قسمٌ يُوضع مكانه.
+    wrap.addEventListener('dragover', (e) => { if (dragging) { e.preventDefault(); wrap.classList.add('drop-over'); } });
+    wrap.addEventListener('dragleave', () => wrap.classList.remove('drop-over'));
+    wrap.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      wrap.classList.remove('drop-over');
+      if (!dragging) return;
+      const d = dragging;
+      dragging = null;
+      if (d.kind === 'page') await placePage(d.key, secIdx, sections[secIdx].pages.length);
+      else if (d.kind === 'section') await moveSection(d.index, secIdx);
+    });
+    box.append(wrap);
   });
 
   return el('div', {},
-    rows,
-    el('div', { class: 'row', style: { marginTop: '10px' } },
+    el('p', { class: 'muted small' },
+      el('strong', { text: 'اسحب الصفحةَ إلى القسم الذي تريد، أو استعمل السهمين. ' }),
+      'والسهمُ يعبر حدَّ القسم، فالصفحةُ في رأس قسمها تصعد إلى ذيل الذي قبله. ',
+      'وكلُّ الصفحات تبقى ظاهرة — الترتيبُ والأقسامُ فقط هو ما يُحفظ.'),
+    box,
+    el('div', { class: 'row', style: { marginTop: '10px', gap: '8px', flexWrap: 'wrap' } },
+      el('button', {
+        type: 'button', class: 'btn', text: '+ قسم جديد',
+        onClick: async () => {
+          const label = await promptDialog({ title: 'قسم جديد', label: 'اسم القسم', confirmText: 'أضِف' });
+          if (!label) return;
+          sections.push({ id: `sec-${Date.now().toString(36)}`, label: label.trim(), pages: [] });
+          await commit();
+        },
+      }),
       el('button', {
         type: 'button', class: 'btn btn-ghost', text: 'إرجاع الترتيب الافتراضي',
         onClick: async () => {
           await resetSidebarOrder();
-          await applySidebarOrder([]);
+          await saveSections(buildDefaultSections([]));
+          await applySidebarOrder();
           toast('أُرجع الترتيب الافتراضي', 'success');
           await redraw();
         },

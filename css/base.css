@@ -227,14 +227,11 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .sidebar-toggle-checkbox:checked ~ .sidebar .nav-group-caret { margin-inline-start: 0; }
 
 /**
- * **والطيُّ قاعدةٌ واحدةٌ لكلّ مجموعة**: كلُّ رابطٍ يحمل مجموعتَه في `data-group`،
- * فيُخفى بها. **و«الإعدادات» مستثناةٌ دائمًا** — هي المثبَّتة في الأسفل، ومنها يُصلَح
- * الترتيبُ نفسُه، فطيُّ «الأدوات» لا يبتلعها.
+ * **والطيُّ صنفٌ على الرابط لا قاعدةٌ لكلّ قسم** (المرحلة ٥٤): معرّفاتُ الأقسام صارت
+ * بيد صاحب المكتب يُسمّيها ويُنشئها، **ولا تُكتب قواعدُ CSS لأسماءٍ لا تُعرف**.
+ * و«الإعدادات» مستثناةٌ دائمًا في `applyNavFolds` — هي المثبَّتة في الأسفل.
  */
-.sidebar-nav.fold-work a[data-group="work"]:not([data-route="settings"]),
-.sidebar-nav.fold-money a[data-group="money"]:not([data-route="settings"]),
-.sidebar-nav.fold-duty a[data-group="duty"]:not([data-route="settings"]),
-.sidebar-nav.fold-tools a[data-group="tools"]:not([data-route="settings"]) { display: none; }
+.sidebar-nav a.nav-hidden { display: none; }
 .sidebar-scrim { display: none; }
 /* `display: none !important`: `.icon-btn` في components.css يُحمَّل بعد هذا الملف
    وبأولويّةٍ مساوية (صنفٌ واحد)، فكان `display: inline-flex` يغلب فيظهر زرّ الدرج

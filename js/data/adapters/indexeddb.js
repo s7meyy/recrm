@@ -14,8 +14,9 @@ const DB_NAME = 'motabiq';
 // ولا يمسّ مخازن أو بيانات موجودة، فلا حاجة لأي ترحيل بيانات يدوي في أيٍّ منها.
 // الإصدار ١٠ (المرحلة ٥٠): أضاف مخزن marketDeals (صفقات السوق من البوّابات المفتوحة)
 // الإصدار ١١ (المرحلة ٥٣): أضاف مخزنَي prospectLists/prospects (الفرص العقاريّة)
+// الإصدار ١٢ (المرحلة ٥٤): أضاف مخزن facilities (إدارة المرافق)
 // — بالمنطق نفسه: `upgrade()` يُنشئ الناقص فقط ولا يمسّ مخزنًا ولا بيانات، فلا ترحيل.
-const DB_VERSION = 11; // ١١: مخزنا الفرص العقاريّة (المرحلة ٥٣)
+const DB_VERSION = 12; // ١٢: مخزن المرافق (المرحلة ٥٤)
 
 const STORE_DEFS = {
   clients: { keyPath: 'id', indexes: ['phone', 'stage', 'updatedAt'] },
@@ -42,6 +43,8 @@ const STORE_DEFS = {
   // الفرص العقاريّة (المرحلة ٥٣) — قوائمُ كقوائم المهامّ، والبطاقةُ تنتقل بينها.
   prospectLists: { keyPath: 'id', indexes: ['order'] },
   prospects: { keyPath: 'id', indexes: ['listId', 'done', 'dueAt', 'city'] },
+  // المرافق (المرحلة ٥٤) — تُسأل بعقارها وحالها ونوعها.
+  facilities: { keyPath: 'id', indexes: ['propertyId', 'status', 'kind'] },
 };
 
 let dbPromise = null;

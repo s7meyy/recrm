@@ -594,6 +594,25 @@ input[type="tel"].input, input[type="email"].input, input[type="url"].input {
 .page-order-row .page-order-name { flex: 1; }
 .page-order-row .btn { padding: 2px 8px; }
 
+/**
+ * **محرّرُ الأقسام** (المرحلة ٥٤) — أقسامٌ تُسمّى وتُسحَب، وصفحاتٌ تُنقل بينها.
+ *
+ * والمقبضُ `⠿` **علامةٌ لا زرّ**: يقول «هذا يُسحب» لمن يرى، ومن لا يسحب فالسهمان أمامه.
+ */
+.section-editor { display: flex; flex-direction: column; gap: 10px; }
+.section-box { border: 1px solid var(--line); border-radius: var(--radius); padding: 8px; background: var(--surface); }
+.section-box.drop-over { border-color: var(--accent); background: var(--accent-soft); }
+.section-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; cursor: grab; }
+.section-head:active { cursor: grabbing; }
+.section-head .section-name { flex: 1 1 140px; min-width: 120px; font-weight: 700; }
+.section-head .btn { padding: 2px 8px; }
+.section-pages { display: flex; flex-direction: column; gap: 4px; }
+.section-pages .page-order-row { cursor: grab; background: var(--surface); }
+.section-pages .page-order-row:active { cursor: grabbing; }
+.page-order-row.dragging { opacity: .45; }
+.page-order-row.drop-over { border-color: var(--accent); box-shadow: inset 0 2px 0 var(--accent); }
+.drag-grip { color: var(--muted); font-size: var(--dhad-font-size-500); line-height: 1; flex-shrink: 0; user-select: none; }
+
 /* ===== المرحلة ٨ — الفواتير وعروض الأسعار ===== */
 .invoice-items td { vertical-align: middle; }
 .invoice-items .input { min-height: 36px; padding: var(--dhad-space-1) var(--dhad-space-2); }

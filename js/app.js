@@ -47,6 +47,7 @@ import * as healthPage from './pages/health.js';
 import * as settingsPage from './pages/settings.js';
 import * as integrationsPage from './pages/integrations.js';
 import * as managementPage from './pages/management.js';
+import * as facilitiesPage from './pages/facilities.js';
 import * as stampPage from './pages/stamp.js';
 import * as whatsappPage from './pages/whatsapp.js';
 import * as regaPage from './pages/rega.js';
@@ -68,6 +69,7 @@ const ROUTES = {
   pricing: { title: 'تقدير السعر', render: pricingPage.render },
   calendar: { title: 'التقويم', render: calendarPage.render },
   management: { title: 'إدارة الأملاك', render: managementPage.render },
+  facilities: { title: 'إدارة المرافق', render: facilitiesPage.render },
   rega: { title: 'عقود الوساطة وتراخيص الإعلانات', render: regaPage.render },
   extract: { title: 'تفريغ المستندات والوسائط', render: extractPage.render },
   stamp: { title: 'ختم الصور والمقاطع', render: stampPage.render },

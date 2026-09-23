@@ -93,7 +93,14 @@ await page.evaluate(() => { location.hash = '#/management'; });
 await page.waitForTimeout(1400);
 const mtext = await page.locator('#page').innerText();
 ok('العقار المُدار ظهر', mtext.includes('الوادي'));
-ok('وغير المُدار لم يظهر', !mtext.includes('الشفا'));
+/* **وغيرُ المُدار لا يظهر في جدول المُدار** — ويظهر في قائمة الإضافة (المرحلة ٥٤).
+   كان الفحصُ يقرأ الصفحةَ كلَّها، فلمّا صارت فيها لوحةُ «أضِف عقارًا إلى الإدارة» تعرض ما
+   ليس تحت الإدارة ليُضاف، ظهر «الشفا» فيها — **وهو عينُ ما وُضعت له**. فقُصر الفحصُ على
+   الجدول، وصار لظهوره في القائمة فحصٌ يشهد به. */
+const managedTable = await page.locator('#page table:has(th:has-text("عقد الإدارة"))').innerText();
+ok('وغير المُدار لم يظهر في جدول المُدار', !managedTable.includes('الشفا'));
+ok('**ويظهر في قائمة «أضِف عقارًا إلى الإدارة»** ليُضاف من مكانه',
+  await page.evaluate(() => [...document.querySelectorAll('#page .panel select option')].some((o) => o.textContent.includes('الشفا'))));
 ok('والمالك والمستأجر يظهران', mtext.includes('مالك مُدار') && mtext.includes('مستأجر مُدار'));
 ok('والأجر الشهري محسوب (٦٠٠٠٠ × ٥٪ ÷ ١٢ = ٢٥٠)', mtext.includes('250'), mtext.split('\n').find((l) => l.includes('250')) || '—');
 ok('وينبّه على العقد المقارب انتهاؤه', mtext.includes('ينتهي بعد'), mtext.split('\n').find((l) => l.includes('ينتهي')) || '—');
