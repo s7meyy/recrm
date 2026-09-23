@@ -163,6 +163,79 @@ for (const vp of [{ width: 1280, height: 800 }, { width: 1366, height: 768 }]) {
   await d.close();
 }
 
+/* ===== المرحلة ٥٣: طيُّ المجموعات — والتجميعُ وحدَه لا يعالج الزحام ===== */
+console.log('\n--- ٤. طيُّ المجموعات ---');
+{
+  const d = await ctx.newPage();
+  await d.setViewportSize({ width: 1280, height: 800 });
+  await d.goto(BASE);
+  await d.waitForTimeout(1700);
+  /* **حالٌ معلومةٌ قبل الفحص**: القسمُ السابق فتح «الإعدادات»، وفتحُ صفحةٍ يفتح مجموعتَها
+     ويحفظ ذلك — وهو السلوكُ الصحيح، فلا يُختبَر الافتراضيُّ على حالٍ غيّرها فحصٌ قبله. */
+  await d.evaluate(async () => {
+    const { setUI } = await import('/js/data/settings.js');
+    const { DEFAULT_FOLDS } = await import('/js/util/sidebar.js');
+    await setUI({ navFolds: { ...DEFAULT_FOLDS } });
+  });
+  await d.reload();
+  await d.waitForTimeout(1900);
+  await d.evaluate(() => { const c = document.getElementById('sidebar-toggle'); c.checked = true; c.dispatchEvent(new Event('change', { bubbles: true })); });
+  await d.waitForTimeout(600);
+
+  const read = () => d.evaluate(() => {
+    const nav = document.querySelector('.sidebar-nav');
+    const bar = document.querySelector('.sidebar');
+    const st = nav.querySelector('a[data-route="settings"]');
+    const r = st.getBoundingClientRect(); const br = bar.getBoundingClientRect();
+    return {
+      visible: [...nav.querySelectorAll('a[data-route]')].filter((a) => a.offsetParent !== null).length,
+      navH: nav.scrollHeight,
+      heads: [...nav.querySelectorAll('.nav-group')].map((h) => ({
+        g: h.dataset.group, exp: h.getAttribute('aria-expanded'),
+        tag: h.tagName, count: h.querySelector('.nav-group-count').textContent,
+      })),
+      settingsVisible: r.top >= br.top - 1 && r.bottom <= br.bottom + 1 && r.width > 0,
+    };
+  });
+
+  const first = await read();
+  ok('**«العمل» وحدَها مفتوحةٌ افتراضًا** — وهي ما يُفتح كلَّ يوم',
+    first.heads.find((h) => h.g === 'work').exp === 'true'
+    && ['money', 'duty', 'tools'].every((k) => first.heads.find((h) => h.g === k).exp === 'false'),
+    JSON.stringify(first.heads));
+  ok('والقائمةُ تقصر إلى النصف تقريبًا', first.navH < 1100, `${first.navH}px`);
+  ok('**والمطويُّ يقول عددَ ما تحته** — فبابٌ مغلقٌ بلا عددٍ لا يُعرف ما خلفه',
+    first.heads.filter((h) => h.exp === 'false').every((h) => Number(h.count) > 0),
+    JSON.stringify(first.heads.map((h) => h.count)));
+  ok('والعنوانُ زرٌّ يصله التركيز لا سطرٌ زينة', first.heads.every((h) => h.tag === 'BUTTON'));
+  ok('**و«الإعدادات» تبقى ظاهرةً وإن طُويت «الأدوات»** — منها يُصلَح الترتيبُ نفسُه',
+    first.settingsVisible);
+
+  await d.locator('.nav-group[data-group="money"]').click();
+  await d.waitForTimeout(700);
+  const opened = await read();
+  ok('والنقرُ يفتح المجموعة', opened.visible === first.visible + 3, `${first.visible} → ${opened.visible}`);
+
+  await d.reload();
+  await d.waitForTimeout(1900);
+  await d.evaluate(() => { const c = document.getElementById('sidebar-toggle'); c.checked = true; c.dispatchEvent(new Event('change', { bubbles: true })); });
+  await d.waitForTimeout(600);
+  const kept = await read();
+  ok('**وما فتحتَه يبقى مفتوحًا بعد إعادة التحميل**',
+    kept.heads.find((h) => h.g === 'money').exp === 'true', JSON.stringify(kept.heads));
+
+  // **ولا يُخفى البابُ الذي أنت فيه**: «السلّة» في «الأدوات» وهي مطويّة.
+  await d.evaluate(() => { location.hash = '#/trash'; });
+  await d.waitForTimeout(1500);
+  const revealed = await d.evaluate(() => ({
+    trash: document.querySelector('.sidebar-nav a[data-route="trash"]').offsetParent !== null,
+    tools: document.querySelector('.nav-group[data-group="tools"]').getAttribute('aria-expanded'),
+  }));
+  ok('**وفتحُ صفحةٍ بعنوانها يفتح مجموعتَها** فلا يضيع الرابطُ النشط',
+    revealed.trash && revealed.tools === 'true', JSON.stringify(revealed));
+  await d.close();
+}
+
 console.log('\nERRORS:', errors.length ? JSON.stringify(errors.slice(0,4)) : 'none');
 ok('لا أخطاء جافاسكربت في الصفحة', errors.length === 0, errors.slice(0, 2).join(' | '));
 await b.close();

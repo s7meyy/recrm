@@ -4,6 +4,8 @@
 // الإدارية (العملاء، المصاريف، الفواتير، المهام…). **إخفاء عرضٍ لا حذف بيانات** — كل شيء
 // يعود بضغطة، والوضع **لا يُحفظ بين الجلسات** (sessionStorage) كي لا تُفاجأ ببيانات مخفية غدًا.
 
+import { applyNavFolds } from './sidebar.js';
+
 const KEY = 'kassab_client_mode';
 const HIDDEN_ROUTES = ['clients', 'expenses', 'invoices', 'tasks', 'notes', 'publish', 'settings', 'opportunities', 'dashboard', 'prospects'];
 
@@ -17,6 +19,8 @@ export function applyClientMode(on) {
   for (const link of document.querySelectorAll('.sidebar-nav a[data-route]')) {
     link.hidden = !!on && HIDDEN_ROUTES.includes(link.dataset.route);
   }
+  // **وعددُ المطويّ يتبع ما يُرى** (المرحلة ٥٣): رابطٌ أخفاه هذا الوضعُ لا يُحسب لك.
+  applyNavFolds();
   const banner = document.getElementById('client-mode-banner');
   if (banner) banner.hidden = !on;
 }

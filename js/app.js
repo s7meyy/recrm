@@ -11,7 +11,7 @@ import { initGlobalSearch } from './util/global-search.js';
 import { installTableCards } from './util/table-cards.js';
 import { installSyncDot } from './util/sync-dot.js';
 import { installShortcuts } from './util/shortcuts.js';
-import { applySidebarOrder } from './util/sidebar.js';
+import { applySidebarOrder, revealGroupOf } from './util/sidebar.js';
 import { applyTheme } from './util/theme.js';
 import { setHijriMode, formatNumber, countOf } from './util/format.js';
 import { initVoiceBar } from './util/voice-bar.js';
@@ -182,6 +182,9 @@ async function navigate() {
       a.scrollIntoView({ block: 'nearest' });
     } else a.removeAttribute('aria-current');
   });
+  // **ولا يُخفى البابُ الذي أنت فيه** (المرحلة ٥٣): مجموعةٌ مطويّةٌ تبتلع الرابطَ النشط،
+  // فمن فتح صفحةً بعنوانها المباشر لم يرَ أين هو من القائمة. والفتحُ يُحفظ.
+  revealGroupOf(name).catch(() => {});
   applyClientMode(clientModeOn()); // الروابط تُعاد بناؤها/تُرتَّب، فيُعاد تطبيق الإخفاء
   // الدرج على الجوال يُطوى بعد اختيار صفحة (وإلا غطّى الصفحة)، أما على الحاسوب فاختيارك يبقى.
   if (isNarrow()) setSidebarExpanded(false);

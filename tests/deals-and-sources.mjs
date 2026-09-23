@@ -36,7 +36,9 @@ ok('الصفقة تُنشأ بلا مسار ولا دفعات افتراضًا',
 console.log('\n--- ١. مسار الصفقة ودفعاتها وشريكها ---');
 await page.evaluate((id) => { location.hash = `#/client/${id}`; }, seed.clientId);
 await page.waitForTimeout(1400);
-const manage = page.locator('button:has-text("إدارة")').first();
+// **والبحثُ يُقصَر على الصفحة** (المرحلة ٥٣): صار عنوانُ مجموعة القائمة زرًّا، و«الإدارة
+// والالتزام» يطابق `has-text("إدارة")` — فكان `.first()` يلتقط زرَّ الشريط لا زرَّ الصفقة.
+const manage = page.locator('#page button:has-text("إدارة")').first();
 ok('زر إدارة الصفقة ظاهر في ملف العميل', await manage.count() > 0);
 await manage.click();
 await page.waitForTimeout(600);

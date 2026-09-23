@@ -188,22 +188,53 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .sidebar-icon { font-size: var(--dhad-font-size-700); flex-shrink: 0; width: 22px; text-align: center; }
 .sidebar-label { display: none; font-size: var(--fs-sm); }
-/* عناوينُ مجموعات القائمة (المرحلة ٤٨): سبعةٌ وعشرون بابًا في قائمةٍ مسطّحةٍ تُقرأ جدارًا.
-   والعنوانُ يتبع عنوانَ الرابط نفسَه: يغيب مع الطيّ فلا يبقى نصٌّ في عمودٍ من أيقونات،
-   ويبقى بدله فاصلٌ رفيعٌ يحفظ التجميع للعين. */
+/**
+ * عناوينُ مجموعات القائمة (المرحلة ٤٨) — **وصارت أزرارَ طيّ** (المرحلة ٥٣).
+ *
+ * سبعةٌ وعشرون بابًا في قائمةٍ مسطّحةٍ تُقرأ جدارًا، فجُمّعت في أربع. ثمّ صارت ثلاثين
+ * بابًا — **والتجميعُ وحدَه لا يعالج الزحام**: من يفتح القائمة يريد بابًا واحدًا فتُعرض
+ * عليه ثلاثون. فصار العنوانُ زرًّا يطوي مجموعتَه ويفتحها، ويقول عددَ ما تحته وهو مطويّ.
+ *
+ * ومساحةُ اللمس ٤٤ بكسلًا كبقيّة الأزرار — **زرٌّ لا يُصاب ليس زرًّا**.
+ */
 .nav-group {
-  font-size: 0; padding: 7px var(--dhad-space-2) 6px;
-  font-weight: 700; letter-spacing: .06em; color: var(--muted);
-  white-space: nowrap; overflow: hidden;
+  display: flex; align-items: center; gap: var(--dhad-space-2);
+  width: 100%; min-height: var(--control);
+  padding: var(--dhad-space-2); margin-block-start: var(--dhad-space-2);
+  background: none; border: 0; border-top: 1px solid var(--line); border-radius: var(--radius);
+  font-family: inherit; font-weight: 700; letter-spacing: .06em; color: var(--muted);
+  white-space: nowrap; overflow: hidden; cursor: pointer; text-align: start;
 }
-.nav-group::after { content: ''; display: block; height: 1px; background: var(--line); }
-.nav-group:first-child { display: none; }  /* فاصلٌ فوق أوّل مجموعةٍ لا معنى له */
-.sidebar-toggle-checkbox:checked ~ .sidebar .nav-group {
-  display: block; font-size: var(--dhad-font-size-100);
-  padding: var(--dhad-space-3) var(--dhad-space-2) 4px;
+.nav-group:first-child { margin-block-start: 0; border-top: 0; }
+.nav-group:hover { background: var(--hover); color: var(--text); }
+.nav-group-label { display: none; font-size: var(--dhad-font-size-100); flex: 1 1 auto; }
+.nav-group-count {
+  display: none; font-size: var(--dhad-font-size-100); font-weight: 700;
+  background: var(--surface-2); color: var(--muted);
+  border-radius: 999px; padding: 1px 7px; flex-shrink: 0;
 }
-.sidebar-toggle-checkbox:checked ~ .sidebar .nav-group:first-child { padding-top: 4px; }
-.sidebar-toggle-checkbox:checked ~ .sidebar .nav-group::after { content: none; }
+/* السهمُ يدور فيقول الحال بالشكل لا باللون وحده — ومن لا يميّز الألوان يقرؤه. */
+.nav-group-caret {
+  font-size: var(--dhad-font-size-500); line-height: 1; flex-shrink: 0;
+  width: 22px; text-align: center; margin-inline-start: auto;
+  transition: transform var(--dhad-duration-fast) var(--dhad-ease);
+}
+.nav-group[aria-expanded="false"] .nav-group-caret { transform: rotate(-90deg); }
+.nav-group[aria-expanded="false"] .nav-group-count { display: inline-block; }
+.nav-group[aria-expanded="false"] .nav-group-count[hidden] { display: none; }
+/* في حال الطيّ (رفُّ الأيقونات) يبقى السهمُ والعدد وحدَهما، والعنوانُ في `aria-label`. */
+.sidebar-toggle-checkbox:checked ~ .sidebar .nav-group-label { display: block; }
+.sidebar-toggle-checkbox:checked ~ .sidebar .nav-group-caret { margin-inline-start: 0; }
+
+/**
+ * **والطيُّ قاعدةٌ واحدةٌ لكلّ مجموعة**: كلُّ رابطٍ يحمل مجموعتَه في `data-group`،
+ * فيُخفى بها. **و«الإعدادات» مستثناةٌ دائمًا** — هي المثبَّتة في الأسفل، ومنها يُصلَح
+ * الترتيبُ نفسُه، فطيُّ «الأدوات» لا يبتلعها.
+ */
+.sidebar-nav.fold-work a[data-group="work"]:not([data-route="settings"]),
+.sidebar-nav.fold-money a[data-group="money"]:not([data-route="settings"]),
+.sidebar-nav.fold-duty a[data-group="duty"]:not([data-route="settings"]),
+.sidebar-nav.fold-tools a[data-group="tools"]:not([data-route="settings"]) { display: none; }
 .sidebar-scrim { display: none; }
 /* `display: none !important`: `.icon-btn` في components.css يُحمَّل بعد هذا الملف
    وبأولويّةٍ مساوية (صنفٌ واحد)، فكان `display: inline-flex` يغلب فيظهر زرّ الدرج
