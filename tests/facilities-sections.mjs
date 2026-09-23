@@ -79,9 +79,31 @@ const boxes = await page.locator('.section-box').count();
 ok('لوحةُ الأقسام تُعرض أقسامًا لا قائمةً مسطّحة', boxes >= 4, `${boxes} قسم`);
 ok('ولكلّ صفحةٍ صفٌّ فيها',
   await page.locator('.page-order-row').count() === await page.evaluate(() => document.querySelectorAll('.sidebar-nav a[data-route]').length));
-ok('**والصفوفُ تُسحب** — والمقبضُ علامةٌ تقول ذلك',
-  await page.locator('.page-order-row[draggable="true"]').count() > 0
-  && await page.locator('.drag-grip').count() > 0);
+/* **والسحبُ من المقبض وحدَه، وبالمؤشّر لا بسحب المتصفّح** (المرحلة ٥٥).
+   شكا صاحبُ المكتب: «إذا ضغطتُ يبقى الزرُّ معلّقًا ولا يتحرّك». فلا `draggable` بعد اليوم. */
+ok('**ولا `draggable` في اللوحة** — فسحبُ المتصفّح لا يعمل باللمس ويعلق',
+  await page.locator('.section-editor [draggable]').count() === 0);
+const gripCss = await page.locator('.page-order-row .drag-grip').first().evaluate((g) => {
+  const cs = getComputedStyle(g); const r = g.getBoundingClientRect();
+  return { touch: cs.touchAction, w: Math.round(r.width), h: Math.round(r.height) };
+});
+ok('**والمقبضُ لا يُمرِّر الصفحةَ تحت الإصبع** (`touch-action: none`)', gripCss.touch === 'none', JSON.stringify(gripCss));
+ok('ومساحتُه ٤٤ بكسلًا على الأقلّ', gripCss.w >= 44 && gripCss.h >= 44, JSON.stringify(gripCss));
+
+/* ضغطةٌ على المقبض بلا حركة — **وهو عينُ ما علق عنده**: يجب ألّا يبقى شيءٌ معلّقًا */
+{
+  const g = page.locator('.page-order-row .drag-grip').nth(2);
+  // **الفأرةُ المحاكاة لا تُمرِّر** — فمقبضٌ خارج الشاشة يُضغط الفراغُ مكانه ويمرّ الفحصُ كاذبًا.
+  await g.scrollIntoViewIfNeeded();
+  const b = await g.boundingBox();
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+  await page.mouse.down();
+  await page.mouse.up();
+  await page.waitForTimeout(400);
+}
+ok('**ضغطةٌ على المقبض بلا حركة لا تترك شيئًا معلّقًا**',
+  await page.locator('.dragging').count() === 0 && await page.locator('.drop-over').count() === 0
+  && !(await page.evaluate(() => document.body.classList.contains('is-dragging'))));
 
 // إعادةُ التسمية
 const nameInput = page.locator('.section-box .section-name').first();
@@ -90,6 +112,57 @@ await nameInput.press('Enter');
 await page.waitForTimeout(1200);
 ok('**وإعادةُ التسمية تصل القائمةَ فورًا**',
   await page.evaluate(() => [...document.querySelectorAll('.sidebar-nav .nav-group')].some((h) => h.getAttribute('aria-label') === 'الإدارة')));
+
+// **سحبٌ حقيقيّ**: أوّلُ صفحةٍ في القسم الثاني تُسحب فوق آخرِ صفحةٍ في الأوّل
+// — قسمان متجاوران كما يسحب إنسانٌ يرى الاثنين، لا قفزةٌ عبر ثلاث شاشات.
+let moving = null;
+{
+  const first = page.locator('.section-box').first().locator('.page-order-row');
+  const n1 = await first.count();
+  const lastOfFirst = await first.nth(n1 - 1).getAttribute('data-page');
+  const src = page.locator('.section-box').nth(1).locator('.page-order-row').first();
+  moving = await src.getAttribute('data-page');
+  await src.scrollIntoViewIfNeeded();
+  const from = await src.locator('.drag-grip').boundingBox();
+  const to = await first.nth(n1 - 1).boundingBox();
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+  await page.mouse.down();
+  // خطواتٌ متعدّدة كما تتحرّك يدٌ حقيقيّة — لا قفزةٌ واحدة
+  await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 14 });
+  const mid = await page.evaluate(() => ({
+    dragging: document.querySelectorAll('.page-order-row.dragging').length,
+    over: document.querySelectorAll('.page-order-row.drop-over').length,
+  }));
+  ok('وأثناء السحب يُرى المسحوبُ باهتًا والهدفُ مؤشَّرًا', mid.dragging === 1 && mid.over === 1, JSON.stringify(mid));
+  await page.mouse.up();
+  await page.waitForTimeout(1300);
+  const keys = await page.locator('.section-box').first().locator('.page-order-row').evaluateAll((rs) => rs.map((r) => r.dataset.page));
+  const at = keys.indexOf(moving);
+  ok('**السحبُ ينقل الصفحةَ إلى قسمٍ آخر وفي موضعٍ بعينه** (قبل ما أُفلتت عليه)',
+    at >= 0 && keys[at + 1] === lastOfFirst, `${moving} في الموضع ${at} · بعده ${keys[at + 1]}`);
+  ok('ويصل القائمةَ الجانبيّةَ فورًا', await page.evaluate((k) => {
+    const heads = [...document.querySelectorAll('.sidebar-nav .nav-group')];
+    const a = document.querySelector(`.sidebar-nav a[data-route="${k}"]`);
+    return heads.length && a && a.dataset.group === heads[0].dataset.group;
+  }, moving));
+  ok('ولا يبقى بعده شيءٌ معلّق', await page.locator('.dragging, .drop-over').count() === 0);
+  // والسهمُ يعمل بعد السحب — فالسحبُ لا يأسر الصفحة
+  const row = page.locator(`.section-box .page-order-row[data-page="${moving}"]`);
+  const before = await page.locator('.section-box').first().locator('.page-order-row').evaluateAll((rs) => rs.map((r) => r.dataset.page));
+  await row.locator('button[title="أعلى"]').click();
+  await page.waitForTimeout(1100);
+  const after = await page.locator('.section-box').first().locator('.page-order-row').evaluateAll((rs) => rs.map((r) => r.dataset.page));
+  ok('**والسهمُ يعمل بعد السحب** — فلا يأسر السحبُ الصفحة',
+    after.indexOf(moving) === before.indexOf(moving) - 1, `${before.indexOf(moving)} → ${after.indexOf(moving)}`);
+}
+
+// والكتابةُ في اسم القسم لا تبدأ سحبًا
+{
+  const ni = page.locator('.section-box .section-name').first();
+  await ni.click();
+  await page.mouse.down(); await page.mouse.move(10, 10, { steps: 3 }); await page.mouse.up();
+  ok('والكتابةُ في اسم القسم لا تبدأ سحبًا', await page.locator('.dragging').count() === 0);
+}
 
 // قسمٌ جديد
 await page.locator('#page button:has-text("+ قسم جديد")').click();
@@ -133,6 +206,60 @@ mine = await sectionNamed('قسمي الخاصّ');
 ok('**والإرجاعُ يُعيد الأقسامَ الأربعة** فلا يبقى صاحبُها حبيسَ تجربته',
   !mine.found && await page.locator('.section-box').count() === 4,
   `${await page.locator('.section-box').count()} قسم`);
+
+/* ===== ٥. السحبُ بإصبعٍ على الجوّال (المرحلة ٥٥) ===== */
+console.log('\n--- ٥. السحبُ باللمس ---');
+/**
+ * **وهذا جهازُ صاحب المكتب**، والفأرةُ وحدَها لا تشهد له. فيُسحب بلمسٍ حقيقيّ عبر
+ * بروتوكول Chrome — الأحداثُ نفسُها التي يُطلقها الإصبع.
+ *
+ * **والعطبُ الذي كشفه هذا الفحصُ وحده**: شريطُ أقسام الإعدادات لاصقٌ فوق القائمة على
+ * الجوّال، فمن سحب صفحةً إلى أعلى أفلتها عليه لا على الصفّ — **فلا يتحرّك شيء**. وفحصُ
+ * الفأرة على شاشة الحاسب مرّ ناجحًا، لأنّ الشريطَ هناك لا يغطّي الهدف.
+ */
+{
+  const mctx = await b.newContext({ locale: 'ar-SA', viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  const mp = await mctx.newPage();
+  mp.on('pageerror', (e) => errors.push('PAGEERROR(جوّال): ' + e.message));
+  await mp.goto(BASE + '/');
+  await mp.waitForTimeout(2300);
+  await mp.evaluate(async () => { const { resetSidebarOrder } = await import('/js/data/settings.js'); await resetSidebarOrder(); });
+  await mp.evaluate(() => { location.hash = '#/settings'; });
+  await mp.waitForTimeout(1700);
+  await mp.locator('#page input.search').fill('ترتيب');   // الألواحُ مطويّةٌ على الجوّال
+  await mp.waitForTimeout(900);
+
+  const first = mp.locator('.section-box').first().locator('.page-order-row');
+  const n1 = await first.count();
+  const target = await first.nth(n1 - 1).getAttribute('data-page');
+  const src = mp.locator('.section-box').nth(1).locator('.page-order-row').first();
+  const moving = await src.getAttribute('data-page');
+  await src.scrollIntoViewIfNeeded();
+  const from = await src.locator('.drag-grip').boundingBox();
+  const to = await first.nth(n1 - 1).boundingBox();
+  const covered = await mp.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest?.('.settings-nav') != null,
+    { x: to.x + to.width / 2, y: to.y + to.height / 2 });
+
+  const cdp = await mctx.newCDPSession(mp);
+  const pt = (x, y) => [{ x: Math.round(x), y: Math.round(y) }];
+  const sx = from.x + from.width / 2; const sy = from.y + from.height / 2;
+  const tx = to.x + to.width / 2; const ty = to.y + to.height / 2;
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pt(sx, sy) });
+  for (let i = 1; i <= 16; i++) {
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pt(sx + (tx - sx) * i / 16, sy + (ty - sy) * i / 16) });
+    await mp.waitForTimeout(16);
+  }
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await mp.waitForTimeout(1400);
+
+  const keys = await mp.locator('.section-box').first().locator('.page-order-row').evaluateAll((rs) => rs.map((r) => r.dataset.page));
+  const at = keys.indexOf(moving);
+  ok('**السحبُ بالإصبع ينقل الصفحة** — وهو جهازُ صاحب المكتب',
+    at >= 0 && keys[at + 1] === target, `${moving} في ${at} · بعده ${keys[at + 1]} · الهدف ${target}${covered ? ' (تحت الشريط اللاصق)' : ''}`);
+  ok('ولا يبقى بعد اللمس شيءٌ معلّق', await mp.locator('.dragging, .drop-over').count() === 0
+    && !(await mp.evaluate(() => document.body.classList.contains('is-dragging'))));
+  await mctx.close();
+}
 
 ok('لا أخطاء في الصفحة', errors.length === 0, errors.slice(0, 3).join(' | '));
 await b.close();

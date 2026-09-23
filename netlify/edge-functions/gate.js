@@ -137,7 +137,14 @@ export default async (request, context) => {
   const password = Netlify.env.get('APP_PASSWORD');
   const secret = Netlify.env.get('APP_SECRET') || password;
   // بلا كلمة سر مضبوطة لا تُقفل البوابة الموقعَ (حتى لا يُحبس المالك خارج موقعه بخطأ إعداد).
-  if (!password) return context.next();
+  // **ولكنّها تقول ذلك** (المرحلة ٥٥): كانت تفتح صامتة، فلا يُعرف أنّ البوّابة لا ترى
+  // كلمةَ السرّ إلّا حين ترفض الدوالُّ كلَّ جلسةٍ بـ«انتهت جلستك». والترويسةُ لا تحمل قيمة.
+  if (!password) {
+    const res = await context.next();
+    const out = new Response(res.body, res);
+    out.headers.set('x-kassab-gate', 'open-no-password');
+    return out;
+  }
 
   const url = new URL(request.url);
 

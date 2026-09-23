@@ -1011,40 +1011,136 @@ async function sidebarOrderBody(redraw) {
     await commit();
   };
 
-  /* ===== السحبُ والإفلات ===== */
-  let dragging = null;   // { kind: 'page'|'section', key|index }
+  /* ===== السحبُ والإفلات — بمؤشّرٍ لا بسحبِ المتصفّح (المرحلة ٥٥) ===== */
+
+  /**
+   * **لماذا لا `draggable`؟** كانت أوّلَ مرّة، فشكا صاحبُ المكتب: «إذا ضغطتُ يبقى الزرُّ
+   * معلّقًا، ولا يرتفع ولا ينزل، ولا حلّ إلّا تحديثُ الصفحة». وثلاثةُ أسبابٍ اجتمعت:
+   *
+   *   ١) سحبُ المتصفّح (`draggable`) **لا يعمل باللمس** — والجوّالُ هو جهازُه الأوّل.
+   *      وبعضُ متصفّحات الجوّال تبدأ سحبًا بالضغط الطويل ثمّ لا تُنهيه أبدًا.
+   *   ٢) الصفُّ كلُّه كان يُسحب، **وفيه السهمان**: ضغطةٌ على السهم تتحرّك شعرةً فتصير
+   *      بدايةَ سحبٍ لا نقرة، فلا يعمل السهمُ ويبقى الصفُّ باهتًا.
+   *   ٣) وعنوانُ القسم كان يُسحب **وفيه حقلُ الاسم** — فالكتابةُ فيه تبدأ سحبًا.
+   *
+   * فصار السحبُ **بأحداث المؤشّر** (تعمل للإصبع والفأرة والقلم معًا)، ويبدأ **من المقبض
+   * ⠿ وحده** — فالسهمان والحقلُ لا يمسّهما. ولا يُعاد رسمُ الصفحة إلّا بعد أن ينتهي
+   * السحبُ ويُنظَّف أثرُه، **فلا يبقى شيءٌ معلّقًا مهما حدث**: ولو انقطع السحبُ
+   * (`pointercancel`) عاد كلُّ شيءٍ كما كان.
+   */
+  let drag = null;   // { kind: 'page'|'section', key, index, node, pointerId }
+
+  const clearMarks = () => document.querySelectorAll('.drop-over').forEach((n) => n.classList.remove('drop-over'));
+
+  /**
+   * ما تحت الإصبع: صفُّ صفحةٍ، وإلّا صندوقُ قسم.
+   *
+   * **ولا يُكتفى بأعلى عنصرٍ هناك** — وهذا هو عطبُ الجوّال بعينه: شريطُ أقسام الإعدادات
+   * (`.settings-nav`) لاصقٌ في أعلى الشاشة **فوق** القائمة، فمن سحب صفحةً إلى أعلى
+   * أفلتها على الشريط لا على الصفّ، فلا يتحرّك شيء. فتُقرأ طبقاتُ النقطة كلُّها
+   * (`elementsFromPoint`) ويؤخذ أوّلُ ما هو داخل المحرّر — فالغطاءُ لا يحجب الهدف.
+   */
+  const targetAt = (x, y) => {
+    const stack = document.elementsFromPoint ? document.elementsFromPoint(x, y) : [document.elementFromPoint(x, y)];
+    const hit = stack.find((n) => n?.closest?.('.section-editor'));
+    return { row: hit?.closest('.page-order-row') || null, sec: hit?.closest('.section-box') || null };
+  };
+
+  /**
+   * **وحافّةُ التمرير تحت الأغطية اللاصقة لا عند حافّة الشاشة.** كان التمريرُ يبدأ على
+   * بُعد ٧٠ بكسلًا من أعلى الشاشة — **وذلك الحيّزُ يغطّيه الشريطُ اللاصق** على الجوّال،
+   * فلا يصله الإصبعُ أبدًا ولا تتمرّر الصفحة، فيعجز عن سحب صفحةٍ إلى ما فوقه.
+   */
+  const stickyTop = () => {
+    let bottom = 0;
+    for (const n of document.querySelectorAll('.settings-nav, .topbar, .app-topbar')) {
+      const cs = getComputedStyle(n);
+      if (cs.position !== 'sticky' && cs.position !== 'fixed') continue;
+      const r = n.getBoundingClientRect();
+      if (r.height && r.bottom > bottom && r.top <= 1) bottom = r.bottom;
+    }
+    return bottom;
+  };
+
+  const endDrag = () => {
+    if (!drag) return null;
+    const d = drag;
+    drag = null;
+    d.node?.classList.remove('dragging');
+    document.body.classList.remove('is-dragging');
+    clearMarks();
+    try { d.grip?.releasePointerCapture?.(d.pointerId); } catch (_) { /* قد يكون أُفلت */ }
+    return d;
+  };
+
+  const startDrag = (e, info) => {
+    if (e.button != null && e.button !== 0) return;   // الزرُّ الأيمن لا يسحب
+    e.preventDefault();
+    drag = { ...info, pointerId: e.pointerId, grip: e.currentTarget };
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) { /* متصفّحٌ قديم */ }
+    info.node.classList.add('dragging');
+    document.body.classList.add('is-dragging');
+  };
+
+  const onMove = (e) => {
+    if (!drag || e.pointerId !== drag.pointerId) return;
+    e.preventDefault();
+    clearMarks();
+    const { row, sec } = targetAt(e.clientX, e.clientY);
+    if (drag.kind === 'page' && row && row !== drag.node) row.classList.add('drop-over');
+    else if (sec) sec.classList.add('drop-over');
+    // **والصفحةُ تتمرّر وأنت تسحب** قرب حافّتَي ما يُرى — وإلّا لم يُبلغ قسمٌ خارجه.
+    const edge = 60;
+    const top = stickyTop();
+    if (e.clientY < top + edge) window.scrollBy(0, -14);
+    else if (e.clientY > window.innerHeight - edge) window.scrollBy(0, 14);
+  };
+
+  const onUp = async (e) => {
+    if (!drag || e.pointerId !== drag.pointerId) return;
+    const { row, sec } = targetAt(e.clientX, e.clientY);
+    const d = endDrag();   // التنظيفُ **قبل** الحفظ — فلا يُرسم شيءٌ والسحبُ قائم
+    if (!d) return;
+    if (d.kind === 'page') {
+      if (row && row.dataset.page && row.dataset.page !== d.key) {
+        const [ti, tj] = locate(row.dataset.page);
+        if (ti >= 0) await placePage(d.key, ti, tj);
+      } else if (sec) {
+        const si = sections.findIndex((x) => x.id === sec.dataset.section);
+        if (si >= 0) await placePage(d.key, si, sections[si].pages.length);
+      }
+    } else if (d.kind === 'section' && sec) {
+      const si = sections.findIndex((x) => x.id === sec.dataset.section);
+      if (si >= 0 && si !== d.index) await moveSection(d.index, si);
+    }
+  };
+
+  const onCancel = (e) => { if (drag && e.pointerId === drag.pointerId) endDrag(); };
+
+  /** مقبضٌ يبدأ السحب — وهو **وحدَه** ما يسحب. */
+  const grip = (label, info) => {
+    const g = el('span', {
+      class: 'drag-grip', role: 'button', tabindex: '-1',
+      title: label, 'aria-label': label, text: '⠿',
+    });
+    g.addEventListener('pointerdown', (e) => startDrag(e, info()));
+    g.addEventListener('pointermove', onMove);
+    g.addEventListener('pointerup', onUp);
+    g.addEventListener('pointercancel', onCancel);
+    g.addEventListener('lostpointercapture', () => { if (drag) endDrag(); });
+    return g;
+  };
 
   const pageRow = (key, secIdx, idx, flatFirst, flatLast) => {
     const page = SIDEBAR_PAGES.find((p) => p.key === key);
-    const row = el('div', {
-      class: 'page-order-row', draggable: 'true', 'data-page': key,
-      title: 'اسحبه إلى قسمٍ آخر، أو استعمل السهمين',
-    },
-    el('span', { class: 'drag-grip', 'aria-hidden': 'true', text: '⠿' }),
-    el('span', { class: 'sidebar-icon', text: page?.icon || '•' }),
-    el('span', { class: 'page-order-name', text: pageLabel(key) }),
-    el('button', { type: 'button', class: 'btn btn-ghost btn-sm', title: 'أعلى', text: '↑', disabled: flatFirst, onClick: () => move(key, -1) }),
-    el('button', { type: 'button', class: 'btn btn-ghost btn-sm', title: 'أسفل', text: '↓', disabled: flatLast, onClick: () => move(key, 1) }));
-
-    row.addEventListener('dragstart', (e) => {
-      dragging = { kind: 'page', key };
-      row.classList.add('dragging');
-      try { e.dataTransfer.setData('text/plain', key); e.dataTransfer.effectAllowed = 'move'; } catch (_) { /* متصفّحٌ ضنين */ }
-    });
-    row.addEventListener('dragend', () => { dragging = null; row.classList.remove('dragging'); document.querySelectorAll('.drop-over').forEach((n) => n.classList.remove('drop-over')); });
-    row.addEventListener('dragover', (e) => {
-      if (dragging?.kind !== 'page') return;
-      e.preventDefault();
-      row.classList.add('drop-over');
-    });
-    row.addEventListener('dragleave', () => row.classList.remove('drop-over'));
-    row.addEventListener('drop', async (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      row.classList.remove('drop-over');
-      if (dragging?.kind === 'page' && dragging.key !== key) await placePage(dragging.key, secIdx, idx);
-      dragging = null;
-    });
+    const row = el('div', { class: 'page-order-row', 'data-page': key });
+    row.append(
+      grip(`اسحب «${pageLabel(key)}» إلى موضعٍ آخر`, () => ({ kind: 'page', key, node: row })),
+      el('span', { class: 'sidebar-icon', text: page?.icon || '•' }),
+      el('span', { class: 'page-order-name', text: pageLabel(key) }),
+      el('button', { type: 'button', class: 'btn btn-ghost btn-sm', title: 'أعلى', text: '↑', disabled: flatFirst, onClick: () => move(key, -1) }),
+      el('button', { type: 'button', class: 'btn btn-ghost btn-sm', title: 'أسفل', text: '↓', disabled: flatLast, onClick: () => move(key, 1) }));
+    void secIdx; void idx;
     return row;
   };
 
@@ -1064,8 +1160,10 @@ async function sidebarOrderBody(redraw) {
       await commit();
     });
 
-    const head = el('div', { class: 'section-head', draggable: 'true' },
-      el('span', { class: 'drag-grip', 'aria-hidden': 'true', text: '⠿' }),
+    const head = el('div', { class: 'section-head' });
+    const secGrip = grip(`اسحب قسم «${sec.label}»`, () => ({ kind: 'section', index: secIdx, node: head }));
+    head.append(
+      secGrip,
       nameInput,
       el('span', { class: 'muted small', text: countOf(sec.pages.length, 'صفحة') }),
       el('button', { type: 'button', class: 'btn btn-ghost btn-sm', title: 'ارفع القسم', text: '↑', disabled: secIdx === 0, onClick: () => moveSection(secIdx, secIdx - 1) }),
@@ -1089,12 +1187,6 @@ async function sidebarOrderBody(redraw) {
         },
       }));
 
-    head.addEventListener('dragstart', (e) => {
-      dragging = { kind: 'section', index: secIdx };
-      try { e.dataTransfer.setData('text/plain', sec.id); e.dataTransfer.effectAllowed = 'move'; } catch (_) { /* متصفّحٌ ضنين */ }
-    });
-    head.addEventListener('dragend', () => { dragging = null; });
-
     const body = el('div', { class: 'section-pages' });
     sec.pages.forEach((key, idx) => {
       const row = pageRow(key, secIdx, idx, flat === 0, flat === total - 1);
@@ -1103,25 +1195,13 @@ async function sidebarOrderBody(redraw) {
     });
     if (!sec.pages.length) body.append(el('p', { class: 'muted small', text: 'قسمٌ فارغ — اسحب إليه صفحةً.' }));
 
-    const wrap = el('section', { class: 'section-box', 'data-section': sec.id }, head, body);
-    // الإفلاتُ على القسم نفسِه: صفحةٌ تُلحَق بذيله، أو قسمٌ يُوضع مكانه.
-    wrap.addEventListener('dragover', (e) => { if (dragging) { e.preventDefault(); wrap.classList.add('drop-over'); } });
-    wrap.addEventListener('dragleave', () => wrap.classList.remove('drop-over'));
-    wrap.addEventListener('drop', async (e) => {
-      e.preventDefault();
-      wrap.classList.remove('drop-over');
-      if (!dragging) return;
-      const d = dragging;
-      dragging = null;
-      if (d.kind === 'page') await placePage(d.key, secIdx, sections[secIdx].pages.length);
-      else if (d.kind === 'section') await moveSection(d.index, secIdx);
-    });
-    box.append(wrap);
+    // الإفلاتُ على القسم نفسِه يُلحِق الصفحةَ بذيله، أو يضع القسمَ مكانه — يقرؤه `onUp`.
+    box.append(el('section', { class: 'section-box', 'data-section': sec.id }, head, body));
   });
 
   return el('div', {},
     el('p', { class: 'muted small' },
-      el('strong', { text: 'اسحب الصفحةَ إلى القسم الذي تريد، أو استعمل السهمين. ' }),
+      el('strong', { text: 'اسحب الصفحةَ من مقبضها ⠿ إلى القسم الذي تريد، أو استعمل السهمين. ' }),
       'والسهمُ يعبر حدَّ القسم، فالصفحةُ في رأس قسمها تصعد إلى ذيل الذي قبله. ',
       'وكلُّ الصفحات تبقى ظاهرة — الترتيبُ والأقسامُ فقط هو ما يُحفظ.'),
     box,

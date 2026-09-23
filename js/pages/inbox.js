@@ -18,7 +18,7 @@
  * فمحلّلٌ واحدٌ يُصان، وشاشاتُ اعتمادٍ تعرفها، **ولا شاشةَ اعتمادٍ ثانيةٌ تُبنى هنا**.
  */
 
-import { el, clear, emptyState, toast, confirmDialog, openModal, selectEl, SESSION_GONE, sessionGoneNote } from '../util/dom.js';
+import { el, clear, emptyState, toast, confirmDialog, openModal, selectEl, SESSION_GONE } from '../util/dom.js';
 import { repo } from '../data/repository.js';
 import { getLists } from '../data/settings.js';
 import { formatDate, formatNumber } from '../util/format.js';
@@ -231,6 +231,62 @@ function statusPanel(data, refresh) {
     ...rows);
 }
 
+/* ===== لماذا رُفضت الجلسة؟ (المرحلة ٥٥) ===== */
+
+/**
+ * **«انتهت جلستك» كانت تُقال لثلاثة أسبابٍ لا يُفرَّق بينها:**
+ *   ١) جلسةٌ انتهت فعلًا — فيكفي الخروجُ والدخول.
+ *   ٢) خادمٌ لا يرى مفتاحَ التوقيع (`APP_SECRET`/`APP_PASSWORD`) — فيرفض **كلَّ** جلسة،
+ *      ولا يُصلحه دخولٌ ولا خروج.
+ *   ٣) بوّابةٌ لا ترى كلمةَ السرّ — فتفتح الموقعَ بلا دخول، **ولا تُصدِر جلسةً أصلًا**.
+ * والثاني والثالث وقعا بعد تأشير هذه المتغيّرات «سرّيّةً» في Netlify. فصار يُسأل الخادمُ
+ * والبوّابةُ عمّا يريان — **«نعم» أو «لا» بلا قيمٍ أبدًا** — ويُقال السببُ الحقّ وعلاجُه.
+ */
+async function diagnoseSession() {
+  let probe = null;
+  let gateOpen = false;
+  try { probe = await (await fetch(`${API}?probe=1`, { credentials: 'same-origin' })).json(); } catch (_) { probe = null; }
+  try { gateOpen = (await fetch('/', { method: 'HEAD', credentials: 'same-origin' })).headers.get('x-kassab-gate') === 'open-no-password'; } catch (_) { gateOpen = false; }
+
+  const serverBlind = probe && !probe.sees?.APP_SECRET && !probe.sees?.APP_PASSWORD;
+  const box = el('div', { class: 'panel' }, el('h2', { text: 'لماذا لا يُفتح الصندوق؟' }));
+
+  if (serverBlind || gateOpen) {
+    const blind = [
+      serverBlind ? 'الدوالُّ لا ترى APP_SECRET ولا APP_PASSWORD' : null,
+      gateOpen ? 'البوّابةُ لا ترى APP_PASSWORD — فالموقعُ مفتوحٌ بلا كلمة سرّ' : null,
+    ].filter(Boolean);
+    box.append(
+      el('p', {}, el('strong', { text: '⚠︎ ليست جلستَك — الخادمُ لا يرى مفتاحَ الدخول. ' }),
+        'ولذلك يرفض كلَّ جلسة، ولا يُصلحه خروجٌ ولا دخول.'),
+      el('ul', { class: 'simple-list' }, blind.map((t) => el('li', { text: t }))),
+      el('p', { class: 'muted small' },
+        el('strong', { text: 'والسببُ المرجّح: ' }),
+        'هذه المتغيّراتُ مؤشَّرةٌ «Contains secret values» في Netlify، وبعضُ بيئات التشغيل لا تُسلَّم قيمتَها. ',
+        'والعلاج: تُعاد بلا هذا التأشير ثمّ يُعاد النشر.'));
+  } else if (probe && probe.sees?.APP_SECRET !== undefined) {
+    box.append(
+      el('p', {}, el('strong', { text: 'الخادمُ يرى مفتاحَ الدخول، والجلسةُ نفسُها غيرُ صالحة. ' }),
+        'اخرج ثمّ ادخل بكلمة السرّ من جديد.'),
+      el('a', { class: 'btn btn-primary', href: '/__logout', text: 'اخرج ثمّ ادخل' }));
+  } else {
+    box.append(el('p', { text: 'تعذّر سؤالُ الخادم عن حاله — تحقّق من الاتّصال ثمّ حدّث الصفحة.' }));
+  }
+
+  // **وحالُ تيليجرام يُقال معه** — فلا يُحلّ عطبٌ ويبقى الثاني خفيًّا.
+  if (probe?.sees) {
+    const tg = ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_SECRET'];
+    box.append(el('ul', { class: 'simple-list' }, tg.map((k) => el('li', {},
+      el('span', { text: k }),
+      el('span', { class: probe.sees[k] ? 'strong' : 'strong warn-text', text: probe.sees[k] ? 'يراه الخادم ✓' : 'لا يراه ✗' })))));
+    if (tg.some((k) => !probe.sees[k])) {
+      box.append(el('p', { class: 'muted small' },
+        'وبلا هذين لا يستقبل البوتُ شيئًا — تُرفض رسائلُه قبل أن تصل الصندوق.'));
+    }
+  }
+  return box;
+}
+
 /* ===== بطاقةُ رسالة ===== */
 
 /** لونُ وسمِ الصنف — والملتبسُ وحده أصفرُ، **فاللونُ يقول درجةَ اليقين لا الصنف فقط**. */
@@ -335,7 +391,10 @@ export async function render(container) {
   const refresh = async () => {
     clear(area);
     const data = await load();
-    if (data.error) { area.append(data.gone ? sessionGoneNote() : emptyState(data.error)); return; }
+    if (data.error) {
+      area.append(data.gone ? await diagnoseSession() : emptyState(data.error));
+      return;
+    }
     area.append(statusPanel(data, refresh));
     if (!data.messages.length) {
       area.append(emptyState('لا وارد بعد. حوّل رسالةَ عميلٍ إلى بوتك في تيليجرام، فتظهر هنا مفروزةً في ثانية.'));

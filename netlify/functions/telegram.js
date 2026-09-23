@@ -242,6 +242,18 @@ export default async (request) => {
 
   /* ٢) سرد الوارد — للمالك وحده */
   if (request.method === 'GET') {
+    /* **فحصُ ما يراه الخادم** (المرحلة ٥٥) — بلا دخول، وبلا قيمٍ أبدًا: «نعم» أو «لا» لكلّ
+       متغيّر. لأنّ «انتهت جلستك» كانت تُقال لسببين لا يُفرَّق بينهما: جلسةٌ انتهت فعلًا،
+       أو خادمٌ **لا يرى مفتاحَ التوقيع أصلًا** فيرفض كلَّ جلسة. والثاني وقع — ولا يُعرف
+       إلّا بسؤال الخادم نفسِه. ومعرفةُ أنّ متغيّرًا مضبوطٌ لا تُفيد أحدًا شيئًا بلا قيمته. */
+    if (new URL(request.url).searchParams.get('probe') === '1') {
+      const sees = (k) => !!String(process.env[k] || '').trim();
+      return json({
+        sees: Object.fromEntries(['APP_PASSWORD', 'APP_SECRET', 'TELEGRAM_BOT_TOKEN', 'TELEGRAM_SECRET']
+          .map((k) => [k, sees(k)])),
+        signedIn: await signedIn(request),
+      });
+    }
     if (!(await signedIn(request))) return unauthorized();
     const { blobs } = await store.list({ prefix: PREFIX });
     const rows = [];

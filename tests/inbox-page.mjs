@@ -149,5 +149,35 @@ const noSecret = await page.evaluate(async () => {
 });
 ok('**وبلا سرٍّ في الترويسة يُرفض الوارد** — فلا يدسّ أحدٌ في صندوقك', noSecret === 403, String(noSecret));
 
+/* ===== ٨. فحصُ ما يراه الخادم (المرحلة ٥٥) ===== */
+console.log('\n--- ٨. لماذا رُفضت الجلسة؟ ---');
+const probe = await page.evaluate(async () => {
+  const res = await fetch('/api/telegram?probe=1', { credentials: 'omit' });
+  return { status: res.status, body: await res.text() };
+});
+ok('**الفحصُ يُجيب بلا دخول** — فالمرفوضُ جلستُه يعرف السبب', probe.status === 200, String(probe.status));
+ok('**ولا يحمل قيمةً واحدة** — «نعم» أو «لا» فقط',
+  !probe.body.includes('topsecret') && !probe.body.includes('test-tg-secret')
+  && /"APP_SECRET":(true|false)/.test(probe.body), probe.body.slice(0, 160));
+
+// صفحةٌ بلا كوكي: تُقال الحالُ الحقّة لا «انتهت جلستك» العامّة
+const anon = await b.newContext({ locale: 'ar-SA' });
+const ap = await anon.newPage();
+await ap.goto(BASE + '/');
+await ap.waitForTimeout(2200);
+await ap.evaluate(() => { location.hash = '#/inbox'; });
+await ap.waitForTimeout(2200);
+const anonText = await ap.locator('#page').innerText();
+/* **والخادمُ المفتوح بلا كلمة سرّ** — وهو حالُ خادم الاختبار هذا عمدًا — يُقال حالُه
+   كما هو: البوّابةُ لا ترى كلمةَ السرّ. وهي **عينُ الحال التي وقعت في الموقع المنشور**
+   بعد تأشير المتغيّرات سرّيّة، فيُختبَر المسارُ الذي يعنيه صاحبُ المكتب لا غيرُه. */
+ok('**بلا جلسةٍ تُقال الحالُ بدقّة لا «انتهت جلستك»**',
+  anonText.includes('لماذا لا يُفتح الصندوق') && !anonText.includes('انتهت جلستك'),
+  anonText.split('\n').slice(-8).join(' | '));
+ok('**والبوّابةُ المفتوحةُ بلا كلمة سرّ تُسمّى باسمها**',
+  anonText.includes('البوّابةُ لا ترى APP_PASSWORD'), anonText.split('\n').slice(-8).join(' | '));
+ok('وحالُ متغيّرَي تيليجرام تُقال معها', anonText.includes('TELEGRAM_SECRET'));
+await anon.close();
+
 ok('لا أخطاء في الصفحة', errors.length === 0, errors.slice(0, 3).join(' | '));
 await b.close();
