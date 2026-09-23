@@ -1239,3 +1239,10 @@ body.modal-open .voice-dock { display: none; }
   height: 140px; width: auto; border-radius: var(--radius);
   object-fit: cover; flex: none; background: var(--surface-2);
 }
+
+/* نسخ درايف (المرحلة ٥٦): خطوات الإعداد مرقّمة، وأسماء المتغيّرات لا تنكسر وسط السطر */
+.drive-steps { margin: 0.5rem 0; padding-inline-start: 1.4rem; line-height: 1.9; }
+.drive-steps li { margin-block: 0.25rem; overflow-wrap: anywhere; }
+.drive-panel code { white-space: nowrap; }
+.drive-term { font-family: ui-monospace, monospace; font-size: 0.88em; background: var(--surface-2, rgba(127,127,127,.12)); padding: 0 0.3em; border-radius: 4px; }
+.drive-steps .drive-url { display: block; width: fit-content; max-width: 100%; margin-block: 0.3rem; padding: 0.15rem 0.5rem; white-space: normal; overflow-wrap: anywhere; text-align: left; background: var(--surface-2, rgba(127,127,127,.12)); border-radius: 6px; }

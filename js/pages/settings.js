@@ -18,6 +18,7 @@ import {
 import {
   listBackupBatches, uploadBackup, restoreBackup, uploadImages, listImageBackups, restoreImages,
   inspectBackup, mergeFromVault, settingsFromVault,
+  driveStatus, driveRunNow, isDriveFile, readDriveFile,
 } from '../data/vault.js';
 import { pushSupported, enablePush, disablePush, currentSubscription, syncReminders } from '../util/push.js';
 import { TEMPLATE_VARS } from '../util/templates.js';
@@ -65,6 +66,8 @@ export async function render(container) {
     panel('النسخ الاحتياطي', 'البيانات محفوظة في هذا المتصفح فقط. الملف الواحد يحوي كل شيء بما فيه الصور والإعدادات.', backupBody),
     // للمالك وحده (المرحلة ٣٥): الخزنة فيها بيانات المكتب كلها، والخادم يرفضها بدور المساعد.
     panel('النسخة السحابية المشفَّرة', 'نسخة مشفَّرة في متصفحك قبل رفعها — الخادم لا يستطيع قراءتها. تحمي بياناتك لو ضاع الجهاز، وتنقلها إلى جهاز آخر.', vaultBody, { ownerOnly: true }),
+    // المرحلة ٥٦: الخزنة نفسها تُنسخ كل ليلة إلى درايف — مشفَّرةً كما هي.
+    panel('النسخ اليومي إلى Google Drive', 'كل ليلة تُنسخ أحدث نسخةٍ سحابية إلى مجلدٍ في درايفك — مشفَّرةً كما هي، فجوجل لا يقرؤها. ويُحفظ آخر ٣٠ يومًا.', driveBody, { ownerOnly: true }),
     panel('التخزين والصور', 'ما تشغله البيانات على هذا الجهاز. لحذف صور بعينها افتح العقار واحذفها من نموذجه.', storageBody),
     panel('القوائم', 'أنواع العقار وحالاته وتصنيفات العملاء والمدن والأحياء. المدمج لا يُحذف؛ ما أضفته يُحذف ما لم يكن مستعملًا.', listsBody),
     panel('الحقول الإضافية', 'حقول تظهر في نموذج العقار لكل الأنواع أو لأنواع محددة.', customFieldsBody),
@@ -221,6 +224,25 @@ async function userBody() {
 
 /* ===== النسخ الاحتياطي ===== */
 
+/**
+ * يقرأ ملف النسخة: العادي كما هو، **وملفّ درايف** (المرحلة ٥٦) يُفكّ بعبارة الخزنة أوّلًا.
+ * فالاسترجاع من درايف طريقه نفس طريق الملف: نزّله من المجلد ثم «استيراد» هنا، ويمرّ
+ * بالمقارنة نفسها قبل أن يستبدل شيئًا.
+ */
+async function readAnyBackupFile(file) {
+  let parsed = null;
+  try { parsed = JSON.parse(await file.text()); } catch (_) { /* يرفضه readBackupFile برسالته */ }
+  if (!isDriveFile(parsed)) return readBackupFile(file);
+  let pass = (await getVaultSettings()).passphrase || '';
+  if (!pass) {
+    pass = await promptDialog({
+      title: 'ملف درايف مشفَّر', label: 'عبارة الخزنة السرّية التي شُفّرت بها النسخة', confirmText: 'فكّ الملف',
+    });
+    if (!pass) throw new Error('أُلغي الاستيراد: لا يُفكّ ملف درايف بلا عبارته');
+  }
+  return readDriveFile(parsed, pass);
+}
+
 async function backupBody(redraw) {
   const info = await getBackupInfo();
   const counts = await repo.counts();
@@ -231,7 +253,7 @@ async function backupBody(redraw) {
       e.target.value = '';
       if (!file) return;
       try {
-        const { data, counts: fileCounts, exportedAt } = await readBackupFile(file);
+        const { data, counts: fileCounts, exportedAt } = await readAnyBackupFile(file);
         // مقارنة صريحة قبل الاستبدال (المرحلة ٢١): «سيُستبدل كل شيء» جملةٌ لا يقرؤها أحد،
         // أما «١٢ عميلًا ← ٩» فرقمٌ يوقفك. والفقد يُحسب لكل كيان لا إجمالًا.
         const current = await repo.counts();
@@ -1491,6 +1513,62 @@ async function teamBody(redraw) {
 }
 
 /* ===== الخزنة السحابية المشفَّرة (المرحلة ١٠) ===== */
+
+/* ===== نسخ درايف اليومي (المرحلة ٥٦) ===== */
+
+/** مصطلحٌ إنجليزي داخل جملةٍ عربية: معزولُ الاتجاه كي لا يقلب ترتيب الجملة. */
+const lt = (text) => el('bdi', { class: 'drive-term', dir: 'ltr', text });
+
+async function driveBody(redraw) {
+  let st;
+  try { st = await driveStatus(); } catch (err) {
+    return el('p', { class: 'muted', text: `تعذّر قراءة حالة درايف: ${err.message}` });
+  }
+  if (!st.configured) {
+    // الصدق قبل الزخرفة: لا زرّ رفعٍ يوهم أن شيئًا سيحدث. ما ينقص بأسمائه، وطريقه.
+    return el('div', { class: 'drive-panel' },
+      el('p', {}, badge('غير مهيّأ', 'badge-warn'), ' ينقص في متغيّرات Netlify: ',
+        ...st.missing.flatMap((k, i) => [i ? '، ' : '', el('code', { class: 'ltr', text: k })])),
+      el('ol', { class: 'drive-steps' },
+        el('li', {}, 'في ', lt('Google Cloud Console'), ' أنشئ مشروعًا، وفعّل ', lt('Google Drive API'), '.'),
+        el('li', {}, 'شاشة الموافقة ', lt('OAuth consent screen'), ': النوع ', lt('External'), '، ثم ', lt('Publish app'),
+          ' لتصير ', lt('In production'), ' — وإلا مات الرمز بعد ٧ أيام.'),
+        el('li', {}, 'أنشئ ', lt('OAuth client ID'), ' من نوع ', lt('Web application'), '، وأضف في ', lt('Authorized redirect URIs'), ':',
+          el('code', { class: 'drive-url', dir: 'ltr', text: 'https://developers.google.com/oauthplayground' })),
+        el('li', {}, 'افتح ', lt('OAuth Playground'), '، ومن ⚙️ اختر ', lt('Use your own OAuth credentials'),
+          ' وضع المعرّف والسرّ. ثم اكتب الصلاحية وحدها:',
+          el('code', { class: 'drive-url', dir: 'ltr', text: 'https://www.googleapis.com/auth/drive.file' }),
+          'ووافق بحسابك، ثم ', lt('Exchange authorization code for tokens'), ' وانسخ ', lt('Refresh token'), '.'),
+        el('li', {}, 'في ', lt('Netlify'), ' ← ', lt('Environment variables'), ' أضف الثلاثة ثم أعد النشر:',
+          ...st.missing.map((k) => el('code', { class: 'drive-url', dir: 'ltr', text: k })))),
+      el('p', { class: 'muted small', text: 'لا تلصق هذه القيم في محادثة ولا في التطبيق — مكانها متغيّرات Netlify وحدها. والكلفة: مجانًا (١٥ غيغابايت في درايف المجاني تكفي سنوات).' }));
+  }
+
+  const runBtn = el('button', { type: 'button', class: 'btn btn-primary', text: '📤 انسخ إلى درايف الآن' });
+  runBtn.addEventListener('click', async () => {
+    runBtn.disabled = true;
+    runBtn.textContent = 'ينسخ…';
+    try {
+      const res = await driveRunNow();
+      toast(`نُسخت إلى درايف: ${res.fileName}`, 'success', 6000);
+    } catch (err) { errToast(err); }
+    finally { await redraw(); }
+  });
+  return el('div', { class: 'drive-panel' },
+    el('dl', { class: 'kv' },
+      el('dt', { text: 'الحالة' }), el('dd', {}, badge('مهيّأ', 'badge-ok'), ` · المجلد «${st.folderName}»`),
+      el('dt', { text: 'آخر نسخ' }),
+      el('dd', {}, st.lastAt ? `${formatDateTime(st.lastAt)} — ` : badge('لم يُنسخ بعد', 'badge-warn'),
+        st.lastFileName ? el('span', { class: 'ltr', text: st.lastFileName }) : ''),
+      el('dt', { text: 'آخر محاولة' }),
+      el('dd', {}, st.lastError
+        ? badge(`تعثّرت: ${st.lastError}`, 'badge-danger')
+        : (st.lastRunAt ? formatDateTime(st.lastRunAt) : '—'))),
+    el('div', { class: 'row' }, runBtn),
+    el('p', { class: 'muted small', text: 'يعمل كل ليلة الساعة الثانية بتوقيت الرياض والتطبيق مغلق. ينسخ أحدث نسخةٍ في الخزنة، فاترك «ارفع نسخة تلقائيًا» مفعّلًا في اللوحة السابقة كي تكون حديثة.'
+      + ' وللاسترجاع: نزّل الملف من المجلد، ثم «استيراد نسخة احتياطية» في لوحة النسخ الاحتياطي — يُفكّ بعبارة الخزنة.'
+      + ' والصور خارجه (حجمها كبير)؛ تبقى في الخزنة وفي ملف التصدير.' }));
+}
 
 async function vaultBody(redraw) {
   const vault = await getVaultSettings();

@@ -28,6 +28,7 @@ const listingsFn = (await import(`${ROOT}/netlify/functions/listings.js`)).defau
 const mediaFn = (await import(`${ROOT}/netlify/functions/media.js`)).default;
 const offerFn = (await import(`${ROOT}/netlify/functions/offer.js`)).default;
 const vaultFn = (await import(`${ROOT}/netlify/functions/vault.js`)).default;
+const driveFn = (await import(`${ROOT}/netlify/functions/drive.js`)).default;
 const pushFn = (await import(`${ROOT}/netlify/functions/push.js`)).default;
 const pushTickFn = (await import(`${ROOT}/netlify/functions/push-tick.js`)).default;
 const clientListFn = (await import(`${ROOT}/netlify/functions/client-list.js`)).default;
@@ -80,6 +81,7 @@ const server = http.createServer(async (req, res) => {
     else if (url.pathname === '/api/media') response = await mediaFn(request);
     else if (url.pathname.startsWith('/offers/l/')) response = await offerFn(request);
     else if (url.pathname === '/api/vault') response = await vaultFn(request);
+    else if (url.pathname === '/api/drive') response = await driveFn(request);
     else if (url.pathname === '/api/push') response = await pushFn(request);
     else if (url.pathname === '/api/push-tick') response = await pushTickFn(request);
     else if (url.pathname === '/api/client-list') response = await clientListFn(request);

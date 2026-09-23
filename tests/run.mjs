@@ -38,6 +38,7 @@ const SUITES = [
   ['voice-unit.mjs', null],
   ['whatsapp-unit.mjs', null],
   ['management-unit.mjs', null],
+  ['drive-unit.mjs', null],
   ['vault-chunk-unit.mjs', null],
   ['commission-instalments-unit.mjs', null],
   ['closing-costs-unit.mjs', null],
@@ -110,6 +111,7 @@ const SUITES = [
   ['guard-input.mjs', OPEN],
   ['gate-and-publish.mjs', LOCKED],
   ['rename-and-vault.mjs', LOCKED],
+  ['drive-panel.mjs', LOCKED],      // المرحلة ٥٦
   ['sync-devices.mjs', LOCKED],
   ['offer-pwa-push.mjs', LOCKED],
   ['client-links.mjs', LOCKED],

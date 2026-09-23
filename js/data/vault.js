@@ -345,3 +345,47 @@ export async function vaultAvailable() {
     return false;
   }
 }
+
+/* ===== نسخ درايف اليومي (المرحلة ٥٦) ===== */
+
+export const DRIVE_FORMAT = 'kassab-drive-1';
+
+async function driveCall(options = {}) {
+  const res = await fetch('/api/drive', { credentials: 'same-origin', ...options });
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 401) throw new Error(SESSION_GONE);
+  if (res.status === 403) throw new Error(data.error || 'نسخ درايف للمالك وحده');
+  return { status: res.status, data };
+}
+
+/** حالة نسخ درايف: مهيّأ أم ينقصه ماذا، وآخر رفعٍ وآخر عطب. */
+export async function driveStatus() {
+  const { status, data } = await driveCall();
+  if (status >= 400 && !('configured' in data)) throw new Error(data.error || `تعذّر قراءة حالة درايف (${status})`);
+  return data;
+}
+
+/** ينسخ أحدث دفعةٍ في الخزنة إلى درايف الآن — ولو كانت قد نُسخت. */
+export async function driveRunNow() {
+  const { data } = await driveCall({ method: 'POST' });
+  if (!data.ok) throw new Error(data.error || 'تعذّر النسخ إلى درايف');
+  return data;
+}
+
+/** هل هذا النص ملفٌّ نزّلته من مجلد كسّاب في درايف؟ */
+export function isDriveFile(parsed) {
+  return parsed?.app === 'kassab' && parsed?.format === DRIVE_FORMAT && Array.isArray(parsed.parts);
+}
+
+/**
+ * يفكّ ملف درايف بعبارة الخزنة ويقرؤه نسخةً عادية — فيمرّ بعدها بمقارنة الاستيراد نفسها.
+ * الكتل تُفكّ بالترتيب وتُوصل كما تفعل الخزنة، وكتلةٌ تالفة ترفض الملف كلّه لا بعضه.
+ */
+export async function readDriveFile(parsed, passphrase) {
+  if (!passphrase) throw new Error('هذا ملف درايف مشفَّر — اكتب عبارة الخزنة السرّية لفكّه');
+  if (!isDriveFile(parsed) || !parsed.parts.length) throw new Error('الملف ليس نسخة درايف من كسّاب');
+  let plain = '';
+  for (const part of parsed.parts) plain += await decryptText(part, passphrase);
+  const file = new File([plain], 'drive.json', { type: 'application/json' });
+  return readBackupFile(file);
+}
