@@ -180,7 +180,7 @@ function draw() {
   }
   grid.replaceChildren(...items.map(card));
   statusEl.textContent = items.length
-    ? `${nf.format(items.length)} ${t.listing}${items.length === all.length ? '' : ` ${t.ofCount} ${nf.format(all.length)}`}`
+    ? `${t.listings(items.length, nf.format(items.length))}${items.length === all.length ? '' : ` ${t.ofCount} ${nf.format(all.length)}`}`
     : (lang === 'en' ? 'No listings match the filter.' : 'لا عروض تطابق الفرز.');
 }
 

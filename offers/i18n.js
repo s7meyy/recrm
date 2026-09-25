@@ -41,6 +41,8 @@ export const STRINGS = {
     error: 'تعذر تحميل العروض حاليًا. حدّث الصفحة بعد قليل.',
     priceOnRequest: 'السعر عند الطلب', updated: 'آخر تحديث للعروض',
     all: 'الكل', ofCount: 'من', listing: 'عرض', photos: 'صور',
+    // العدّادُ يُجمع (المرحلة ٥٧): «٤ عرض» لحنٌ يقرؤه كلُّ عميلٍ في أوّل سطر.
+    listings: (n, shown) => countAr(n, ['عرضٌ واحد', 'عرضان', 'عروض', 'عرضًا'], shown),
     whatsapp: 'واتساب', call: 'اتصال', location: 'الموقع', allOffers: 'كل العروض',
     disclaimer: 'الأسعار والتفاصيل قابلة للتغيير — للتأكد تواصل معنا مباشرة.',
     ref: 'رقم',
@@ -72,6 +74,7 @@ export const STRINGS = {
     error: 'Could not load listings. Please refresh in a moment.',
     priceOnRequest: 'Price on request', updated: 'Last updated',
     all: 'All', ofCount: 'of', listing: 'listing', photos: 'photos',
+    listings: (n, shown) => `${shown ?? n} ${n === 1 ? 'listing' : 'listings'}`,
     whatsapp: 'WhatsApp', call: 'Call', location: 'Location', allOffers: 'All listings',
     disclaimer: 'Prices and details are subject to change — please contact us to confirm.',
     ref: 'Ref',

@@ -113,7 +113,8 @@ await page.locator('button:has-text("إضافة عقار")').first().click();
 await page.waitForTimeout(800);
 const echo = await page.evaluate(() => {
   const d = [...document.querySelectorAll('#modal-root input[type="date"], #modal-root input[type="datetime-local"]')];
-  return { n: d.length, echoed: d.filter((x) => x.nextElementSibling?.classList.contains('date-echo')).length };
+  // الحقلُ داخل غلافِ الغطاء منذ المرحلة ٥٧، والصدى يلي الغلاف.
+  return { n: d.length, echoed: d.filter((x) => (x.closest('.date-cover-wrap') || x).nextElementSibling?.classList.contains('date-echo')).length };
 });
 ok('كلُّ حقل تاريخٍ في النافذة له صدًى', echo.n > 0 && echo.n === echo.echoed, `${echo.echoed}/${echo.n}`);
 await page.locator('#modal-root input[type="date"]').first().fill('2026-11-03');

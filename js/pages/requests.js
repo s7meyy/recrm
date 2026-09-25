@@ -286,6 +286,9 @@ function renderList(ctx) {
     return;
   }
   const head = el('tr', {}, ['العميل', 'النوع', 'الغرض', 'المدينة', 'الأحياء المرغوبة', 'سقف الميزانية', 'المساحة', 'الحالة', 'المطابقات'].map((t) => el('th', { text: t })));
+  // على الجوّال (المرحلة ٥٧) تُطوى المدينةُ والمساحة: المدينةُ واحدةٌ في الغالب، والمساحةُ
+  // تفصيلٌ يُقرأ في الاستمارة — فتقصُر البطاقةُ إلى ما يُقرَّر به: من، وماذا، وبكم، وكم مطابقة.
+  const secondary = (attrs) => ({ ...attrs, class: `${attrs.class || ''} m-hide`.trim() });
   const body = el('tbody', {}, items.map((r) => {
     const client = ctx.clientsById.get(r.clientId);
     const n = ctx.counts.get(r.id) || 0;
@@ -293,14 +296,14 @@ function renderList(ctx) {
       el('td', { class: 'strong' }, clientName(client), sourceBadge(r.referralSource)),
       el('td', { text: typeLabel(ctx.lists, r.type) }),
       el('td', { text: labelFor(ENUMS.purposes, r.purpose) }),
-      el('td', { text: r.city || '—' }),
+      el('td', secondary({ text: r.city || '—' })),
       el('td', {}, placesNode(ctx, r)),
       el('td', { class: 'num' },
         el('span', { text: r.budgetMax == null ? '—' : formatSAR(r.budgetMax) }),
         // **الميزانيةُ وحدها نصفُ الخبر** (المرحلة ٤٩): مليونٌ ونصف نقدًا غيرُ مليونٍ
         // ونصفٍ ينتظر بنكًا، فتُقرأ الطريقةُ حيث يُقرأ المبلغ لا في عمودٍ آخر.
         payBadge(r.payMethod)),
-      el('td', { class: 'num', text: formatArea(r.area) }),
+      el('td', secondary({ class: 'num', text: formatArea(r.area) })),
       el('td', {}, badge(labelFor(ENUMS.requestStatuses, r.status), STATUS_STYLE[r.status] || '')),
       el('td', {}, r.status === 'active'
         ? el('a', {

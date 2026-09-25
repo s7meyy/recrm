@@ -336,10 +336,12 @@ async function refreshBanner() {
   if (!status.due) { banner.hidden = true; return; }
   clear(banner);
   const since = status.lastExportAt ? `آخر نسخة احتياطية قبل ${daysWord(Math.floor(status.hoursSince / 24))}.` : 'لم تُحفظ نسخة احتياطية بعد.';
-  banner.append(el('div', { class: 'banner-inner' },
-    el('span', {}, `${since} بياناتك محفوظة في هذا المتصفح فقط — صدّر نسخة يوميًا.`),
+  // سطرٌ واحد (المرحلة ٥٧): كان الشريطُ ثلاثةَ أسطرٍ وزرّين بارتفاع ١٣٠ بكسلًا فوق عنوان
+  // كلِّ صفحةٍ على الجوّال — فالتذكيرُ الذي يحجب العملَ يُتجاهَل. والشرحُ في العنوان.
+  banner.append(el('div', { class: 'banner-inner banner-slim', title: 'بياناتك محفوظة في هذا المتصفح فقط — صدّر نسخة يوميًا.' },
+    el('span', { text: since }),
     el('div', { class: 'banner-actions' },
-      el('button', { type: 'button', class: 'btn btn-primary btn-sm', text: 'تصدير الآن', onClick: exportNow }),
+      el('button', { type: 'button', class: 'btn btn-primary btn-sm', text: 'صدّر الآن', onClick: exportNow }),
       el('button', {
         type: 'button', class: 'btn btn-ghost btn-sm', text: 'لاحقًا',
         /* **و«لاحقًا» تعني اليومَ كلَّه** (المرحلة ٥٢): كانت تُخفيه في الذاكرة وحدها،

@@ -378,7 +378,8 @@ input[type="tel"].input, input[type="email"].input, input[type="url"].input {
   .search { min-width: 0; width: 100%; max-width: none; }
   .head-actions { width: 100%; }
   .filter-row { flex-direction: column; gap: 4px; }
-  .grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+  /* عمودٌ واحد (المرحلة ٥٧): عمودان في ٣٩٠ بكسلًا يكسران «بلا موقع» و«٧٬١١١ ريال/م²» على أربعة أسطر. */
+  .grid { grid-template-columns: 1fr; }
   .card-price { font-size: var(--fs-lg); }
 
   /* أهدافُ اللمس ٤٤ بكسلًا: الرقائق كانت ٣٤، وهي أكثرُ ما يُنقر في صفحة العقارات. */
@@ -1032,6 +1033,7 @@ body.assistant-mode [data-owner-only] { display: none !important; }
   inset-block-end: calc(16px + env(safe-area-inset-bottom, 0px));
   z-index: var(--dhad-z-sidebar, 35); display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
 }
+
 /* نافذةٌ مفتوحة تغطّي الزرّ: لا يقف فوق أزرار الحوار فيُضغط بالخطأ. */
 body.modal-open .voice-dock { display: none; }
 .voice-btn {
@@ -1177,6 +1179,12 @@ body.modal-open .voice-dock { display: none; }
   .table tbody td:first-child::before { content: none; }
   /* خليّةٌ فارغةٌ لا تشغل سطرًا في بطاقةٍ تُقرأ بالإبهام. */
   .table td:empty { display: none; }
+  /* البطاقةُ المضغوطة (المرحلة ٥٧): الثانويُّ يُطوى، وأزرارُ التواصل تظهر بحجم الإبهام. */
+  .table td.m-hide { display: none; }
+  .table td.m-actions { display: flex; gap: var(--dhad-space-2); padding-top: var(--dhad-space-2); }
+  .table td.m-actions::before { content: none; }
+  .table td.m-actions .btn { flex: 1 1 0; min-height: var(--dhad-size-touch); justify-content: center; }
+  .table td.phone .tel { display: inline-flex; align-items: center; min-height: var(--dhad-size-touch); }
   .table td .row { flex-wrap: wrap; }
   .table td.num { white-space: normal; }
 }
@@ -1246,3 +1254,31 @@ body.modal-open .voice-dock { display: none; }
 .drive-panel code { white-space: nowrap; }
 .drive-term { font-family: ui-monospace, monospace; font-size: 0.88em; background: var(--surface-2, rgba(127,127,127,.12)); padding: 0 0.3em; border-radius: 4px; }
 .drive-steps .drive-url { display: block; width: fit-content; max-width: 100%; margin-block: 0.3rem; padding: 0.15rem 0.5rem; white-space: normal; overflow-wrap: anywhere; text-align: left; background: var(--surface-2, rgba(127,127,127,.12)); border-radius: 6px; }
+
+/* ===== المرحلة ٥٧ — ما كشفته المراجعة بعين العميل ===== */
+/* تنبيهٌ فقرةً: `.notice` صفٌّ مرنٌ يوزّع أطرافَ الجملة على الجانبين؛ وهذا نثرٌ يُقرأ بترتيبه. */
+.notice.notice-prose { display: block; }
+.notice.notice-prose .muted { display: block; margin-top: 4px; }
+/* شريطُ فلاتر: بحثٌ يتمدّد وقوائمُ بعرضها الطبيعي في صفٍّ واحد — لا كلٌّ بعرض الصفحة. */
+.filter-bar { display: flex; flex-wrap: wrap; gap: var(--dhad-space-2); align-items: center; margin-bottom: var(--dhad-space-3); }
+.filter-bar .input[type="search"] { flex: 1 1 260px; }
+.filter-bar select.input { flex: 0 1 auto; width: auto; min-width: 160px; }
+/* أزرارُ الجوّال لا تُرى على الشاشة الواسعة: الصفُّ يُفتح بالنقر وفيه كلُّ شيء. */
+@media (min-width: 720.1px) { .table td.m-actions, .table th.m-actions { display: none; } }
+.plan-step > .date-cover-wrap { flex: 0 1 auto; }
+/* غطاءُ حقل التاريخ الفارغ: يجلس فوق `mm/dd/yyyy` ويزول بالتركيز أو القيمة. */
+.date-cover-wrap { position: relative; display: block; }
+.date-cover-wrap > input { width: 100%; }
+.date-cover {
+  position: absolute; inset: 1px; display: flex; align-items: center;
+  padding: 0 var(--dhad-space-3); border-radius: inherit; pointer-events: auto; cursor: pointer;
+  background: var(--surface); color: var(--muted); font-size: var(--fs-sm);
+}
+.date-cover[hidden] { display: none; }
+/* الميكروفون على الجوّال (المرحلة ٥٧): كان في منتصف الجانب يغطّي أزرارَ البطاقات؛ فيصغُر
+   إلى ٤٤ ويلتصق بالزاوية السفلى حيث لا محتوى. (بعد قواعد `.voice-btn` كي تغلبها.) */
+@media (max-width: 640px) {
+  .voice-dock { inset-inline-end: 8px; inset-block-end: calc(8px + env(safe-area-inset-bottom, 0px)); }
+  .voice-btn { width: var(--dhad-size-touch); height: var(--dhad-size-touch); font-size: 18px; opacity: 0.85; }
+  .voice-btn.voice-on { opacity: 1; }
+}

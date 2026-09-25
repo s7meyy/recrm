@@ -167,9 +167,12 @@ button, input, select, textarea { font: inherit; color: inherit; }
  * المِمرّ ما دام آخرَها (`:last-child`)، فإن رفعتَه بترتيبك عاد رابطًا كغيره.
  */
 .sidebar-nav a[data-route="settings"]:last-child {
-  position: sticky; bottom: 0; z-index: 1;
+  position: sticky; bottom: 0; z-index: 2;
+  /* `border-radius` الرابط كان يترك زاويتين شفّافتين يظهر منهما رأسُ المجموعة المارّ تحته
+     مقطوعًا (المرحلة ٥٧) — فالخلفيةُ تملأ الصندوق كلَّه وتزيد هامشًا فوقه بلون السطح. */
+  border-radius: 0; margin-top: var(--dhad-space-2);
   background: var(--surface);
-  box-shadow: 0 -1px 0 var(--line), 0 -10px 10px -10px rgba(0, 0, 0, .18);
+  box-shadow: 0 -1px 0 var(--line), 0 -10px 10px -10px rgba(0, 0, 0, .18), 0 var(--dhad-space-2) 0 var(--surface);
 }
 .sidebar-nav a[data-route="settings"]:last-child:hover { background: var(--hover); }
 .sidebar-nav a {
@@ -373,3 +376,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
   .modal-head, .modal-foot { padding-inline: var(--dhad-space-4); }
   .modal-body { padding: var(--dhad-space-4); }
 }
+
+/* شريطُ النسخة سطرٌ واحد (المرحلة ٥٧): لا يلتفّ ولا يحجب عنوانَ الصفحة على الجوّال. */
+.banner-inner.banner-slim { flex-wrap: nowrap; padding: 4px var(--dhad-space-3); font-size: var(--fs-sm); }
+.banner-inner.banner-slim > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.banner-inner.banner-slim .banner-actions { flex: 0 0 auto; flex-wrap: nowrap; }
+.banner-inner.banner-slim .btn-sm { min-height: 36px; padding-block: 4px; }

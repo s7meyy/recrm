@@ -147,7 +147,25 @@ export function echoDates(root) {
     input.addEventListener('change', draw);
     input.addEventListener('input', draw);
     input.after(out);
+    coverEmptyDate(input);
   }
+}
+
+/**
+ * غطاءُ الحقل الفارغ (المرحلة ٥٧): `mm/dd/yyyy` يبقى عند من لغةُ جهازه إنجليزية، والشرحُ
+ * تحته لا يمنع أن يُرى إنجليزيًّا وسط عربية. فما دام الحقلُ فارغًا وغيرَ مركَّزٍ يُغطّى
+ * بعبارة «اختر التاريخ» بالعربية؛ وعند التركيز أو الكتابة ينكشف المنتقي الأصليّ كما هو
+ * — فلا تُخسر لوحةُ التاريخ في الجوّال، وهي أنفعُ ما فيه.
+ */
+function coverEmptyDate(input) {
+  const wrap = el('span', { class: 'date-cover-wrap' });
+  const cover = el('span', { class: 'date-cover', 'aria-hidden': 'true', text: input.type === 'datetime-local' ? 'اختر التاريخ والوقت' : 'اختر التاريخ' });
+  input.replaceWith(wrap);
+  wrap.append(input, cover);
+  const sync = () => { cover.hidden = !!input.value || document.activeElement === input || input.disabled; };
+  for (const ev of ['input', 'change', 'focus', 'blur']) input.addEventListener(ev, sync);
+  cover.addEventListener('click', () => { input.focus(); try { input.showPicker?.(); } catch (_) { /* يلزم إيماءةٌ من المستخدم، وقد وُجدت */ } });
+  sync();
 }
 
 /* ===== النوافذ المنبثقة ===== */

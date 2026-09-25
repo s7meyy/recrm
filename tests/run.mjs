@@ -39,6 +39,7 @@ const SUITES = [
   ['whatsapp-unit.mjs', null],
   ['management-unit.mjs', null],
   ['drive-unit.mjs', null],
+  ['review-unit.mjs', null],
   ['vault-chunk-unit.mjs', null],
   ['commission-instalments-unit.mjs', null],
   ['closing-costs-unit.mjs', null],
@@ -112,6 +113,7 @@ const SUITES = [
   ['gate-and-publish.mjs', LOCKED],
   ['rename-and-vault.mjs', LOCKED],
   ['drive-panel.mjs', LOCKED],      // المرحلة ٥٦
+  ['review-fixes.mjs', OPEN],       // المرحلة ٥٧
   ['sync-devices.mjs', LOCKED],
   ['offer-pwa-push.mjs', LOCKED],
   ['client-links.mjs', LOCKED],

@@ -95,12 +95,39 @@ form.addEventListener('submit', async (event) => {
     if (!res.ok) throw new Error(out.error || 'تعذّر الإرسال');
     form.reset();
     drawDistricts();
-    statusNode.textContent = 'وصلنا طلبك — نتواصل معك قريبًا بإذن الله.';
+    showDone(data.name);
   } catch (err) {
     statusNode.textContent = err.message || 'تعذّر الإرسال، حاول لاحقًا.';
   } finally {
     sendBtn.disabled = false;
   }
 });
+
+/**
+ * بطاقةُ النجاح (المرحلة ٥٧): كانت جملةٌ تحت الزرّ والاستمارةُ كاملةٌ بحقولها الفارغة
+ * فوقها، فلا يُدرى أأُرسل شيءٌ أم يُعاد. الآن تختفي الحقول ويبقى ما يُفعل تاليًا:
+ * واتساب المكتب، وتصفّح العروض، أو طلبٌ آخر.
+ */
+function showDone(name) {
+  const phone = (document.getElementById('office-contact')?.textContent || '').replace(/\D/g, '');
+  const intl = phone.startsWith('0') ? `966${phone.slice(1)}` : phone;
+  const done = document.createElement('div');
+  done.className = 'lead-done';
+  done.setAttribute('role', 'status');
+  done.innerHTML = `<h2>وصلنا طلبك${name ? ` يا ${escapeHtml(name)}` : ''} ✓</h2>
+    <p class="muted">نراجعه ونتواصل معك قريبًا بإذن الله على الجوال الذي كتبته.</p>
+    <div class="lead-done-actions">
+      ${intl ? `<a class="btn btn-primary" href="https://wa.me/${intl}" target="_blank" rel="noopener">راسلنا على واتساب</a>` : ''}
+      <a class="btn" href="index.html">تصفّح العروض</a>
+      <button type="button" class="btn" id="intake-again">طلب آخر</button>
+    </div>`;
+  form.hidden = true;
+  form.after(done);
+  done.querySelector('#intake-again').addEventListener('click', () => { done.remove(); form.hidden = false; form.querySelector('input')?.focus(); });
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
 
 loadForms();

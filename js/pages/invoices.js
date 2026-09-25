@@ -87,7 +87,8 @@ function buildLayout(ctx) {
         el('button', { type: 'button', class: 'btn btn-primary', text: '+ فاتورة جديدة', onClick: () => openForm(ctx, null, 'invoice') }),
         el('button', { type: 'button', class: 'btn', text: '+ عرض سعر', onClick: () => openForm(ctx, null, 'quote') }),
         el('button', { type: 'button', class: 'btn', text: '🧾 ملخّص الضريبة', title: 'ضريبة المخرجات لربع سنة', onClick: () => openVatReport(ctx) }))),
-    el('div', { class: 'toolbar' }, search, typeFilter, collectionFilter),
+    // `filter-bar` (المرحلة ٥٧): كانت القائمتان كلٌّ بعرض الصفحة فوق بعضهما.
+    el('div', { class: 'toolbar filter-bar' }, search, typeFilter, collectionFilter),
   );
   ctx.nodes.summary = el('div');
   ctx.nodes.list = el('div');

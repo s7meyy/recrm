@@ -157,7 +157,7 @@ h1 { margin: 0; font-size: clamp(22px, 4vw, 30px); line-height: var(--dhad-line-
   gap: var(--dhad-space-3, 12px); margin-top: var(--dhad-space-3, 12px);
 }
 .lead-box label { display: block; font-size: var(--dhad-font-size-300, 13px); font-weight: 600; color: var(--muted); }
-.lead-box input, .lead-box textarea {
+.lead-box input, .lead-box textarea, .lead-box select {
   display: block; width: 100%; box-sizing: border-box; margin-top: var(--dhad-space-1, 4px);
   min-height: var(--touch); padding: var(--dhad-space-2, 8px) var(--dhad-space-3, 12px);
   border: 1px solid var(--line); border-radius: var(--dhad-radius-sm, 10px);
@@ -165,11 +165,21 @@ h1 { margin: 0; font-size: clamp(22px, 4vw, 30px); line-height: var(--dhad-line-
   transition: border-color 150ms ease, box-shadow 150ms ease;
 }
 .lead-box textarea { min-height: 84px; resize: vertical; line-height: var(--dhad-line-reading, 1.7); }
-.lead-box input:focus, .lead-box textarea:focus {
+.lead-box input:focus, .lead-box textarea:focus, .lead-box select:focus {
   border-color: var(--accent); outline: none; box-shadow: 0 0 0 var(--focus) var(--accent-soft);
 }
 .lead-box input[type="tel"], .lead-box input[type="email"] { direction: ltr; unicode-bidi: isolate; text-align: right; }
 .lead-full { margin-top: var(--dhad-space-3, 12px); }
+/* القوائمُ (المرحلة ٥٧): كانت عناصرَ متصفّحٍ خامًا ملتصقةً بعنوانها بين حقولٍ منسّقة. */
+.lead-box select { appearance: none; -webkit-appearance: none; cursor: pointer; padding-inline-end: 36px;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='9' viewBox='0 0 14 9'><path d='M1 1l6 6 6-6' fill='none' stroke='%23666' stroke-width='2' stroke-linecap='round'/></svg>");
+  background-repeat: no-repeat; background-position: left 12px center; background-size: 14px 9px; }
+[dir="ltr"] .lead-box select { background-position: right 12px center; }
+/* بعد الإرسال (المرحلة ٥٧): الحقولُ تختفي وتبقى بطاقةُ نجاحٍ فيها ما يُفعل تاليًا. */
+.lead-done { text-align: center; padding: var(--dhad-space-4, 16px) 0; }
+.lead-done h2 { margin-bottom: var(--dhad-space-2, 8px); }
+.lead-done .lead-done-actions { display: flex; flex-wrap: wrap; gap: var(--dhad-space-2, 8px); justify-content: center; margin-top: var(--dhad-space-4, 16px); }
+.lead-done .btn { margin-top: 0; }
 .lead-box button { margin-top: var(--dhad-space-3, 12px); }
 /* الفخّ: بعيد عن العين وعن قارئ الشاشة، ولا يعبّئه إلا آلة. */
 .lead-trap { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

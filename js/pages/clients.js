@@ -12,7 +12,7 @@ import {
 import {
   formatDate, formatDateTime, formatSAR, formatNumber, relativeDays, daysBetween, daysWord,
   toInputDateTime, fromInputDateTime, fromInputDate, countOf } from '../util/format.js';
-import { INFERRED_LABEL } from '../util/outreach.js';
+import { INFERRED_LABEL, openWhatsApp } from '../util/outreach.js';
 import { matchesQuery } from '../util/arabic.js';
 import { scoreClient } from '../util/lead-score.js';
 import { formatPhone } from '../util/phone.js';
@@ -339,22 +339,32 @@ function renderList(ctx) {
   /* **وعمودٌ كلُّه شرطاتٌ لا يُعرض** (المرحلة ٥٢): «التصنيفات» كان يأخذ عُشرَ الجدول
      وهو فارغٌ في العشرة كلِّهم، ويُضيّق على الاسم والجوال في الجوّال. */
   const showTags = visible.some((c) => (c.tags || []).length);
-  const cols = ['الأولوية', 'الاسم', 'الجوال', 'الأدوار', 'المرحلة'];
+  /* **الاسمُ أوّلًا** (المرحلة ٥٧): على الجوّال يصير الصفُّ بطاقةً عنوانُها خليّتُها الأولى —
+     وكانت «الأولوية»، فتتصدّر البطاقةَ شرطةٌ. والأعمدةُ الثانوية (`m-hide`) تُطوى هناك،
+     ويظهر بدلَها صفُّ أزرارٍ (`m-actions`) للاتصال وواتساب بحجم الإبهام. */
+  const cols = ['الاسم', 'الأولوية', 'الجوال', 'الأدوار', 'المرحلة'];
   if (showTags) cols.push('التصنيفات');
   if (showAssign) cols.push('المسند إليه');
-  cols.push('آخر تواصل', 'المتابعة القادمة');
-  const head = el('tr', {}, cols.map((t) => el('th', { text: t })));
+  cols.push('آخر تواصل', 'المتابعة القادمة', '');
+  const head = el('tr', {}, cols.map((t, i) => el('th', { text: t, class: i === cols.length - 1 ? 'm-actions' : '' })));
   const body = el('tbody', {}, visible.map((c) => el('tr', { class: `row-priority-${clientPriority(c)}`, onClick: () => openDetail(ctx, c.id) },
-    el('td', {}, scoreBadge(ctx, c)),
     el('td', { class: 'strong nowrap' }, c.name || el('span', { class: 'muted', text: 'بلا اسم' }), sourceBadge(c.referralSource),
       isArchived(c) ? badge('مؤرشف', '') : null),
+    el('td', { class: 'm-hide' }, scoreBadge(ctx, c)),
     el('td', { class: 'phone' }, phoneLink(c.phone)),
-    el('td', {}, (c.roles || []).map((r) => labelFor(ENUMS.clientRoles, r)).join('، ') || '—'),
+    el('td', { class: 'm-hide' }, (c.roles || []).map((r) => labelFor(ENUMS.clientRoles, r)).join('، ') || '—'),
     el('td', {}, stageBadge(c.stage)),
-    showTags ? el('td', {}, (c.tags || []).length ? c.tags.map((t) => badge(t, clientTagClass(t))) : '—') : null,
-    showAssign ? el('td', { text: c.assignedTo ? memberName(ctx.team, c.assignedTo, { me: ctx.meId }) : '—' }) : null,
+    showTags ? el('td', { class: 'm-hide' }, (c.tags || []).length ? c.tags.map((t) => badge(t, clientTagClass(t))) : '—') : null,
+    showAssign ? el('td', { class: 'm-hide', text: c.assignedTo ? memberName(ctx.team, c.assignedTo, { me: ctx.meId }) : '—' }) : null,
     el('td', {}, lastContactNode(c)),
-    el('td', {}, followUpNode(c)))));
+    el('td', {}, followUpNode(c)),
+    el('td', { class: 'm-actions' }, c.phone ? [
+      el('a', { class: 'btn btn-sm', href: `tel:${c.phone}`, text: '📞 اتصال', onClick: (e) => e.stopPropagation() }),
+      el('button', {
+        type: 'button', class: 'btn btn-sm', text: '💬 واتساب',
+        onClick: (e) => { e.stopPropagation(); openWhatsApp({ clientId: c.id, phone: c.phone }); },
+      }),
+    ] : el('span', { class: 'muted small', text: 'بلا جوال' })))));
   area.append(el('div', { class: 'table-wrap' }, el('table', { class: 'table' }, el('thead', {}, head), body)));
   if (more) {
     area.append(el('div', { class: 'row', style: { justifyContent: 'center', marginTop: '16px' } },
