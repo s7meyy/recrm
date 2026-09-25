@@ -133,7 +133,7 @@ function sparkline(place) {
       <circle cx="${x(months.length - 1).toFixed(1)}" cy="${y(last.avg).toFixed(1)}" r="2.2" fill="currentColor"/>
     </svg>
     <div class="spark-ends"><span>${esc(months[0].label)}</span>
-      <span class="spark-scale">${lo} — ${hi}</span>
+      <span class="spark-scale">مدى المحور: ${lo} إلى ${hi}</span>
       <span>${esc(last.label)}</span></div>
   </div>`;
 }
@@ -174,23 +174,32 @@ export function briefBlock(place, job = {}) {
   /* التقرير كان يقول ما يخسره ولا يقول ما يكسبه. و«تخسر 48,600 سنويًّا»
      تُثقِل الصدر، و«الشكاوى إن زالت يرتفع متوسطك كذا» تُحرّك اليد.
      والحسابُ ظاهر: لو أن شاكي عيّنتك كتبوا خمسًا بدل ما كتبوا. */
+  /* **الكسبُ يُقال في إطاره لا في إطارٍ يُوهِم.**
+     كانت البطاقةُ تقول «+1.25 نجمة» محسوبةً على متوسط ثمانية تعليقات في
+     العيّنة، وتُوضَع بجانب «4.2 من 5» وهو متوسطُه في قوقل على 240 تقييمًا.
+     فيقرؤها المالك 5.45 — وهي مستحيلة. والصوابُ أن يُقال ما تفعله شكاوى
+     عيّنته بمتوسطه الحقيقيّ إن عُرف: ثلاثةُ شاكين يكتبون خمسًا على 240
+     تقييمًا يرفعونه خمسَ نقطةٍ من مئة. وهذا رقمٌ صغيرٌ صادق، وفيه خبرٌ أهمّ
+     من الرقم الموهِم: أن الإصلاح يُقاس بمن سيأتي لا بمن شكا. */
   const gain = (() => {
     if (!s.rated || !s.negative || !avg) return null;
-    const sum = s.rated * (s.sampleAverage ?? avg);
-    const negSum = place.reviews.filter((r) => r.rating >= 1 && r.rating <= 2)
-      .reduce((a, r) => a + Number(r.rating), 0);
-    const lifted = (sum - negSum + s.negative * 5) / s.rated;
-    const diff = Number((lifted - (s.sampleAverage ?? avg)).toFixed(2));
-    if (diff < 0.05) return null;
-    return {
-      stars: diff,
-      how: (() => {
-        const n = s.negative;
-        if (n === 1) return 'لو أن الشاكيَ الواحد في عيّنتك خرج راضيًا';
-        if (n === 2) return 'لو أن الشاكيَين في عيّنتك خرجا راضيَين';
-        return `لو أن ${n} ${n <= 10 ? 'شاكين' : 'شاكيًا'} في عيّنتك خرجوا راضين`;
-      })(),
-    };
+    const neg = place.reviews.filter((r) => r.rating >= 1 && r.rating <= 2);
+    const lift = neg.reduce((a, r) => a + (5 - Number(r.rating)), 0);
+    const n = s.negative;
+    const who = n === 1 ? 'الشاكي الواحد في عيّنتك' : n === 2 ? 'الشاكيان في عيّنتك' : `${n} ${n <= 10 ? 'شاكين' : 'شاكيًا'} في عيّنتك`;
+    const verb = n === 1 ? 'كتب' : n === 2 ? 'كتبا' : 'كتبوا';
+    if (s.googleAverage && s.googleCount) {
+      const to = Math.round((s.googleAverage + lift / s.googleCount) * 100) / 100;
+      if (to - s.googleAverage < 0.005) return null;
+      return {
+        from: s.googleAverage, to, frame: 'google',
+        how: `لو ${verb} ${who} خمسًا — على ${s.googleCount} تقييمًا في قوقل. صغيرٌ لأن متوسطك يصنعه من سيأتي، لا من شكا.`,
+      };
+    }
+    const base = s.sampleAverage ?? avg;
+    const to = Math.round((base + lift / s.rated) * 100) / 100;
+    if (to - base < 0.05) return null;
+    return { from: base, to, frame: 'sample', how: `متوسطُ عيّنتك نفسها لو ${verb} ${who} خمسًا — لا متوسطُك في قوقل.` };
   })();
 
   return `<section class="brief">
@@ -239,8 +248,8 @@ export function briefBlock(place, job = {}) {
         <span class="fine">${num(b.yearly)} ريال في السنة · على الشاكين في عيّنتك، لا بجمع المواضيع</span>
       </div>` : ''}
       ${gain ? `<div class="bcard gain">
-        <b>وما تكسبه إن عالجت</b>
-        <span class="big">+${gain.stars} نجمة</span>
+        <b>${gain.frame === 'google' ? 'وأثرُ هؤلاء على متوسطك' : 'وما تكسبه في عيّنتك'}</b>
+        <span class="big">من ${gain.from} إلى ${gain.to}</span>
         <span class="fine">${esc(gain.how)}</span>
       </div>` : ''}
       ${toTarget ? `<div class="bcard goal">

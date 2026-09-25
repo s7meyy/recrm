@@ -48,8 +48,15 @@ export const TEMPLATES = {
     },
   },
   owner: {
-    id: 'owner', name: 'لصاحب المنشأة', note: 'ما يُعمَل به: الخلاصة، والأولويات، وخطة العمل، وصوت العميل، وقائمة المتابعة. والتفصيلُ المنهجيّ يُختصَر ولا يُحذَف.',
-    sections: [/خلاص|تنفيذي/, /ضعف|شكاو/, /توصي|خطة/, /زمن|اتجاه/],
+    id: 'owner', name: 'لصاحب المنشأة', note: 'ما يُعمَل به: الخلاصة، والأولويات، وخطة العمل، وصوت العميل، وقائمة المتابعة. ونصُّ التحليل كلُّه كما كتبه النموذج — لا يُحذَف منه قسم.',
+    /* **لا يُقصّ نصُّ النموذج في القالب الافتراضيّ.** كانت القائمةُ أربعةَ أنماطٍ
+       تُبقي ما طابقها وتُسقط ما عداه صامتًا — فسقط من التقرير النموذجيّ قسمُ
+       «أبرز ما يتكرّر»، ومن التقرير الحقيقيّ ستةٌ من الأقسام العشرة التي يُطلَب
+       من النموذج كتابتُها: قراءةُ الأرقام، ونقاطُ القوة، وتحليلُ المحاور،
+       وأثرُه على العميل الجديد، والمخاطرُ التي لم تنفجر. يقرأ المالكُ الخلاصةَ
+       ثم يقفز إلى التوصيات ولا يدري أن بينهما تحليلًا كُتب له وحُذف. والقالبُ
+       يُقصِّر بالكتل المحسوبة (`show`) لا بنصّ التحليل. */
+    sections: null,
     show: {
       brief: true, coverage: true, confidence: true, toc: false, quotes: true,
       priority: false, actions: true, commit: true, checklist: true, drafts: true,
@@ -63,7 +70,7 @@ export const TEMPLATES = {
   },
   exec: {
     id: 'exec', name: 'تنفيذي', note: 'الخلاصة والأرقام والشكاوى والتوصيات فقط — صفحتان لصاحب القرار.',
-    sections: [/خلاص|تنفيذي/, /أرقام|قراءة/, /ضعف|شكاو/, /زمن|اتجاه/, /توصي|خطة/],
+    sections: [/خلاص|تنفيذي/, /أرقام|قراءة/, /ضعف|شكاو|تكرّر|تكرر|يتكرر/, /زمن|اتجاه/, /توصي|خطة/],
     show: {
       brief: true, coverage: true, confidence: true, toc: false, quotes: false,
       priority: false, actions: true, commit: false, checklist: false, drafts: false,
@@ -91,7 +98,7 @@ export const TEMPLATES = {
   },
   teaser: {
     id: 'teaser', name: 'عيّنة مجانية', note: 'صفحة واحدة تُرسَل لعميل محتمل: الأرقام وأبرز الشكاوى فقط، بلا توصيات — أداة بيع لا أداة تحليل.',
-    sections: [/خلاص|تنفيذي/, /ضعف|شكاو/],
+    sections: [/خلاص|تنفيذي/, /ضعف|شكاو|تكرّر|تكرر|يتكرر/],
     show: {
       brief: true, coverage: true, confidence: true, toc: false, quotes: false,
       priority: false, actions: false, commit: false, checklist: false, drafts: false,

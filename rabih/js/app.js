@@ -3521,6 +3521,9 @@ async function boot() {
     $('#f-url').value = job.mapsUrl || '';
     $('#f-brand').value = job.ctx.brand || '';
     $('#f-branch').value = job.ctx.branch || '';
+    /* البابُ يُفتَح تلقائيًّا لمن ملأ شيئًا من قبل — فلا يُخفى عنه ما كتبه. */
+    const mf = $('#more-fields');
+    if (mf) mf.open = !!(job.ctx.cityId || job.ctx.categoryId || job.ctx.brand || job.ctx.districtName);
     loadDataView();
     renderPipeline();
     loadReportView();

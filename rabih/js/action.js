@@ -166,8 +166,15 @@ export function actions(place, job = {}) {
   /* وإن لم يبلغ شيءٌ ثلاثًا فالخطة لا تسقط — يسقط **ترتيبُها** وحده:
      تُعرَض البطاقات بلا أرقام، ويُقال إن عيّنتك لا ترتّبها. وحذفُ الخطة
      لصغر العيّنة يترك صاحب المحل بلا شيء، وهو أسوأ من ترتيبٍ متحفّظ. */
-  const rows = ordered.length ? ordered : all.slice(0, 6);
+  /* **وحين لا يبلغ شيءٌ ثلاثًا، لا تُساوى المرةُ بالمرتين.** كان «الازدحام»
+     بشكوى واحدة يأخذ بطاقةً كاملة — مسؤولًا ومدةً وكلفةً وثلاثَ خطوات — بالوزن
+     البصريّ نفسه لما ذُكر مرتين؛ الوسمُ يقول «لا يُرتَّب» والشكلُ يقول «افعل
+     هذا». فما ذُكر مرتين يأخذ البطاقة، وما ذُكر مرةً يصير سطرًا في قائمة. وإن
+     لم يوجد إلا المفرد بقيت ثلاثُ بطاقاتٍ فلا يُترك بلا شيء. */
+  const doubles = singles.filter((r) => r.count === 2);
+  const rows = ordered.length ? ordered : (doubles.length ? doubles : all.slice(0, 3));
   const rankable = ordered.length > 0;
+  const listed = all.filter((r) => r.count < 3 && !rows.includes(r));
 
   const assume = {
     ticket: job.assume?.ticket, monthly: job.assume?.monthly,
@@ -231,7 +238,7 @@ export function actions(place, job = {}) {
     totalRiyals: hasMoney ? (imp?.totalRiyals ?? 0) : 0,
     assume: { ticket: imp?.ticket || 0, monthly: imp?.monthly || 0, lossRate: imp?.lossRate ?? 0.25 },
     rows: ranked,
-    singles: rankable ? singles.map((r) => shape(r, null)) : [],
+    singles: listed.map((r) => shape(r, null)),
   };
 }
 
@@ -242,7 +249,7 @@ export function actionsBlock(place, job = {}) {
 
   const cards = a.rows.map((r) => `<div class="act" style="--tc:${topicColor(r.id)}">
     <div class="act-head">
-      <span class="act-rank${r.rank === null ? ' none' : ''}">${r.rank === null ? '•' : r.rank}</span>
+      <span class="act-rank${r.rank === null ? ' none' : ''}" title="${r.rank === null ? 'بلا ترتيب — عيّنتك لا ترتّبه' : 'الأولوية ' + r.rank}">${r.rank === null ? '' : r.rank}</span>
       <div>
         <b>${esc(r.name)}</b>
         <div class="fine">${esc(r.why)}</div>
@@ -255,8 +262,7 @@ export function actionsBlock(place, job = {}) {
         r.when ? `${r.when.n} من شكاوى هذا الموضوع ذكرت وقتها · والإصلاح ${r.days[0]}–${r.days[1]} يومًا`
                : 'عُرفُ القطاع لا قياسُ محلّك'}</small></div>
       <div><b>مرتبة الكلفة</b><span>${esc(r.cost.label)}</span><small>${esc(r.cost.hint)}</small></div>
-      <div><b>ما تكسبه إن عولجت</b><span>${r.money === null ? '—' : `${num(r.money)} ريال/شهر`}</span><small>${
-        r.money === null ? 'أدخِل متوسط فاتورتك وعدد عملائك ليُحسب' : `${num(r.yearly)} ريال في السنة، على فرضك`}</small></div>
+      ${r.money === null ? '' : `<div><b>ما تكسبه إن عولجت</b><span>${num(r.money)} ريال/شهر</span><small>${num(r.yearly)} ريال في السنة، على فرضك</small></div>`}
     </div>
     <ol class="act-steps">
       <li><b>ابدأ اليوم:</b> ${esc(r.first)}</li>
@@ -286,8 +292,8 @@ export function actionsBlock(place, job = {}) {
 
   return `<section class="actions">
     <h2>خطة العمل — من يفعل ماذا</h2>
-    <p class="note">${a.rankable ? 'مرتَّبةٌ بأولويةٍ محسوبةٍ من تعليقاتك. و' : ''}<b>ما تكسبه</b> محسوبٌ من أرقامك أنت
-    (متوسط الفاتورة × عدد عملائك × نصيب الشكوى من عيّنتك × نسبة من لا يعود) — فإن غيّرتَ فرضك تغيّر.</p>
+    ${a.rankable || a.hasMoney ? `<p class="note">${a.rankable ? 'مرتَّبةٌ بأولويةٍ محسوبةٍ من تعليقاتك.' : ''}${
+      a.hasMoney ? ' <b>ما تكسبه</b> محسوبٌ من أرقامك أنت (متوسط الفاتورة × عدد عملائك × نصيب الشكوى من عيّنتك × نسبة من لا يعود) — فإن غيّرتَ فرضك تغيّر.' : ''}</p>` : ''}
     ${caveat}
     <div class="acts">${cards}</div>
     ${a.hasMoney && a.rows.length > 1 ? `<p class="fine"><b>ولا تُجمَع أرقام «ما تكسبه».</b>
@@ -433,20 +439,41 @@ function countWord(n, one, two, few, many) {
   return `${n} ${many}`;
 }
 
-export function unansweredBlock(place) {
+/** المسوّداتُ كما كتبها النموذج: `### المعرّف` ثم نصُّ الردّ — تُقرأ لا تُعاد صياغتها. */
+function draftsById(job = {}) {
+  const raw = String(job.replyDrafts || '');
+  const out = new Map();
+  const re = /^###\s*\[?([A-Za-z]\d{2,})\]?\s*$/gm;
+  let m;
+  const marks = [];
+  while ((m = re.exec(raw))) marks.push({ id: m[1], at: m.index, end: m.index + m[0].length });
+  marks.forEach((mk, i) => {
+    const body = raw.slice(mk.end, i + 1 < marks.length ? marks[i + 1].at : raw.length).trim();
+    if (body) out.set(mk.id, body);
+  });
+  return out;
+}
+
+export function unansweredBlock(place, job = {}) {
   const a = analyzeReplies(place);
   if (!a.unanswered.length) return '';
   const byId = new Map((place?.reviews || []).map((r) => [r.id, r]));
+  /* **القسمُ كان يقول «ردّ» ولا يُعطي ما يُردّ به**، والمسوّداتُ التي كتبها
+     النموذج في ملحقٍ آخرَ الكتاب. فتُوضَع كلُّ مسوّدةٍ تحت شكواها — مسوّدةً
+     تُراجَع لا ردًّا يُنشَر، وبنصّها كما وُلِّدت. */
+  const drafts = draftsById(job);
   const rows = a.unanswered.slice(0, 8).map((id) => {
     const r = byId.get(id);
     if (!r) return '';
     const text = String(r.text || '').trim();
     const cut = text.length > 150 ? `${text.slice(0, 150)}…` : text;
+    const d = drafts.get(id);
     return `<li>
       <span class="rid">${esc(id)}</span>
       ${r.rating ? `<span class="uw-stars">${'★'.repeat(Math.round(r.rating))}</span>` : ''}
       ${r.date ? `<span class="fine">${esc(r.date)}</span>` : ''}
       <p>${esc(cut)}</p>
+      ${d ? `<div class="uw-draft"><b>مسوّدةُ ردٍّ تُراجَع:</b> ${esc(d).replace(/\n+/g, '<br>')}</div>` : ''}
     </li>`;
   }).join('');
 
@@ -511,7 +538,7 @@ export function nextBlock(place, job = {}) {
         <b>ما يجعل التقرير القادم أدقّ</b>
         <ul>
           <li>ردَّ على الشكاوى التي بلا ردّ — يُقاس ذلك ويظهر.</li>
-          <li>أدخِل متوسط فاتورتك وعدد عملائك إن لم تكن أدخلتَهما، فتُحسَب الأرقام بفرضك.</li>
+          ${job.assume?.show ? '' : '<li>الأثرُ الماليّ مطفأٌ في هذا التقرير بخيارك؛ فإن أردته أدخِل متوسط فاتورتك وعدد عملائك وشغِّل إدراجه — ويُكتَب حينها فرضًا لا قياسًا.</li>'}
           ${s.declaredWithText === null ? '<li>أدخِل عدد التعليقات <b>المنصوصة</b> في قوقل، فتُقاس التغطية بمقامها الصحيح.</li>' : ''}
         </ul>
       </div>

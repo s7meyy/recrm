@@ -318,6 +318,22 @@ export function trendWithinBlock(place) {
   if (!r.recent.n || !r.older.n) return '';
   const esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
+  /* **فترةٌ من تعليقٍ واحد لا تُقارَن بشيء.** كان القسمُ يقارن تعليقًا واحدًا
+     قديمًا بسبعةٍ حديثة، ثم يعلن خمس شكاوى «ناشئة» كلُّها «1 حديثة مقابل 0
+     قديمة» — والحاشيةُ تعترف بضعفه والقائمةُ الحمراء فوقها تصرخ بخلافه. فمتى
+     قلّت فترةٌ عن ثلاثة تعليقات قيل ذلك في سطرٍ ولم يُرسَم جدول. */
+  const MIN = 3;
+  if (r.recent.n < MIN || r.older.n < MIN) {
+    const thin = r.older.n < MIN ? `ما قبل ${r.window} يومًا` : `آخر ${r.window} يومًا`;
+    const n = r.older.n < MIN ? r.older.n : r.recent.n;
+    return `<section class="selfcompare">
+    <h2>أنت مقابل نفسك — من داخل هذه العيّنة</h2>
+    <p class="note">لا تقرير سابق يُقارَن به بعد، والمقارنةُ من داخل العيّنة تحتاج ${MIN} تعليقاتٍ
+      في كل فترة على الأقل. و${thin} فيها ${n === 1 ? 'تعليقٌ واحد' : 'تعليقان'} فقط، فلا يُقال منها
+      «تحسّن» ولا «انحدار» ولا «شكوى ناشئة» — وسيصحّ هذا في تقريرك القادم حين تتراكم التعليقات.</p>
+  </section>`;
+  }
+
   const negNow = wilson(r.recent.neg === null ? 0 : Math.round((r.recent.neg / 100) * r.recent.n), r.recent.n);
   const negOld = wilson(r.older.neg === null ? 0 : Math.round((r.older.neg / 100) * r.older.n), r.older.n);
   const sig = significant(negNow, negOld);

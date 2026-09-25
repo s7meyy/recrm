@@ -14,7 +14,7 @@
 
 <header class="topbar">
   <div class="inner">
-    <div class="logo">رابــح<small>تقارير المنشآت من خرائط قوقل</small></div>
+    <div class="logo"><span class="chip"><img src="assets/rabeh-logo.png" alt="رابــح" width="446" height="320"></span><small>تقارير المنشآت من خرائط قوقل</small></div>
     <nav>
       <button type="button" data-go="new">تقرير جديد</button>
       <button type="button" data-go="compare">المقارنة</button>
@@ -46,6 +46,12 @@
         <div class="note" id="url-note">يُقبل الرابط الكامل والمختصر. من التطبيق: مشاركة ← نسخ الرابط.</div>
       </div>
 
+      <!-- **الرابطُ وحده كافٍ — فتُطوى الخمسةُ الباقية.** كانت سبعةَ حقولٍ تحت
+           وعدِ «هذا كافٍ»، والوافدُ لا يعرف أيَّها يلزمه. فلا يبقى مبسوطًا إلا
+           الرابط، وما يُحسِّن الأرشيفَ والتحليلَ خلف بابٍ يُفتَح عند الحاجة، ويُفتَح
+           تلقائيًّا متى كان قد مُلئ من قبل. -->
+      <details class="more-fields" id="more-fields">
+        <summary>المدينة والتصنيف والحيّ <span class="fine">— اختياري، يُحسِّن شجرة الأرشيف ومحاور التحليل</span></summary>
       <div class="grid c2">
         <div class="field">
           <label for="f-region">المنطقة / الدولة</label>
@@ -97,6 +103,7 @@
         </div>
         <div class="note">إن لم تجد الحي في القائمة فأضفه — يُحفَظ في متصفحك ويظهر في المرات القادمة.</div>
       </div>
+      </details>
 
       <div class="field" id="bulk-field" hidden>
         <label for="bulk-list">قائمة المحلات — سطر لكل محل: <code>الاسم | الرابط | الحي</code></label>

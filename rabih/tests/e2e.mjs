@@ -58,6 +58,8 @@ try {
   regions === 14 ? ok(`المناطق ${regions - 1}`) : bad('عدد المناطق', regions);
 
   console.log('٢) التعبئة المتسلسلة');
+  // الحقولُ الاختيارية خلف بابٍ مطويّ — يُفتَح كما يفتحه المستخدم
+  await page.evaluate(() => { const d = document.querySelector('#more-fields'); if (d) d.open = true; });
   await page.selectOption('#f-region', 'riyadh');
   await page.waitForTimeout(100);
   const cities = await page.$$eval('#f-city option', o => o.map(x => x.textContent));
@@ -839,6 +841,8 @@ try {
   console.log('٨-ح) بذر الدفعة');
   await page.click('[data-go="new"]');
   await page.waitForTimeout(400);
+  // الحقولُ الاختيارية خلف بابٍ مطويّ — يُفتَح كما يفتحه المستخدم
+  await page.evaluate(() => { const d = document.querySelector('#more-fields'); if (d) d.open = true; });
   await page.selectOption('#f-region', 'riyadh');
   await page.selectOption('#f-city', 'riyadh');
   await page.selectOption('#f-group', 'food');

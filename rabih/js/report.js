@@ -390,10 +390,10 @@ body{margin:0;font-family:"Segoe UI",Tahoma,"Arabic Typesetting",sans-serif;colo
 .cover .sub{font-size:13pt;color:var(--muted);margin:0 0 7mm}
 .cover-photo{margin:0 auto 8mm;max-width:150mm}
 .cover-photo img{width:100%;height:55mm;object-fit:cover;border-radius:8px;border:1px solid var(--line)}
-.cover-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:4mm;max-width:150mm;margin:0 auto;text-align:right}
-.cover-grid div{border:1px solid var(--line);border-radius:6px;padding:4mm 5mm}
+.cover-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:3mm;max-width:170mm;margin:0 auto;text-align:right}
+.cover-grid div{border:1px solid var(--line);border-radius:6px;padding:3mm 4mm}
 .cover-grid b{display:block;font-size:9pt;color:var(--muted);font-weight:600;margin-bottom:1mm}
-.cover-grid span{font-size:12pt;color:var(--navy);font-weight:700}
+.cover-grid span{font-size:11.5pt;color:var(--navy);font-weight:700}
 /* الترقيم صار في البناء لا في التنسيق (numberSections)، فالعدّاد أُلغي:
    كان يتخطّى كل عنوانٍ وُسم no-count فيَخرم التسلسل بلا أن يُرى السبب. */
 .body h2{font-size:15pt;color:var(--navy);border-bottom:2px solid var(--gold);padding-bottom:2mm;margin:10mm 0 4mm;break-after:avoid}
@@ -492,6 +492,8 @@ code{background:#f3f5f8;padding:0 1mm;border-radius:3px;font-size:10pt}
 .divider::before,.divider::after{content:"";flex:1;border-top:1px solid var(--line)}
 .divider span{flex:0 1 auto;font-size:9.5pt;color:var(--muted);text-align:center;line-height:1.8}
 @media print{ .divider{break-before:page;margin-top:0} }
+/* «في سطور» أهمُّ صفحةٍ في التقرير، وكان يبدأ في ذيل الغلاف وينكسر إلى الثانية. */
+@media print{ .brief{break-before:page} }
 .appendix{margin-top:12mm;padding-top:5mm;border-top:2px solid var(--line)}
 .appendix-head{font-size:12pt;font-weight:700;color:var(--navy);margin:0 0 5mm}
 /* خطة العمل — بطاقةٌ لكل أولوية، لا تنكسر بين صفحتين. */
@@ -501,7 +503,7 @@ code{background:#f3f5f8;padding:0 1mm;border-radius:3px;font-size:10pt}
 .act{border-inline-start:3px solid var(--tc,var(--line))}
 .act-rank{flex:0 0 auto;width:8mm;height:8mm;border-radius:50%;background:var(--navy);color:#fff;
 .act-rank{background:var(--tc,var(--navy))}
-.act-rank.none{background:none;color:var(--gold);font-size:14pt}
+.act-rank.none{background:none;color:transparent;border:1.5px dashed var(--line);width:6mm;height:6mm;font-size:0}
 .teaser-note{margin:0 0 8mm;padding:5mm 6mm;border:1px solid #e0cfa0;border-radius:10px;
   background:#fdfaf2;break-inside:avoid;position:relative}
 .teaser-tag{position:absolute;inset-inline-end:5mm;top:-3mm;margin:0;padding:1mm 4mm;border-radius:999px;
@@ -581,6 +583,7 @@ code{background:#f3f5f8;padding:0 1mm;border-radius:3px;font-size:10pt}
 .topic-row.faint{opacity:.62}
 .legend .leg-note{color:var(--muted);font-size:8.5pt}
 .ownernotes .ownernote-q{margin:2mm 0 0;padding:3mm 4mm;border-inline-start:3px solid #7a8798;background:#f4f6f8;border-radius:6px;font-size:10.5pt;line-height:1.9;white-space:pre-line}
+.uw-draft{margin:2mm 0 0;padding:2.5mm 3.5mm;background:#f4f6f8;border-inline-start:3px solid var(--gold);border-radius:5px;font-size:10pt;line-height:1.8}
 .lone-tag{font-size:8pt;color:#8a6d1f;background:#faf3e0;border:1px solid #ead9ab;border-radius:999px;padding:0 2mm;white-space:nowrap}
 .lone-row{color:#5c6470}
 .lone-row .w-fill{opacity:.45}
@@ -801,7 +804,7 @@ export function buildReportHtml({ place: rawPlace, ctx = {}, markdown = '', phot
     cooccur: true, timing: true, promises: true, effect: true, bias: true, ...(sector?.show || {}), ...show };
   const s = stats(place);
   const body = tocFrom(mdToHtml(markdown));
-  const date = new Date().toLocaleDateString('ar-SA-u-ca-gregory-nu-latn');
+  const date = new Date().toLocaleDateString('ar-SA-u-ca-gregory-nu-latn', { day: 'numeric', month: 'long', year: 'numeric' });
   const name = esc(place.identity?.name || 'منشأة غير مسمّاة');
 
   /* **تاريخ البيانات لا تاريخ الطبع.** التقرير يُفتَح بعد شهرين فيُقرأ كأنه
@@ -809,7 +812,7 @@ export function buildReportHtml({ place: rawPlace, ctx = {}, markdown = '', phot
      في ترويسة كل صفحة وعلى الغلاف. */
   const dataDate = (() => {
     const t = Date.parse(job?.fetchedAt || job?.createdAt || '');
-    return Number.isFinite(t) ? new Date(t).toLocaleDateString('ar-SA-u-ca-gregory-nu-latn') : date;
+    return Number.isFinite(t) ? new Date(t).toLocaleDateString('ar-SA-u-ca-gregory-nu-latn', { day: 'numeric', month: 'long', year: 'numeric' }) : date;
   })();
 
   /* الغلاف كان يطبع «—» في كل حقلٍ لم يُملأ: ثلاثُ شرطاتٍ تُقرأ تقريرًا
@@ -858,11 +861,9 @@ export function buildReportHtml({ place: rawPlace, ctx = {}, markdown = '', phot
     body.html,
     opt.priority ? priorityBlock(place) : '',
     opt.actions ? actionsBlock(place, job || {}) : '',
-    opt.unanswered ? unansweredBlock(place) : '',
+    opt.unanswered ? unansweredBlock(place, job || {}) : '',
     opt.keep ? keepBlock(place) : '',
     opt.commit ? commitBlock(place, job || {}) : '',
-    opt.voice ? voiceBlock(place) : '',
-    opt.card ? cardBlock(place) : '',
     opt.selfCompare ? (job?.prevJob ? selfCompareBlock(job.prevJob, job) : trendWithinBlock(place)) : '',
     opt.effect && job?.prevJob ? effectBlock(job.prevJob, job) : '',
     opt.promises ? promisesBlock(place) : '',
@@ -870,6 +871,8 @@ export function buildReportHtml({ place: rawPlace, ctx = {}, markdown = '', phot
        ثمانيةَ عشرَ قسمًا متساويةً في الوزن البصري، فلا يعرف القارئ أين ينتهي
        ما يلزمه ويبدأ ما يُراجعه عند الحاجة — فيقرأ الكلَّ أو لا يقرأ شيئًا. */
     `<div class="divider"><span>ما سبق هو ما تعمل به. وما يلي تفصيلُه ودليلُه — يُرجَع إليه عند الحاجة.</span></div>`,
+    opt.voice ? voiceBlock(place) : '',
+    opt.card ? cardBlock(place) : '',
     opt.ownerNotes ? ownerNotesBlock(place) : '',
     opt.topics ? topicsBlock(place, sector?.lead || []) : '',
     opt.coverage ? coverageBlock(place, job || {}) : '',
@@ -933,7 +936,7 @@ ${footer}
 /** تقرير المجموعة — نفس هوية التقرير الفردي، بجداول الفروع بدل بطاقة منشأة. */
 export function buildGroupReportHtml({ brand, analysis, markdown = '', font = null, identity = null }) {
   const a = analysis;
-  const date = new Date().toLocaleDateString('ar-SA-u-ca-gregory-nu-latn');
+  const date = new Date().toLocaleDateString('ar-SA-u-ca-gregory-nu-latn', { day: 'numeric', month: 'long', year: 'numeric' });
   const body = tocFrom(mdToHtml(markdown));
 
   const rows = a.ranking.length ? a.ranking : a.branches.map((b, i) => ({ ...b, rank: i + 1 }));

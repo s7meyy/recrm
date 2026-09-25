@@ -428,3 +428,22 @@ select.model-pick{width:auto;min-width:150px;padding:6px 10px;font-size:13px}
   padding: 11px 13px; background: #f7f9fb; border: 1px solid #e3e8ee; border-radius: 10px; cursor: pointer }
 .optin input { width: auto; min-width: 18px; min-height: 18px; margin-top: 3px }
 .optin .fine { display: block; margin-top: 4px }
+
+/* الطابورُ كان يظهر شريطًا فارغًا رغم `hidden`، لأن `display:flex` يغلبها. */
+#queue-bar[hidden] { display: none }
+
+/* شعارُ الرأس: كحليٌّ على كحليّ لا يُرى — فيُوضَع على شريحةٍ بيضاء صغيرة. */
+.logo { display: flex; align-items: center; gap: 10px }
+.logo .chip { display: inline-flex; align-items: center; background: #fff; border-radius: 10px; padding: 4px 8px }
+.logo .chip img { height: 34px; width: auto; display: block }
+.logo small { display: block }
+
+/* الحقولُ الاختيارية خلف باب. */
+.more-fields { margin: 0 0 14px; border: 1px solid #e3e8ee; border-radius: 10px; background: #fbfcfd }
+.more-fields > summary { cursor: pointer; padding: 11px 14px; font-weight: 700; color: var(--navy); min-height: 40px }
+.more-fields[open] > summary { border-bottom: 1px solid #e3e8ee; margin-bottom: 10px }
+.more-fields > *:not(summary) { padding: 0 14px }
+
+/* زرُّ إغلاق المعاينة كان يتراكب فوق شريط التنقّل. */
+.owner-preview { z-index: 90 }
+.owner-preview .bar { position: relative; z-index: 91; padding-top: env(safe-area-inset-top, 0px) }
