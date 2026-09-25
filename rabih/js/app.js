@@ -2458,6 +2458,15 @@ function bindEval() {
       message('#eval-msg', 'err', 'لا مفتاح OpenRouter.', ['أضف OPENROUTER_KEY في متغيّرات البيئة على Netlify ثم أعد النشر.']);
       return;
     }
+    /* **فشلُ الاتصال ليس تشغيلًا.** كان تعذُّرُ الوصول إلى الخادم يُسجَّل في
+       السجلّ تشغيلًا بمتوسط صفر و«مرفوض» — فيقرؤه من يفتح اللوحة حكمًا على
+       النماذج لا على الشبكة. فما لم يُجِب نموذجٌ واحد لا يُحفَظ شيء ويُقال السبب. */
+    const answered = (r.rows || []).filter((x) => !x.error).length;
+    if (!answered) {
+      const why = (r.rows || []).find((x) => x.error)?.error || 'تعذّر الوصول إلى الخادم';
+      message('#eval-msg', 'err', 'لم يُشغَّل المعيار: لم يُجِب أيُّ نموذج، فلا يُسجَّل تشغيل.', [String(why)]);
+      return;
+    }
     saveRun(r);
     render();
     const lines = r.rows.map((x) => x.error
@@ -3174,9 +3183,14 @@ function bindSettings() {
 
   $('#btn-lock-on').addEventListener('click', async () => {
     const p = $('#lk-pass').value;
+    /* «لا سبيل لاستعادتها» — فخطأُ حرفٍ واحد يحبس صاحبه خارج أرشيفه إلى الأبد.
+       فتُكتب مرتين قبل أن تُفعَّل. */
+    const p2 = $('#lk-pass2')?.value ?? p;
+    if (p !== p2) { message('#lock-msg', 'err', 'الكلمتان مختلفتان — اكتبها مرتين متطابقتين، فلا سبيل لاستعادتها بعد التفعيل.'); return; }
     const r = await lock.enable(p);
     message('#lock-msg', r.ok ? 'ok' : 'err', r.ok ? 'فُعِّل القفل. احفظ كلمة السر — لا سبيل لاستعادتها.' : r.reason);
     $('#lk-pass').value = '';
+    if ($('#lk-pass2')) $('#lk-pass2').value = '';
     renderLockState();
   });
 

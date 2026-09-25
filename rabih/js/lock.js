@@ -31,7 +31,7 @@ export const isEnabled = () => !!readCfg();
 
 /** يضبط القفل. لا تُحفَظ كلمة السر، بل مُلحها ومُتحقِّقها. */
 export async function enable(password) {
-  if (!password || password.length < 4) return { ok: false, reason: 'كلمة السر قصيرة جدًّا.' };
+  if (!password || password.length < 8) return { ok: false, reason: 'كلمة السر قصيرة — ثمانية أحرف فأكثر، فهي تحمي ما تصدّره مشفَّرًا.' };
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const check = await deriveCheck(password, salt);
   try {

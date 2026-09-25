@@ -803,7 +803,16 @@ gbox.includes('±') ? ok('ونصيبُ السلبي لكل فرع بهامشه')
   roundtrip.rejected ? ok('كلمة السر الخاطئة تُرفض') : bad('رفض الخاطئة');
   roundtrip.accepted && roundtrip.hasName ? ok('كلمة السر الصحيحة تفكّ الملف') : bad('فكّ التشفير', JSON.stringify(roundtrip));
 
+  /* التفعيلُ بلا تأكيدٍ كان يحبس صاحبَ خطأِ حرفٍ واحد خارج أرشيفه إلى الأبد. */
   await page.fill('#lk-pass', 'kalimat-sirr');
+  await page.fill('#lk-pass2', 'kalimat-sirr-x');
+  await page.click('#btn-lock-on');
+  await page.waitForTimeout(400);
+  // «غير مفعَّل» تحوي «مفعَّل» — فيُطابَق نصُّ الحالة لا جزؤه
+  (await page.textContent('#lock-msg')).includes('مختلفتان') && (await page.textContent('#lock-state')).includes('غير مفعَّل')
+    ? ok('كلمتان مختلفتان لا تُفعّلان القفل') : bad('قفلٌ بلا تأكيد');
+  await page.fill('#lk-pass', 'kalimat-sirr');
+  await page.fill('#lk-pass2', 'kalimat-sirr');
   await page.click('#btn-lock-on');
   await page.waitForTimeout(600);
   (await page.textContent('#lock-state')).includes('مفعَّل') ? ok('القفل يُفعَّل') : bad('تفعيل القفل');
