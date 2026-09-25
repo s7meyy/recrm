@@ -404,7 +404,7 @@ function bindBulk() {
         regionId: region?.id || '', regionName: region?.name || '',
         cityId, cityName: city?.name || '',
         groupId: cat?.group || '', categoryId, categoryName: cat?.name || '',
-        districtName: rawDistrict || '', brand, branch: '',
+        districtName: rawDistrict || '', brand, branch: name,   // ما كتبته الوكالةُ اسمًا هو اسمُ الفرع في تقرير المجموعة
       };
       j.place.mapsUrl = url;
       j.place.identity.name = name || parseMapsUrl(url)?.data?.name || '';
@@ -2093,12 +2093,14 @@ function renderGroup() {
     const tone = b.trend === 'انحدار' ? 'down' : (b.trend === 'تحسّن' ? 'up' : '');
     return `<tr><td>${b.rank}</td><td>${esc(b.label)}</td><td>${esc(b.district)}</td>
       <td>${b.googleAverage ?? '—'}</td><td>${b.googleCount ?? '—'}</td>
-      <td>${b.negativeShare ?? '—'}%</td><td>${b.replyRate ?? '—'}%</td>
+      <td>${b.negativeShare === null ? '—' : `${b.negativeShare}%${b.negMargin !== null ? ` <span class="fine">±${b.negMargin}</span>` : ''}`}${b.thin ? ' <span class="lone-tag">دون 3</span>' : ''}</td><td>${b.replyRate ?? '—'}%</td>
       <td class="${tone}">${esc(b.trend)}</td></tr>`;
   }).join('');
 
   const shared = a.shared.map((t) =>
     `<li><b>${esc(t.name)}</b> — ${t.branches.length} فروع: ${t.branches.map((x) => `${esc(x.label)} (${x.neg})`).join('، ')}</li>`).join('');
+  const mentioned = (a.mentioned || []).map((t) =>
+    `<li><b>${esc(t.name)}</b> — ${t.branches.map((x) => `${esc(x.label)} (${x.neg})`).join('، ')} <span class="fine">— دون ثلاثٍ في فرع، فلا يُسمّى مشكلةَ نظام</span></li>`).join('');
   const uniq = a.unique.map((t) =>
     `<li><b>${esc(t.name)}</b> — ${esc(t.branches[0].label)} وحده (${t.branches[0].neg})</li>`).join('');
 
@@ -2115,7 +2117,8 @@ function renderGroup() {
       <th>#</th><th>الفرع</th><th>الحي</th><th>متوسط قوقل</th><th>التقييمات</th><th>السلبي</th><th>ردود</th><th>الاتجاه</th>
     </tr></thead><tbody>${rows}</tbody></table></div>
     <div class="changes">
-      ${shared ? `<div class="chg bad"><b>شكاوى مشتركة — مشكلة نظام</b><ul>${shared}</ul></div>` : ''}
+      ${shared ? `<div class="chg bad"><b>شكاوى مشتركة — مشكلة نظام (ثلاثٌ فأكثر في كل فرع)</b><ul>${shared}</ul></div>` : ''}
+      ${mentioned ? `<div class="chg"><b>وردت في أكثر من فرع — ذِكرًا لا نمطًا بعد</b><ul>${mentioned}</ul></div>` : ''}
       ${uniq ? `<div class="chg"><b>شكاوى منفردة — مشكلة فرع</b><ul>${uniq}</ul></div>` : ''}
     </div>`;
 }

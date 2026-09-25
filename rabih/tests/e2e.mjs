@@ -712,7 +712,14 @@ try {
   const gopts = await page.$$eval('#grp-brand option', o => o.map(x => x.textContent));
   gopts.some(o => o.includes('مقهى الدرب') && o.includes('3')) ? ok('العلامة جُمعت: ' + gopts[0]) : bad('جمع العلامة', gopts.join('|'));
   const gbox = await page.textContent('#group-box');
-  gbox.includes('مشكلة نظام') ? ok('فُرزت الشكاوى المشتركة عن المنفردة') : bad('فرز الشكاوى', gbox.slice(0,120));
+  /* الانتظارُ وارد في الفروع الثلاثة — مرتين ومرتين ومرة. وكان يُسمّى «مشكلة
+     نظام» على ذلك، وهو حكمٌ ثقيل لا يحمله ذكران. فيُذكَر أنه ورد في أكثر من
+     فرع، ولا يُسمّى نظامًا حتى يبلغ ثلاثًا في كل فرع. */
+  gbox.includes('ذِكرًا لا نمطًا') && gbox.includes('الانتظار')
+    ? ok('الانتظارُ في الفروع الثلاثة يُذكَر ولا يُسمّى مشكلةَ نظام — دون ثلاثٍ في فرع') : bad('فرز الشكاوى', gbox.slice(0,160));
+!gbox.includes('مشكلة نظام (ثلاثٌ فأكثر')
+    ? ok('ولا «مشكلة نظام» على ذكرين') : bad('حكمٌ على ذكرين');
+gbox.includes('±') ? ok('ونصيبُ السلبي لكل فرع بهامشه') : bad('نسبةٌ بلا هامش');
   const grows = await page.$$eval('#group-box tbody tr', n => n.map(r => r.cells[1].textContent));
   grows.length === 3 ? ok('ترتيب الفروع: ' + grows.join(' ← ')) : bad('ترتيب الفروع', grows.join('|'));
   grows[grows.length-1].includes('النرجس') ? ok('الفرع الأضعف في الذيل') : bad('الأضعف', grows.join('|'));

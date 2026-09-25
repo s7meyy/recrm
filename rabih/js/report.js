@@ -947,17 +947,24 @@ export function buildGroupReportHtml({ brand, analysis, markdown = '', font = nu
   const table = `<table><thead><tr>
       <th>#</th><th>الفرع</th><th>الحي</th><th>متوسط قوقل</th><th>التقييمات</th><th>السلبي %</th><th>ردود %</th><th>الاتجاه</th>
     </tr></thead><tbody>${
-      rows.map((b) => `<tr><td>${b.rank}</td><td>${esc(b.label)}</td><td>${esc(b.district)}</td>
+      rows.map((b) => `<tr${b.thin ? ' class="lone-row"' : ''}><td>${b.rank}</td><td>${esc(b.label)}${b.thin ? ' <span class="lone-tag">عيّنةٌ دون 3</span>' : ''}</td><td>${esc(b.district)}</td>
         <td>${b.googleAverage ?? '—'}</td><td>${b.googleCount ?? '—'}</td>
-        <td>${b.negativeShare ?? '—'}</td><td>${b.replyRate ?? '—'}</td><td>${esc(b.trend)}</td></tr>`).join('')
-    }</tbody></table>`;
+        <td>${b.negativeShare === null ? '—' : `${b.negativeShare}${b.negMargin !== null ? ` <span class="fine">±${b.negMargin}</span>` : ''}`}</td><td>${b.replyRate ?? '—'}</td><td>${esc(b.trend)}</td></tr>`).join('')
+    }</tbody></table>
+    <p class="fine">الترتيبُ بمتوسط قوقل وحده — وهو رقمُه على تقييماته كلِّها. و«السلبي %» نصيبٌ من العيّنة الملصقة لكل فرع بهامشه،
+      فلا يُقارَن به فرعٌ بفرعٍ إن تداخل هامشاهما.</p>`;
 
   const list = (title, items, cls) => items.length
     ? `<section class="${cls}"><h2>${title}</h2><ul>${items.join('')}</ul></section>` : '';
 
   const shared = list('شكاوى مشتركة — مسؤولية الإدارة المركزية',
-    a.shared.map((t) => `<li><b>${esc(t.name)}</b> — في ${t.branches.length} فروع: ${
+    a.shared.map((t) => `<li><b>${esc(t.name)}</b> — ثلاثُ شكاوى فأكثر في كل فرع: ${
       t.branches.map((x) => `${esc(x.label)} (${x.neg})`).join('، ')}</li>`), 'group-shared');
+
+  /* ما ورد في الفروع كلِّها لكن مرةً أو مرتين في كلٍّ: يُذكَر ولا يُسمّى مشكلةَ نظام. */
+  const mentioned = list('وردت في أكثر من فرع — ذِكرًا لا نمطًا بعد',
+    (a.mentioned || []).map((t) => `<li><b>${esc(t.name)}</b> — ${
+      t.branches.map((x) => `${esc(x.label)} (${x.neg})`).join('، ')} <span class="fine">— دون ثلاثٍ في فرعٍ فلا يُحكَم به على النظام</span></li>`), 'group-mentioned');
 
   const unique = list('شكاوى منفردة — مسؤولية إدارة الفرع',
     a.unique.map((t) => `<li><b>${esc(t.name)}</b> — ${esc(t.branches[0].label)} وحده: ${t.branches[0].neg} مرات</li>`), 'group-unique');
@@ -968,6 +975,7 @@ export function buildGroupReportHtml({ brand, analysis, markdown = '', font = nu
   const groupRaw = [
     `<section><h2>ترتيب الفروع</h2>${table}</section>`,
     shared,
+    mentioned,
     unique,
     body.html,
   ].filter(Boolean).join('\n');

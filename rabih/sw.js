@@ -1,7 +1,7 @@
 // عامل الخدمة — رابح يعمل بلا إنترنت. لا شيء يُرسَل إلى أي خادم أصلًا،
 // فالاتصال إنما يلزم لتحميل الملفات أول مرة.
 
-const CACHE = 'rabih-v22';
+const CACHE = 'rabih-v23';
 const ASSETS = [
   './', './index.html', './manifest.webmanifest', './icon.svg', './assets/rabeh-logo.png',
   './css/rabih.css',

@@ -5,6 +5,7 @@
 import { stats } from './schema.js';
 import { topicStats } from './lexicon.js';
 import { recentVsOlder } from './recency.js';
+import { wilson } from './interval.js';
 
 /** العلامات الموجودة في الأرشيف، مع عدد فروع كل واحدة. */
 export function brands(jobs) {
@@ -37,7 +38,7 @@ const branchLabel = (j) =>
 
 /**
  * تحليل المجموعة.
- * @returns {{branches, shared, unique, ranking, totals, gap}}
+ * @returns {{branches, shared, mentioned, unique, ranking, totals, gap}}
  */
 export function analyze(jobs) {
   const branches = jobs.map((j) => {
@@ -53,6 +54,10 @@ export function analyze(jobs) {
       googleCount: s.googleCount,
       sampleAverage: s.sampleAverage,
       negativeShare: s.rated ? Number(((s.negative / s.rated) * 100).toFixed(1)) : null,
+      /* النسبةُ وحدها تُقرأ حكمًا على الفرع وهي وصفٌ لعيّنته: فيُذكر هامشُها
+         معها، ويُوسَم الفرعُ الذي دون ثلاثة تعليقات بأن عيّنته لا تُقاس. */
+      negMargin: s.rated ? (wilson(s.negative, s.rated, s.googleCount || null)?.margin ?? null) : null,
+      thin: s.rated < 3,
       replyRate: s.replyRate,
       total: s.total,
       trend: r.verdict,
@@ -70,7 +75,9 @@ export function analyze(jobs) {
     for (const t of b.topics) {
       if (!t.neg) continue;
       const row = counter.get(t.id) || { id: t.id, name: t.name, branches: [], totalNeg: 0 };
-      row.branches.push({ label: b.label, neg: t.neg, ids: t.negIds });
+      /* «مشكلةُ نظام» حكمٌ ثقيل: لا يُبنى على ذكرٍ أو ذكرين في كل فرع. فما دون
+         ثلاثٍ في فرعٍ يُعدّ فيه ذكرًا لا نمطًا، ولا يُحسَب في الاشتراك. */
+      row.branches.push({ label: b.label, neg: t.neg, ids: t.negIds, solid: t.neg >= 3 });
       row.totalNeg += t.neg;
       counter.set(t.id, row);
     }
@@ -78,8 +85,11 @@ export function analyze(jobs) {
 
   const shared = [];
   const unique = [];
+  const mentioned = [];
   for (const row of counter.values()) {
-    if (row.branches.length >= threshold) shared.push(row);
+    const solidBranches = row.branches.filter((x) => x.solid);
+    if (solidBranches.length >= threshold) shared.push(row);
+    else if (row.branches.length >= threshold) mentioned.push(row);   // مشتركةٌ ذِكرًا لا نمطًا
     else if (row.branches.length === 1) unique.push(row);
   }
   shared.sort((a, b) => b.branches.length - a.branches.length || b.totalNeg - a.totalNeg);
@@ -99,7 +109,7 @@ export function analyze(jobs) {
     : null;
 
   return {
-    branches, shared, unique, ranking, gap,
+    branches, shared, mentioned, unique, ranking, gap,
     totals: {
       branches: n,
       reviews: branches.reduce((a, b) => a + b.total, 0),

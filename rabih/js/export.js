@@ -6,7 +6,7 @@
 
 import { stats } from './schema.js';
 import { topicStats, topicSentiment, topicsOf } from './lexicon.js';
-import { scan } from './anomaly.js';
+import { scan, FLAGS } from './anomaly.js';
 import { progress, STATUS } from './plan.js';
 import { shield } from './privacy.js';
 
@@ -204,7 +204,8 @@ export function jobSheets(job) {
       r.id, Number(r.rating) || '', r.author || '', r.date || '', r.text || '', r.ownerReply || '',
       names.join('، '),
       dir.includes('neg') ? (dir.includes('pos') ? 'مختلط' : 'سلبي') : (dir.includes('pos') ? 'إيجابي' : 'محايد'),
-      (flags.get(r.id)?.flags || []).join('، '),
+      /* كانت تُكتب بمفاتيحها الداخلية («noName») في جدولٍ يُسلَّم لصاحب المحلّ. */
+      (flags.get(r.id)?.flags || []).map((k) => FLAGS[k]?.label || k).join('، '),
     ]);
   }
 
