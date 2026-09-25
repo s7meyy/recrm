@@ -447,3 +447,12 @@ select.model-pick{width:auto;min-width:150px;padding:6px 10px;font-size:13px}
 /* زرُّ إغلاق المعاينة كان يتراكب فوق شريط التنقّل. */
 .owner-preview { z-index: 90 }
 .owner-preview .bar { position: relative; z-index: 91; padding-top: env(safe-area-inset-top, 0px) }
+
+/* «كيف يعمل» للمالك: عناوينُ فرعية هادئة، وما يخصّ المشغّل خلف باب. */
+.about h3 { margin: 18px 0 6px; font-size: 15.5px; color: var(--navy) }
+.about ul { margin: 0; padding-inline-start: 20px; line-height: 1.9 }
+.about li { margin-bottom: 4px }
+.about .ops { margin-top: 18px; border: 1px solid #e3e8ee; border-radius: 10px; background: #fbfcfd }
+.about .ops > summary { cursor: pointer; padding: 11px 14px; font-weight: 700; color: var(--muted); min-height: 40px }
+.about .ops > *:not(summary) { padding: 0 14px }
+.about .ops ol { line-height: 1.9 }

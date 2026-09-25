@@ -679,14 +679,18 @@ figcaption{font-size:9pt;color:var(--muted);margin-top:1mm;text-align:center}
   /* الجدول يُمرَّر في حدّ ذاته، فلا يدفع الصفحة كلها. */
   table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch;font-size:11pt}
   th,td{white-space:nowrap}
-  .cover{padding:14mm 0 8mm}
-  .cover h1{font-size:19pt;margin:6mm 0 3mm}
+  /* الشاشةُ الأولى على الجوّال كانت غلافًا كلُّها: شعارٌ وعنوانٌ وثماني بطاقاتٍ
+     بارتفاع سطرٍ كامل، ولا خبرَ واحد قبل التمرير. فيُضغَط الغلاف إلى نصفها. */
+  .cover{padding:6mm 0 5mm}
+  .cover h1{font-size:18pt;margin:3mm 0 2mm}
+  .brand img{height:16mm}
+  .cover-grid{grid-template-columns:1fr 1fr;gap:2mm}
+  .cover-grid div{display:block;padding:2mm 2.5mm}
+  .cover-grid b{font-size:8.5pt;margin-bottom:.5mm}
+  .cover-grid span{font-size:10.5pt}
+  .spark-scale{display:none}
   .cover .sub{font-size:11pt;margin-bottom:6mm}
-  .cover-grid,.brief-cards,.act-grid,.sc-cols,.voice-cols,.photo-grid{grid-template-columns:1fr}
-  .cover-grid{gap:2mm}
-  /* البطاقة على الهاتف سطرٌ واحد: اسمٌ وقيمة، لا مربّعٌ يملأ الشاشة. */
-  .cover-grid div{display:flex;justify-content:space-between;align-items:baseline;gap:3mm;padding:2.5mm 3mm}
-  .cover-grid b{margin-bottom:0}
+  .brief-cards,.act-grid,.sc-cols,.voice-cols,.photo-grid{grid-template-columns:1fr}
   .rec-grid{grid-template-columns:1fr}
   .brief-hero{gap:3mm}
   .brief-hero .hero-side{border-inline-start:0;padding-inline-start:0}
