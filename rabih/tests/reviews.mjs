@@ -126,5 +126,38 @@ try {
   srv.close();
 }
 
+console.log('٥) الرابطُ المختصر يُفكّ في الخادم — لا «أدخِل البيانات يدويًّا»');
+/* «maps.app.goo.gl/xxxx» لا يحمل الاسم في حروفه ويقود إليه بتحويلةٍ واحدة يمنع
+   المتصفّحُ تتبّعَها. فيتبعها الخادم، ويرفض ما ليس من قوقل، ويقف عند تحويلةٍ
+   تخرج عن قوقل — وإلا صار أداةَ طلبٍ نيابةً عن غيره إلى شبكةٍ داخلية. */
+{
+  const { createServer } = await import('node:http');
+  const srv = createServer((req, res) => {
+    if (req.url === '/short') { res.writeHead(302, { location: 'https://www.google.com/maps/place/%D9%85%D9%82%D9%87%D9%89+%D8%A7%D9%84%D8%AF%D8%B1%D8%A8/@24.7136,46.6753,17z/data=!4m2!3m1!1s0x3e2f03:0x9a1c' }); res.end(); return; }
+    if (req.url === '/evil') { res.writeHead(302, { location: 'http://169.254.169.254/latest/meta-data/' }); res.end(); return; }
+    res.writeHead(200); res.end('x');
+  });
+  await new Promise((r) => srv.listen(8977, r));
+  const real = globalThis.fetch;
+  let leaked = null;
+  globalThis.fetch = (input, init) => {
+    const u = String(input);
+    if (u.startsWith('https://maps.app.goo.gl/')) return real('http://127.0.0.1:8977/' + u.split('/').pop(), init);
+    if (u.startsWith('https://www.google.com/maps/place/')) return new Response('', { status: 200 });
+    leaked = u; throw new Error('BLOCKED ' + u);
+  };
+  const { default: fn } = await import('../netlify/functions/expand.js');
+  const call = (q) => fn(new Request('http://x/api/expand?url=' + encodeURIComponent(q))).then((r) => r.json());
+  const a = await call('https://maps.app.goo.gl/short');
+  a.name === 'مقهى الدرب' && a.coords?.lat === 24.7136 && a.placeId === '0x3e2f03:0x9a1c'
+    ? ok('يُفكّ فيُستخرَج الاسمُ والإحداثياتُ والمعرّف بلا مفتاح') : bad('فكّ المختصر', JSON.stringify(a));
+  const e = await call('https://maps.app.goo.gl/evil');
+  !e.resolved && leaked === null ? ok('وتحويلةٌ إلى شبكةٍ داخلية لا تُتبَع — ولا يخرج طلبٌ إليها') : bad('تسريب', leaked || JSON.stringify(e));
+  const f = await call('https://example.com/abc');
+  f.error ? ok('وما ليس من قوقل يُرفَض قبل أي طلب') : bad('قبول أجنبي', JSON.stringify(f));
+  globalThis.fetch = real;
+  srv.close();
+}
+
 console.log('\n' + (fails.length ? `فشل ${fails.length}:\n` + fails.map((f) => ' - ' + f).join('\n') : '✅ نجحت كل الاختبارات'));
 process.exit(fails.length ? 1 : 0);

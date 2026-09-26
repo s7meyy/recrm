@@ -33,7 +33,7 @@ export function parseMapsUrl(raw) {
   const hex = u.href.match(/0x[0-9a-f]+:0x[0-9a-f]+/i);
   if (hex && !data.placeId) data.placeId = hex[0];
 
-  if (short) return { ok: true, short: true, data, reason: 'رابط مختصر: تعذّر استخراج الاسم منه، أدخِل البيانات يدويًا.' };
+  if (short) return { ok: true, short: true, data, reason: 'رابط مختصر — يُفكّ الآن لاستخراج الاسم…' };
   if (!place && !at && !data.placeId) {
     return { ok: false, reason: 'الرابط من قوقل لكنه لا يشير إلى مكان محدد.' };
   }
@@ -73,4 +73,20 @@ export function asciiName(text, fallback = 'rabih') {
     .toLowerCase()
     .slice(0, 60);
   return out || fallback;
+}
+
+/**
+ * فكُّ الرابط المختصر عبر الخادم — يُعيد الرابطَ الكامل وما فيه من اسمٍ وإحداثيات.
+ * وبلا شبكةٍ يُعيد `null`، فيبقى الرابطُ المختصر كما هو ولا يُكسَر شيء.
+ * @returns {Promise<{url:string, name:string, coords:object|null, placeId:string}|null>}
+ */
+export async function expandShortUrl(raw) {
+  const p = parseMapsUrl(raw);
+  if (!p.ok || !p.short) return null;
+  try {
+    const res = await fetch(`/api/expand?url=${encodeURIComponent(String(raw).trim())}`);
+    if (!res.ok) return null;
+    const j = await res.json();
+    return j?.url ? j : null;
+  } catch { return null; }
 }

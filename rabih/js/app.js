@@ -3,7 +3,7 @@
 import { citiesOfRegion, cityById, regionById, allCities, addCity, allRegions, addRegion } from './data/cities.js';
 import { CATEGORY_GROUPS, categoryById, allCategories, addCategory } from './data/categories.js';
 import { districtsOf, addDistrict } from './data/districts.js';
-import { parseMapsUrl, asciiName } from './maps.js';
+import { parseMapsUrl, expandShortUrl, asciiName } from './maps.js';
 import { emptyPlace, assignReviewIds, validate, stats } from './schema.js';
 import { parseReviews, parseHeader } from './parse.js';
 import { STEPS, STAGE_NAMES, MODEL_PICKS } from './prompts.js';
@@ -301,9 +301,17 @@ function bindNewView() {
       const v = $('#f-url').value.trim();
       if (!v) { message('#new-msg', 'ok', ''); return; }
       const r = parseMapsUrl(v);
-      if (!r.ok) message('#new-msg', 'err', r.reason);
-      else if (r.short) message('#new-msg', 'warn', r.reason);
-      else message('#new-msg', 'ok', `الرابط صالح${r.data.name ? ` — المنشأة: ${r.data.name}` : ''}.`);
+      if (!r.ok) { message('#new-msg', 'err', r.reason); return; }
+      if (!r.short) { message('#new-msg', 'ok', `الرابط صالح${r.data.name ? ` — المنشأة: ${r.data.name}` : ''}.`); return; }
+      /* الرابطُ المختصر يُفكّ في الخادم: كان الموقع يقول «أدخِل البيانات يدويًّا»
+         وهو تهرّبٌ عن تحويلةٍ واحدة يستطيع الخادمُ تتبّعها بلا مفتاح. */
+      message('#new-msg', 'warn', r.reason);
+      expandShortUrl(v).then((x) => {
+        if ($('#f-url').value.trim() !== v) return;      // بدّل الرابطَ أثناء الانتظار
+        if (x?.name) message('#new-msg', 'ok', `الرابط صالح — المنشأة: ${x.name}.`);
+        else if (x?.url) message('#new-msg', 'ok', 'فُكّ الرابط المختصر، ولم يحمل اسمًا — يُملأ الاسم في شاشة البيانات.');
+        else message('#new-msg', 'warn', 'رابط مختصر، وتعذّر فكّه الآن — يُقبَل كما هو ويُملأ الاسم في شاشة البيانات.');
+      });
     }, 400);
   });
 
@@ -390,12 +398,14 @@ function bindBulk() {
     for (const line of lines) {
       const [rawName, rawUrl, rawDistrict] = line.split('|').map((x) => (x || '').trim());
       const name = rawName || '';
-      const url = rawUrl || '';
+      let url = rawUrl || '';
       if (!name && !url) continue;
 
+      let expanded = null;
       if (url) {
         const chk = parseMapsUrl(url);
         if (!chk.ok) { skipped.push(`${name || url}: ${chk.reason}`); continue; }
+        if (chk.short) { expanded = await expandShortUrl(url); if (expanded?.url) url = expanded.url; }
       }
 
       const j = blankJob();
@@ -407,7 +417,7 @@ function bindBulk() {
         districtName: rawDistrict || '', brand, branch: name,   // ما كتبته الوكالةُ اسمًا هو اسمُ الفرع في تقرير المجموعة
       };
       j.place.mapsUrl = url;
-      j.place.identity.name = name || parseMapsUrl(url)?.data?.name || '';
+      j.place.identity.name = name || parseMapsUrl(url)?.data?.name || expanded?.name || '';
       j.place.identity.category = cat?.name || '';
       await saveJob(j);
       queue.add(j.id);
@@ -430,7 +440,7 @@ function bindBulk() {
 }
 
 async function onStart() {
-  const url = $('#f-url').value.trim();
+  let url = $('#f-url').value.trim();
   const regionId = $('#f-region').value;
   const cityId = $('#f-city').value;
   const categoryId = $('#f-category').value;
@@ -451,7 +461,12 @@ async function onStart() {
   if (!categoryId) missing.push('التصنيف');
   if (!districtName) missing.push('الحي');
 
-  const parsed = parseMapsUrl(url);
+  let parsed = parseMapsUrl(url);
+  /* وعند البدء يُفكّ المختصرُ فيُحفَظ الرابطُ الكامل والاسمُ معًا — لا الرابطُ العاري. */
+  if (parsed.ok && parsed.short) {
+    const x = await expandShortUrl(url);
+    if (x?.url) { url = x.url; parsed = parseMapsUrl(url); if (!parsed.ok) parsed = { ok: true, data: { name: x.name, coords: x.coords, placeId: x.placeId } }; }
+  }
   const city = cityById(cityId);
   const cat = categoryById(categoryId);
   const region = regionById(regionId || city?.region);
