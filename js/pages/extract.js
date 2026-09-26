@@ -22,7 +22,7 @@ import { labelFor, ENUMS } from '../data/schema.js';
 import { getLists, typeLabel } from '../data/settings.js';
 import { el, clear, badge, toast, emptyState, confirmDialog, allChip } from '../util/dom.js';
 import { formatDateTime, formatNumber } from '../util/format.js';
-import { formatBytes } from '../data/images.js';
+import { formatBytes, storeImage } from '../data/images.js';
 import { parseDocument, toPropertyFields, DOC_KINDS } from '../util/deed-parse.js';
 import { parseOfferText, parseRequestText } from '../data/listing-parse.js';
 import { loadIntegrations, runIntegration, explain } from '../data/integrations.js';
@@ -31,8 +31,12 @@ import { runPlans } from '../util/plans.js';
 const MAX_BYTES = 25 * 1024 * 1024; // حدُّ ما يُرسَل إلى مزوّدٍ في نداءٍ واحد
 const KIND_LABEL = Object.fromEntries(DOC_KINDS.map((k) => [k.key, k.label]));
 
+/* **«بانتظار المراجعة» كانت تُقرأ «قيد المعالجة»** (المرحلة ٦١): صاحبُ المكتب رأى سجلّاتٍ
+   عليها الشارةُ أيامًا وظنّ أن النظام يراجعها. والنظامُ لا يراجع شيئًا — التفريغُ فوريّ، وما
+   يُنتظر هو اعتمادُه هو. فالشارةُ تقول ذلك بلفظه: «تنتظر اعتمادك». والفاشلُ لا يحمل شارةَ
+   الانتظار أبدًا: هو «لم يُفرَّغ» بلونه وسببه وزرِّ ما يُفعل. */
 const FILTERS = [
-  { key: 'new', label: 'بانتظار المراجعة', test: (r) => r.status !== 'approved' },
+  { key: 'new', label: 'تنتظر اعتمادك', test: (r) => r.status !== 'approved' && !r.error },
   { key: 'approved', label: 'معتمَدة', test: (r) => r.status === 'approved' },
   { key: 'failed', label: 'فشل تفريغها', test: (r) => !!r.error },
   { key: 'used', label: 'أُنشئ منها شيء', test: (r) => !!(r.madePropertyId || r.madeRequestId || r.madeTaskId) },
@@ -102,21 +106,41 @@ function intakePanel(ctx) {
       + 'مثال: رقم الصك ٣١٠١٠٢٠٤٥٦٧٨٩ — اسم المالك سعد التميمي — المدينة الرياض — الحي النرجس — المساحة ٤٥٠ م٢',
   });
 
+  /* ملفّاتٌ عدّة دفعةً واحدة (المرحلة ٦١): كان الاختيارُ متعدّدًا في الكود ولا يقوله الزرّ،
+     ولا تقدّمَ يُرى — فمن اختار خمسَ صورٍ لم يعرف أوصلت أم لا. الآن الزرُّ يقولها، وسطرُ
+     تقدّمٍ يعدّ «يُفرَّغ ٢ من ٥»، وتُقبل بالسحب والإفلات وبلصق صورةٍ في مربّع النصّ. */
+  const progress = ctx.nodes.progress = el('p', { class: 'field-hint extract-progress', hidden: true, 'aria-live': 'polite' });
+  const takeFiles = async (files) => {
+    const list = [...files].filter(Boolean);
+    if (!list.length) return;
+    let done = 0;
+    progress.hidden = false;
+    for (const f of list) {
+      progress.textContent = `يُفرَّغ ${formatNumber(done + 1)} من ${formatNumber(list.length)} — ${f.name || 'ملف'}…`;
+      await intakeFile(ctx, f);
+      done += 1;
+    }
+    progress.hidden = true;
+    await load(ctx);
+    renderFilters(ctx);
+    renderList(ctx);
+    const failed = ctx.rows.slice(0, list.length).filter((r) => r.error).length;
+    toast(failed
+      ? `وصل ${formatNumber(list.length)} — فُرِّغ ${formatNumber(list.length - failed)} ولم يُفرَّغ ${formatNumber(failed)}؛ السببُ مكتوبٌ على كل بطاقة`
+      : `فُرِّغ ${formatNumber(list.length)} — راجعها واعتمدها أدناه`, failed ? 'info' : 'success', 6000);
+  };
   const fileInput = el('input', {
     type: 'file', accept: 'image/*,application/pdf,audio/*,video/*', multiple: true, class: 'visually-hidden',
-    onChange: async (e) => {
-      const files = [...e.target.files];
-      e.target.value = '';
-      for (const f of files) await intakeFile(ctx, f);
-      await load(ctx);
-      renderFilters(ctx);
-      renderList(ctx);
-    },
+    onChange: async (e) => { const files = [...e.target.files]; e.target.value = ''; await takeFiles(files); },
+  });
+  textarea.addEventListener('paste', (e) => {
+    const files = [...(e.clipboardData?.files || [])];
+    if (files.length) { e.preventDefault(); takeFiles(files); }
   });
 
-  return el('section', { class: 'panel' },
+  const panel = el('section', { class: 'panel extract-intake' },
     el('h2', { text: 'فرّغ مستندًا' }),
-    el('p', { class: 'panel-desc', text: 'الصق نصًّا، أو اختر ملفًّا. والنصّ يبقى قابلًا للتعديل بعد التفريغ — التفريغ مسوّدةٌ لا حكم.' }),
+    el('p', { class: 'panel-desc', text: 'الصق نصًّا، أو اختر ملفًّا أو عدّة ملفات. والتفريغُ فوريٌّ: يعود النصُّ في لحظته أو يُكتب سببُ الفشل — ولا شيء يبقى «قيد المعالجة». ما ينتظر بعده هو اعتمادُك أنت.' }),
     textarea,
     el('div', { class: 'row', style: { marginTop: '8px', gap: '8px', flexWrap: 'wrap' } },
       el('button', {
@@ -136,8 +160,13 @@ function intakePanel(ctx) {
           renderList(ctx);
         },
       }),
-      el('label', { class: 'btn' }, '+ اختر ملفًّا (صورة · PDF · صوت · مقطع)', fileInput)),
-    el('p', { class: 'field-hint', text: `حدّ الملف ${formatBytes(MAX_BYTES)} — وما فوقه لا يُرسَل إلى مزوّدٍ في نداءٍ واحد.` }));
+      el('label', { class: 'btn' }, '+ اختر ملفات (صور · PDF · صوت · مقطع — عدّة ملفات دفعةً واحدة)', fileInput)),
+    progress,
+    el('p', { class: 'field-hint', text: `حدّ الملف ${formatBytes(MAX_BYTES)} — وما فوقه لا يُرسَل إلى مزوّدٍ في نداءٍ واحد. ويمكنك سحبُ الملفات وإفلاتُها هنا، أو لصقُ صورةٍ في مربّع النصّ.` }));
+  for (const ev of ['dragenter', 'dragover']) panel.addEventListener(ev, (e) => { e.preventDefault(); panel.classList.add('is-dropping'); });
+  panel.addEventListener('dragleave', () => panel.classList.remove('is-dropping'));
+  panel.addEventListener('drop', (e) => { e.preventDefault(); panel.classList.remove('is-dropping'); takeFiles(e.dataTransfer?.files || []); });
+  return panel;
 }
 
 /**
@@ -196,7 +225,17 @@ const blobToBase64 = (blob) => new Promise((resolve, reject) => {
  * يرسل ملفًّا إلى محوّله. **وسجلُّ الفشل يُحفظ كسجلّ النجاح** — ملفٌّ فشل تفريغه وسقط
  * صامتًا أسوأ من سطرٍ أحمر يقول لماذا، لأنك تظنّه فُرّغ.
  */
-async function intakeFile(ctx, file) {
+/**
+ * الصورةُ التي فشل تفريغُها تُحفظ (المرحلة ٦١) كي يُعاد بضغطةٍ بعد تهيئة المزوّد — وكانت
+ * تُرمى فلا سبيلَ إلا اختيارُها من جديد. الصورُ وحدها (مضغوطةً)؛ وPDF والصوتُ ثقيلان.
+ */
+async function keepForRetry(file, existingId = null) {
+  if (existingId) return existingId;
+  if (!(file.type || '').startsWith('image/') || file.size > 8 * 1024 * 1024) return null;
+  try { return (await storeImage(file, { entity: 'extraction' })).id; } catch (_) { return null; }
+}
+
+async function intakeFile(ctx, file, { imageId: keptId = null } = {}) {
   const mime = file.type || '';
   const isAudio = mime.startsWith('audio/') || mime.startsWith('video/');
   const isDoc = mime.startsWith('image/') || mime === 'application/pdf';
@@ -215,7 +254,7 @@ async function intakeFile(ctx, file) {
   const st = statusOf(ctx, key);
   if (st && !st.configured) {
     await repo.extractions.create({
-      ...base, source: key,
+      ...base, source: key, imageId: await keepForRetry(file, keptId),
       error: `${st.label} غير مُهيَّأ — الناقص: ${(st.missing || []).join('، ')}. وتُكتب في Netlify ← Site configuration ← Environment variables.`,
     });
     return;
@@ -232,19 +271,28 @@ async function intakeFile(ctx, file) {
     : await runIntegration('ocr', 'document.read', { image: payload, mime, kind: 'auto' });
 
   if (!res?.ok) {
-    await repo.extractions.create({ ...base, source: key, error: explain(res, key) });
+    await repo.extractions.create({ ...base, source: key, imageId: await keepForRetry(file, keptId), error: explain(res, key) });
     return;
   }
   const text = String(res.provider?.text || res.provider?.transcript || res.text || '').trim();
   if (!text) {
-    await repo.extractions.create({ ...base, source: key, error: 'ردّ المزوّد بلا نصّ — جرّب ملفًّا أوضح، أو الصق النصّ يدويًّا.' });
+    await repo.extractions.create({ ...base, source: key, imageId: await keepForRetry(file, keptId), error: 'ردّ المزوّد بلا نصّ — جرّب ملفًّا أوضح، أو الصق النصّ يدويًّا.' });
     return;
   }
   const parsed = readAll(text, ctx.lists);
   await repo.extractions.create({
     ...base, source: key, text, kind: parsed.kind?.key || null,
-    fields: parsed.fields, warnings: parsed.warnings,
+    fields: parsed.fields, warnings: parsed.warnings, imageId: keptId,
   });
+}
+
+/** يعيد تفريغَ سجلٍّ فاشلٍ من صورته المحفوظة، ثم يحذف السجلَّ القديم. */
+async function retryRecord(ctx, rec) {
+  const img = rec.imageId ? await repo.images.get(rec.imageId) : null;
+  if (!img?.blob) { toast('لا صورةَ محفوظة لهذا السجلّ — اختر الملف من جديد', 'error'); return; }
+  const file = new File([img.blob], rec.fileName || 'صورة.jpg', { type: img.mime || 'image/jpeg' });
+  await intakeFile(ctx, file, { imageId: rec.imageId });
+  await repo.extractions.remove(rec.id);
 }
 
 /* ===== الفلاتر والقائمة ===== */
@@ -303,7 +351,14 @@ function card(ctx, rec) {
           formatDateTime(rec.createdAt),
         ].filter(Boolean).join(' · '))),
     el('div', { class: 'row' },
-      rec.status === 'approved' ? badge('معتمَدة', 'badge-ok') : badge('بانتظار المراجعة', 'badge-warn'),
+      rec.error ? badge('لم يُفرَّغ — يحتاج تدخّلك', 'badge-danger')
+        : rec.status === 'approved' ? badge('معتمَدة', 'badge-ok') : badge('تنتظر اعتمادك', 'badge-warn'),
+      // الاعتمادُ من الرأس (المرحلة ٦١): كان زرًّا خافتًا في آخر البطاقة باسم «راجعتُه».
+      (!rec.error && rec.status !== 'approved') ? el('button', {
+        type: 'button', class: 'btn btn-primary btn-sm', text: '✓ اعتمد',
+        title: 'يُعلَّم معتمَدًا بلا إنشاء شيء — والتحويل إلى عقار أو طلب أو مهمة في آخر البطاقة',
+        onClick: async () => { await repo.extractions.update(rec.id, { status: 'approved' }); toast('اعتُمد', 'success'); await refresh(); },
+      }) : null,
       el('button', {
         type: 'button', class: 'btn btn-ghost btn-sm', text: '🗑', title: 'احذف السجل',
         onClick: async () => {
@@ -318,9 +373,23 @@ function card(ctx, rec) {
       })));
 
   if (rec.error) {
+    const key = rec.source === 'transcribe' ? 'transcribe' : 'ocr';
+    const st = statusOf(ctx, key);
+    const canRetry = !!rec.imageId && !!st?.configured;
     return el('article', { class: 'panel extract-card extract-failed' }, head,
       el('p', { class: 'field-hint warn-text', text: rec.error }),
-      el('p', { class: 'muted small', text: 'والمسار الأول يعمل الآن: استخرج نصّه بجوّالك والصقه أعلاه.' }));
+      el('p', { class: 'muted small', text: 'والمسار الأول يعمل الآن: استخرج نصّه بجوّالك والصقه أعلاه.' }),
+      el('div', { class: 'row', style: { gap: '6px', flexWrap: 'wrap' } },
+        el('button', {
+          type: 'button', class: 'btn btn-sm', text: '📋 الصق نصّه',
+          onClick: () => { const t = ctx.container.querySelector('.extract-intake textarea'); t?.scrollIntoView({ block: 'center', behavior: 'smooth' }); t?.focus(); },
+        }),
+        rec.imageId ? el('button', {
+          type: 'button', class: 'btn btn-sm', text: canRetry ? '↻ أعد المحاولة' : '↻ أعد المحاولة (بعد التهيئة)',
+          disabled: !canRetry,
+          title: canRetry ? 'يُرسل الصورة المحفوظة إلى المزوّد من جديد' : 'الصورة محفوظة — تعمل بعد تهيئة «قراءة المستندات» في التكاملات',
+          onClick: async () => { await retryRecord(ctx, rec); await refresh(); },
+        }) : null));
   }
 
   /* النصّ — قابلٌ للتعديل وإعادة القراءة */
@@ -519,15 +588,9 @@ function actionsBlock(ctx, rec, textarea, refresh) {
     },
   });
 
-  const approve = rec.status === 'approved' ? null : el('button', {
-    type: 'button', class: 'btn btn-ghost btn-sm', text: '✓ راجعتُه',
-    title: 'يُعلَّم معتمَدًا بلا إنشاء شيء',
-    onClick: async () => { await repo.extractions.update(rec.id, { status: 'approved', text: textarea.value }); await refresh(); },
-  });
-
   return el('div', { class: 'panel-block' },
     el('h3', { text: 'حوّله' }),
-    el('p', { class: 'muted small', text: 'لا يُنشأ شيءٌ حتى تضغط — والمُنشأ يُفتح لك لتُكمله وتراجعه.' }),
-    el('div', { class: 'row', style: { gap: '6px', flexWrap: 'wrap' } }, mkProperty, mkRequest, mkContractTask, approve),
+    el('p', { class: 'muted small', text: 'لا يُنشأ شيءٌ حتى تضغط — والمُنشأ يُفتح لك لتُكمله وتراجعه. و«اعتمد» في رأس البطاقة يُعلّمها مراجَعةً بلا إنشاء.' }),
+    el('div', { class: 'row', style: { gap: '6px', flexWrap: 'wrap' } }, mkProperty, mkRequest, mkContractTask),
     made.children.length ? made : null);
 }

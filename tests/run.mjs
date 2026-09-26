@@ -108,6 +108,7 @@ const SUITES = [
   ['offer-paste.mjs', OPEN],
   ['tasks-table.mjs', OPEN],
   ['extract.mjs', OPEN],
+  ['extract-batch.mjs', OPEN],      // المرحلة ٦١
   ['deals-router.mjs', OPEN],
   ['guard-input.mjs', OPEN],
   ['gate-and-publish.mjs', LOCKED],

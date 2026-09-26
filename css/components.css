@@ -1323,3 +1323,6 @@ body.modal-open .voice-dock { display: none; }
 .share-card-box { display: flex; flex-direction: column; gap: 10px; }
 .share-card-preview { width: 100%; max-width: 420px; margin-inline: auto; border-radius: var(--radius); border: 1px solid var(--line); display: block; }
 .share-card-text { font-size: var(--fs-sm); direction: rtl; }
+/* التفريغ (المرحلة ٦١): منطقةُ الإفلات وسطرُ التقدّم */
+.extract-intake.is-dropping { outline: 2px dashed var(--accent); outline-offset: -6px; background: var(--accent-soft); }
+.extract-progress { font-weight: 600; color: var(--accent-text); }
