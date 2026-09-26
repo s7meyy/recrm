@@ -34,10 +34,21 @@ export default async () => {
   try { data = (await upstream.json())?.data || []; } catch { data = []; }
 
   const isFree = (m) => m?.pricing && Number(m.pricing.prompt) === 0 && Number(m.pricing.completion) === 0;
-  const free = data.filter(isFree).map((m) => ({
+  /* **نصٌّ يدخل ونصٌّ يخرج** — لا غير. القائمةُ المجانية فيها ما يُولّد موسيقى
+     أو صورًا (Lyria، وأشباهها)، وقد رُشِّح أحدُها لتوحيد التعليقات فانقطع
+     البثّ. فيُشترط أن يقبل نصًّا ويُخرج نصًّا، بالحقلين الحديثين أو بالقديم. */
+  const isText = (m) => {
+    const a = m?.architecture || {};
+    const ins = a.input_modalities, outs = a.output_modalities;
+    if (Array.isArray(ins) && Array.isArray(outs)) return ins.includes('text') && outs.includes('text');
+    const mod = String(a.modality || '');
+    return mod === '' ? true : /(^|\+)text(\+|->)/.test(mod) && /->.*text/.test(mod);
+  };
+  const free = data.filter((m) => isFree(m) && isText(m)).map((m) => ({
     id: m.id,
     name: m.name || m.id,
     context: Number(m.context_length) || 0,
+    text: true,
   })).sort((a, b) => b.context - a.context);
 
   const body = JSON.stringify({ at: new Date(now).toISOString(), count: free.length, free });

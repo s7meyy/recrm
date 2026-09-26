@@ -117,7 +117,13 @@ export async function runStep(stepKey, state, { onChunk, onModel, signal } = {})
     if (signal?.aborted) return { ok: false, attempts, error: 'أُوقف بأمرك.' };
     if (onModel) onModel(pick);
 
-    const r = await callModel(pick.slug, prompt, { onChunk, signal });
+    let r = await callModel(pick.slug, prompt, { onChunk, signal });
+    /* ٤٢٩ «Provider returned error» وانقطاعُ البثّ عابران عند المزوّد أكثر
+       مما هما عند النموذج: تُعاد المحاولةُ مرةً بعد مهلةٍ قبل هجر النموذج. */
+    if (!r.ok && (r.rateLimited || r.network) && !retiredFrom(r.error) && !signal?.aborted) {
+      await new Promise((res) => setTimeout(res, 2500));
+      r = await callModel(pick.slug, prompt, { onChunk, signal });
+    }
 
     if (!r.ok) {
       attempts.push({ model: pick.name, error: r.error });

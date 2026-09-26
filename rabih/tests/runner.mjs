@@ -271,6 +271,7 @@ console.log('١١) الترشيحُ حيٌّ لا محفور — القائمة�
     { id: 'qwen/qwen3-235b-a22b:free', name: 'Qwen3 235B', context: 40000 },
     { id: 'google/gemini-2.0-flash-exp:free', name: 'Gemini 2.0 Flash', context: 1000000 },
     { id: 'tiny/model:free', name: 'Tiny', context: 4000 },
+    { id: 'google/lyria-3:free', name: 'Lyria 3', context: 200000, text: false },
   ] };
   globalThis.fetch = async (input) => {
     const url = String(input);
@@ -285,6 +286,8 @@ console.log('١١) الترشيحُ حيٌّ لا محفور — القائمة�
   n.some((p) => p.slug.startsWith('meta-llama/')) && n.some((p) => p.slug.startsWith('qwen/'))
     ? ok('وLlama وQwen كلٌّ إلى قريبه') : bad('العائلات', n.map((p) => p.slug).join(' | '));
   !n.some((p) => p.slug === 'tiny/model:free') ? ok('ولا يُرشَّح نموذجٌ نافذتُه أضيق من تقرير') : bad('نافذة ضيقة رُشِّحت');
+  const all = [...n, ...(await resolvePicks('mergeNormalized')), ...(await resolvePicks('analyze'))];
+  !all.some((p) => p.slug.includes('lyria')) ? ok('ولا نموذجٌ يُخرج موسيقى — رُشِّح مرةً لتوحيد التعليقات') : bad('نموذجٌ غير نصّيّ رُشِّح', all.map((p) => p.slug).join(' | '));
   const a = await resolvePicks('analyze');
   a[0].slug === 'google/gemini-2.0-flash-exp:free' || a.some((p) => p.slug === 'google/gemini-2.0-flash-exp:free')
     ? ok('وما بقي مجانيًّا يبقى كما هو') : bad('المفضَّل الحيّ أُسقط', a.map((p) => p.slug).join(' | '));
