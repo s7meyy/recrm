@@ -56,7 +56,10 @@ function card(listing) {
     el('a', { href: single }, media),
     el('div', { class: 'card-body' },
       el('h2', { class: 'card-title' }, el('a', { class: 'card-link', href: single, text: listing.title || listing.typeLabel || 'عقار' })),
-      el('div', { class: 'card-place', text: [listing.district, listing.city].filter(Boolean).join('، ') }),
+      // المكانُ في العنوان حين يحمله («فلة — الملقا»)، وإلا يُقال تحته (المرحلة ٥٨).
+      (listing.title || '').includes(listing.district || '\u0000')
+        ? null
+        : el('div', { class: 'card-place', text: [listing.district, listing.city].filter(Boolean).join('، ') }),
       el('div', { class: 'card-price', text: money(listing.price) }),
       el('div', { class: 'card-meta' },
         (listing.purposeLabels || []).map((p) => el('span', { class: 'tag', text: p })),

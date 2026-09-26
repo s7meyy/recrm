@@ -70,6 +70,16 @@ function drawDistricts() {
 }
 citySelect.addEventListener('change', drawDistricts);
 
+/* رقمُ العرض من الرابط (المرحلة ٥٨): «اطلب معاينة» في صفحة العرض يأتي به، فيُقال في
+   الاستمارة ويُرسل مع الطلب — ويصل صاحبَ المكتب موصولًا بعرضه لا سؤالًا عامًّا. */
+const askedRef = (new URLSearchParams(location.search).get('ref') || '').slice(0, 12);
+if (askedRef) {
+  const note = document.createElement('p');
+  note.className = 'intake-ref';
+  note.textContent = `بخصوص العرض رقم ${askedRef}`;
+  form.prepend(note);
+}
+
 form.addEventListener('submit', async (event) => {
   event.preventDefault();
   const data = Object.fromEntries(new FormData(form).entries());
@@ -84,7 +94,7 @@ form.addEventListener('submit', async (event) => {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        name: data.name, phone: data.phone, note: data.note, website: data.website,
+        name: data.name, phone: data.phone, note: data.note, website: data.website, ref: askedRef,
         want: {
           purpose: data.purpose, type: data.type, city: data.city, district: data.district,
           budgetMax: data.budgetMax, area: data.area,

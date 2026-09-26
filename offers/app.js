@@ -46,7 +46,26 @@ const monthsSince = (iso) => {
 };
 
 let all = [];
-const filters = { type: '', purpose: '', district: '' };
+const filters = { type: '', purpose: '', district: '', priceMax: '', areaMin: '', favs: false };
+
+/* ===== المفضّلة (المرحلة ٥٨) — في متصفّح العميل وحده، لا تصل الخادم ولا تُطلب بها هويّة ===== */
+const FAV_KEY = 'kassab-offers-favs';
+const favs = new Set((() => { try { return JSON.parse(localStorage.getItem(FAV_KEY) || '[]'); } catch (_) { return []; } })());
+function toggleFav(ref) {
+  const key = String(ref);
+  if (favs.has(key)) favs.delete(key); else favs.add(key);
+  try { localStorage.setItem(FAV_KEY, JSON.stringify([...favs])); } catch (_) { /* تصفّح خاص: تبقى للجلسة */ }
+}
+
+/** سلّمٌ ثابت للسعر والمساحة — ولا يُعرض من درجاته إلا ما يفصل بين العروض فعلًا. */
+const PRICE_LADDER = [100000, 250000, 500000, 750000, 1000000, 1500000, 2000000, 3000000, 5000000, 10000000];
+const AREA_LADDER = [150, 200, 250, 300, 400, 500, 750, 1000, 2000];
+function ladderOptions(ladder, values, keep) {
+  const nums = values.filter((v) => Number.isFinite(v));
+  if (nums.length < 2) return [];
+  return ladder.filter((step) => keep(step, nums));
+}
+const shortMoney = (n) => (n >= 1000000 ? t.million(nf.format(n / 1000000)) : t.thousand(nf.format(n / 1000)));
 /** ترتيبُ القائمة: `''` كما وصلت · `new` الأحدث · `cheap` الأرخص · `dear` الأغلى. */
 let sortBy = '';
 /** أمفتوحٌ الحجزُ في هذه اللقطة؟ — يُقرأ عند التحميل. */
@@ -80,8 +99,29 @@ function card(listing) {
     media.append(el('img', { src: `/api/media?id=${encodeURIComponent(images[0])}`, alt: listing.title || '', loading: 'lazy' }));
     if (images.length > 1) media.append(el('span', { class: 'count', text: `${nf.format(images.length)} ${t.photos}` }));
   } else {
-    media.append(el('div', { class: 'noimg', text: typeName(listing, lang) }));
+    /* بلا صور (المرحلة ٥٨): كان مربّعًا بارتفاع الصورة فيه اسمُ النوع وحده — فراغٌ يقارنه
+       العميل بمنصّاتٍ صورُها لا تغيب. فيصغُر إلى شريطٍ يقول الحال ويشير إلى الموقع إن عُرف. */
+    media.classList.add('card-media-none');
+    media.append(el('div', { class: 'noimg' },
+      el('span', { class: 'noimg-icon', 'aria-hidden': 'true', text: '🏠' }),
+      el('span', { text: `${typeName(listing, lang)} · ${t.noPhotos}` })));
   }
+  const favBtn = el('button', {
+    type: 'button', class: `fav-btn${favs.has(String(listing.ref)) ? ' is-fav' : ''}`,
+    'aria-label': favs.has(String(listing.ref)) ? t.favRemove : t.favAdd, 'aria-pressed': favs.has(String(listing.ref)) ? 'true' : 'false',
+  }, favs.has(String(listing.ref)) ? '♥' : '♡');
+  favBtn.addEventListener('click', (ev) => {
+    ev.preventDefault(); ev.stopPropagation();
+    toggleFav(listing.ref);
+    const on = favs.has(String(listing.ref));
+    favBtn.textContent = on ? '♥' : '♡';
+    favBtn.classList.toggle('is-fav', on);
+    favBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    favBtn.setAttribute('aria-label', on ? t.favRemove : t.favAdd);
+    updateFavChip();
+    if (filters.favs && !on) draw();
+  });
+  media.append(favBtn);
 
   const waText = encodeURIComponent(`السلام عليكم، مهتم بالعرض: ${listing.title || ''}${listing.ref ? ` (رقم ${listing.ref})` : ''}`);
   const phone = (listing.contactPhone || '').replace(/\D/g, '');
@@ -91,8 +131,9 @@ function card(listing) {
   return el('article', { class: 'card' },
     el('a', { href: single, 'aria-label': listing.title || 'عرض' }, media),
     el('div', { class: 'card-body' },
-      el('h2', { class: 'card-title' }, el('a', { class: 'card-link', href: single, text: listingTitle(listing, lang) })),
-      el('div', { class: 'card-place', text: [listing.district, listing.city].filter(Boolean).join(lang === 'en' ? ', ' : '، ') }),
+      /* العنوانُ يحمل المكانَ أصلًا («فلة — الملقا، الرياض»)، فسطرُ المكان تحته تكرارٌ (المرحلة ٥٨).
+         والأسماءُ العربيّة في الصفحة الإنجليزية تُعزل اتجاهيًّا كي لا تقلب الجملة. */
+      el('h2', { class: 'card-title' }, el('a', { class: 'card-link', href: single }, titleNode(listing))),
       el('div', { class: 'card-price', text: money(listing.price) }),
       el('div', { class: 'card-meta' },
         purposeNames(listing, lang).map((p) => el('span', { class: 'tag', text: p })),
@@ -123,7 +164,10 @@ function card(listing) {
         bookingOpen ? el('a', {
           class: 'btn', href: `book.html?lang=${lang}&p=${encodeURIComponent(listing.ref || '')}`,
           text: lang === 'en' ? 'Book a viewing' : 'احجز معاينة',
-        }) : null,
+        }) : el('a', {
+          /* والحجزُ مغلقٌ (المرحلة ٥٨): طريقٌ إلى الاستمارة برقم العرض، لا واتساب وحده. */
+          class: 'btn', href: `intake.html?lang=${lang}&ref=${encodeURIComponent(listing.ref || '')}`, text: t.askAbout,
+        }),
         /* **والمشاركة** (المرحلة ٥٢): العميلُ لا يقرّر وحده — يُرسل العرضَ لمن يقرّر معه،
            وكان يفعلها بنسخ الرابط من شريط المتصفّح إن عرف كيف. */
         shareButton(listing, single)),
@@ -139,6 +183,14 @@ function card(listing) {
  * إلى نسخ الرابط حيث لا تُوجد** — ولا يُترك الزرُّ صامتًا في متصفّحٍ لا يدعمها:
  * زرٌّ لا يفعل شيئًا أسوأُ من غيابه.
  */
+/** العنوان بعزل الأسماء العربيّة (المرحلة ٥٨): «Land — <bdi>العارض، الرياض</bdi>». */
+function titleNode(listing) {
+  const type = typeName(listing, lang);
+  const where = [listing.district, listing.city].filter(Boolean).join(lang === 'en' ? ', ' : '، ');
+  if (!where) return document.createTextNode(listingTitle(listing, lang));
+  return el('span', {}, type, ' — ', el('bdi', { text: where }));
+}
+
 function shareButton(listing, single) {
   const url = new URL(`${single}?lang=${lang}`, location.href).href;
   const title = `${typeName(listing, lang)} — ${listing.district || listing.city || ''}`.trim();
@@ -162,7 +214,12 @@ function draw() {
   // الفرز على **المفاتيح والقيم المخزَّنة** لا على النصّ المعروض: تبديل اللغة لا يُفرغ الفرز.
   const items = all.filter((l) => (!filters.type || (l.type || l.typeLabel) === filters.type)
     && (!filters.purpose || (l.purposes || l.purposeLabels || []).includes(filters.purpose))
-    && (!filters.district || l.district === filters.district));
+    && (!filters.district || l.district === filters.district)
+    /* السعر والمساحة (المرحلة ٥٨): «حتى» للسعر و«فأكثر» للمساحة — وهما ما يُسأل عنه أوّلًا.
+       **وبلا سعرٍ لا يُقصى بفلتر السعر**: عرضٌ سعرُه عند الطلب قد يكون في الميزانية. */
+    && (!filters.priceMax || l.price == null || Number(l.price) <= Number(filters.priceMax))
+    && (!filters.areaMin || (l.area != null && Number(l.area) >= Number(filters.areaMin)))
+    && (!filters.favs || favs.has(String(l.ref))));
   /* **والترتيبُ بالسعر** (المرحلة ٥٢): «أرخصُ فلّة عندكم؟» أوّلُ سؤالٍ عند كلّ مشترٍ،
      ولم يكن في الصفحة ترتيبٌ أصلًا. **وبلا سعرٍ يُؤخَّر لا يُحذف**: عرضٌ سعرُه عند
      الطلب ما زال عرضًا، وإقصاؤه من الترتيب إخفاءٌ له. */
@@ -181,7 +238,15 @@ function draw() {
   grid.replaceChildren(...items.map(card));
   statusEl.textContent = items.length
     ? `${t.listings(items.length, nf.format(items.length))}${items.length === all.length ? '' : ` ${t.ofCount} ${nf.format(all.length)}`}`
-    : (lang === 'en' ? 'No listings match the filter.' : 'لا عروض تطابق الفرز.');
+    : (filters.favs && !favs.size ? t.noFavs : (lang === 'en' ? 'No listings match the filter.' : 'لا عروض تطابق الفرز.'));
+}
+
+let favChip = null;
+function updateFavChip() {
+  if (!favChip) return;
+  favChip.textContent = `${favs.size ? '♥' : '♡'} ${t.favs}${favs.size ? ` (${nf.format(favs.size)})` : ''}`;
+  favChip.classList.toggle('is-on', filters.favs);
+  favChip.setAttribute('aria-pressed', filters.favs ? 'true' : 'false');
 }
 
 function buildFilters() {
@@ -208,6 +273,26 @@ function buildFilters() {
     select.addEventListener('change', () => { filters[key] = select.value; draw(); });
     filtersBox.append(select);
   }
+  /* السعر والمساحة (المرحلة ٥٨) — درجاتُ السلّم التي تفصل بين العروض فقط، فلا قائمةَ
+     من عشر درجاتٍ تُعطي النتيجةَ نفسها. */
+  const prices = all.map((l) => (l.price == null ? NaN : Number(l.price)));
+  const priceSteps = ladderOptions(PRICE_LADDER, prices, (step, nums) => nums.some((v) => v <= step) && nums.some((v) => v > step));
+  if (priceSteps.length) {
+    const sel = el('select', { 'aria-label': t.priceUpTo }, el('option', { value: '', text: t.priceUpTo }),
+      priceSteps.map((v) => el('option', { value: String(v), text: t.priceOpt(shortMoney(v)), selected: filters.priceMax === String(v) ? true : null })));
+    sel.addEventListener('change', () => { filters.priceMax = sel.value; draw(); });
+    filtersBox.append(sel);
+    any = true;
+  }
+  const areas = all.map((l) => (l.area == null ? NaN : Number(l.area)));
+  const areaSteps = ladderOptions(AREA_LADDER, areas, (step, nums) => nums.some((v) => v >= step) && nums.some((v) => v < step));
+  if (areaSteps.length) {
+    const sel = el('select', { 'aria-label': t.areaFrom }, el('option', { value: '', text: t.areaFrom }),
+      areaSteps.map((v) => el('option', { value: String(v), text: t.areaOpt(`${nf.format(v)} ${t.m2}`), selected: filters.areaMin === String(v) ? true : null })));
+    sel.addEventListener('change', () => { filters.areaMin = sel.value; draw(); });
+    filtersBox.append(sel);
+    any = true;
+  }
   /* **والترتيبُ بجانب الفلاتر** — لا يُخفى ولو كانت الفلاترُ كلُّها بخيارٍ واحد. */
   const sortLabels = lang === 'en'
     ? [['', 'Sort: default'], ['new', 'Newest'], ['cheap', 'Cheapest'], ['dear', 'Most expensive']]
@@ -216,6 +301,11 @@ function buildFilters() {
     sortLabels.map(([value, label]) => el('option', { value, text: label, selected: sortBy === value ? true : null })));
   sortSel.addEventListener('change', () => { sortBy = sortSel.value; draw(); });
   filtersBox.append(sortSel);
+  /* المفضّلة (المرحلة ٥٨): زرٌّ يُبدّل لا قائمة — ضغطةٌ واحدة تُريك ما حفظت. */
+  favChip = el('button', { type: 'button', class: 'btn btn-sm fav-chip', 'aria-pressed': 'false' });
+  favChip.addEventListener('click', () => { filters.favs = !filters.favs; updateFavChip(); draw(); });
+  filtersBox.append(favChip);
+  updateFavChip();
   filtersBox.hidden = false;
 }
 

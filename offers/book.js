@@ -45,7 +45,18 @@ function pick(slot, button) {
 function draw(data) {
   slotsEl.textContent = '';
   if (!data.enabled) {
-    statusEl.textContent = 'الحجز مغلق حاليًا — تواصل مع المكتب مباشرة.';
+    /* مغلقٌ (المرحلة ٥٨): كانت جملةً تحيل إلى «المكتب» بلا زرّ. الآن طرقُ التواصل أزرارٌ،
+       والاستمارةُ برقم العرض إن جاء العميل من صفحة عرض. */
+    statusEl.textContent = 'الحجز مغلق حاليًا — تواصل معنا مباشرةً أو اترك طلبك ونرتّب لك الموعد.';
+    const office = data.office || {};
+    const phone = String(office.phone || '').replace(/\D/g, '');
+    const intl = phone ? (phone.startsWith('966') ? phone : `966${phone.replace(/^0/, '')}`) : '';
+    const ref = new URLSearchParams(location.search).get('p') || '';
+    const msg = encodeURIComponent(ref ? `السلام عليكم، أودّ معاينة العرض رقم ${ref}` : 'السلام عليكم، أودّ حجز موعد معاينة');
+    slotsEl.append(el('div', { class: 'closed-actions' },
+      intl ? el('a', { class: 'btn btn-primary', href: `https://wa.me/${intl}?text=${msg}`, target: '_blank', rel: 'noopener', text: 'واتساب' }) : null,
+      office.phone ? el('a', { class: 'btn', href: `tel:${office.phone}`, text: 'اتصال' }) : null,
+      el('a', { class: 'btn', href: `intake.html${ref ? `?ref=${encodeURIComponent(ref)}` : ''}`, text: 'اطلب معاينة' })));
     return;
   }
   if (!data.slots.length) {

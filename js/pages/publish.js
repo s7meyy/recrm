@@ -492,11 +492,36 @@ async function passLicenseGate(ctx, chosen) {
   return null;
 }
 
+/**
+ * بابُ الجودة (المرحلة ٥٨): عرضٌ بلا صور أو بلا سعرٍ يُنشر اليومَ صامتًا، ويراه العميلُ
+ * مربّعًا فارغًا و«السعر عند الطلب» ويقارنه بمنصّاتٍ لا تغيب صورُها. فيُقال **بالعدد**
+ * قبل النشر، والقرارُ قرارُك — نشرٌ ناقصٌ خيرٌ من لا نشر، لكن لا يكون بلا علم.
+ */
+export function qualityGaps(chosen) {
+  const noPhotos = chosen.filter((p) => !(p.images || []).length);
+  const noPrice = chosen.filter((p) => p.price == null || p.price === '');
+  return { noPhotos, noPrice };
+}
+
+async function passQualityGate(chosen) {
+  const { noPhotos, noPrice } = qualityGaps(chosen);
+  if (!noPhotos.length && !noPrice.length) return true;
+  const lines = [];
+  if (noPhotos.length) lines.push(`${countOf(noPhotos.length, 'عرض')} من ${chosen.length} بلا صور — يراه العميل شريطًا فارغًا.`);
+  if (noPrice.length) lines.push(`${countOf(noPrice.length, 'عرض')} بلا سعر — يُعرض «السعر عند الطلب».`);
+  return confirmDialog({
+    title: 'قبل النشر',
+    message: `${lines.join('\n')}\nتنشر على كل حال؟`,
+    confirmText: 'انشر على كل حال',
+  });
+}
+
 async function doPublish(ctx, btn) {
   const picked = ctx.properties.filter((p) => ctx.selected.has(p.id));
   if (!picked.length) { toast('اختر عقارًا واحدًا على الأقل قبل النشر', 'error'); return; }
   const chosen = await passLicenseGate(ctx, picked);
   if (!chosen) return;
+  if (!(await passQualityGate(chosen))) return;
   if (chosen.length > PREVIEW_LIMIT) { toast(`الحد الأعلى ${countOf(PREVIEW_LIMIT, 'عرض')} في النشرة الواحدة`, 'error'); return; }
 
   btn.disabled = true;

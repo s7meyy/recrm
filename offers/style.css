@@ -201,3 +201,32 @@ h1 { margin: 0; font-size: clamp(22px, 4vw, 30px); line-height: var(--dhad-line-
 @media (prefers-reduced-motion: reduce) {
   .card, .btn, .lead-box input, .lead-box textarea { transition: none; }
 }
+
+/* ===== المرحلة ٥٨ — بعين العميل ===== */
+/* بلا صور: شريطٌ قصير لا مربّعٌ بارتفاع الصورة. */
+.card-media.card-media-none { aspect-ratio: auto; min-height: 72px; }
+.card-media-none .noimg { display: flex; align-items: center; justify-content: center; gap: var(--dhad-space-2, 8px); padding: var(--dhad-space-3, 12px); font-weight: 600; font-size: var(--dhad-font-size-400, 14px); }
+.noimg-icon { font-size: 22px; opacity: .8; }
+.offer-gallery .noimg.noimg-slim { aspect-ratio: auto; min-height: 84px; display: flex; gap: var(--dhad-space-2, 8px); align-items: center; justify-content: center; font-weight: 600; }
+/* قلبُ المفضّلة على الصورة: ٤٤ بكسلًا، وخلفيةٌ تُرى على أيّ صورة. */
+.fav-btn {
+  position: absolute; inset-block-start: var(--dhad-space-2, 8px); inset-inline-end: var(--dhad-space-2, 8px);
+  width: var(--touch); height: var(--touch); border-radius: 50%; border: 1px solid var(--line);
+  background: rgba(255,255,255,.92); color: var(--accent-text); font-size: 20px; line-height: 1; cursor: pointer;
+  display: grid; place-items: center; font-family: inherit;
+}
+.fav-btn.is-fav { color: #c0392b; border-color: #c0392b; }
+.fav-btn:hover { border-color: var(--accent); }
+.fav-chip.is-on { background: var(--accent); color: #fff; border-color: var(--accent); }
+.filters .btn-sm { min-height: var(--touch); }
+/* هويّةُ المكتب في صفحة العرض الواحد وصفحات الحجز والاستمارة: شعارٌ واسمٌ وجوال. */
+.office-line { display: flex; align-items: center; gap: var(--dhad-space-3, 12px); margin-top: var(--dhad-space-3, 12px); color: var(--muted); flex-wrap: wrap; }
+.office-line .logo { max-height: 40px; }
+.office-line a { color: var(--accent-text); text-decoration: none; unicode-bidi: isolate; }
+.office-line a:hover { text-decoration: underline; }
+.office-line .office-name { font-weight: 600; color: var(--text); }
+/* الحجزُ مغلق: طرقُ التواصل بأزرارٍ لا جملةٌ تحيل إلى «المكتب». */
+.closed-actions { display: flex; flex-wrap: wrap; gap: var(--dhad-space-2, 8px); margin-top: var(--dhad-space-3, 12px); }
+.intake-ref { margin: 0 0 var(--dhad-space-3, 12px); padding: var(--dhad-space-2, 8px) var(--dhad-space-3, 12px); background: var(--accent-soft); color: var(--accent-text); border-radius: var(--dhad-radius-sm, 10px); font-weight: 600; }
+/* الشريطُ داخل رابط الصورة: لا خطَّ تحت نصّه. */
+.card > a { text-decoration: none; color: inherit; }

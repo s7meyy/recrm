@@ -14,6 +14,9 @@ const ok = (n,c,x='') => console.log(`${c?'PASS':'FAIL'} — ${n}${x?' :: '+x:''
 async function answerLicenseGate(page) {
   const btn = page.locator('.modal button:has-text("انشر الكلّ وأنا أعلم")');
   try { await btn.waitFor({ timeout: 2500 }); await btn.click(); } catch (_) { /* لا مانعَ فلا سؤال */ }
+  // بابُ الجودة (المرحلة ٥٨): بلا صورٍ أو بلا سعرٍ يُسأل — والتجربةُ تنشر على كل حال.
+  const q = page.locator('.modal button:has-text("انشر على كل حال")');
+  try { await q.waitFor({ timeout: 2500 }); await q.click(); } catch (_) { /* لا نقصَ فلا سؤال */ }
 }
 
 const ctx = await b.newContext({ locale: 'ar-SA' });

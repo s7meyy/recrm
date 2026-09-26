@@ -43,6 +43,11 @@ export const STRINGS = {
     all: 'الكل', ofCount: 'من', listing: 'عرض', photos: 'صور',
     // العدّادُ يُجمع (المرحلة ٥٧): «٤ عرض» لحنٌ يقرؤه كلُّ عميلٍ في أوّل سطر.
     listings: (n, shown) => countAr(n, ['عرضٌ واحد', 'عرضان', 'عروض', 'عرضًا'], shown),
+    // المرحلة ٥٨ — بعين العميل
+    noPhotos: 'بلا صور بعد', askAbout: 'اطلب معاينة', favs: 'المفضّلة', favAdd: 'أضف إلى المفضّلة', favRemove: 'أزل من المفضّلة',
+    priceUpTo: 'السعر: الكل', priceOpt: (s) => `حتى ${s}`, areaFrom: 'المساحة: الكل', areaOpt: (s) => `${s} فأكثر`,
+    onlyFavs: 'المفضّلة فقط', noFavs: 'لم تحفظ عرضًا بعد — اضغط ♡ على أيّ عرض.',
+    million: (n) => `${n} مليون`, thousand: (n) => `${n} ألف`, sar: 'ريال', m2: 'م²',
     whatsapp: 'واتساب', call: 'اتصال', location: 'الموقع', allOffers: 'كل العروض',
     disclaimer: 'الأسعار والتفاصيل قابلة للتغيير — للتأكد تواصل معنا مباشرة.',
     ref: 'رقم',
@@ -75,6 +80,10 @@ export const STRINGS = {
     priceOnRequest: 'Price on request', updated: 'Last updated',
     all: 'All', ofCount: 'of', listing: 'listing', photos: 'photos',
     listings: (n, shown) => `${shown ?? n} ${n === 1 ? 'listing' : 'listings'}`,
+    noPhotos: 'No photos yet', askAbout: 'Request a viewing', favs: 'Favourites', favAdd: 'Add to favourites', favRemove: 'Remove from favourites',
+    priceUpTo: 'Price: any', priceOpt: (s) => `Up to ${s}`, areaFrom: 'Area: any', areaOpt: (s) => `${s} or more`,
+    onlyFavs: 'Favourites only', noFavs: 'No saved listings yet — tap ♡ on any listing.',
+    million: (n) => `${n}M`, thousand: (n) => `${n}K`, sar: 'SAR', m2: 'm²',
     whatsapp: 'WhatsApp', call: 'Call', location: 'Location', allOffers: 'All listings',
     disclaimer: 'Prices and details are subject to change — please contact us to confirm.',
     ref: 'Ref',

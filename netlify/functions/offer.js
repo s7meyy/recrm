@@ -69,6 +69,8 @@ const T = {
       facades: (v) => `الواجهات: ${v}`,
     },
     book: 'احجز معاينة',
+    // المرحلة ٥٨
+    ask: 'اطلب معاينة', share: 'شارك', shareText: (t, u) => `${t}\n${u}`, copied: 'نُسخ الرابط', noimgSlim: 'بلا صور بعد — اطلب معاينة لتراه',
   },
   en: {
     dir: 'ltr', lang: 'en', other: 'العربية', otherLang: 'ar',
@@ -94,6 +96,7 @@ const T = {
       facades: (v) => `Facades: ${v}`,
     },
     book: 'Book a viewing',
+    ask: 'Request a viewing', share: 'Share', shareText: (t, u) => `${t}\n${u}`, copied: 'Link copied', noimgSlim: 'No photos yet — request a viewing',
   },
 };
 
@@ -133,6 +136,12 @@ export default async (request) => {
     : (listing.purposeLabels || []);
   const where = [listing.district, listing.city].filter(Boolean).join(lang === 'en' ? ', ' : '، ');
   const heading = [typeName, where].filter(Boolean).join(' — ') || listing.title || '';
+  // الأسماءُ العربيّة في الصفحة الإنجليزية معزولةٌ اتجاهيًّا (المرحلة ٥٨).
+  const headingHtml = where ? `${esc(typeName)} — <bdi>${esc(where)}</bdi>` : esc(heading);
+  const officeLogo = office.logo ? `<img class="logo" src="/api/media?id=${esc(encodeURIComponent(office.logo))}" alt="">` : '';
+  const officeLine = (office.name || office.phone || officeLogo)
+    ? `<p class="office-line">${officeLogo}${office.name ? `<span class="office-name">${esc(office.name)}</span>` : ''}${office.phone ? `<a href="tel:${esc(office.phone)}" dir="ltr">${esc(office.phone)}</a>` : ''}</p>`
+    : '';
   const title = `${heading}${office.name ? ` — ${office.name}` : ''}`;
   const descParts = [
     where,
@@ -165,12 +174,12 @@ ${image ? `<meta property="og:image" content="${esc(image)}">` : ''}
 <link rel="stylesheet" href="/css/dhad.css"><link rel="stylesheet" href="/offers/style.css">
 </head><body>
 <header class="hero"><div class="wrap"><div class="office"><div>
-  <h1>${esc(heading)}</h1>
-  <p class="office-contact">${esc(where)}</p>
+  <h1>${headingHtml}</h1>
+  ${officeLine}
 </div></div>
 <a class="btn btn-sm lang-toggle" href="${esc(other)}">${esc(t.other)}</a></div></header>
 <main class="wrap">
-  <div class="offer-gallery">${gallery || `<div class="noimg">${esc(t.noimg)}</div>`}</div>
+  <div class="offer-gallery">${gallery || `<div class="noimg noimg-slim"><span aria-hidden="true">🏠</span> ${esc(t.noimgSlim)}</div>`}</div>
   <p class="card-price" style="font-size:26px">${esc(money(listing.price))}</p>
   <div class="card-meta">
     ${purposeNames.map((p) => `<span class="tag">${esc(p)}</span>`).join('')}
@@ -185,7 +194,10 @@ ${image ? `<meta property="og:image" content="${esc(image)}">` : ''}
     ${wa ? `<a class="btn btn-primary" href="${esc(wa)}" target="_blank" rel="noopener">${esc(t.whatsapp)}</a>` : ''}
     ${listing.contactPhone ? `<a class="btn" href="tel:${esc(listing.contactPhone)}">${esc(t.call)}</a>` : ''}
     ${listing.mapUrl ? `<a class="btn" href="${esc(listing.mapUrl)}" target="_blank" rel="noopener">${esc(t.location)}</a>` : ''}
-    ${bookingOpen ? `<a class="btn" href="/offers/book.html?lang=${t.lang}&amp;p=${esc(listing.ref)}">${esc(t.book)}</a>` : ''}
+    ${bookingOpen
+    ? `<a class="btn" href="/offers/book.html?lang=${t.lang}&amp;p=${esc(listing.ref)}">${esc(t.book)}</a>`
+    : `<a class="btn" href="/offers/intake.html?lang=${t.lang}&amp;ref=${esc(listing.ref)}">${esc(t.ask)}</a>`}
+    <button type="button" class="btn" id="share-btn" data-title="${esc(heading)}" data-copied="${esc(t.copied)}" data-label="${esc(t.share)}">${esc(t.share)}</button>
     <a class="btn" href="/offers/?lang=${t.lang}">${esc(t.all)}</a>
   </div>
   <!-- الإفصاح النظاميّ (المرحلة ٤٧): رقمُ ترخيص الإعلان يلزم كلَّ إعلان. ولا يُترجَم. -->
@@ -194,6 +206,25 @@ ${image ? `<meta property="og:image" content="${esc(image)}">` : ''}
 <footer class="wrap footer"><p class="muted small">${esc(office.name || '')}${office.phone ? ` · ${esc(office.phone)}` : ''}</p>
 <p class="muted small">${esc(t.disclaimer)}</p></footer>
 <script>
+/* المشاركة (المرحلة ٥٨): صفحةُ العرض هي ما يُرسل لمن يقرّر مع العميل، وكان زرُّ «شارك» في
+   القائمة وحدها. مشاركةُ الجهاز حيث وُجدت، وإلا واتساب بالنصّ، وإلا نسخُ الرابط. */
+(function () {
+  var b = document.getElementById('share-btn');
+  if (!b) return;
+  b.addEventListener('click', function () {
+    var title = b.getAttribute('data-title') || document.title;
+    var url = location.href;
+    if (navigator.share) { navigator.share({ title: title, url: url }).catch(function () {}); return; }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(function () {
+        b.textContent = b.getAttribute('data-copied');
+        setTimeout(function () { b.textContent = b.getAttribute('data-label'); }, 1600);
+      }).catch(function () { location.href = 'https://wa.me/?text=' + encodeURIComponent(title + '\\n' + url); });
+      return;
+    }
+    location.href = 'https://wa.me/?text=' + encodeURIComponent(title + '\\n' + url);
+  });
+})();
 /* عدّاد المشاهدات (المرحلة ٢٥): مرة واحدة لكل جلسة متصفح، بلا كوكي ولا معرّف زائر.
    وفشله لا يُظهر للزائر شيئًا — العدّاد ليس جزءًا من الصفحة التي جاء لأجلها. */
 try {
