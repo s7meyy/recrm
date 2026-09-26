@@ -33,9 +33,15 @@ async function expand(url) {
 /** ما يُستخرَج من الرابط الكامل — الاسمُ والإحداثياتُ والمعرّف — بلا شبكةٍ أخرى. */
 function parseFull(href) {
   const u = new URL(href);
-  const out = { name: '', coords: null, placeId: '' };
+  const out = { name: '', address: '', coords: null, placeId: '' };
   const place = u.pathname.match(/\/maps\/place\/([^/@]+)/);
-  if (place) { try { out.name = decodeURIComponent(place[1]).replace(/\+/g, ' '); } catch { out.name = place[1]; } }
+  if (place) {
+    let seg = place[1];
+    try { seg = decodeURIComponent(seg).replace(/\+/g, ' '); } catch { /* يبقى */ }
+    const parts = seg.split(/[,،]/).map((x) => x.trim()).filter(Boolean);
+    out.name = parts[0] || seg;
+    out.address = parts.slice(1).join('، ');
+  }
   const at = u.pathname.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
   if (at) out.coords = { lat: parseFloat(at[1]), lng: parseFloat(at[2]) };
   const cid = u.searchParams.get('cid');

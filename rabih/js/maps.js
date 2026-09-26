@@ -16,12 +16,17 @@ export function parseMapsUrl(raw) {
   if (!known) return { ok: false, reason: 'الرابط ليس من قوقل مابز.' };
 
   const short = host.includes('goo.gl') || host === 'g.co';
-  const data = { name: '', placeId: '', coords: null, short };
+  const data = { name: '', address: '', placeId: '', coords: null, short };
 
   // /maps/place/<الاسم>/@<lat>,<lng>,17z/data=...
   const place = u.pathname.match(/\/maps\/place\/([^/@]+)/);
   if (place) {
-    try { data.name = decodeURIComponent(place[1]).replace(/\+/g, ' '); } catch { data.name = place[1]; }
+    let seg = place[1];
+    try { seg = decodeURIComponent(seg).replace(/\+/g, ' '); } catch { /* يبقى كما هو */ }
+    /* المقطعُ قد يحمل العنوانَ بعد الاسم: «مقهى الدرب، شارع التحلية، الرياض». */
+    const parts = seg.split(/[,،]/).map((x) => x.trim()).filter(Boolean);
+    data.name = parts[0] || seg;
+    data.address = parts.slice(1).join('، ');
   }
   const at = u.pathname.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
   if (at) data.coords = { lat: parseFloat(at[1]), lng: parseFloat(at[2]) };

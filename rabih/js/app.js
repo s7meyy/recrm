@@ -465,13 +465,15 @@ async function onStart() {
   /* وعند البدء يُفكّ المختصرُ فيُحفَظ الرابطُ الكامل والاسمُ معًا — لا الرابطُ العاري. */
   if (parsed.ok && parsed.short) {
     const x = await expandShortUrl(url);
-    if (x?.url) { url = x.url; parsed = parseMapsUrl(url); if (!parsed.ok) parsed = { ok: true, data: { name: x.name, coords: x.coords, placeId: x.placeId } }; }
+    if (x?.url) { url = x.url; parsed = parseMapsUrl(url); if (!parsed.ok) parsed = { ok: true, data: { name: x.name, address: x.address || '', coords: x.coords, placeId: x.placeId } }; }
   }
   const city = cityById(cityId);
   const cat = categoryById(categoryId);
   const region = regionById(regionId || city?.region);
 
-  if (!job || job.out?.am || job.place?.reviews?.length) job = blankJob();
+  /* **رابطٌ جديد = وظيفةٌ جديدة.** كانت وظيفةٌ قديمةٌ بلا تعليقات تُعاد لرابطٍ
+     آخر، فتظهر لصاحب المحلّ بياناتُ محلٍّ غيره في الحقول — وهذا أسوأ من الفراغ. */
+  if (!job || job.out?.am || job.place?.reviews?.length || (job.mapsUrl && job.mapsUrl !== url)) job = blankJob();
 
   job.mapsUrl = url;
   job.ctx = {
@@ -485,14 +487,24 @@ async function onStart() {
   job.place.mapsUrl = url;
   job.place.placeId = parsed.data?.placeId || '';
   if (parsed.data?.coords) job.place.identity.coords = parsed.data.coords;
-  if (parsed.data?.name && !job.place.identity.name) job.place.identity.name = parsed.data.name;
+  if (parsed.data?.name) job.place.identity.name = parsed.data.name;
+  if (parsed.data?.address && !job.place.identity.address) job.place.identity.address = parsed.data.address;
   if (cat && !job.place.identity.category) job.place.identity.category = cat.name;
+  /* ويُقال في شاشة البيانات ما جاء من الرابط وما لا يحمله الرابطُ أصلًا — فلا يُظنّ الفراغُ تهرّبًا. */
+  const came = [parsed.data?.name && 'الاسم', parsed.data?.address && 'العنوان', parsed.data?.coords && 'الإحداثيات', parsed.data?.placeId && 'معرّف المكان'].filter(Boolean);
+  job.fromLink = came;
 
   await persist();
   loadDataView();
   show('data');
   /* والتنبيه يقع حيث صار المستخدم لا حيث كان: وُضع أولًا في شاشة الإدخال
      فاختفى معها قبل أن يُقرأ. */
+  if (!job.fromLink?.length) message('#card-msg', 'ok', '');   // لا تبقى رسالةُ محلٍّ سابق
+  if (job.fromLink?.length) {
+    message('#card-msg', 'ok', `مُلئ من الرابط: ${job.fromLink.join('، ')}.`, [
+      'والمتوسطُ وعددُ التقييمات والهاتفُ وساعاتُ العمل لا يحملها الرابطُ نفسه — انسخها من صفحة المنشأة في قوقل كما تراها.',
+    ]);
+  }
   if (missing.length) {
     message('#parse-msg', 'warn', `بدأنا بالرابط وحده. وما ينقص (${missing.join('، ')}) يُستكمَل متى شئت:`, [
       'التصنيف يختار قالب القطاع — وبدونه يُستعمل العام.',
@@ -3588,7 +3600,8 @@ async function boot() {
 
   // العمل بلا اتصال: لا شيء يُرسَل إلى خادم أصلًا، والاتصال إنما يلزم لأول تحميل.
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-    navigator.serviceWorker.register('./sw.js').catch(() => { /* لا يمنع التشغيل */ });
+    // في سياقٍ يُعطَّل فيه العاملُ (إطارٌ محجوب، أو تصفّحٌ خاصّ صارم) تُرمى القراءةُ نفسها لا التسجيلُ وحده.
+    try { navigator.serviceWorker.register('./sw.js').catch(() => { /* لا يمنع التشغيل */ }); } catch { /* ولا هذا */ }
   }
 
   $('#btn-tour').addEventListener('click', () => { tour.reset(); tour.start(show); });
