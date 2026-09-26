@@ -253,5 +253,57 @@ console.log('١٠) عطبُ الشبكة يُعاد لا يُرمى');
   globalThis.fetch = saved;
 }
 
+console.log('١١) الترشيحُ حيٌّ لا محفور — القائمةُ المجانية تتبدّل ولا يتوقّف الخطّ');
+/* ماتت ثلاثةُ بدائلَ مجانيةٍ في يومٍ واحد فتوقّف خطُّ التحليل عند أول خطوة:
+   «تعذّرت بعد تجربة كل البدائل». فالترشيحُ يُقرأ من القائمة الحيّة ويُطابَق
+   بالعائلة، وما ردّ بأنه «لم يعد مجانيًّا» لا يُجرَّب ثانية. */
+{
+  const saved = globalThis.fetch;
+  const store = new Map();
+  globalThis.localStorage = {
+    getItem: (k) => (store.has(k) ? store.get(k) : null),
+    setItem: (k, v) => store.set(k, String(v)),
+    removeItem: (k) => store.delete(k),
+  };
+  const live = { free: [
+    { id: 'deepseek/deepseek-chat-v3.1:free', name: 'DeepSeek V3.1', context: 64000 },
+    { id: 'meta-llama/llama-4-maverick:free', name: 'Llama 4 Maverick', context: 128000 },
+    { id: 'qwen/qwen3-235b-a22b:free', name: 'Qwen3 235B', context: 40000 },
+    { id: 'google/gemini-2.0-flash-exp:free', name: 'Gemini 2.0 Flash', context: 1000000 },
+    { id: 'tiny/model:free', name: 'Tiny', context: 4000 },
+  ] };
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.endsWith('/api/models')) return new Response(JSON.stringify(live), { status: 200, headers: { 'content-type': 'application/json' } });
+    return new Response('nope', { status: 500 });
+  };
+  const { resolvePicks, retire, retiredFrom, freeModels } = await import('../js/catalog.js?live');
+  const n = await resolvePicks('normalize');
+  n.length >= 3 ? ok(`التوحيد له ${n.length} مرشَّحين رغم موت أسمائه الثابتة`) : bad('لا مرشَّح', n.length);
+  n[0].slug === 'deepseek/deepseek-chat-v3.1:free'
+    ? ok('DeepSeek V3 الميت ← DeepSeek V3.1 الحيّ من العائلة نفسها') : bad('مطابقة العائلة', n[0].slug);
+  n.some((p) => p.slug.startsWith('meta-llama/')) && n.some((p) => p.slug.startsWith('qwen/'))
+    ? ok('وLlama وQwen كلٌّ إلى قريبه') : bad('العائلات', n.map((p) => p.slug).join(' | '));
+  !n.some((p) => p.slug === 'tiny/model:free') ? ok('ولا يُرشَّح نموذجٌ نافذتُه أضيق من تقرير') : bad('نافذة ضيقة رُشِّحت');
+  const a = await resolvePicks('analyze');
+  a[0].slug === 'google/gemini-2.0-flash-exp:free' || a.some((p) => p.slug === 'google/gemini-2.0-flash-exp:free')
+    ? ok('وما بقي مجانيًّا يبقى كما هو') : bad('المفضَّل الحيّ أُسقط', a.map((p) => p.slug).join(' | '));
+
+  const r = retiredFrom('OpenRouter ردّ بخطأ (404): This model is unavailable for free. The paid version is available now - use this slug instead: deepseek/deepseek-chat-v3');
+  r && r.paid === 'deepseek/deepseek-chat-v3' ? ok('ردُّ «لم يعد مجانيًّا» يُفهَم ويُلتقَط بديلُه المدفوع — ولا يُشغَّل') : bad('فهم الردّ', JSON.stringify(r));
+  retiredFrom('OpenRouter ردّ بخطأ (429): rate limited') === null ? ok('و٤٢٩ ليس تقاعدًا') : bad('٤٢٩ عُدَّ تقاعدًا');
+  retire('deepseek/deepseek-chat-v3.1:free');
+  const n2 = await resolvePicks('normalize');
+  !n2.some((p) => p.slug === 'deepseek/deepseek-chat-v3.1:free') ? ok('المتقاعدُ لا يُجرَّب ثانية') : bad('متقاعدٌ عاد');
+
+  globalThis.fetch = async () => { throw new Error('offline'); };
+  store.delete('rabih:free-models');
+  const off = await resolvePicks('normalize');
+  off.length >= 2 && off.every((p) => p.slug.endsWith(':free'))
+    ? ok('وبلا قائمةٍ حيّة يعود إلى الثابت فلا يُكسَر ما كان') : bad('انقطاع القائمة أسقط كل شيء', off.length);
+  globalThis.fetch = saved;
+  delete globalThis.localStorage;
+}
+
 console.log('\n' + (fails.length ? `فشل ${fails.length}:\n` + fails.map((f) => ' - ' + f).join('\n') : '✅ نجحت كل الاختبارات'));
 process.exit(fails.length ? 1 : 0);

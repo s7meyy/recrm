@@ -456,3 +456,7 @@ select.model-pick{width:auto;min-width:150px;padding:6px 10px;font-size:13px}
 .about .ops > summary { cursor: pointer; padding: 11px 14px; font-weight: 700; color: var(--muted); min-height: 40px }
 .about .ops > *:not(summary) { padding: 0 14px }
 .about .ops ol { line-height: 1.9 }
+
+.models-live { margin-top: 12px; border: 1px solid #e3e8ee; border-radius: 10px; background: #fbfcfd }
+.models-live > summary { cursor: pointer; padding: 10px 14px; font-weight: 700; color: var(--navy); min-height: 40px }
+.models-live > *:not(summary) { padding: 0 14px 10px }

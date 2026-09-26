@@ -1180,6 +1180,26 @@ function renderPhotoChips() {
 
 /* ───────────────────────── ٣) خط النماذج ───────────────────────── */
 
+/** النماذجُ الحيّة لكل دور — تُعرَض بأسمائها كما ستُجرَّب، ويُقال إن تعذّرت القراءة. */
+async function renderLiveModels({ force = false } = {}) {
+  const box = $('#models-live-box');
+  const state = $('#models-live-state');
+  if (!box) return;
+  const { resolvePicks, freeModels, retired } = await import('./catalog.js');
+  const live = await freeModels({ force });
+  const roles = [['normalize', 'التوحيد'], ['mergeNormalized', 'دمج التوحيد'], ['analyze', 'التحليل'], ['mergeAnalysis', 'الدمج النهائي']];
+  const rows = [];
+  for (const [role, label] of roles) {
+    const picks = await resolvePicks(role);
+    rows.push(`<tr><td><b>${label}</b></td><td>${picks.length ? picks.map((p) => `${esc(p.name)} <span class="fine">${esc(p.note)}</span>`).join('<br>') : '<span class="err-text">لا مرشَّح</span>'}</td></tr>`);
+  }
+  const dead = [...retired()];
+  if (state) state.textContent = live ? `— ${live.length} نموذجًا مجانيًّا في قائمة OpenRouter الآن` : '— تعذّرت قراءة القائمة الحيّة، فتُجرَّب القائمةُ الثابتة';
+  box.innerHTML = `<div class="table-wrap"><table class="mini"><thead><tr><th>المرحلة</th><th>ما سيُجرَّب بالترتيب</th></tr></thead><tbody>${rows.join('')}</tbody></table></div>
+    ${dead.length ? `<p class="fine">تقاعد في هذه الجلسة ولن يُجرَّب: ${dead.map(esc).join('، ')}.</p>` : ''}
+    <p class="fine">لا يُشغَّل نموذجٌ مدفوع إلا بإذنك — والقائمةُ مجانيةٌ كلُّها.</p>`;
+}
+
 function renderPipeline() {
   const host = $('#pipeline-steps');
   const nowStamp = dataStamp(job.place);
@@ -3634,6 +3654,8 @@ async function boot() {
   }
 
   bindFilePickers();
+  $('#models-live')?.addEventListener('toggle', (e) => { if (e.target.open) renderLiveModels(); });
+  $('#btn-models-refresh')?.addEventListener('click', () => renderLiveModels({ force: true }));
   renderQueue();
 
   /* **الجولة تُعرَض ولا تُفرَض.**

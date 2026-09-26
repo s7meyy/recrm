@@ -316,6 +316,13 @@
         <span class="badge" id="pipeline-progress"></span>
       </div>
       <div id="run-msg" role="status" aria-live="polite"></div>
+      <!-- ما سيُجرَّب فعلًا يُقال قبل التشغيل: القائمةُ حيّةٌ من OpenRouter، فلا يُفاجأ
+           المستخدم بـ«تعذّرت بعد تجربة كل البدائل» والبدائلُ ميتةٌ منذ أسابيع. -->
+      <details class="models-live" id="models-live">
+        <summary>النماذج التي ستُجرَّب اليوم <span class="fine" id="models-live-state">— تُقرأ من OpenRouter عند فتح هذا الباب</span></summary>
+        <div id="models-live-box"></div>
+        <div class="row"><button type="button" class="btn ghost sm" id="btn-models-refresh">حدّث القائمة الآن</button></div>
+      </details>
     </div>
 
     <div class="card" id="agreement-card" hidden>

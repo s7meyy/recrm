@@ -13,6 +13,7 @@
 //    والتوازي يستنزف الحدّ فيُفشل ما كان سينجح.
 
 import { STEPS, MODEL_PICKS, batchCount, promptNormalizeBatch, promptMergeNormalized, splitBatches } from './prompts.js';
+import { resolvePicks, retire, retiredFrom } from './catalog.js';
 import { verify } from './verify.js';
 
 /** نداءٌ واحد لنموذجٍ واحد، يُسلّم النصّ قطعةً قطعةً كما يصل. */
@@ -107,7 +108,9 @@ export async function runStep(stepKey, state, { onChunk, onModel, signal } = {})
   catch (e) { return { ok: false, attempts: [], error: 'تعذّر بناء الرسالة: ' + e.message }; }
   if (!prompt || !prompt.trim()) return { ok: false, attempts: [], error: 'الرسالة فارغة — أكمل ما قبلها.' };
 
-  const picks = MODEL_PICKS[step.role] || [];
+  /* الترشيحُ حيٌّ: ما نفضّله إن بقي مجانيًّا، وإلا قريبُه، وإلا أفضلُ المتاح اليوم. */
+  const picks = await resolvePicks(step.role);
+  if (!picks.length) return { ok: false, attempts: [], error: 'لا نموذجَ مجانيًّا متاحًا اليوم في قائمة OpenRouter — ولا يُشغَّل مدفوعٌ بلا إذنك.' };
   const attempts = [];
 
   for (const pick of picks) {
@@ -119,6 +122,7 @@ export async function runStep(stepKey, state, { onChunk, onModel, signal } = {})
     if (!r.ok) {
       attempts.push({ model: pick.name, error: r.error });
       if (r.needsKey) return { ok: false, attempts, error: r.error, needsKey: true };
+      if (retiredFrom(r.error)) retire(pick.slug);   // لم يعد مجانيًّا: لا يُجرَّب ثانيةً
       if (r.rateLimited) continue;             // البديل
       if (signal?.aborted) return { ok: false, attempts, error: 'أُوقف بأمرك.' };
       continue;                                 // خطأ عابر: يُجرَّب البديل أيضًا
@@ -159,7 +163,9 @@ export async function runStep(stepKey, state, { onChunk, onModel, signal } = {})
  * لأن توحيدًا ناقصًا يبدو تامًّا أخطرُ من توحيدٍ لم يتمّ.
  */
 async function runBatched(step, state, total, { onChunk, onModel, signal } = {}) {
-  const picks = MODEL_PICKS[step.role] || [];
+  /* الترشيحُ حيٌّ: ما نفضّله إن بقي مجانيًّا، وإلا قريبُه، وإلا أفضلُ المتاح اليوم. */
+  const picks = await resolvePicks(step.role);
+  if (!picks.length) return { ok: false, attempts: [], error: 'لا نموذجَ مجانيًّا متاحًا اليوم في قائمة OpenRouter — ولا يُشغَّل مدفوعٌ بلا إذنك.' };
   const parts = [];
   const attempts = [];
   let whole = '';
@@ -182,6 +188,7 @@ async function runBatched(step, state, total, { onChunk, onModel, signal } = {})
       if (!r.ok) {
         attempts.push({ model: pick.name, batch: i + 1, error: r.error });
         if (r.needsKey) return { ok: false, attempts, error: r.error, needsKey: true };
+        if (retiredFrom(r.error)) retire(pick.slug);
         continue;
       }
       if (!r.text) { attempts.push({ model: pick.name, batch: i + 1, error: 'ردّ فارغ.' }); continue; }
@@ -232,7 +239,9 @@ async function runBatched(step, state, total, { onChunk, onModel, signal } = {})
  * ثم تُوصَل. فتبقى كل رسالةٍ في حدود ما تحتمله النافذة، ولا يُدمَج ما لا يلتقي.
  */
 async function runMergeBatched(step, state, parts, { onChunk, onModel, signal } = {}) {
-  const picks = MODEL_PICKS[step.role] || [];
+  /* الترشيحُ حيٌّ: ما نفضّله إن بقي مجانيًّا، وإلا قريبُه، وإلا أفضلُ المتاح اليوم. */
+  const picks = await resolvePicks(step.role);
+  if (!picks.length) return { ok: false, attempts: [], error: 'لا نموذجَ مجانيًّا متاحًا اليوم في قائمة OpenRouter — ولا يُشغَّل مدفوعٌ بلا إذنك.' };
   const cols = ['n1', 'n2', 'n3'].map((k) => splitBatches(state.out?.[k] || '', parts));
   const out = [];
   const attempts = [];
@@ -256,6 +265,7 @@ async function runMergeBatched(step, state, parts, { onChunk, onModel, signal } 
       if (!r.ok) {
         attempts.push({ model: pick.name, batch: i + 1, error: r.error });
         if (r.needsKey) return { ok: false, attempts, error: r.error, needsKey: true };
+        if (retiredFrom(r.error)) retire(pick.slug);
         continue;
       }
       if (!r.text) { attempts.push({ model: pick.name, batch: i + 1, error: 'ردّ فارغ.' }); continue; }
