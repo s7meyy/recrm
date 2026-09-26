@@ -266,12 +266,13 @@ console.log('١١) الترشيحُ حيٌّ لا محفور — القائمة�
     removeItem: (k) => store.delete(k),
   };
   const live = { free: [
-    { id: 'deepseek/deepseek-chat-v3.1:free', name: 'DeepSeek V3.1', context: 64000 },
-    { id: 'meta-llama/llama-4-maverick:free', name: 'Llama 4 Maverick', context: 128000 },
-    { id: 'qwen/qwen3-235b-a22b:free', name: 'Qwen3 235B', context: 40000 },
-    { id: 'google/gemini-2.0-flash-exp:free', name: 'Gemini 2.0 Flash', context: 1000000 },
-    { id: 'tiny/model:free', name: 'Tiny', context: 4000 },
-    { id: 'google/lyria-3:free', name: 'Lyria 3', context: 200000, text: false },
+    { id: 'deepseek/deepseek-chat-v3.1:free', name: 'DeepSeek V3.1', context: 64000, text: true },
+    { id: 'meta-llama/llama-4-maverick:free', name: 'Llama 4 Maverick', context: 128000, text: true },
+    { id: 'qwen/qwen3-235b-a22b:free', name: 'Qwen3 235B', context: 40000, text: true },
+    { id: 'google/gemini-2.0-flash-exp:free', name: 'Gemini 2.0 Flash', context: 1000000, text: true },
+    { id: 'tiny/model:free', name: 'Tiny', context: 4000, text: true },
+    { id: 'google/lyria-3:free', name: 'Lyria 3 Pro Preview', context: 200000 },
+    { id: 'google/lyria-3-clip:free', name: 'Lyria 3 Clip Preview', context: 200000, text: true },
   ] };
   globalThis.fetch = async (input) => {
     const url = String(input);

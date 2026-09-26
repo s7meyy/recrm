@@ -15,7 +15,7 @@
 
 import { MODEL_PICKS } from './prompts.js';
 
-const CACHE_KEY = 'rabih:free-models';
+const CACHE_KEY = 'rabih:free-models:v2';   // v2: القائمةُ موسومةٌ بالنصّية — وما قبلها يُهمَل
 const RETIRED_KEY = 'rabih:retired-models';
 const TTL = 60 * 60 * 1000;
 
@@ -72,6 +72,12 @@ export async function freeModels({ force = false } = {}) {
   } catch { return null; }
 }
 
+/** نصّيٌّ بشهادة الخادم، وليس اسمُه اسمَ مولّدِ صوتٍ أو صورة — حارسان لا واحد. */
+const NON_TEXT = /lyria|imagen|veo|flux|stable-diffusion|whisper|tts|embed|rerank|moderation|guard|clip|audio|music|video|image/i;
+export function isTextModel(m) {
+  return m?.text === true && !NON_TEXT.test(`${m.id} ${m.name || ''}`);
+}
+
 /** جذرُ الاسم بلا نسخةٍ ولا لاحقة: «deepseek/deepseek-chat-v3:free» ← «deepseek/deepseek-chat». */
 function family(slug) {
   return String(slug || '').replace(/:free$/, '').replace(/-v?\d+(\.\d+)*[a-z]*$/i, '').replace(/-(instruct|exp|preview|it)$/i, '');
@@ -97,7 +103,7 @@ export async function resolvePicks(role) {
     if (liveIds.has(p.slug)) { push(p); continue; }
     // أقربُ قريب من العائلة نفسها
     const fam = family(p.slug);
-    const fit = (m) => !dead.has(m.id) && m.text !== false && m.context >= 32000;
+    const fit = (m) => !dead.has(m.id) && isTextModel(m) && m.context >= 32000;
     const kin = live.find((m) => family(m.id) === fam && fit(m))
       || live.find((m) => m.id.split('/')[0] === p.slug.split('/')[0] && fit(m));
     if (kin) push({ name: kin.name, slug: kin.id, note: `مجاني اليوم — بديلُ ${p.name} من العائلة نفسها` });
@@ -107,12 +113,12 @@ export async function resolvePicks(role) {
   const WANT = 6;
   for (const vendor of TRUSTED) {
     if (out.length >= WANT) break;
-    const m = live.find((x) => x.id.startsWith(vendor + '/') && !seen.has(x.id) && !dead.has(x.id) && x.text !== false && x.context >= 32000);
+    const m = live.find((x) => x.id.startsWith(vendor + '/') && !seen.has(x.id) && !dead.has(x.id) && isTextModel(x) && x.context >= 32000);
     if (m) push({ name: m.name, slug: m.id, note: 'مجاني اليوم — من القائمة الحيّة' });
   }
   for (const m of live) {
     if (out.length >= WANT) break;
-    if (m.text !== false && m.context >= 32000) push({ name: m.name, slug: m.id, note: 'مجاني اليوم — من القائمة الحيّة' });
+    if (isTextModel(m) && m.context >= 32000) push({ name: m.name, slug: m.id, note: 'مجاني اليوم — من القائمة الحيّة' });
   }
   return out;
 }

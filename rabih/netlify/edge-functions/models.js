@@ -44,7 +44,9 @@ export default async () => {
     const mod = String(a.modality || '');
     return mod === '' ? true : /(^|\+)text(\+|->)/.test(mod) && /->.*text/.test(mod);
   };
-  const free = data.filter((m) => isFree(m) && isText(m)).map((m) => ({
+  /* وبالاسم أيضًا: بعضُ المولّدات لا تُعلن وسائطَها في الحقول، وأسماؤها تفضحها. */
+  const NON_TEXT = /lyria|imagen|veo|flux|stable-diffusion|whisper|tts|embed|rerank|moderation|guard|clip|vision-only|audio|music|video|image/i;
+  const free = data.filter((m) => isFree(m) && isText(m) && !NON_TEXT.test(`${m.id} ${m.name || ''}`)).map((m) => ({
     id: m.id,
     name: m.name || m.id,
     context: Number(m.context_length) || 0,
