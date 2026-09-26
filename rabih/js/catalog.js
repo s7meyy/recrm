@@ -15,6 +15,7 @@
 
 import { MODEL_PICKS } from './prompts.js';
 
+
 const CACHE_KEY = 'rabih:free-models:v2';   // v2: القائمةُ موسومةٌ بالنصّية — وما قبلها يُهمَل
 const RETIRED_KEY = 'rabih:retired-models';
 const TTL = 60 * 60 * 1000;
@@ -51,23 +52,40 @@ export function retire(slug) {
 /** هل هذا الخطأ يقول إن النموذج لم يعد مجانيًّا؟ ويُرجِع البديلَ المدفوع إن سمّاه. */
 export function retiredFrom(errorText) {
   const t = String(errorText || '');
+  /* «للأدوات البرمجية فقط» (٤٠٣) تقاعدٌ من جهتنا أيضًا: لن يُجيب غدًا كما لم يُجب اليوم. */
+  if (/only available on agentic harnesses|only available (to|on) /i.test(t)) return { paid: null, why: 'harness' };
   if (!/unavailable for free|no longer free|not available for free/i.test(t)) return null;
   const m = t.match(/use this slug instead:\s*([\w./:-]+)/i);
-  return { paid: m ? m[1] : null };
+  return { paid: m ? m[1] : null, why: 'paid-only' };
 }
+
+const ALLOW_PAID_KEY = 'rabih:allow-paid';
+
+/** إذنُ المدفوع — مطفأٌ حتى يضغطه المالك بيده، ويُقال له السعر قبل ذلك. */
+export function allowPaid() {
+  try { return storage()?.getItem(ALLOW_PAID_KEY) === '1'; } catch { return false; }
+}
+export function setAllowPaid(on) {
+  try { storage()?.setItem(ALLOW_PAID_KEY, on ? '1' : '0'); } catch { /* تجاهل */ }
+}
+
+let lastPaid = [];
+/** المدفوعُ كما جاء آخرَ مرة — بسعره، للعرض ولطبقة الإذن. */
+export function paidModels() { return lastPaid; }
 
 /** القائمةُ الحيّة — من الخادم، أو من الخبيئة، أو لا شيء. */
 export async function freeModels({ force = false } = {}) {
   if (!force) {
     const c = readCache();
-    if (c) return c;
+    if (c) { lastPaid = c.paid || []; return c.free || c; }
   }
   try {
     const res = await fetch('/api/models', { cache: 'no-store' });
     if (!res.ok) return null;
     const j = await res.json();
     if (!Array.isArray(j?.free)) return null;
-    writeCache(j.free);
+    lastPaid = Array.isArray(j.paid) ? j.paid : [];
+    writeCache({ free: j.free, paid: lastPaid });
     return j.free;
   } catch { return null; }
 }
@@ -119,6 +137,21 @@ export async function resolvePicks(role) {
   for (const m of live) {
     if (out.length >= WANT) break;
     if (isTextModel(m) && m.context >= 32000) push({ name: m.name, slug: m.id, note: 'مجاني اليوم — من القائمة الحيّة' });
+  }
+
+  /* **طبقةُ الإذن**: تُضاف بعد المجاني كلِّه، ولا تُضاف إلا إن أذن المالك، وكلُّ
+     مرشَّحٍ فيها يحمل سعره في ملاحظته فلا يُفاجأ. */
+  if (allowPaid() && lastPaid.length) {
+    const price = (m) => `مدفوع — ${m.promptPerM}$ للمليون رمزٍ داخل، ${m.completionPerM}$ خارج`;
+    for (const p of preferred) {
+      const fam = family(p.slug);
+      const kin = lastPaid.find((m) => family(m.id) === fam && !dead.has(m.id));
+      if (kin) push({ name: kin.name, slug: kin.id, note: `${price(kin)} — النسخةُ المدفوعة من ${p.name}`, paid: true });
+    }
+    for (const m of lastPaid) {
+      if (out.filter((x) => x.paid).length >= 3) break;
+      if (!dead.has(m.id)) push({ name: m.name, slug: m.id, note: price(m), paid: true });
+    }
   }
   return out;
 }
