@@ -294,27 +294,12 @@ console.log('١١) الترشيحُ حيٌّ لا محفور — القائمة�
     ? ok('وما بقي مجانيًّا يبقى كما هو') : bad('المفضَّل الحيّ أُسقط', a.map((p) => p.slug).join(' | '));
 
   const r = retiredFrom('OpenRouter ردّ بخطأ (404): This model is unavailable for free. The paid version is available now - use this slug instead: deepseek/deepseek-chat-v3');
-  r && r.paid === 'deepseek/deepseek-chat-v3' ? ok('ردُّ «لم يعد مجانيًّا» يُفهَم ويُلتقَط بديلُه المدفوع — ولا يُشغَّل') : bad('فهم الردّ', JSON.stringify(r));
+  r && r.paid === 'deepseek/deepseek-chat-v3' ? ok('ردُّ «لم يعد مجانيًّا» يُفهَم — ولا مدفوعَ يُشغَّل') : bad('فهم الردّ', JSON.stringify(r));
   retiredFrom('OpenRouter ردّ بخطأ (429): rate limited') === null ? ok('و٤٢٩ ليس تقاعدًا') : bad('٤٢٩ عُدَّ تقاعدًا');
   retire('deepseek/deepseek-chat-v3.1:free');
   const n2 = await resolvePicks('normalize');
   !n2.some((p) => p.slug === 'deepseek/deepseek-chat-v3.1:free') ? ok('المتقاعدُ لا يُجرَّب ثانية') : bad('متقاعدٌ عاد');
 
-  {
-    const { setAllowPaid, freeModels: fm } = await import('../js/catalog.js?live');
-    live.paid = [{ id: 'deepseek/deepseek-chat-v3', name: 'DeepSeek V3 (paid)', context: 64000, text: true, promptPerM: 0.3, completionPerM: 1.2 }];
-    store.delete('rabih:free-models:v2');
-    await fm({ force: true });
-    const noPerm = await resolvePicks('normalize');
-    !noPerm.some((p) => p.paid) ? ok('المدفوعُ لا يُضاف بلا إذن') : bad('مدفوعٌ بلا إذن');
-    setAllowPaid(true);
-    const withPerm = await resolvePicks('normalize');
-    const firstPaid = withPerm.findIndex((p) => p.paid);
-    firstPaid > 0 && withPerm.slice(0, firstPaid).every((p) => !p.paid)
-      ? ok('وبالإذن يُضاف بعد المجاني كلِّه لا قبله') : bad('ترتيب المدفوع', withPerm.map((p) => (p.paid ? '$' : 'f')).join(''));
-    /0\.3\$/.test(withPerm[firstPaid]?.note || '') ? ok('وسعرُه في ملاحظته قبل أن يُشغَّل') : bad('بلا سعر', withPerm[firstPaid]?.note);
-    setAllowPaid(false);
-  }
   retiredFrom('OpenRouter ردّ بخطأ (403): x:free is only available on agentic harnesses.')?.why === 'harness'
     ? ok('و«للأدوات البرمجية فقط» تقاعدٌ فلا يُجرَّب غدًا') : bad('٤٠٣ الأدوات');
 

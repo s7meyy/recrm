@@ -10,7 +10,8 @@
 //   3. ثم أفضلُ ما بقي في القائمة الحيّة، بالعائلات التي نثق بعربيّتها.
 //
 // وما جُرِّب فردّ بأنه «لم يعد مجانيًّا» يُوسَم متقاعدًا فلا يُجرَّب ثانيةً في
-// هذه الجلسة. وإن تعذّر الوصول إلى القائمة عاد الترشيحُ إلى الثابت كما كان،
+// هذه الجلسة. **ولا مدفوعَ هنا بقرار المالك**: مجانيٌّ يُجيب، أو نسخٌ ولصقٌ في
+// أي نموذجٍ مجانيٍّ على الويب — وهو الطريقُ الثاني القائم في شاشة خطّ التحليل. وإن تعذّر الوصول إلى القائمة عاد الترشيحُ إلى الثابت كما كان،
 // فلا يُكسَر ما كان يعمل.
 
 import { MODEL_PICKS } from './prompts.js';
@@ -49,7 +50,7 @@ export function retire(slug) {
   try { storage()?.setItem(RETIRED_KEY, JSON.stringify([...set])); } catch { /* تجاهل */ }
 }
 
-/** هل هذا الخطأ يقول إن النموذج لم يعد مجانيًّا؟ ويُرجِع البديلَ المدفوع إن سمّاه. */
+/** هل هذا الخطأ يقول إن النموذج لم يعد مجانيًّا أو أنه محجوزٌ لغيرنا؟ فلا يُجرَّب ثانية. */
 export function retiredFrom(errorText) {
   const t = String(errorText || '');
   /* «للأدوات البرمجية فقط» (٤٠٣) تقاعدٌ من جهتنا أيضًا: لن يُجيب غدًا كما لم يُجب اليوم. */
@@ -59,33 +60,18 @@ export function retiredFrom(errorText) {
   return { paid: m ? m[1] : null, why: 'paid-only' };
 }
 
-const ALLOW_PAID_KEY = 'rabih:allow-paid';
-
-/** إذنُ المدفوع — مطفأٌ حتى يضغطه المالك بيده، ويُقال له السعر قبل ذلك. */
-export function allowPaid() {
-  try { return storage()?.getItem(ALLOW_PAID_KEY) === '1'; } catch { return false; }
-}
-export function setAllowPaid(on) {
-  try { storage()?.setItem(ALLOW_PAID_KEY, on ? '1' : '0'); } catch { /* تجاهل */ }
-}
-
-let lastPaid = [];
-/** المدفوعُ كما جاء آخرَ مرة — بسعره، للعرض ولطبقة الإذن. */
-export function paidModels() { return lastPaid; }
-
 /** القائمةُ الحيّة — من الخادم، أو من الخبيئة، أو لا شيء. */
 export async function freeModels({ force = false } = {}) {
   if (!force) {
     const c = readCache();
-    if (c) { lastPaid = c.paid || []; return c.free || c; }
+    if (c) return c.free || c;
   }
   try {
     const res = await fetch('/api/models', { cache: 'no-store' });
     if (!res.ok) return null;
     const j = await res.json();
     if (!Array.isArray(j?.free)) return null;
-    lastPaid = Array.isArray(j.paid) ? j.paid : [];
-    writeCache({ free: j.free, paid: lastPaid });
+    writeCache({ free: j.free });
     return j.free;
   } catch { return null; }
 }
@@ -139,19 +125,5 @@ export async function resolvePicks(role) {
     if (isTextModel(m) && m.context >= 32000) push({ name: m.name, slug: m.id, note: 'مجاني اليوم — من القائمة الحيّة' });
   }
 
-  /* **طبقةُ الإذن**: تُضاف بعد المجاني كلِّه، ولا تُضاف إلا إن أذن المالك، وكلُّ
-     مرشَّحٍ فيها يحمل سعره في ملاحظته فلا يُفاجأ. */
-  if (allowPaid() && lastPaid.length) {
-    const price = (m) => `مدفوع — ${m.promptPerM}$ للمليون رمزٍ داخل، ${m.completionPerM}$ خارج`;
-    for (const p of preferred) {
-      const fam = family(p.slug);
-      const kin = lastPaid.find((m) => family(m.id) === fam && !dead.has(m.id));
-      if (kin) push({ name: kin.name, slug: kin.id, note: `${price(kin)} — النسخةُ المدفوعة من ${p.name}`, paid: true });
-    }
-    for (const m of lastPaid) {
-      if (out.filter((x) => x.paid).length >= 3) break;
-      if (!dead.has(m.id)) push({ name: m.name, slug: m.id, note: price(m), paid: true });
-    }
-  }
   return out;
 }

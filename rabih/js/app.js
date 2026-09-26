@@ -1185,17 +1185,8 @@ async function renderLiveModels({ force = false } = {}) {
   const box = $('#models-live-box');
   const state = $('#models-live-state');
   if (!box) return;
-  const { resolvePicks, freeModels, retired, paidModels, allowPaid } = await import('./catalog.js');
+  const { resolvePicks, freeModels, retired } = await import('./catalog.js');
   const live = await freeModels({ force });
-  const paid = paidModels();
-  const pbox = $('#models-paid-box');
-  if ($('#allow-paid')) $('#allow-paid').checked = allowPaid();
-  if (pbox) {
-    pbox.innerHTML = paid.length
-      ? `<p class="fine"><b>المدفوعُ المتاح اليوم بسعره</b> (دولار لكل مليون رمز — داخل / خارج):
-          ${paid.slice(0, 6).map((m) => `${esc(m.name)} <span class="fine">${m.promptPerM} / ${m.completionPerM}</span>`).join(' · ')}</p>`
-      : '';
-  }
   const roles = [['normalize', 'التوحيد'], ['mergeNormalized', 'دمج التوحيد'], ['analyze', 'التحليل'], ['mergeAnalysis', 'الدمج النهائي']];
   const rows = [];
   for (const [role, label] of roles) {
@@ -1206,7 +1197,8 @@ async function renderLiveModels({ force = false } = {}) {
   if (state) state.textContent = live ? `— ${live.length} نموذجًا مجانيًّا في قائمة OpenRouter الآن` : '— تعذّرت قراءة القائمة الحيّة، فتُجرَّب القائمةُ الثابتة';
   box.innerHTML = `<div class="table-wrap"><table class="mini"><thead><tr><th>المرحلة</th><th>ما سيُجرَّب بالترتيب</th></tr></thead><tbody>${rows.join('')}</tbody></table></div>
     ${dead.length ? `<p class="fine">تقاعد في هذه الجلسة ولن يُجرَّب: ${dead.map(esc).join('، ')}.</p>` : ''}
-    <p class="fine">لا يُشغَّل نموذجٌ مدفوع إلا بإذنك — والقائمةُ مجانيةٌ كلُّها.</p>`;
+    <p class="fine">لا مدفوعَ في رابح: القائمةُ مجانيةٌ كلُّها. وإن لم يُجب منها أحد، فالطريقُ الثاني قائم:
+      انسخ رسالة كل خطوة والصقها في أي نموذجٍ مجانيٍّ على الويب، وأعد جوابه إلى مربعها.</p>`;
 }
 
 function renderPipeline() {
@@ -3665,12 +3657,7 @@ async function boot() {
   bindFilePickers();
   $('#models-live')?.addEventListener('toggle', (e) => { if (e.target.open) renderLiveModels(); });
   $('#btn-models-refresh')?.addEventListener('click', () => renderLiveModels({ force: true }));
-  $('#allow-paid')?.addEventListener('change', async (e) => {
-    const { setAllowPaid } = await import('./catalog.js');
-    setAllowPaid(e.target.checked);
-    toast(e.target.checked ? 'ستُجرَّب النسخ المدفوعة بعد المجانية — وتُخصم من رصيدك' : 'لن يُشغَّل نموذجٌ مدفوع');
-    renderLiveModels();
-  });
+
   renderQueue();
 
   /* **الجولة تُعرَض ولا تُفرَض.**

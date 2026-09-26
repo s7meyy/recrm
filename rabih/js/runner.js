@@ -110,7 +110,7 @@ export async function runStep(stepKey, state, { onChunk, onModel, signal } = {})
 
   /* الترشيحُ حيٌّ: ما نفضّله إن بقي مجانيًّا، وإلا قريبُه، وإلا أفضلُ المتاح اليوم. */
   const picks = await resolvePicks(step.role);
-  if (!picks.length) return { ok: false, attempts: [], error: 'لا نموذجَ مجانيًّا متاحًا اليوم في قائمة OpenRouter — ولا يُشغَّل مدفوعٌ بلا إذنك. افتح باب «النماذج التي ستُجرَّب اليوم» لتأذن بالمدفوع إن شئت.' };
+  if (!picks.length) return { ok: false, attempts: [], error: 'لا نموذجَ مجانيًّا متاحًا اليوم في قائمة OpenRouter. الطريقُ الثاني قائم: انسخ رسالة الخطوة والصقها في أي نموذجٍ مجانيٍّ على الويب، ثم أعد جوابه إلى مربعها.' };
   const attempts = [];
 
   for (const pick of picks) {
