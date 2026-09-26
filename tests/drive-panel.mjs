@@ -24,7 +24,7 @@ ok('الحالة: غير مهيّأ وبأسماء المتغيّرات الثل
 ok('«انسخ الآن» بلا تهيئة: NOT_CONFIGURED لا نجاحٌ مزيَّف', api.ps === 503 && /NOT_CONFIGURED/.test(api.p.error), JSON.stringify(api.p));
 
 // ——— اللوحة ———
-await page.evaluate(() => { location.hash = '#/settings'; });
+await page.evaluate(() => { localStorage.setItem('kassab:settings-open', '"*"'); location.hash = '#/settings'; });
 await page.waitForTimeout(1500);
 const drivePanel = page.locator('[id="set-النسخ-اليومي-إلى-Google-Drive"]');
 ok('لوحة درايف موجودة في الإعدادات', await drivePanel.count() === 1);

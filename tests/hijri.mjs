@@ -47,7 +47,7 @@ await page.waitForTimeout(400);
 
 /* ===== الإطفاء من الإعدادات يعمّ الصفحات كلّها ===== */
 console.log('\n--- ٣٨. الإطفاء والتشغيل ---');
-await page.evaluate(() => { location.hash = '#/settings'; });
+await page.evaluate(() => { localStorage.setItem('kassab:settings-open', '"*"'); location.hash = '#/settings'; });
 await page.waitForTimeout(1000);
 const panel = page.locator('.panel', { hasText: 'المظهر والتاريخ' }).first();
 ok('الإعدادات فيها مفتاح للهجري', await panel.locator('input[type="checkbox"]').count() === 1);

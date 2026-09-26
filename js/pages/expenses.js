@@ -123,14 +123,27 @@ function renderSummary(ctx) {
     stat(formatSAR(current.expenses), 'مصاريف هذا الشهر'),
     stat(formatSAR(current.net), current.net < 0 ? 'خسارة هذا الشهر' : 'صافي ربح هذا الشهر')));
 
+  /* الأشهرُ بلا حركة تُطوى (المرحلة ٥٩): ستّةُ أشهرٍ كلُّها «٠ ريال» ثلاثون خليّةً صفريّةً
+     تدفن الشهرَ الذي فيه رقم. الشهرُ الحاليُّ يبقى دائمًا، والفارغُ يُعدّ في سطرٍ ويُفتح بزرّ. */
+  const quiet = (r, i) => i > 0 && !r.commission && !r.income && !r.expenses;
+  const rowOf = (r, i) => el('tr', { class: quiet(r, i) ? 'month-quiet' : '', hidden: quiet(r, i) },
+    el('td', { text: r.month }),
+    el('td', { class: 'num', text: formatSAR(r.commission) }),
+    el('td', { class: 'num', text: formatSAR(r.income) }),
+    el('td', { class: 'num', text: formatSAR(r.expenses) }),
+    el('td', {}, badge(formatSAR(r.net), r.net < 0 ? 'badge-danger' : 'badge-ok')));
+  const quietCount = rows.filter(quiet).length;
+  const tbody = el('tbody', {}, rows.map(rowOf));
   area.append(el('div', { class: 'table-wrap' }, el('table', { class: 'table' },
     el('thead', {}, el('tr', {}, ['الشهر', 'العمولات', 'إيرادات أخرى', 'المصاريف', 'صافي الربح'].map((t) => el('th', { text: t })))),
-    el('tbody', {}, rows.map((r) => el('tr', {},
-      el('td', { text: r.month }),
-      el('td', { class: 'num', text: formatSAR(r.commission) }),
-      el('td', { class: 'num', text: formatSAR(r.income) }),
-      el('td', { class: 'num', text: formatSAR(r.expenses) }),
-      el('td', {}, badge(formatSAR(r.net), r.net < 0 ? 'badge-danger' : 'badge-ok'))))))));
+    tbody)));
+  if (quietCount) {
+    const btn = el('button', {
+      type: 'button', class: 'btn btn-sm', text: `${countOf(quietCount, 'شهر')} بلا حركة — أظهرها`,
+      onClick: () => { for (const tr of tbody.querySelectorAll('.month-quiet')) tr.hidden = false; btn.remove(); },
+    });
+    area.append(el('p', { class: 'muted small' }, btn));
+  }
   area.append(el('p', { class: 'muted small', text: 'صافي الربح = عمولاتك من الصفقات + إيراداتك الأخرى − مصاريفك. وسعر البيع نفسه ليس دخلك، فلا يدخل هنا.' }));
   renderRecurring(ctx, area);
 }

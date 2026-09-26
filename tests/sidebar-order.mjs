@@ -18,7 +18,7 @@ const navOrder = () => page.$$eval('.sidebar-nav a', as => as.map(a => a.dataset
 const before = await navOrder();
 ok('الترتيب الافتراضي يطابق index.html', before[0] === 'today' && before[1] === 'dashboard', before.join(','));
 
-await page.evaluate(() => { location.hash = '#/settings'; });
+await page.evaluate(() => { localStorage.setItem('kassab:settings-open', '"*"'); location.hash = '#/settings'; });
 await page.waitForTimeout(900);
 // اللوحة الثانية = ترتيب الصفحات. نرفع «الإعدادات» (الأخيرة) خطوتين بزر ↑
 const rows = page.locator('.page-order-row');
@@ -45,7 +45,7 @@ const afterReload = await navOrder();
 ok('الترتيب محفوظ بعد إعادة التحميل', JSON.stringify(afterReload) === JSON.stringify(after), afterReload.slice(-3).join(','));
 
 // إرجاع الافتراضي
-await page.evaluate(() => { location.hash = '#/settings'; });
+await page.evaluate(() => { localStorage.setItem('kassab:settings-open', '"*"'); location.hash = '#/settings'; });
 await page.waitForTimeout(900);
 await page.locator('button:has-text("إرجاع الترتيب الافتراضي")').click();
 await page.waitForTimeout(600);

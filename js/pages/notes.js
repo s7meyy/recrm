@@ -172,6 +172,11 @@ function buildLayout(ctx) {
           el('span', { text: 'إظهار المؤرشفة' })))));
 
   ctx.container.append(quickCapture(ctx));
+  // الربطُ بالوارد (المرحلة ٥٩): البوتُ يفرز «فكرة» و«مقترح» إلى هنا، ولم يكن في الصفحة
+  // ما يقوله — فتبدو صفحةً فارغةً لا صلةَ لها بشيء.
+  ctx.container.append(el('p', { class: 'muted small notes-inbox-hint row', style: { gap: '6px', alignItems: 'center', flexWrap: 'wrap' } },
+    'ما يصلك في الوارد موسومًا «فكرة» أو «مقترح» يُقيَّد هنا بعد اعتماده — والمثبَّتُ أوّلًا ثم الأحدث.',
+    el('a', { class: 'btn btn-ghost btn-sm', href: '#/inbox', text: 'افتح الوارد' })));
 
   const visible = ctx.notes
     .filter((n) => (ctx.showArchived ? n.archived : !n.archived))

@@ -17,7 +17,7 @@ await page.waitForTimeout(2400);
 /* ===== ١) استيراد CSV ===== */
 console.log('\n--- ١. استيراد CSV ---');
 const before = await page.evaluate(async () => (await (await import('/js/data/repository.js')).repo.clients.list()).length);
-await page.evaluate(() => { location.hash = '#/settings'; });
+await page.evaluate(() => { localStorage.setItem('kassab:settings-open', '"*"'); location.hash = '#/settings'; });
 await page.waitForTimeout(1600);
 
 const csv = '﻿الاسم,الجوال,ملاحظات\nعميل مستورد أول,0512345001,من ملف إكسل\nعميل مستورد ثانٍ,0512345002,\nبلا بيانات,,\nمكرر,0512345001,نفس جوال الأول\n';

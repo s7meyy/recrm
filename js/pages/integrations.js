@@ -3,7 +3,7 @@
 // وهي صفحة **حالة وخطوات** لا صفحة إعدادات: لا حقل مفتاحٍ فيها، لأن المفاتيح لا تنزل إلى
 // المتصفح. تُكتب في Netlify فتبقى خارج قاعدة بياناتك ونسخك الاحتياطية وشاشتك.
 
-import { el, clear, badge, emptyState, toast } from '../util/dom.js';
+import { el, clear, badge, emptyState, toast, disclosure } from '../util/dom.js';
 import { loadIntegrations, runIntegration, explain, INTEGRATION_GUIDE } from '../data/integrations.js';
 import { resetPublicApi } from '../util/public-api.js';
 
@@ -26,10 +26,9 @@ export async function render(container) {
     // منها، ويبقى ما لا يُعرف بلا خادمٍ **هو الحالة وحدها**، ويُقال ذلك صراحةً.
     const guides = Object.entries(INTEGRATION_GUIDE);
     container.append(
-      el('div', { class: 'notice' },
-        el('strong', { text: 'لم تُقرأ الحالة. ' }),
-        'قراءةُ الحالة تحتاج جلسة مالك على الموقع المنشور — اضغط «تحديث الحالة» بعد الدخول. ',
-        'وهذه التكاملات التي يعرفها النظام، وما يحتاجه كلٌّ منها:'),
+      el('div', { class: 'notice notice-prose' },
+        el('strong', { text: 'لم تُقرأ الحالة ' }),
+        '— اضغط «تحديث الحالة» بعد الدخول على الموقع المنشور.'),
       el('div', { class: 'today-grid' }, guides.map(([key, g]) => el('section', { class: 'panel today-panel' },
         el('div', { class: 'today-head' },
           el('h2', {}, g.label || key, badge('الحالة غير معروفة', 'badge-outline'))),
@@ -42,10 +41,11 @@ export async function render(container) {
 
   const ready = rows.filter((r) => r.configured).length;
   container.append(
-    el('div', { class: 'notice' },
+    el('div', { class: 'notice notice-prose' },
       el('strong', { text: `${ready} من ${rows.length} جاهزة. ` }),
-      'ما ليس جاهزًا لا يتظاهر بالعمل: يقول ما ينقصه بالضبط، ولا يعرض بياناتٍ وهمية. ',
-      'والمفاتيح تُكتب في Netlify ← Site configuration ← Environment variables، فلا تدخل بياناتك ولا نسخك.'),
+      'وما ليس جاهزًا يقول ما ينقصه بالضبط.',
+      disclosure('أين تُكتب المفاتيح؟',
+        el('p', {}, 'في Netlify ← Site configuration ← Environment variables — فلا تدخل بياناتك ولا نسخك، ولا يعرض تكاملٌ ناقصٌ بياناتٍ وهمية.'))),
     el('div', { class: 'today-grid' }, rows.map((row) => card(row, container))));
 }
 

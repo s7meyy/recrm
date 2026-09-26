@@ -94,7 +94,7 @@ await page.evaluate(async () => {
   const { repo } = await import('/js/data/repository.js');
   const n = await repo.notes.create({ text: 'فكرة في السلة للعرض' });
   await repo.notes.remove(n.id);
-  location.hash = '#/settings';
+  localStorage.setItem('kassab:settings-open', '"*"'); location.hash = '#/settings';
 });
 await page.waitForTimeout(1800);
 const settingsText = await page.locator('#page').innerText();

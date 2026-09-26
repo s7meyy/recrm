@@ -88,7 +88,7 @@ ok('والاسترجاع يُعيده فعلًا', back);
 
 /* ===== ٤. فهرس الإعدادات ===== */
 console.log('\n--- ٤٣. فهرس الإعدادات وبحثه ---');
-await page.evaluate(() => { location.hash = '#/settings'; });
+await page.evaluate(() => { localStorage.setItem('kassab:settings-open', '"*"'); location.hash = '#/settings'; });
 await page.waitForTimeout(2200);
 const chips = await page.locator('.settings-nav-chips .chip').count();
 ok('لكلّ لوحٍ رقيقةٌ في الفهرس', chips >= 20, String(chips));

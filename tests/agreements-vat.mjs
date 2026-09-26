@@ -59,7 +59,7 @@ console.log('\n--- ٢. vCard ---');
 await page.evaluate(async () => {
   const { repo } = await import('/js/data/repository.js');
   await repo.clients.create({ name: 'تركي الحارثي', phone: '0512223344', tags: ['جادّ'], notes: 'ملاحظة داخلية لا تُصدَّر' });
-  location.hash = '#/settings';
+  localStorage.setItem('kassab:settings-open', '"*"'); location.hash = '#/settings';
 });
 await page.waitForTimeout(2400);
 const settingsText = await page.locator('#page').innerText();

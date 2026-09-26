@@ -230,6 +230,7 @@ ok('وزرُّ واتساب صار زرًّا يسجّل لا رابطًا صا�
 
 /* ===== المدى في التصدير (٢١) ===== */
 console.log('\n--- ٤٧. ملفُّ الربع لا ملفُّ العمر ---');
+await page.evaluate(() => localStorage.setItem('kassab:settings-open', '"*"'));
 await go('#/settings', 2600);
 const settingsText = await page.locator('#page').innerText();
 ok('المصاريفُ والإيرادات صارتا في التصدير', settingsText.includes('تصدير إلى إكسل'));

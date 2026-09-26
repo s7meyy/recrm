@@ -152,7 +152,7 @@ ok('وتذكر فرق السعر', /أعلى بـ|أقل بـ|بالسعر نف�
 
 /* ===== ٥. القفل التلقائي ===== */
 console.log('\n--- ٥. القفل التلقائي ---');
-await page.evaluate(() => { location.hash = '#/settings'; });
+await page.evaluate(() => { localStorage.setItem('kassab:settings-open', '"*"'); location.hash = '#/settings'; });
 await page.waitForTimeout(2400);
 const settingsText = await page.locator('#page').innerText();
 ok('لوحة القفل في الإعدادات', settingsText.includes('القفل التلقائي'));

@@ -14,7 +14,7 @@ await page.waitForTimeout(1400);
 
 /* بيانات شركة */
 console.log('\n--- ٦. بيانات الشركة والترقيم ---');
-await page.evaluate(() => { location.hash = '#/settings'; });
+await page.evaluate(() => { localStorage.setItem('kassab:settings-open', '"*"'); location.hash = '#/settings'; });
 await page.waitForTimeout(1000);
 const panel = page.locator('.panel:has-text("بيانات الشركة والمستندات")');
 await panel.locator('input[type="text"]').first().fill('مكتب سائح العقاري');

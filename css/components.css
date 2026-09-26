@@ -393,15 +393,6 @@ input[type="tel"].input, input[type="email"].input, input[type="url"].input {
   .fold-toggle { width: 100%; margin-bottom: 8px; justify-content: space-between; }
   .fold-body:not(.fold-open) { display: none; }
 
-  /* الإعدادات: الأوّلُ مفتوحٌ وما بعده يُطوى خلف عنوانِه (المرحلة ٥٢). */
-  .set-fold:not(.set-open) > .panel-desc, .set-fold:not(.set-open) > .panel-body { display: none; }
-  .set-fold > h2 { margin: 0; }
-  .set-fold-toggle {
-    width: 100%; min-height: 44px; display: flex; align-items: center; justify-content: space-between;
-    gap: 8px; background: none; border: 0; padding: 0; font: inherit; color: inherit; text-align: start; cursor: pointer;
-  }
-  .set-fold-toggle::after { content: '▾'; color: var(--muted); font-size: var(--fs-sm); }
-  .set-fold.set-open .set-fold-toggle::after { content: '▴'; }
   .filters-foldable { margin-bottom: 8px; }
   .filters-foldable:not(.filters-open) { display: none; }
 
@@ -1282,3 +1273,30 @@ body.modal-open .voice-dock { display: none; }
   .voice-btn { width: var(--dhad-size-touch); height: var(--dhad-size-touch); font-size: 18px; opacity: 0.85; }
   .voice-btn.voice-on { opacity: 1; }
 }
+
+/* ===== المرحلة ٥٩ — أهداف اللمس التي بقيت دون ٤٤ ===== */
+.check.check-bare { min-width: var(--dhad-size-touch); justify-content: center; }
+.check.check-bare input { width: 22px; height: 22px; }
+.task-card-actions .btn, .task-quick-add .btn-sm { min-width: var(--dhad-size-touch); }
+.rega-link a.strong { display: inline-flex; align-items: center; min-height: var(--dhad-size-touch); }
+.leaflet-touch .leaflet-bar a, .leaflet-bar a { width: var(--dhad-size-touch) !important; height: var(--dhad-size-touch) !important; line-height: var(--dhad-size-touch) !important; font-size: 20px; }
+/* مربّعُ الاختيار العاري داخل الجداول (النشر): مساحةُ لمسٍ لا مربّعُ ظفر. */
+.table td > input[type="checkbox"] { width: 22px; height: 22px; margin: 11px; }
+/* الإعدادات: الأوّلُ مفتوحٌ وما بعده يُطوى خلف عنوانِه — على كل الشاشات منذ المرحلة ٥٩. */
+.set-fold:not(.set-open) > .panel-desc, .set-fold:not(.set-open) > .panel-body { display: none; }
+.set-fold > h2 { margin: 0; }
+.set-fold-toggle {
+  width: 100%; min-height: 44px; display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; background: none; border: 0; padding: 0; font: inherit; color: inherit; text-align: start; cursor: pointer;
+}
+.set-fold-toggle::after { content: '▾'; color: var(--muted); font-size: var(--fs-sm); }
+.set-fold.set-open .set-fold-toggle::after { content: '▴'; }
+/* التقويم على الجوّال: أيامٌ ببطاقات لا شبكة (المرحلة ٥٩). */
+.agenda { display: flex; flex-direction: column; gap: var(--dhad-space-2); }
+.agenda-day { padding: var(--dhad-space-3); }
+.agenda-head { margin: 0 0 var(--dhad-space-2); font-size: var(--fs-md); display: flex; align-items: center; gap: var(--dhad-space-2); }
+.agenda-items { display: flex; flex-direction: column; }
+.agenda-item { display: flex; gap: var(--dhad-space-3); align-items: baseline; min-height: var(--dhad-size-touch); padding: 6px 0; border-top: 1px dashed var(--line); text-decoration: none; color: inherit; }
+.agenda-item:first-child { border-top: 0; }
+.agenda-time { flex: 0 0 auto; color: var(--muted); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.dash-more { width: 100%; justify-content: center; margin-block: var(--dhad-space-2); }

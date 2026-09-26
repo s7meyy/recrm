@@ -115,7 +115,7 @@ await page.waitForTimeout(600);
 
 /* ===== ٣. نقاط المكالمة ===== */
 console.log('\n--- ٣. نقاط المكالمة ---');
-await page.evaluate(() => { document.getElementById('modal-root')?.replaceChildren(); location.hash = '#/settings'; });
+await page.evaluate(() => { document.getElementById('modal-root')?.replaceChildren(); localStorage.setItem('kassab:settings-open', '"*"'); location.hash = '#/settings'; });
 await page.waitForTimeout(2200);
 const settingsText = await page.locator('#page').innerText();
 ok('لوحة النقاط في الإعدادات', settingsText.includes('نقاط المكالمات'));

@@ -8,8 +8,8 @@ import { getLists, typeLabel, getCompany } from '../data/settings.js';
 import { monthEvents, monthGrid, icsCalendar, EVENT_KINDS, dayKey } from '../util/calendar.js';
 import { agreementState } from '../util/agreements.js';
 import { downloadBlob } from '../data/backup.js';
-import { el, clear, badge, toast } from '../util/dom.js';
-import { formatNumber, formatDateTime, hijriMode, countOf } from '../util/format.js';
+import { el, clear, badge, toast, isNarrow } from '../util/dom.js';
+import { formatNumber, formatDateTime, formatDate, hijriMode, countOf } from '../util/format.js';
 import { hijriSupported, hijriDay, hijriRange, formatHijri } from '../util/hijri.js';
 
 const MONTHS = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
@@ -80,6 +80,14 @@ function build(ctx) {
         .map((k) => badge(`${k.icon} ${k.label} ${formatNumber(counts[k.key])}`, ''))));
   }
 
+  /* على الجوّال (المرحلة ٥٩): شبكةُ الشهر تصير ثلاثين صفًّا أكثرُها فارغ. فتُعرض الأيامُ
+     التي فيها شيءٌ وحدها، يومًا فيومًا، بمواعيده كاملةً. والشبكةُ للشاشة الواسعة. */
+  if (isNarrow() && events.length) {
+    ctx.container.append(agendaList(days));
+    ctx.container.append(el('p', { class: 'muted small', text: 'كل موعد هنا مقروء من سجلّه — التقويم لا يُنشئ شيئًا، والنقر يفتح المصدر.' }));
+    return;
+  }
+
   const table = el('table', { class: 'table calendar-table' },
     el('thead', {}, el('tr', {}, WEEKDAYS.map((d) => el('th', { text: d })))),
     el('tbody', {}, monthGrid(ctx.year, ctx.month).map((week) => el('tr', {}, week.map((date) => {
@@ -106,6 +114,24 @@ function build(ctx) {
 
   ctx.container.append(el('div', { class: 'table-wrap' }, table));
   ctx.container.append(el('p', { class: 'muted small', text: 'كل موعد هنا مقروء من سجلّه — التقويم لا يُنشئ شيئًا، والنقر يفتح المصدر. وملف ‎.ics‎ يُضاف مرّة واحدة إلى تقويمك ولا يتزامن بعدها.' }));
+}
+
+/** الأيامُ التي فيها مواعيدُ فقط — كلٌّ ببطاقته وقائمةِ مواعيده. */
+function agendaList(days) {
+  const todayKey = dayKey(new Date());
+  const keys = [...days.keys()].filter((k) => (days.get(k) || []).length).sort();
+  return el('div', { class: 'agenda' }, keys.map((key) => {
+    const list = days.get(key);
+    const date = new Date(`${key}T12:00:00`);
+    return el('section', { class: `panel agenda-day${key === todayKey ? ' cal-today' : ''}` },
+      el('h3', { class: 'agenda-head' },
+        `${WEEKDAYS[date.getDay()]} ${formatDate(date.toISOString())}`,
+        key === todayKey ? badge('اليوم', 'badge-accent') : null),
+      el('div', { class: 'agenda-items' }, list.map((e) => el('a', {
+        class: `agenda-item cal-${e.kind}`, href: e.href || '#/calendar',
+      }, el('span', { class: 'agenda-time', text: formatDateTime(e.at).split('،').pop()?.trim() || '' }),
+      el('span', {}, `${EVENT_KINDS[e.kind]?.icon || ''} ${e.title}${e.meta ? ` · ${e.meta}` : ''}`)))));
+  }));
 }
 
 function move(ctx, step) {

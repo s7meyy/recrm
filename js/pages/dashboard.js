@@ -14,7 +14,7 @@ import { sourceReport, propertyProfit } from '../util/sources.js';
 import { campaignReport } from '../util/campaigns.js';
 import { showingStats } from '../util/showings.js';
 import { revenueForecast } from '../util/forecast.js';
-import { el, clear, badge } from '../util/dom.js';
+import { el, clear, badge, isNarrow } from '../util/dom.js';
 import { formatNumber, formatSAR, formatDate, daysBetween, relativeDays, countWord, countOf, deltaOf } from '../util/format.js';
 import { formatPhone, toInternational } from '../util/phone.js';
 import { discountEffect } from '../util/property-evidence.js';
@@ -333,6 +333,29 @@ function buildLayout(container, data) {
   grid.append(panel('المهام', null, ...taskSection(tasks)));
 
   foldEmptyPanels(grid);
+  foldRestOnNarrow(grid);
+}
+
+/**
+ * الداشبورد على الجوّال (المرحلة ٥٩): قِيس فبلغ ثمانيةَ آلاف بكسلٍ من الطول. فتُعرض أربعُ
+ * لوحاتٍ أُولى — وهي الأهمّ بترتيبها — ويُطوى الباقي خلف زرٍّ يسمّي عددَه. والفارغةُ
+ * طُويت قبله في سطرها. وعلى الشاشة الواسعة لا يتغيّر شيء.
+ */
+const NARROW_FIRST = 4;
+export function foldRestOnNarrow(grid) {
+  if (!isNarrow()) return 0;
+  const panels = [...grid.children].filter((n) => n.classList?.contains('panel') && !n.classList.contains('dash-folded'));
+  const rest = panels.slice(NARROW_FIRST);
+  if (rest.length < 2) return 0;
+  for (const node of rest) node.hidden = true;
+  const more = el('button', {
+    type: 'button', class: 'btn dash-more',
+    text: `المزيد — ${countOf(rest.length, 'لوحة')} أخرى ▾`,
+    onClick: () => { for (const node of rest) node.hidden = false; more.remove(); },
+  });
+  const anchor = grid.querySelector('.dash-folded');
+  if (anchor) anchor.before(more); else grid.append(more);
+  return rest.length;
 }
 
 /* ===== اللوحاتُ الفارغة تُطوى (المرحلة ٥٢) ===== */

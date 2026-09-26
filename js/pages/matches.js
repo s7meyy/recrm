@@ -295,7 +295,24 @@ function renderList(ctx) {
     } else {
       // على الجوّال تُطوى مطابقاتُ كلّ عميلٍ تحت اسمه وعددها، فتُرى أسماءُ عملائك كلِّهم
       // في شاشةٍ واحدة ثم تفتح من تريد. وعلى الشاشة الواسعة لا يتغيّر شيء.
-      const list = el('div', { class: 'match-list' }, rows.map((row) => matchRow(ctx, request, row)));
+      /* **أعلى ثلاثٍ ثم الباقي بزرّ** (المرحلة ٥٩): تسعَ عشرةَ بطاقةً بلا ترتيبٍ ظاهرٍ
+         تُقرأ كلُّها سواء. والصفوفُ مرتّبةٌ بالدرجة أصلًا، فالثلاثُ الأولى هي ما يُقرَّر به،
+         والباقي معدودٌ تحتها ويُفتح بضغطة. */
+      const TOP = 3;
+      const top = rows.slice(0, TOP).map((row) => matchRow(ctx, request, row));
+      const tail = rows.slice(TOP).map((row) => matchRow(ctx, request, row));
+      const tailBox = el('div', { class: 'match-tail', hidden: true }, tail);
+      const list = el('div', { class: 'match-list' }, top, tailBox,
+        tail.length ? el('button', {
+          type: 'button', class: 'btn btn-sm match-more', 'aria-expanded': 'false',
+          text: `أظهر ${countOf(tail.length, 'مطابقة')} أخرى ▾`,
+          onClick: (e) => {
+            const on = tailBox.hidden;
+            tailBox.hidden = !on;
+            e.currentTarget.setAttribute('aria-expanded', on ? 'true' : 'false');
+            e.currentTarget.textContent = on ? 'أخفِ الباقي ▴' : `أظهر ${countOf(tail.length, 'مطابقة')} أخرى ▾`;
+          },
+        }) : null);
       const best = rows[0]?.score;
       block.append(foldOnNarrow(list,
         `${countOf(rows.length, 'مطابقة')}${best != null ? ` — أعلاها ${best}٪` : ''}`,

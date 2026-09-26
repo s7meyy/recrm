@@ -73,7 +73,7 @@ ok('**والعقارُ يدخل الإدارة من هنا** لا من أربع 
 
 /* ===== ٤. الأقسام: تسميةٌ وإضافةٌ وسحب ===== */
 console.log('\n--- ٤. أقسامُ القائمة ---');
-await page.evaluate(() => { location.hash = '#/settings'; });
+await page.evaluate(() => { localStorage.setItem('kassab:settings-open', '"*"'); location.hash = '#/settings'; });
 await page.waitForTimeout(1600);
 const boxes = await page.locator('.section-box').count();
 ok('لوحةُ الأقسام تُعرض أقسامًا لا قائمةً مسطّحة', boxes >= 4, `${boxes} قسم`);
@@ -194,7 +194,7 @@ ok('**والسهمُ يعبر حدَّ القسم** — فالصفحةُ في ر
 // يبقى بعد إعادة التحميل
 await page.reload();
 await page.waitForTimeout(2400);
-await page.evaluate(() => { location.hash = '#/settings'; });
+await page.evaluate(() => { localStorage.setItem('kassab:settings-open', '"*"'); location.hash = '#/settings'; });
 await page.waitForTimeout(1600);
 mine = await sectionNamed('قسمي الخاصّ');
 ok('وما رتّبتَه يبقى بعد إعادة التحميل', mine.found);

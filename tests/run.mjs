@@ -114,6 +114,7 @@ const SUITES = [
   ['rename-and-vault.mjs', LOCKED],
   ['drive-panel.mjs', LOCKED],      // المرحلة ٥٦
   ['review-fixes.mjs', OPEN],       // المرحلة ٥٧
+  ['review-round3.mjs', OPEN],      // المرحلة ٥٩
   ['public-experience.mjs', LOCKED], // المرحلة ٥٨
   ['sync-devices.mjs', LOCKED],
   ['offer-pwa-push.mjs', LOCKED],

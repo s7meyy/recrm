@@ -213,10 +213,16 @@ function linkButton(url, { small = true } = {}) {
   });
 }
 
-function readyBadge(x) {
+function readyBadge(x, ctx = null) {
   const { ready, missing } = matchReadiness(x);
   if (ready) return badge('جاهز للمطابقة', 'badge-ok');
-  return badge(`ينقصه: ${missing.map((m) => m.label).join('، ')}`, 'badge-warn');
+  // «أكمل الآن» (المرحلة ٥٩): الصفُّ الناقص كان يقول ما ينقصه ولا يفتح طريقًا إليه.
+  return el('span', { class: 'row', style: { gap: '6px', flexWrap: 'wrap' } },
+    badge(`ينقصه: ${missing.map((m) => m.label).join('، ')}`, 'badge-warn'),
+    ctx ? el('button', {
+      type: 'button', class: 'btn btn-sm', text: 'أكمل الآن',
+      onClick: (e) => { e.stopPropagation(); openForm(ctx, x); },
+    }) : null);
 }
 
 function statusCell(ctx, x) {
@@ -271,7 +277,7 @@ function renderList(ctx) {
       linkButton(x.sourceUrl))),
     el('td', { text: x.postedAt ? formatDate(x.postedAt) : '—' }),
     el('td', {}, statusCell(ctx, x)),
-    el('td', {}, readyBadge(x)))));
+    el('td', {}, readyBadge(x, ctx)))));
   area.append(el('div', { class: 'table-wrap' }, el('table', { class: 'table' }, el('thead', {}, head), body)));
 }
 

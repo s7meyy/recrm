@@ -92,7 +92,8 @@ export function selectEl({ options = [], value = '', placeholder = null, onChang
 export function checkbox(labelText, { name, value, checked = false, onChange = null } = {}) {
   const input = el('input', { type: 'checkbox', name, value, checked });
   if (onChange) input.addEventListener('change', onChange);
-  return el('label', { class: 'check' }, input, el('span', { text: labelText }));
+  // بلا نصٍّ (المرحلة ٥٩): مربّعٌ وحده عرضُه ١٨ بكسلًا، فيُعطى الغلافُ عرضَ الإبهام.
+  return el('label', { class: `check${labelText ? '' : ' check-bare'}` }, input, el('span', { text: labelText }));
 }
 
 /**

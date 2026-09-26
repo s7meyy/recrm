@@ -140,8 +140,19 @@ function settingsNav(grid) {
 
   // **`<nav>` لا `.panel`**: الفهرس يحمل عناوين اللوحات كلَّها نصًّا، فلو كان `.panel`
   // أصابه كلُّ بحثٍ عن لوحٍ باسمه قبل اللوح نفسه. والوسمُ الدلاليّ أصحُّ هنا على كلّ حال.
+  // «افتح الكل / اطوِ الكل» (المرحلة ٥٩): اللوحاتُ مطويّةٌ افتراضًا على كل الشاشات، ومن
+  // يفضّل الصفحةَ الطويلة يفتحها كلَّها مرّةً ويُتذكَّر ذلك.
+  const setAll = (on) => {
+    for (const p of panels()) {
+      p.classList.toggle('set-open', on);
+      p.querySelector('.set-fold-toggle')?.setAttribute('aria-expanded', on ? 'true' : 'false');
+    }
+    rememberAll(on);
+  };
+  const openAll = el('button', { type: 'button', class: 'btn btn-ghost btn-sm', text: 'افتح الكل', onClick: () => setAll(true) });
+  const closeAll = el('button', { type: 'button', class: 'btn btn-ghost btn-sm', text: 'اطوِ الكل', onClick: () => setAll(false) });
   return el('nav', { class: 'settings-nav', 'aria-label': 'فهرس الإعدادات' },
-    el('div', { class: 'row', style: { gap: '8px', flexWrap: 'wrap' } }, search, count),
+    el('div', { class: 'row', style: { gap: '8px', flexWrap: 'wrap' } }, search, count, openAll, closeAll),
     chips);
 }
 
@@ -154,9 +165,32 @@ function settingsNav(grid) {
  */
 let panelIndex = 0;
 
+/* **وعلى الحاسوب أيضًا** (المرحلة ٥٩): قِيست الصفحةُ على ١٣٦٦ بكسلًا فبلغت ستّةَ عشر ألف
+   بكسلٍ من الطول — كلُّ اللوحات مفتوحة. فالطيُّ في الحالين، **ويُتذكَّر ما فتحتَه** في هذا
+   الجهاز: من يعمل في «الفريق» كلَّ يوم يجده مفتوحًا لا يفتحه كلَّ مرّة. */
+const OPEN_KEY = 'kassab:settings-open';
+/** ما فُتح: مجموعةُ معرّفات، أو `'*'` = «افتح الكل» (زرٌّ في الفهرس لمن يفضّل الصفحة الطويلة). */
+const rememberedOpen = () => {
+  try {
+    const raw = JSON.parse(localStorage.getItem(OPEN_KEY) || '[]');
+    return raw === '*' ? { has: () => true, all: true } : new Set(raw);
+  } catch (_) { return new Set(); }
+};
+function rememberOpen(id, on) {
+  try {
+    const set = rememberedOpen();
+    if (set.all) { if (on) return; localStorage.setItem(OPEN_KEY, JSON.stringify([...document.querySelectorAll('.set-fold.set-open')].map((n) => n.id).filter((x) => x !== id))); return; }
+    if (on) set.add(id); else set.delete(id);
+    localStorage.setItem(OPEN_KEY, JSON.stringify([...set]));
+  } catch (_) { /* تصفّح خاص: يُطوى ويُفتح للجلسة فقط */ }
+}
+function rememberAll(on) {
+  try { localStorage.setItem(OPEN_KEY, JSON.stringify(on ? '*' : [])); } catch (_) { /* تصفّح خاص */ }
+}
+
 function foldOnMobile(node, head) {
-  if (!isNarrow()) return;
-  const open = panelIndex++ === 0;
+  const first = panelIndex++ === 0;
+  const open = first || rememberedOpen().has(node.id);
   node.classList.add('set-fold');
   if (open) node.classList.add('set-open');
   const btn = el('button', {
@@ -165,6 +199,7 @@ function foldOnMobile(node, head) {
     onClick: () => {
       const on = node.classList.toggle('set-open');
       btn.setAttribute('aria-expanded', on ? 'true' : 'false');
+      rememberOpen(node.id, on);
     },
   });
   clear(head);
