@@ -333,7 +333,10 @@ async function refreshBanner() {
     banner.hidden = true;
     return;
   }
-  if (!status.due) { banner.hidden = true; return; }
+  paintBackupDot(status);
+  // الشريطُ بعد ثلاثة أيام لا يوم (المرحلة ٦٠): المؤشّرُ في الرأس يقول «آخر نسخة قبل يومين»
+  // بلا أن يحجب شيئًا، والشريطُ لمن أهمل ثلاثةَ أيامٍ أو لم يحفظ قطّ.
+  if (!status.bannerDue) { banner.hidden = true; return; }
   clear(banner);
   const since = status.lastExportAt ? `آخر نسخة احتياطية قبل ${daysWord(Math.floor(status.hoursSince / 24))}.` : 'لم تُحفظ نسخة احتياطية بعد.';
   // سطرٌ واحد (المرحلة ٥٧): كان الشريطُ ثلاثةَ أسطرٍ وزرّين بارتفاع ١٣٠ بكسلًا فوق عنوان
@@ -353,6 +356,22 @@ async function refreshBanner() {
         },
       }))));
   banner.hidden = false;
+}
+
+/**
+ * مؤشّرُ النسخة في الرأس (المرحلة ٦٠): نقطةٌ بجانب نقطة المزامنة تقول متى آخرُ نسخة —
+ * خضراءُ دون يوم، صفراءُ دون ثلاثة، حمراءُ بعدها أو إن لم تُحفظ قطّ. والنقرُ يفتح الإعدادات.
+ */
+function paintBackupDot(status) {
+  const dot = document.getElementById('backup-dot');
+  if (!dot) return;
+  if (status.dot === 'none') { dot.hidden = true; return; }
+  const since = status.lastExportAt ? `آخر نسخة احتياطية قبل ${daysWord(Math.floor(status.hoursSince / 24))}` : 'لم تُحفظ نسخة احتياطية بعد';
+  dot.hidden = false;
+  dot.className = `sync-dot backup-dot backup-${status.dot}`;
+  dot.textContent = '💾';
+  dot.title = since;
+  dot.setAttribute('aria-label', since);
 }
 
 /* ===== الرفع التلقائي للنسخة السحابية المشفَّرة (المرحلة ١٠) ===== */

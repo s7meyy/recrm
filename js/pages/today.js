@@ -5,6 +5,7 @@
 // فلا مصدر حقيقة ثانيًا يمكن أن يتناقض معها.
 
 import { repo, getCurrentUser } from '../data/repository.js';
+import { foldEmptyPanels } from './dashboard.js';
 import { ENUMS, labelFor, clientPriority, clientTagClass, reviewCandidates } from '../data/schema.js';
 import { getLists, getCompleteness, getFollowUpSettings, typeLabel, getUI, setUI, getGoals, getCompany, getPlaybooks, getPublishSettings, getBackupInfo, getTemplates, getTeam } from '../data/settings.js';
 import { loadMatchingContext, candidatesFor, matchReadiness } from '../data/matching.js';
@@ -1027,6 +1028,12 @@ function build(container, d) {
 
   grid.append(section('يحتاج إكمالًا', chores.length,
     chores.length ? el('div', {}, chores) : el('p', { class: 'muted small', text: 'لا شيء ناقص — ممتاز.' })));
+
+  /* اللوحاتُ الفارغة تُطوى (المرحلة ٦٠): «لا أحد تجاوز الحدّ» و«لا عجز حاليًا» خبرٌ يُقال
+     في سطرٍ واحدٍ بأسمائها، لا في ستّ لوحاتٍ تدفن ما ينتظرك فعلًا. والقاعدةُ قاعدةُ
+     الداشبورد نفسُها (المرحلة ٥٢) — موضعٌ واحدٌ لكليهما. */
+  // `min: 1`: في «يومي» حتى اللوحةُ الفارغة الواحدة تُطوى — الصفحةُ صفحةُ ما ينتظرك، لا ما لا ينتظرك.
+  foldEmptyPanels(grid, { title: (n) => `${countOf(n, 'لوحة')} لا شيء فيها اليوم`, button: 'أظهرها', min: 1 });
 }
 
 /** شريط تقدّم نحو هدف الشهر — يتجاوز ١٠٠٪ بلا كسر (تجاوزتَ هدفك). */

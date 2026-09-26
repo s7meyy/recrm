@@ -23,6 +23,8 @@ import { propertyEvidence, priceDrops } from '../util/property-evidence.js';
 import { historyBox } from '../util/history-view.js';
 import { printProperty } from '../util/property-print.js';
 import { whatsappButton } from '../util/outreach.js';
+import { openShareCard } from '../util/share-card.js';
+import { getPublishSettings } from '../data/settings.js';
 import { getImageUrl } from '../data/images.js';
 import { districtStatSmart, marketLine, vsMarket } from '../util/market.js';
 
@@ -40,6 +42,18 @@ function headPanel(ctx) {
     el('button', {
       type: 'button', class: 'btn btn-ghost', text: 'اطبع البطاقة',
       onClick: () => printProperty(p, { lists: ctx.lists, company: ctx.company }).catch(() => toast('تعذّرت الطباعة', 'error')),
+    }),
+    // بطاقةُ المشاركة (المرحلة ٦٠): صورةٌ بالسعر والمكان والشعار تُرسل في واتساب — لا رابطٌ وحده.
+    el('button', {
+      type: 'button', class: 'btn', text: '🖼️ بطاقة مشاركة',
+      onClick: async () => {
+        try {
+          const pub = await getPublishSettings();
+          const ref = new Map(pub.publishedRefs || []).get(p.id);
+          const url = ref ? `${location.origin}/offers/l/${ref}` : '';
+          await openShareCard({ property: p, lists: ctx.lists, company: ctx.company, url });
+        } catch (err) { toast(err.message || 'تعذّر رسم البطاقة', 'error'); }
+      },
     }));
 
   return el('div', { class: 'page-head' },

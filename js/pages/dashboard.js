@@ -378,20 +378,20 @@ function saysEmpty(node) {
  * فتُنزع الفارغاتُ من الشبكة وتُجمع في سطرٍ واحدٍ يسمّيها بأسمائها — **فلا تختفي
  * صامتةً** — ويُعيدها زرٌّ واحدٌ إلى مكانها متى أردت أن ترى ما ينتظرك.
  */
-export function foldEmptyPanels(grid) {
+export function foldEmptyPanels(grid, { title = (n) => `${countOf(n, 'لوحة')} تنتظر بياناتها`, button = 'أظهر الفارغ', min = 3 } = {}) {
   const panels = [...grid.children].filter((n) => n.classList?.contains('panel'));
   const empties = panels.filter((n) => !n.querySelector(HAS_DATA) && saysEmpty(n));
-  if (empties.length < 3) return 0; // لوحةٌ أو لوحتان فارغتان لا تستحقّان طيًّا
+  if (empties.length < min) return 0; // لوحةٌ أو لوحتان فارغتان لا تستحقّان طيًّا
 
-  const names = empties.map((n) => n.querySelector('h2')?.textContent?.trim()).filter(Boolean);
+  const names = empties.map((n) => n.querySelector('h2')?.textContent?.trim().replace(/\s*\(0\)\s*$/, '')).filter(Boolean);
   for (const node of empties) node.remove();
 
   const note = el('div', { class: 'panel dash-folded' },
-    el('h2', { text: `${countOf(empties.length, 'لوحة')} تنتظر بياناتها` }),
+    el('h2', { text: title(empties.length) }),
     el('p', { class: 'panel-desc', text: names.join(' · ') }),
     el('button', {
       type: 'button', class: 'btn btn-sm',
-      text: 'أظهر الفارغ',
+      text: button,
       onClick: () => { note.remove(); for (const node of empties) grid.append(node); },
     }));
   grid.append(note);

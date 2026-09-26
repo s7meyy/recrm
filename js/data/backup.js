@@ -12,6 +12,8 @@ export const BACKUP_APP = 'kassab';
 export const LEGACY_BACKUP_APP = 'motabiq';
 export const BACKUP_FORMAT = 1;
 export const REMINDER_HOURS = 24;
+/** الشريطُ الأصفر لا يُعرض قبل ثلاثة أيام (المرحلة ٦٠) — المؤشّرُ في الرأس يقول الحالَ قبله. */
+export const BANNER_HOURS = 72;
 
 // كل المخازن، مشتقّة من STORES لا مكتوبة يدويًا: الإعدادات أولًا والصور آخرًا (أثقلها)،
 // وأي مخزن يُضاف لاحقًا يدخل النسخة تلقائيًا. (كانت مكتوبة يدويًا فسقطت منها مخازن
@@ -166,6 +168,10 @@ export async function backupStatus() {
     hoursSince,
     hasData,
     due: hasData && (hoursSince == null || hoursSince >= REMINDER_HOURS),
+    /** الشريط: لم تُحفظ نسخةٌ قطّ، أو مضى على آخرها ثلاثة أيام. */
+    bannerDue: hasData && (hoursSince == null || hoursSince >= BANNER_HOURS),
+    /** حالُ المؤشّر: `ok` دون يوم · `stale` دون ثلاثة · `late` بعدها أو لم تُحفظ · `none` بلا بيانات. */
+    dot: !hasData ? 'none' : (hoursSince == null || hoursSince >= BANNER_HOURS) ? 'late' : hoursSince >= REMINDER_HOURS ? 'stale' : 'ok',
   };
 }
 

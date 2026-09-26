@@ -1300,3 +1300,26 @@ body.modal-open .voice-dock { display: none; }
 .agenda-item:first-child { border-top: 0; }
 .agenda-time { flex: 0 0 auto; color: var(--muted); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
 .dash-more { width: 100%; justify-content: center; margin-block: var(--dhad-space-2); }
+
+/* ===== المرحلة ٦٠ — الإضافات ===== */
+/* مؤشّرُ النسخة: أيقونةٌ صغيرة يُلوَّن إطارُها بالحال، والنصُّ في العنوان. */
+.backup-dot { font-size: 14px; border-radius: 50%; position: relative; }
+.backup-dot::after { content: ''; position: absolute; inset-block-end: 8px; inset-inline-end: 8px; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
+.backup-stale::after { background: var(--warn); }
+.backup-late::after { background: var(--danger); }
+/* زرُّ التواصل الموحّد وقائمته */
+.contact-menu { position: relative; display: inline-block; }
+.contact-menu-list {
+  position: absolute; inset-inline-start: 0; top: calc(100% + 4px); z-index: 20; min-width: 200px;
+  background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius);
+  box-shadow: var(--shadow-modal); padding: 4px; display: flex; flex-direction: column;
+}
+.contact-menu-item {
+  display: flex; align-items: center; gap: 8px; min-height: var(--dhad-size-touch); padding: 0 12px;
+  border: 0; background: none; font: inherit; color: inherit; text-align: start; text-decoration: none; cursor: pointer; border-radius: var(--radius);
+}
+.contact-menu-item:hover { background: var(--hover); }
+/* بطاقةُ المشاركة */
+.share-card-box { display: flex; flex-direction: column; gap: 10px; }
+.share-card-preview { width: 100%; max-width: 420px; margin-inline: auto; border-radius: var(--radius); border: 1px solid var(--line); display: block; }
+.share-card-text { font-size: var(--fs-sm); direction: rtl; }

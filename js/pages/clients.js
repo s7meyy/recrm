@@ -12,7 +12,7 @@ import {
 import {
   formatDate, formatDateTime, formatSAR, formatNumber, relativeDays, daysBetween, daysWord,
   toInputDateTime, fromInputDateTime, fromInputDate, countOf } from '../util/format.js';
-import { INFERRED_LABEL, openWhatsApp } from '../util/outreach.js';
+import { INFERRED_LABEL, openWhatsApp, contactMenu } from '../util/outreach.js';
 import { matchesQuery } from '../util/arabic.js';
 import { scoreClient } from '../util/lead-score.js';
 import { formatPhone } from '../util/phone.js';
@@ -500,6 +500,8 @@ async function openDetail(ctx, clientId) {
     title: client.name || formatPhone(client.phone) || 'عميل',
     body, size: 'wide',
     footer: [
+      // زرُّ التواصل الموحّد (المرحلة ٦٠): «سجّل تواصلًا» يقفز إلى استمارة السجلّ في النافذة نفسها.
+      contactMenu(el, { client, onLog: () => { const f = body.querySelector('select'); f?.scrollIntoView({ block: 'center' }); f?.focus(); } }),
       el('button', {
         type: 'button', class: 'btn btn-ghost btn-danger', text: 'حذف العميل',
         onClick: async () => {

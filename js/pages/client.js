@@ -19,7 +19,7 @@ import { audioPlayer } from '../util/audio-note.js';
 import { historyBox } from '../util/history-view.js';
 import { ejarPackage, ejarText } from '../util/ejar-package.js';
 import { printReceipt } from '../util/property-print.js';
-import { whatsappButton, INFERRED_LABEL } from '../util/outreach.js';
+import { whatsappButton, INFERRED_LABEL, contactMenu } from '../util/outreach.js';
 import { investorPortfolio, yieldPct, concentration } from '../util/investor.js';
 
 function routeClientId() {
@@ -60,9 +60,9 @@ export async function render(container) {
   container.append(el('div', { class: 'page-head' },
     el('h1', {}, name, ' ', ...(client.tags || []).filter(clientTagClass).map((t) => badge(t, clientTagClass(t)))),
     el('div', { class: 'head-actions' },
-      client.phone ? el('a', { class: 'btn', href: `tel:${client.phone}`, text: '📞 اتصال', 'data-sensitive': true }) : null,
-      // يفتح المحادثة **ويسجّل تواصلًا مستنتَجًا** (المرحلة ٤٧) — فلا تظهر في «المتأخّرين» وقد كلّمتَه.
-      client.phone ? whatsappButton(el, { clientId: client.id, phone: client.phone, note: 'فُتحت المحادثة من ملفّه' }) : null,
+      // زرٌّ واحد (المرحلة ٦٠): اتصالٌ وواتساب وتسجيلُ تواصل — وكانت أزرارًا متفرّقة.
+      // وواتساب يسجّل تواصلًا مستنتَجًا كما كان (المرحلة ٤٧).
+      contactMenu(el, { client, onLog: () => { location.hash = `#/clients/${client.id}`; } }),
       el('a', { class: 'btn btn-ghost', href: `#/clients/${client.id}`, text: 'تعديل البيانات' }))));
 
   container.append(el('div', { class: 'stat-strip' },

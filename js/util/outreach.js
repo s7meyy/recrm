@@ -78,3 +78,43 @@ export function whatsappButton(el, {
     onClick: () => openWhatsApp({ clientId, phone, text: textOf ? textOf() : text, note }),
   });
 }
+
+
+/**
+ * **زرُّ «تواصل» الموحّد** (المرحلة ٦٠): اتصالٌ وواتساب وتسجيلُ تواصلٍ كانت ثلاثةَ
+ * أزرارٍ متفرّقة في رأس الملفّ وفي نافذته. زرٌّ واحد يفتح قائمةً صغيرة، والاختيارُ الأوّل
+ * فيها هو الأكثرُ استعمالًا. وكلُّ خيارٍ هدفُ لمسٍ ٤٤.
+ *
+ * @param {Function} el باني العناصر
+ * @param {{ client, onLog?: Function, sensitive?: boolean }} o `onLog` يفتح تسجيلَ التواصل
+ */
+export function contactMenu(el, { client, onLog = null, sensitive = true }) {
+  const phone = client?.phone || '';
+  const wrap = el('div', { class: 'contact-menu' });
+  const btn = el('button', {
+    type: 'button', class: 'btn btn-primary contact-menu-btn', text: '📞 تواصل ▾',
+    'aria-haspopup': 'menu', 'aria-expanded': 'false',
+    ...(sensitive ? { 'data-sensitive': true } : {}),
+  });
+  const items = [
+    phone ? el('a', { class: 'contact-menu-item', role: 'menuitem', href: `tel:${phone}`, text: '📞 اتصال' }) : null,
+    phone ? el('button', {
+      type: 'button', class: 'contact-menu-item', role: 'menuitem', text: '💬 واتساب',
+      title: 'يفتح المحادثة ويسجّل تواصلًا مُستنتَجًا في سجلّ العميل',
+      onClick: () => { close(); openWhatsApp({ clientId: client.id, phone, note: 'فُتحت المحادثة من زرّ التواصل' }); },
+    }) : null,
+    onLog ? el('button', { type: 'button', class: 'contact-menu-item', role: 'menuitem', text: '📝 سجّل تواصلًا', onClick: () => { close(); onLog(); } }) : null,
+  ].filter(Boolean);
+  if (!items.length) return null;
+  const menu = el('div', { class: 'contact-menu-list', role: 'menu', hidden: true }, items);
+  const close = () => { menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); document.removeEventListener('click', onDoc, true); };
+  const onDoc = (e) => { if (!wrap.contains(e.target)) close(); };
+  btn.addEventListener('click', () => {
+    const open = menu.hidden;
+    menu.hidden = !open;
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) setTimeout(() => document.addEventListener('click', onDoc, true), 0);
+  });
+  wrap.append(btn, menu);
+  return wrap;
+}
