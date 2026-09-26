@@ -118,9 +118,9 @@ export async function runStep(stepKey, state, { onChunk, onModel, signal } = {})
     if (onModel) onModel(pick);
 
     let r = await callModel(pick.slug, prompt, { onChunk, signal });
-    /* ٤٢٩ «Provider returned error» وانقطاعُ البثّ عابران عند المزوّد أكثر
-       مما هما عند النموذج: تُعاد المحاولةُ مرةً بعد مهلةٍ قبل هجر النموذج. */
-    if (!r.ok && (r.rateLimited || r.network) && !retiredFrom(r.error) && !signal?.aborted) {
+    /* انقطاعُ البثّ عابرٌ عند المزوّد أكثر مما هو عند النموذج: تُعاد المحاولةُ
+       مرةً بعد مهلةٍ قبل هجره. أمّا ٤٢٩ فحدٌّ بلغه هذا النموذج، والبديلُ أولى. */
+    if (!r.ok && r.network && !retiredFrom(r.error) && !signal?.aborted) {
       await new Promise((res) => setTimeout(res, 2500));
       r = await callModel(pick.slug, prompt, { onChunk, signal });
     }

@@ -107,12 +107,12 @@ export async function resolvePicks(role) {
   const WANT = 6;
   for (const vendor of TRUSTED) {
     if (out.length >= WANT) break;
-    const m = live.find((x) => x.id.startsWith(vendor + '/') && !seen.has(x.id) && !dead.has(x.id) && x.context >= 32000);
+    const m = live.find((x) => x.id.startsWith(vendor + '/') && !seen.has(x.id) && !dead.has(x.id) && x.text !== false && x.context >= 32000);
     if (m) push({ name: m.name, slug: m.id, note: 'مجاني اليوم — من القائمة الحيّة' });
   }
   for (const m of live) {
     if (out.length >= WANT) break;
-    if (m.context >= 32000) push({ name: m.name, slug: m.id, note: 'مجاني اليوم — من القائمة الحيّة' });
+    if (m.text !== false && m.context >= 32000) push({ name: m.name, slug: m.id, note: 'مجاني اليوم — من القائمة الحيّة' });
   }
   return out;
 }
